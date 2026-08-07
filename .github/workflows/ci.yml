@@ -140,6 +140,50 @@ jobs:
             exit 1
           fi
 
+  # plan/00-SPINE.md S12 permits Python in exactly three places, and the
+  # evaluation harness is one of them. eval/ is a pure-Python tree.
+  #
+  # The register this job validates is the artifact plan step M0.18 reads to
+  # decide whether Anvil's detection-model tier exists at all, so the property
+  # that matters is narrow and absolute: a row whose experiment has not run must
+  # never be readable as a pass. The schema encodes that; this job is what makes
+  # anything actually run the schema. It shipped with nothing in the repository
+  # checking one against the other, and a schema nobody runs is a comment.
+  eval-harness:
+    name: Eval harness (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # [dev] carries pytest/ruff. Core deps are deliberately minimal -- the
+      # heavy [stats] and [models] extras are pulled by the packets that need
+      # them (M0.6, M0.10, M0.15), not here.
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Tests, including the register mutation suite
+        run: python -m pytest tests/ -q
+
+      # A skipped test is a legitimate outcome here -- M0.7's smoke path is
+      # UNVERIFIED by design because nothing downloads the opengrep engine in
+      # CI. But a suite that silently degrades to all-skips would still report
+      # green, so assert the register suite actually ran.
+      - name: The register mutation suite really ran
+        run: |
+          out=$(python -m pytest tests/test_register_schema.py -q 2>&1)
+          echo "$out"
+          echo "$out" | grep -qE '[0-9]+ passed' || {
+            echo "::error::register schema suite reported no passing tests"; exit 1; }
+
   # NOTE: there is deliberately no "plan" job here. The planning workspace
   # (plan/) and its verification tooling (tools/) are local-only and gitignored,
   # same posture as research/ -- they are how Anvil was designed and verified,

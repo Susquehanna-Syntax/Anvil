@@ -1,0 +1,81 @@
+# eval/.gitignore — Anvil evaluation harness (M0.2)
+#
+# The repository-root .gitignore already covers the generic Python noise
+# (__pycache__/, *.egg-info/, .venv/) and blanket-ignores `models/`,
+# `*.gguf` and `*.safetensors`. This file adds the eval-tree-specific rules
+# for model and dataset caches, and re-includes the provenance metadata that
+# the Milestone 0 register depends on.
+#
+# Deeper .gitignore files take precedence over shallower ones, so the
+# re-inclusions below override the root file's `models/` rule for eval/models.
+
+# --- Dataset payloads (M0.3 PrimeVul, M0.4 ARVO, M0.5 CWE-Bench-Java) -------
+# Corpora are acquired locally and never committed or re-hosted:
+# PrimeVul is Google-Drive-gated (M0.3 forbidden actions) and ARVO /
+# CWE-Bench-Java are pulled from their upstream repos at a pinned SHA.
+data/**
+# ...but keep the directory skeleton, the MANIFEST files that record the
+# acquisition-date snapshot and pinned SHAs, and any prose notes.
+!data/**/
+!data/**/MANIFEST
+!data/**/MANIFEST.*
+!data/**/*.md
+!data/**/.gitkeep
+
+# --- Model artifacts (M0.6) -------------------------------------------------
+# Weights are never committed. Only the pinned-download manifest, the exact HF
+# revision SHA, the archived LICENSE text (S8 compliance mechanics) and the
+# checksums are tracked.
+!models/
+models/**
+!models/**/
+!models/**/MANIFEST
+!models/**/MANIFEST.*
+!models/**/*.md
+!models/**/*.json
+!models/**/*.txt
+!models/**/*.sha256
+!models/**/LICENSE*
+!models/**/.gitkeep
+# Belt and braces: never track a weight file even if a rule above widens.
+models/**/*.gguf
+models/**/*.safetensors
+models/**/*.onnx
+models/**/*.onnx_data
+models/**/*.bin
+models/**/*.pt
+models/**/*.pth
+
+# --- Tool binaries (M0.7 opengrep engine + pinned ruleset) ------------------
+# The repository-root .gitignore blanket-ignores `tools/` (unanchored, so it
+# matches eval/tools/ too). That rule is meant for the root-level planning
+# tooling; eval/tools/ is M0.7's write scope and its pin records must be
+# tracked, so re-include the directory here and exclude only the payloads.
+!tools/
+tools/**/bin/
+tools/**/*.exe
+tools/**/*.tar.gz
+tools/**/*.zip
+tools/**/*.tgz
+tools/**/*.whl
+
+# --- Hugging Face / dataset download caches --------------------------------
+.hf_cache/
+.cache/
+hf_home/
+transformers_cache/
+datasets_cache/
+
+# --- Local run scratch ------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+scratch/
+*.log
+
+# NOTE: eval/results/ is deliberately NOT ignored — the Milestone 0 exit
+# criteria require every register row's `artifact_path` to point at a real,
+# committed eval/results/<ID>.json file.

@@ -1,0 +1,12 @@
+# Acquired artefacts: fetched from pinned URLs, verified against MANIFEST.toml,
+# never committed. The pin lives in MANIFEST.toml; the bytes do not live in git.
+vendor/
+
+# opengrep binaries are LGPL-2.1. Keeping them out of the tree also keeps Anvil
+# out of any "distribution" question until plan/30-lane-b-detection.md B.2
+# decides packaging deliberately.
+opengrep
+opengrep.exe
+opengrep_*
+opengrep-core_*
+*.sarif
