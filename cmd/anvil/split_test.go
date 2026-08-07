@@ -24,6 +24,16 @@ import (
 // guards do. Plan step O.16 owns its final form and must demonstrate the
 // negative control: add a temporary internal/dast import, watch this fail,
 // revert. A guard that has never failed has not been tested.
+//
+// ALWAYS RUN THIS WITH -count=1.
+//
+// This test's verdict comes from the output of an external `go list` process,
+// and Go's test-result cache does not track that. Against a warm build cache it
+// will replay a previous PASS for a package whose import graph has since
+// changed -- reporting "ok (cached)" while never looking at the new import.
+// That is precisely the stale-pass this guard exists to prevent, and it is not
+// hypothetical: it defeated the CI negative control on its first run against a
+// restored cache. -count=1 forces the run.
 func TestSplit_CoreBinaryHasNoDASTCapability(t *testing.T) {
 	const forbidden = "/internal/dast"
 

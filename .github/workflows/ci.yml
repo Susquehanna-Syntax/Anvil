@@ -69,8 +69,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # -count=1 is load-bearing, not decoration. TestSplit shells out to
+      # `go list -deps`, and Go's test-result cache does not track the output of
+      # an external command -- so with the build cache restored by setup-go it
+      # will happily replay a previous PASS for a package whose import graph has
+      # since changed. That is exactly the stale-pass this guard exists to
+      # prevent, and it defeated the negative control on the first run against
+      # a warm cache.
       - name: Core binary has no DAST capability in its import graph
-        run: go test ./cmd/anvil -run TestSplit -v
+        run: go test -count=1 ./cmd/anvil -run TestSplit -v
 
       - name: Negative control -- the guard must be able to fail
         run: |
@@ -86,14 +93,34 @@ jobs:
 
           import _ "github.com/Susquehanna-Syntax/Anvil/internal/dast/ciprobe"
           EOF
-          if go test ./cmd/anvil -run TestSplit; then
+          # Capture the output rather than just the exit code. A nonzero exit
+          # proves only that something went wrong -- a compile error would also
+          # produce one, and would let a broken guard masquerade as a working
+          # one. Assert the guard failed for the RIGHT reason, naming the
+          # package it was supposed to catch.
+          set +e
+          out=$(go test -count=1 ./cmd/anvil -run TestSplit 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -eq 0 ]; then
             echo "::error::TestSplit PASSED with an internal/dast import present. The guard is a no-op."
             exit 1
           fi
-          echo "guard correctly failed on the injected violation"
+          if ! echo "$out" | grep -q 'internal/dast/ciprobe'; then
+            echo "::error::TestSplit failed, but not by detecting internal/dast/ciprobe. The guard may be broken rather than working."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "guard correctly failed on the injected violation, naming internal/dast/ciprobe"
           rm -f cmd/anvil/ci_negctl.go
           rm -rf internal/dast/ciprobe
-          go test ./cmd/anvil -run TestSplit
+          go test -count=1 ./cmd/anvil -run TestSplit
 
       - name: Static, cgo-free builds for both artifacts
         env:
