@@ -1,0 +1,38 @@
+# Research workspace — local only, not part of the distributed project
+research/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+build/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Anvil runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+buffer/
+.anvil/
+models/
+*.gguf
+*.safetensors
+
+# Go
+/anvil
+/anvil-dast
+*.exe
