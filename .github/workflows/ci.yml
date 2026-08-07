@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build, vet, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Single source of truth: the toolchain line in go.mod.
+          go-version-file: go.mod
+          cache: true
+
+      - name: go mod tidy is a no-op
+        run: |
+          cp go.mod go.mod.bak
+          cp go.sum go.sum.bak
+          go mod tidy
+          diff -u go.mod.bak go.mod
+          diff -u go.sum.bak go.sum
+          rm go.mod.bak go.sum.bak
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test -race -count=1 ./...
+
+  # plan/00-SPINE.md S9-AMENDED splits Anvil into two distribution artifacts:
+  # anvil (core, no network-probing capability compiled in) and anvil-dast.
+  # plan/IMPLEMENTATION-PLAN.md 2.2 rules that a config flag inside a single
+  # binary does not address the concern the split exists for. This job is what
+  # makes the split real rather than conventional.
+  artifact-split:
+    name: Two-artifact split (S9-AMENDED)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Core binary has no DAST capability in its import graph
+        run: go test ./cmd/anvil -run TestSplit -v
+
+      - name: Negative control -- the guard must be able to fail
+        run: |
+          set -e
+          mkdir -p internal/dast/ciprobe
+          cat > internal/dast/ciprobe/probe.go <<'EOF'
+          package ciprobe
+
+          const Sentinel = "ci-negative-control"
+          EOF
+          cat > cmd/anvil/ci_negctl.go <<'EOF'
+          package main
+
+          import _ "github.com/Susquehanna-Syntax/Anvil/internal/dast/ciprobe"
+          EOF
+          if go test ./cmd/anvil -run TestSplit; then
+            echo "::error::TestSplit PASSED with an internal/dast import present. The guard is a no-op."
+            exit 1
+          fi
+          echo "guard correctly failed on the injected violation"
+          rm -f cmd/anvil/ci_negctl.go
+          rm -rf internal/dast/ciprobe
+          go test ./cmd/anvil -run TestSplit
+
+      - name: Static, cgo-free builds for both artifacts
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -e
+          for goarch in amd64 arm64; do
+            for target in anvil anvil-dast; do
+              GOOS=linux GOARCH=$goarch go build -o "/tmp/${target}-linux-${goarch}" "./cmd/${target}"
+              file "/tmp/${target}-linux-${goarch}"
+            done
+          done
+          # S12 mandates modernc.org/sqlite precisely so no cgo/C toolchain is
+          # needed. mattn/go-sqlite3 would reintroduce both.
+          if go list -deps ./... | grep -q 'github.com/mattn/go-sqlite3'; then
+            echo "::error::mattn/go-sqlite3 is in the dependency graph. S12 mandates modernc.org/sqlite."
+            exit 1
+          fi
+
+  plan:
+    name: Plan cross-reference invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # plan/IMPLEMENTATION-PLAN.md 2.6: "Re-run it after any edit to an area
+      # file." Making that a CI job is the only way it actually happens.
+      - name: tools/plan_xref.py
+        run: python tools/plan_xref.py
+
+      - name: tools/plan_fields.py parses
+        run: python tools/plan_fields.py > /dev/null
+
+  licence:
+    name: Licence hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # plan/00-SPINE.md S8: read LICENSE file bodies, never API metadata.
+      # Seven audited artifacts return NOASSERTION over a real licence and one
+      # hides a restrictive licence behind a permissive tag.
+      - name: LICENSE is canonical Apache-2.0
+        run: |
+          expected=cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
+          actual=$(sha256sum LICENSE | cut -d' ' -f1)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::LICENSE sha256 is $actual, expected the canonical Apache-2.0 $expected"
+            exit 1
+          fi
+
+      - name: Required compliance files exist
+        run: |
+          set -e
+          for f in LICENSE NOTICE THIRD-PARTY-LICENSES.md; do
+            test -s "$f" || { echo "::error::$f missing or empty (plan step C.1)"; exit 1; }
+          done
+
+      # plan/00-SPINE.md S5 is enforced, not advisory. This is a coarse
+      # placeholder for cmd/license-gate (plan steps C.9/C.10), which reads
+      # licence bodies properly; it exists so the exclusion list is not purely
+      # documentary between now and Phase 6.
+      - name: Hard exclusions (S5) are absent from the dependency graph
+        run: |
+          set -e
+          fail=0
+          # Deliberately narrow: module paths only, so prose in plan/ and
+          # NOTICE -- which must be free to *name* these to explain the
+          # exclusions -- does not trip the gate.
+          for banned in \
+            "github.com/github/codeql" \
+            "github.com/returntocorp/semgrep" \
+            "github.com/opengrep/opengrep-rules" \
+            "github.com/AFLplusplus/AFLplusplus" \
+            "github.com/mattn/go-sqlite3" ; do
+            if grep -rn --include=go.mod --include=go.sum "$banned" . ; then
+              echo "::error::$banned is on the S5 hard exclusion list"
+              fail=1
+            fi
+          done
+          exit $fail
