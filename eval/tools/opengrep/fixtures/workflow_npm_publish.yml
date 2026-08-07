@@ -1,0 +1,18 @@
+# FIXTURE — deliberately vulnerable. Not a real workflow, never executed.
+#
+# Materialized by anvil_opengrep.fixtures into a throwaway temp directory at
+# .github/workflows/workflow_npm_publish.yml.
+#
+# Expected to match rule: npm_staged_publishing_missing
+#   a bare `npm publish` with no staged-publishing approval gate.
+name: fixture-release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm publish

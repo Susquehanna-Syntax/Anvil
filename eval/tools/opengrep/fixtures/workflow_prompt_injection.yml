@@ -1,0 +1,25 @@
+# FIXTURE — deliberately vulnerable. Not a real workflow, never executed.
+#
+# Materialized by anvil_opengrep.fixtures into a throwaway temp directory at
+# .github/workflows/workflow_prompt_injection.yml, because both AikidoSec rules
+# carry a `paths.include` filter on .github/workflows/**. It is stored under
+# this flat name so that no `.github/` directory ever exists inside the Anvil
+# repository itself.
+#
+# Expected to match rule: github_workflow_prompt_injection
+#   `prompt:` whose value interpolates ${{ github.event.issue.title }}, which the
+#   rule's metavariable-regex lists as attacker-controlled.
+name: fixture-triage
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Summarise the issue
+        uses: example/inference-action@v1
+        with:
+          prompt: "Summarise this issue: ${{ github.event.issue.title }}"

@@ -1,0 +1,15 @@
+# FIXTURE — the negative control. Should produce NO findings.
+#
+# If a smoke run reports a finding against this file, the wrapper is attributing
+# matches to the wrong path, or the ruleset changed under its pin.
+name: fixture-ci
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm test

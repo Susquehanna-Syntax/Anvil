@@ -1,0 +1,186 @@
+# Anvil M0.7 — pinned acquisition manifest for the deterministic recall tier.
+#
+# Scope: this file is DATA ONLY. It records exactly which artefacts Anvil's
+# evaluation harness is allowed to fetch, and the checksum each fetch must match.
+# Nothing here downloads anything; see anvil_opengrep/acquire.py.
+#
+# Provenance of every value below: fetched in-session 2026-08-06 from the GitHub
+# REST API / raw.githubusercontent.com. See LICENSES.md for the exact endpoints
+# and for the licence findings. Values recalled from memory are not permitted here.
+#
+# Spine references:
+#   plan/00-SPINE.md S4  — source-recall pick: opengrep engine + AikidoSec/opengrep-rules
+#   plan/00-SPINE.md S5  — hard exclusions (see [excluded] at the bottom of this file)
+#   plan/00-SPINE.md S7  — supply-chain pinning: pin by commit SHA, diff before promotion
+#   plan/00-SPINE.md S12 — opengrep has zero bindings in any language; subprocess only
+
+schema_version = 1
+generated_utc = "2026-08-06"
+generated_by = "Anvil implementation plan, step M0.7"
+
+# ---------------------------------------------------------------------------
+# Engine: opengrep CLI (LGPL-2.1). Invoked as a SUBPROCESS ONLY, never linked.
+# ---------------------------------------------------------------------------
+[engine]
+name = "opengrep"
+repo = "https://github.com/opengrep/opengrep"
+version = "v1.26.0"
+release_tag = "v1.26.0"
+release_commit_sha = "1bef4ea4ff3264754132eec823b5b1d8cde3e4ee"
+release_published_utc = "2026-07-24T20:00:53Z"
+release_html_url = "https://github.com/opengrep/opengrep/releases/tag/v1.26.0"
+license_spdx = "LGPL-2.1"
+license_url = "https://raw.githubusercontent.com/opengrep/opengrep/v1.26.0/LICENSE"
+license_verified_utc = "2026-08-06"
+# Linkage posture, restated here because it is a licence-compliance invariant:
+linkage = "subprocess"
+linkage_note = """opengrep is an OCaml CLI with zero bindings in any language (plan/00-SPINE.md S12).
+Anvil execs the binary and reads its stdout. No FFI, no cgo, no shared-object load, no static link.
+The LGPL-2.1 "combined work" analysis therefore never engages for the running system."""
+
+# Asset checksums. Source: GitHub Releases API `assets[].digest`, which GitHub
+# computes over the stored asset bytes. Fetched in-session.
+#
+# HONESTY NOTE, do not delete: these digests were read from the GitHub API. As of
+# this packet no asset has been downloaded and independently re-hashed on this
+# host (the orchestrator explicitly forbade downloading the binary in M0.7).
+# acquire.py enforces the digest at fetch time, which is the point at which the
+# claim first becomes load-bearing.
+[[engine.assets]]
+platform = "linux-x86_64-glibc"
+filename = "opengrep_manylinux_x86"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_x86"
+sha256 = "40c21299eeddabf743b856daa843d24f9d4a027130671cd45b3b21776fd9ab26"
+size_bytes = 41867160
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_x86.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_x86.cert"
+
+[[engine.assets]]
+platform = "linux-aarch64-glibc"
+filename = "opengrep_manylinux_aarch64"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_aarch64"
+sha256 = "3042a3b1aa98fa93407b9d66a45ab1f179b5b367e76965f56afdbd2c038fb1fa"
+size_bytes = 43569499
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_aarch64.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_aarch64.cert"
+
+[[engine.assets]]
+platform = "linux-x86_64-musl"
+filename = "opengrep_musllinux_x86"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_x86"
+sha256 = "18aeca114221e2816ec26e1a731f1a2583408c8e4578cd868cd2d47c12fd29f8"
+size_bytes = 44153516
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_x86.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_x86.cert"
+
+[[engine.assets]]
+platform = "linux-aarch64-musl"
+filename = "opengrep_musllinux_aarch64"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_aarch64"
+sha256 = "d4e20ac57b6f9bb32c2b0ffc0501b8c6acb92ecee60f11f1cd72db9b11647857"
+size_bytes = 45794214
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_aarch64.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_musllinux_aarch64.cert"
+
+[[engine.assets]]
+platform = "darwin-arm64"
+filename = "opengrep_osx_arm64"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_arm64"
+sha256 = "513ff8491f7254c9a672cf8421136a537eb53b2a8af748568bd697acdc59eefe"
+size_bytes = 43665440
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_arm64.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_arm64.cert"
+
+[[engine.assets]]
+platform = "darwin-x86_64"
+filename = "opengrep_osx_x86"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_x86"
+sha256 = "36c00a2b6eeb45796275e69cb8f74ef27c42724a1b3c98f6c8d861bad7a8529d"
+size_bytes = 44252144
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_x86.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_osx_x86.cert"
+
+[[engine.assets]]
+platform = "windows-x86_64"
+filename = "opengrep_windows_x86.exe"
+url = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_windows_x86.exe"
+sha256 = "4e6c0e201982cd72ca4aff5798a2ff133e17de8af3b00b460238fdda4dd266e3"
+size_bytes = 49845248
+sigstore_sig = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_windows_x86.exe.sig"
+sigstore_cert = "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_windows_x86.exe.cert"
+
+# ---------------------------------------------------------------------------
+# Ruleset: AikidoSec/opengrep-rules (MIT). The ONLY permitted rule source.
+# ---------------------------------------------------------------------------
+[ruleset]
+name = "AikidoSec/opengrep-rules"
+repo = "https://github.com/AikidoSec/opengrep-rules"
+# S7 supply-chain pinning: commit SHA, never a branch name, never `main`.
+commit_sha = "7ac79affecf709eb7263a243b518a417cd7e0ab2"
+commit_utc = "2026-06-04T16:06:22Z"
+branch_observed = "main"
+archived = false
+license_spdx = "MIT"
+license_url = "https://raw.githubusercontent.com/AikidoSec/opengrep-rules/7ac79affecf709eb7263a243b518a417cd7e0ab2/LICENSE"
+license_verified_utc = "2026-08-06"
+license_holder = "Aikido Security BV"
+# Advisory only. GitHub codeload tarballs are re-gzipped and are NOT byte-stable
+# across time; the authoritative pin is commit_sha + the per-file blob SHAs below.
+tarball_url = "https://codeload.github.com/AikidoSec/opengrep-rules/tar.gz/7ac79affecf709eb7263a243b518a417cd7e0ab2"
+tarball_sha256_observed = "8b683f8e5907b368763c8e05bdbf298607da22ad4e34625166ce950bfe8d1e51"
+tarball_sha256_authoritative = false
+
+# Git blob SHAs (sha1 of "blob <len>\0" + content). Content-addressed and stable
+# forever, so a checkout can be verified file-by-file without trusting git itself.
+[[ruleset.files]]
+path = "LICENSE"
+blob_sha1 = "b48a9af2d18b4847a0cfa4882d4aafa180052543"
+size_bytes = 1075
+
+[[ruleset.files]]
+path = "README.md"
+blob_sha1 = "16937a1ad926b171423702f8604964d50063f21f"
+size_bytes = 295
+
+[[ruleset.files]]
+path = "rules/github_workflow_prompt_injection/github_workflow_prompt_injection.yaml"
+blob_sha1 = "9e133e0d61fba2fc86ce1c97197355bd14b57c71"
+size_bytes = 1539
+
+[[ruleset.files]]
+path = "rules/npm_staged_publishing_missing/npm_staged_publishing_missing.yaml"
+blob_sha1 = "bcfbe4803a0d0f3142afcd3dccd96256e9318adc"
+size_bytes = 647
+
+# Corpus size, measured — not estimated. This is load-bearing for INSTR-01.
+[ruleset.coverage]
+rule_files = 2
+rule_ids = ["github_workflow_prompt_injection", "npm_staged_publishing_missing"]
+languages = ["yaml"]
+path_filters = [".github/workflows/**", ".github/actions/**"]
+total_repo_commits = 7
+tags = 0
+warning = """MEASURED, NOT ESTIMATED: at the pinned commit this ruleset contains exactly TWO rules,
+both YAML-only and both path-filtered to .github/workflows and .github/actions. It performs no
+taint analysis and covers no general-purpose source language. See LICENSES.md section 4 and the
+M0.7 report: this is a coverage finding the orchestrator must resolve before INSTR-01 is read as
+a recall measurement of anything."""
+
+# ---------------------------------------------------------------------------
+# S5 hard exclusions. Recorded so a future contributor cannot "helpfully" add them.
+# ---------------------------------------------------------------------------
+[excluded]
+[[excluded.repos]]
+repo = "opengrep/opengrep-rules"
+reason = "plan/00-SPINE.md S5 hard exclusion"
+observed_utc = "2026-08-06"
+archived = true
+spdx_id = "NOASSERTION"
+stars = 6
+last_push = "2025-11-28T13:17:29Z"
+detail = "LGPL-2.1 plus a Commons Clause rider; Commons Clause is not OSI-approved and redistribution inside an OSI-licensed project is a licence conflict. Never vendor, never --config against it."
+
+[[excluded.repos]]
+repo = "semgrep/semgrep-rules"
+reason = "plan/00-SPINE.md S5 hard exclusion"
+detail = "Semgrep Rules License v.1.0 — internal business use only, no redistribution, no service. Any Semgrep-maintained ruleset is out, in every form."
