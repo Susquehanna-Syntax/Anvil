@@ -1,0 +1,41 @@
+# Anvil ships Linux binaries and Linux-targeted deploy assets, and its CI runs
+# on ubuntu-latest. Line endings are therefore LF everywhere, enforced here
+# rather than left to each contributor's core.autocrlf setting.
+#
+# Without this, a Windows checkout gets CRLF working-tree files, `gofmt -l`
+# reports every Go file as unformatted locally while CI (which sees LF) passes,
+# and local verification stops being trustworthy. Every packet in
+# plan/IMPLEMENTATION-PLAN.md owes build/test evidence, so local verification
+# has to mean something.
+
+* text=auto eol=lf
+
+*.go       text eol=lf diff=golang
+*.sql      text eol=lf
+*.py       text eol=lf
+*.sh       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.toml     text eol=lf
+go.mod     text eol=lf
+go.sum     text eol=lf
+Makefile   text eol=lf
+Dockerfile text eol=lf
+
+# systemd units are parsed on Linux only and must never carry CR.
+*.service  text eol=lf
+*.timer    text eol=lf
+*.slice    text eol=lf
+
+# Model weights, archives, and fixture corpora.
+*.gguf         binary
+*.safetensors  binary
+*.onnx         binary
+*.db           binary
+*.sqlite       binary
+*.tar          binary
+*.gz           binary
+*.zip          binary
+*.png          binary
