@@ -1,6 +1,12 @@
 # Research workspace — local only, not part of the distributed project
 research/
 
+# Planning workspace and its tooling — local only, not part of the distributed
+# project. Same posture as research/ above: these are how Anvil was designed and
+# verified, not something a user of Anvil needs or should receive.
+plan/
+tools/
+
 # Python
 __pycache__/
 *.py[cod]
