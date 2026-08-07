@@ -1,0 +1,231 @@
+Anvil
+Copyright 2026 The Anvil Authors
+
+This product includes software developed by The Anvil Authors, licensed under
+the Apache License, Version 2.0. A copy of that license is in the LICENSE file
+at the root of this repository.
+
+================================================================================
+HOW TO READ THIS FILE
+================================================================================
+
+This is the Apache-2.0 Section 4(d) attribution aggregation point for Anvil.
+
+Two rules govern every entry below, and both come from the licence audit in
+research/13-license-compatibility-audit.md as corrected by
+research/13a-license-audit-adversarial-review.md:
+
+  1. Every licence recorded here was determined by READING THE LICENSE FILE
+     BODY, never by trusting package-manager or registry metadata. Seven
+     audited artifacts return NOASSERTION over a real licence, and one hides a
+     restrictive licence behind a permissive tag: fdtn-ai/Foundation-Sec-8B is
+     tagged apache-2.0 on Hugging Face while its own NOTICE.md states the
+     weights remain under the Llama 3.1 Community License and only Cisco's
+     delta is Apache-2.0. That artifact is not used by Anvil, but the trap it
+     represents is why this rule exists.
+
+  2. An attribution duty is recorded here when it is OWED, and the condition
+     that triggers it is stated. Apache-2.0 Section 4(d) attaches to
+     distribution of a Derivative Work. Anvil invokes several tools as separate
+     subprocesses rather than linking them, so their notice duties trigger at
+     IMAGE BUILD and RELEASE PACKAGING, not at source checkout. Those entries
+     are marked accordingly rather than being silently omitted or silently
+     claimed.
+
+Share-alike sources are deliberately NOT aggregated into this file. They are
+quarantined under data/share-alike/, each with its own LICENSE, so that their
+copyleft terms cannot propagate into Anvil's own findings database. The pointer
+at the end of this file names them; it carries no share-alike content.
+
+================================================================================
+1. REDISTRIBUTED IN SOURCE FORM TODAY (Go module dependencies)
+================================================================================
+
+These are compiled into the anvil and anvil-dast binaries. Every licence below
+was read from the LICENSE file in the Go module cache at the pinned version.
+None is Apache-2.0, so none triggers a Section 4(d) NOTICE duty; each is listed
+in THIRD-PARTY-LICENSES.md with its full attribution text.
+
+  modernc.org/sqlite v1.56.0                    BSD-3-Clause
+  modernc.org/libc v1.74.4                      BSD-3-Clause
+  modernc.org/mathutil v1.7.1                   BSD-3-Clause
+  modernc.org/memory v1.11.0                    BSD-3-Clause
+  golang.org/x/sys v0.47.0                      BSD-3-Clause
+  github.com/google/uuid v1.6.0                 BSD-3-Clause
+  github.com/remyoudompheng/bigfft (pinned)     BSD-3-Clause
+  github.com/dustin/go-humanize v1.0.1          MIT
+  github.com/mattn/go-isatty v0.0.24            MIT
+  github.com/ncruces/go-strftime v1.0.0         MIT
+
+================================================================================
+2. APACHE-2.0 ARTIFACTS WITH SECTION 4(d) NOTICE DUTIES
+================================================================================
+
+Each entry names the operative clause and the event that triggers the duty.
+Entries marked PENDING are not yet redistributed by any Anvil artifact; the
+duty is recorded now so that the packaging steps cannot ship without it.
+
+  Trivy (aquasecurity/trivy) -- Apache-2.0
+      Duty: Section 4(d) notice. Triggers when the container image bakes in the
+      Trivy binary. Status: PENDING (image build, plan step O.17).
+      Source: research/13 row C25, verified from the LICENSE file body.
+
+  ZAP (zaproxy/zaproxy) -- Apache-2.0
+      Duty: Section 4(d) notice plus NOTICE-file duties. Triggers when the
+      anvil-dast image bakes in ZAP. Status: PENDING (plan step O.17).
+      Source: research/13 row C3, LICENSE title line verified verbatim.
+
+  Syft (anchore/syft), Grype (anchore/grype), OSV-Scanner (google/osv-scanner)
+      -- Apache-2.0 each. Duty: Section 4(d) notice on redistribution.
+      Status: PENDING. Source: research/13 rows C27, C26, C28.
+
+  honggfuzz (google/honggfuzz) -- Apache-2.0, per its COPYING file
+      Duty: Section 4(d) notice on redistribution. Status: PENDING.
+      Source: research/13 row D2. This is the permissive AFL++ substitute;
+      AFL++ is excluded by plan/00-SPINE.md S5 because its LICENSE is AGPL-3.0
+      regardless of what its README says.
+
+  Docker Engine, Docker Compose -- Apache-2.0
+      Duty: Section 4(d) notice IF redistributed as binaries. Anvil invokes
+      them; it does not currently redistribute them. Status: NOT TRIGGERED.
+      Source: plan/spine-b-open-licences.md A5, A6.
+
+  Gemma 4 weights -- Apache-2.0
+      Duty: Section 4(d) notice if the weights are bundled or redistributed,
+      plus a container image LABEL. Status: PENDING and CONDITIONAL -- the
+      model tier itself may not exist. Plan step M0.18 decides whether Anvil
+      has a detection-model tier at all, and no component pick is final before
+      it resolves (plan/00-SPINE.md S3, S4).
+      CAVEAT, and it is not optional: verify the licence of the SPECIFIC
+      Gemma 4 variant at selection time. Qwen is documented to split licences
+      by parameter count inside one family, so a sibling's licence proves
+      nothing about the one shipped. Source: plan/spine-b-open-licences.md A1.
+
+  Qwen/Qwen3-Coder-30B-A3B-Instruct -- Apache-2.0
+      Duty: Section 4(d) notice if weights are shipped, plus model-weight
+      METADATA. Status: PENDING. Same by-parameter-count caveat as Gemma 4.
+      Source: plan/spine-b-open-licences.md A7.
+
+  go-apispec -- Apache-2.0
+      Duty: Section 4(d) requires the upstream NOTICE file be shipped VERBATIM,
+      not summarised. Its body is archived at data/LICENSES/GO-APISPEC-NOTICE
+      by plan step C.4. Status: PENDING.
+      Source: plan/spine-b-open-licences.md A2.
+
+================================================================================
+3. ATTRIBUTION-REQUIRED DATA SOURCES (CC-BY and equivalent)
+================================================================================
+
+Attribution here is mandatory, not courtesy.
+
+  GitHub Advisory Database -- CC-BY-4.0, verified from LICENSE.md
+      Section 3(a) requires all of: creator identification, copyright notice, a
+      notice referring to the Public License, a notice referring to the
+      warranty disclaimer, a URI or hyperlink to the Licensed Material, and an
+      indication of modifications made.
+      Attribution: "Contains information from the GitHub Advisory Database,
+      which is made available under the Creative Commons Attribution 4.0
+      International License (https://creativecommons.org/licenses/by/4.0/).
+      Source: https://github.com/github/advisory-database. Modified by Anvil:
+      normalised into Anvil's audit record schema."
+      Source: research/13 row B3.
+
+  Red Hat Security Data (CSAF / VEX / OSV) -- CC-BY-4.0, explicit
+      Attribution to Red Hat, Inc. required on distribution of the content or
+      of modified versions. Source: research/13 row B11.
+
+  MITRE CVE -- CVE Terms of Use
+      Duty: reproduce MITRE's copyright designation. The operative text is
+      archived at data/LICENSES/CVE-TOU.txt by plan step C.4.
+      Source: research/13 row B1.
+
+  MITRE CWE -- CWE Terms of Use
+      Duty: reproduce MITRE's copyright designation. Archived at
+      data/LICENSES/CWE-TERMS.txt. CWE 4.20 is Anvil's Lane B label space.
+      Source: research/13 row B7.
+
+  MITRE ATT&CK -- required notice with a DYNAMIC year
+      The year must be substituted at build time from
+      data/NOTICES/ATTACK-NOTICE-TEMPLATE.txt, never hardcoded. Hardcoding it
+      was defect E4 in research/13a's adversarial review of the audit.
+      Source: research/13 row B9, corrected by research/13a E4.
+
+  OWASP Top 10:2025 -- CC-BY-3.0 per page footer. Attribution required.
+      Source: research/13 row F12. The repository LICENSE was not cross-checked
+      by the audit; re-verify before relying on it.
+
+  FIRST EPSS -- NO LICENCE, NO SPDX IDENTIFIER
+      Recorded here as a deliberate NON-entry. The strongest operative
+      statements available are that scores "are published freely via CSV
+      download and API with no registration required" and that "Attribution is
+      requested when EPSS data is used in publications or products." Neither is
+      a grant of rights. Anvil must not describe EPSS as "open licensed"
+      anywhere in its documentation. If used at all it is an optional
+      prioritisation input under documented risk acceptance, never
+      load-bearing. Source: research/13 row B6.
+
+================================================================================
+4. SHARE-ALIKE SOURCES -- QUARANTINED, NOT AGGREGATED HERE
+================================================================================
+
+The following carry share-alike terms that would propagate to a derivative
+database. They are segregated under data/share-alike/, each with its own
+LICENSE file, and their content is never merged into Anvil's findings database.
+This is a POINTER ONLY and carries no share-alike content.
+
+  data/share-alike/ubuntu/        Ubuntu OVAL / USN          CC-BY-SA-4.0
+  data/share-alike/alpine/        Alpine secdb               CC-BY-SA-4.0
+  data/share-alike/openvas-feed/  Greenbone Community Feed   ODbL-1.0
+
+The Greenbone entry stands on verified evidence: Greenbone's own licence page
+states that "The OPENVAS COMMUNITY FEED is a database licensed under the Open
+Data Commons Open Database License version 1.0 (ODbLv1)". An earlier report
+that this item was unsourced was checked and found wrong; see
+plan/00-SPINE.md S8 and plan/IMPLEMENTATION-PLAN.md 2.3.
+
+Plan step C.2 owns this directory tree.
+
+================================================================================
+5. WHAT IS DELIBERATELY ABSENT
+================================================================================
+
+The following are EXCLUDED from Anvil by plan/00-SPINE.md S5, each for a
+documented reason, and must never appear in this file or in any Anvil artifact:
+
+  CodeQL                       CLI terms forbid CI/CD database generation and
+                               non-open-source targets; the restriction attaches
+                               to the TARGET, so Anvil's own licence is
+                               irrelevant to it.
+  Semgrep-maintained rules     internal business use only.
+  opengrep/opengrep-rules      archived, NOASSERTION, LGPL-2.1 + Commons Clause.
+                               Use AikidoSec/opengrep-rules instead (MIT).
+  CIS Benchmark content        in any form, including rules written by reading
+                               one.
+  Gemma 1-3, Llama, StarCoder2,
+    Mistral-MNPL weights       licence terms incompatible with Anvil's posture.
+  DiverseVul                   no licence.
+  vendored ExploitDB,
+    Metasploit modules,
+    PoC-aggregator code        licence and safety posture.
+  AFL++                        AGPL-3.0 in its LICENSE regardless of its README.
+  FuzzDB web-backdoors/        content posture.
+  Nuclei "code:" templates     251 exist; they execute arbitrary commands on the
+                               Anvil host.
+
+Note on Gemma: Gemma 4 IS eligible and Gemma 1-3 are NOT. Gemma 4 resolves to
+Apache-2.0 and is carved out of the old Gemma Terms of Use, whose remote-
+restriction clause was the reason Gemma 1-3 were excluded. See
+plan/00-SPINE.md S4.
+
+================================================================================
+6. PATENT POSTURE -- STATED SO IT IS NOT MISREAD
+================================================================================
+
+Anvil is licensed Apache-2.0. Do NOT read that as freedom to operate. The
+Apache-2.0 Section 3 patent grant runs from CONTRIBUTORS over their OWN
+contributions and does nothing about third-party patents. US10043004B2
+(SAST-DAST correlation, priority 2015-01-30, granted 2018-08-07, expires
+approximately 2035, assignee Denim Group Ltd. / Coalfire Systems) is materially
+similar to Anvil's link-based correlation mechanism and remains an unresolved
+risk. An outbound licence is not a freedom-to-operate instrument. See
+plan/00-SPINE.md S8 and plan/40-record-and-storage.md Open Question 1.
