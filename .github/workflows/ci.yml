@@ -113,22 +113,14 @@ jobs:
             exit 1
           fi
 
-  plan:
-    name: Plan cross-reference invariants
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      # plan/IMPLEMENTATION-PLAN.md 2.6: "Re-run it after any edit to an area
-      # file." Making that a CI job is the only way it actually happens.
-      - name: tools/plan_xref.py
-        run: python tools/plan_xref.py
-
-      - name: tools/plan_fields.py parses
-        run: python tools/plan_fields.py > /dev/null
+  # NOTE: there is deliberately no "plan" job here. The planning workspace
+  # (plan/) and its verification tooling (tools/) are local-only and gitignored,
+  # same posture as research/ -- they are how Anvil was designed and verified,
+  # not something a consumer of Anvil receives. The cross-reference invariants
+  # those tools enforce are therefore checked locally by the maintainer before
+  # dispatch, not in CI, because CI cannot see the files. Everything CI *can*
+  # see -- the artifact split, the licence bodies, the build -- is still gated
+  # below.
 
   licence:
     name: Licence hygiene
