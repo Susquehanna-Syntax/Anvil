@@ -101,7 +101,9 @@ class OpengrepRunner:
         from . import acquire
 
         self.manifest = manifest or load_manifest()
-        self.engine_path = Path(engine_path) if engine_path else acquire.engine_path(manifest=self.manifest)
+        self.engine_path = (
+            Path(engine_path) if engine_path else acquire.engine_path(manifest=self.manifest)
+        )
         self.ruleset_path = (
             Path(ruleset_path) if ruleset_path else acquire.ruleset_path(manifest=self.manifest)
         )
@@ -212,7 +214,8 @@ class OpengrepRunner:
         try:
             if proc.returncode not in OK_EXIT_CODES:
                 raise OpengrepRunError(
-                    f"opengrep exited {proc.returncode} (expected one of {sorted(OK_EXIT_CODES)}).\n"
+                    f"opengrep exited {proc.returncode} "
+                    f"(expected one of {sorted(OK_EXIT_CODES)}).\n"
                     f"argv: {argv}\n"
                     f"stderr:\n{proc.stderr.strip()[:4000]}"
                 )
@@ -224,7 +227,9 @@ class OpengrepRunner:
             try:
                 sarif = json.loads(sarif_file.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                raise OpengrepOutputError(f"opengrep SARIF output is not valid JSON: {exc}") from exc
+                raise OpengrepOutputError(
+                    f"opengrep SARIF output is not valid JSON: {exc}"
+                ) from exc
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
@@ -258,7 +263,7 @@ def parse_sarif(document: dict) -> tuple[Finding, ...]:
         driver = ((run.get("tool") or {}).get("driver")) or {}
         for rule in driver.get("rules") or []:
             rule_id = rule.get("id")
-            level = ((rule.get("defaultConfiguration") or {}).get("level"))
+            level = (rule.get("defaultConfiguration") or {}).get("level")
             if rule_id and level:
                 rule_levels[rule_id] = level
 

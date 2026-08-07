@@ -190,7 +190,9 @@ def load_manifest(path: str | Path | None = None) -> Manifest:
         for i, raw in enumerate(ruleset.get("files") or [])
     )
     if not files:
-        raise ManifestError("MANIFEST.toml: ruleset.files is empty; the checkout cannot be verified")
+        raise ManifestError(
+            "MANIFEST.toml: ruleset.files is empty; the checkout cannot be verified"
+        )
 
     coverage = ruleset.get("coverage") or {}
     rule_ids = tuple(str(r) for r in coverage.get("rule_ids", ()))

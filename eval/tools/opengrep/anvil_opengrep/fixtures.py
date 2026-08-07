@@ -47,7 +47,9 @@ def materialize_sample_repo(dest: str | Path | None = None) -> Path:
     The caller owns cleanup when it passes `dest`; when it does not, the
     directory is a `tempfile.mkdtemp` the caller should remove.
     """
-    root = Path(dest) if dest is not None else Path(tempfile.mkdtemp(prefix="anvil-opengrep-fixture-"))
+    root = (
+        Path(dest) if dest is not None else Path(tempfile.mkdtemp(prefix="anvil-opengrep-fixture-"))
+    )
     root.mkdir(parents=True, exist_ok=True)
     for source_name, relative in SAMPLE_REPO_LAYOUT.items():
         source = FIXTURE_SOURCE_DIR / source_name

@@ -132,7 +132,9 @@ def test_schema_rejects_a_pass_on_an_unrun_row(schema: dict, register: dict, sta
     "field,value",
     [("decision", None), ("decision", ""), ("decision", "OK")],
 )
-def test_schema_rejects_malformed_decisions(schema: dict, register: dict, field: str, value) -> None:
+def test_schema_rejects_malformed_decisions(
+    schema: dict, register: dict, field: str, value
+) -> None:
     mutated = copy.deepcopy(register)
     _rows(mutated)[0][field] = value
     assert _errors(schema, mutated), f"schema accepted {field}={value!r}"

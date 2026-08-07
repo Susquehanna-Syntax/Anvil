@@ -114,7 +114,8 @@ def fetch_engine(
         size = tmp.stat().st_size
         if size != asset.size_bytes:
             raise ChecksumMismatch(
-                f"{asset.url}: size {size} != pinned {asset.size_bytes} (digest matched, which is odd)"
+                f"{asset.url}: size {size} != pinned {asset.size_bytes} "
+                "(digest matched, which is odd)"
             )
         tmp.replace(dest)
     finally:
@@ -239,7 +240,9 @@ def _git(args: list[str]) -> str:
         ["git", *args], capture_output=True, text=True, check=False
     )
     if proc.returncode != 0:
-        raise OpengrepError(f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()}")
+        raise OpengrepError(
+            f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()}"
+        )
     return proc.stdout
 
 
@@ -265,8 +268,14 @@ def main(argv: list[str] | None = None) -> int:
     vendor = Path(args.vendor_dir) if args.vendor_dir else None
 
     print(f"manifest        : {manifest.path}")
-    print(f"engine          : {manifest.engine_repo} {manifest.engine_version} ({manifest.engine_license})")
-    print(f"ruleset         : {manifest.ruleset_name} @ {manifest.ruleset_commit_sha} ({manifest.ruleset_license})")
+    print(
+        f"engine          : {manifest.engine_repo} {manifest.engine_version} "
+        f"({manifest.engine_license})"
+    )
+    print(
+        f"ruleset         : {manifest.ruleset_name} @ {manifest.ruleset_commit_sha} "
+        f"({manifest.ruleset_license})"
+    )
 
     try:
         if args.rules:

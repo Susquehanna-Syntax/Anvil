@@ -41,7 +41,10 @@ def main() -> int:
     manifest = load_manifest()
     print("=== Anvil M0.7 opengrep smoke run ===")
     print(f"engine  : {manifest.engine_repo} {manifest.engine_version} [{manifest.engine_license}]")
-    print(f"ruleset : {manifest.ruleset_name} @ {manifest.ruleset_commit_sha} [{manifest.ruleset_license}]")
+    print(
+        f"ruleset : {manifest.ruleset_name} @ {manifest.ruleset_commit_sha} "
+        f"[{manifest.ruleset_license}]"
+    )
     print(f"rules   : {', '.join(manifest.ruleset_rule_ids) or '(none recorded)'}")
 
     runner = OpengrepRunner(manifest=manifest)
