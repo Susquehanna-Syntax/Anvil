@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=77.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anvil-eval"
+version = "0.1.0"
+description = "Anvil Milestone 0 evaluation harness — experiment register, corpora loaders, and experiment runners."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Anvil maintainers" }]
+keywords = ["vulnerability", "evaluation", "harness", "anvil", "milestone-0"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Private :: Do Not Upload",
+]
+
+# Core runtime dependencies. Kept deliberately small so that
+# `pip install -e eval/` resolves quickly in a fresh virtualenv with no
+# network access beyond the package index (M0.2 stop condition).
+# Anything heavy, platform-specific, or only needed by one later M0 step
+# lives in an optional-dependency group below.
+dependencies = [
+  "jsonschema>=4.23",  # M0.1/M0.17 register validation against eval/schema/register.schema.json
+  "pyyaml>=6.0.2",     # eval/register.yaml read/write
+  "numpy>=2.1",        # bootstrap confidence intervals (EXP-01, EXP-02)
+  "requests>=2.32",    # pinned-artifact fetches, S12-RTT HTTP client
+]
+
+[project.optional-dependencies]
+# EXP-02 code-metrics logistic-regression baseline.
+stats = [
+  "scikit-learn>=1.5",
+  "scipy>=1.14",
+]
+# M0.6 model acquisition and the S12-RTT ONNX encoder worker.
+# Not installed by default: these wheels are large and platform-specific,
+# and M0.2 is forbidden from vendoring any model weight.
+models = [
+  "huggingface-hub>=0.26",
+  "onnxruntime>=1.20",
+  "tokenizers>=0.20",
+  "transformers>=4.46",
+]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.7",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["anvil_eval*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "network: test reaches the public internet; skipped in offline runs",
+  "docker: test shells out to Docker (ARVO reproducers, EXP-04)",
+  "model: test loads model weights from eval/models/",
+  "slow: test takes more than a few seconds",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

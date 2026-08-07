@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anvil.invalid/eval/schema/register.schema.json",
+  "title": "Anvil Milestone 0 Experiment Register",
+  "description": "Schema for eval/register.yaml. Source of truth for the field list: plan/10-milestone0-evaluation.md '## Experiment Register Schema'. The register carries exactly fourteen rows: EXP-01..EXP-12, INSTR-01, S12-RTT. SAFETY RULE: 'decision' is required on every row and has no null / no empty-string / no absent representation. An experiment whose outcome has not been adjudicated carries the explicit sentinel 'UNRESOLVED'. A missing or unadjudicated decision must never be readable as a PASS.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "experiments"],
+  "properties": {
+    "version": {
+      "description": "Register format version. 1 per plan/10-milestone0-evaluation.md.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "experiments": {
+      "description": "Exactly the fourteen registered rows, each ID present exactly once.",
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": { "$ref": "#/$defs/row" },
+      "allOf": [
+        { "contains": { "$ref": "#/$defs/idIs/EXP-01" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-02" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-03" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-04" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-05" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-06" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-07" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-08" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-09" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-10" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-11" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/EXP-12" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/INSTR-01" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/S12-RTT" }, "minContains": 1, "maxContains": 1 }
+      ]
+    }
+  },
+  "$defs": {
+    "idIs": {
+      "EXP-01": { "type": "object", "properties": { "id": { "const": "EXP-01" } }, "required": ["id"] },
+      "EXP-02": { "type": "object", "properties": { "id": { "const": "EXP-02" } }, "required": ["id"] },
+      "EXP-03": { "type": "object", "properties": { "id": { "const": "EXP-03" } }, "required": ["id"] },
+      "EXP-04": { "type": "object", "properties": { "id": { "const": "EXP-04" } }, "required": ["id"] },
+      "EXP-05": { "type": "object", "properties": { "id": { "const": "EXP-05" } }, "required": ["id"] },
+      "EXP-06": { "type": "object", "properties": { "id": { "const": "EXP-06" } }, "required": ["id"] },
+      "EXP-07": { "type": "object", "properties": { "id": { "const": "EXP-07" } }, "required": ["id"] },
+      "EXP-08": { "type": "object", "properties": { "id": { "const": "EXP-08" } }, "required": ["id"] },
+      "EXP-09": { "type": "object", "properties": { "id": { "const": "EXP-09" } }, "required": ["id"] },
+      "EXP-10": { "type": "object", "properties": { "id": { "const": "EXP-10" } }, "required": ["id"] },
+      "EXP-11": { "type": "object", "properties": { "id": { "const": "EXP-11" } }, "required": ["id"] },
+      "EXP-12": { "type": "object", "properties": { "id": { "const": "EXP-12" } }, "required": ["id"] },
+      "INSTR-01": { "type": "object", "properties": { "id": { "const": "INSTR-01" } }, "required": ["id"] },
+      "S12-RTT": { "type": "object", "properties": { "id": { "const": "S12-RTT" } }, "required": ["id"] }
+    },
+
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "spine_ref",
+        "source_ref",
+        "owner_step",
+        "status",
+        "decision_gated",
+        "corpus",
+        "method",
+        "metric",
+        "threshold_pass",
+        "threshold_fail",
+        "reference_baseline",
+        "result",
+        "decision",
+        "depends_on",
+        "deferred_reason",
+        "owning_future_phase"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable identifier, never reused.",
+          "type": "string",
+          "enum": [
+            "EXP-01", "EXP-02", "EXP-03", "EXP-04", "EXP-05", "EXP-06",
+            "EXP-07", "EXP-08", "EXP-09", "EXP-10", "EXP-11", "EXP-12",
+            "INSTR-01", "S12-RTT"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["experiment", "instrumentation"] },
+        "spine_ref": {
+          "description": "Section(s) of plan/00-SPINE.md this row is gated on, e.g. 'S3.1', 'S2', 'S12'.",
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "description": "Research file + section that named this experiment.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_step": {
+          "description": "The M0.x step ID that builds/runs it, or the literal 'deferred'.",
+          "type": "string",
+          "pattern": "^(M0\\.[0-9]+|deferred)$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["not_started", "in_progress", "blocked", "complete", "deferred"]
+        },
+        "decision_gated": {
+          "description": "Free text: what this outcome decides.",
+          "type": "string",
+          "minLength": 1
+        },
+        "corpus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "licence", "licence_ref"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "licence": { "type": "string", "minLength": 1 },
+              "licence_ref": {
+                "description": "File + section confirming the licence.",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "method": { "type": "string", "minLength": 1 },
+        "metric": { "type": "string", "minLength": 1 },
+        "threshold_pass": { "type": "string", "minLength": 1 },
+        "threshold_fail": { "type": "string", "minLength": 1 },
+        "reference_baseline": {
+          "description": "Per plan/10-milestone0-evaluation.md '## Exit Criteria': must either cite a research/plan file + figure (i.e. contain a '.md' path) or be the literal string 'PROPOSED - no published baseline' (em dash).",
+          "type": "string",
+          "anyOf": [
+            { "const": "PROPOSED — no published baseline" },
+            { "pattern": "\\.md" }
+          ]
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "unit", "measured_at", "artifact_path"],
+          "properties": {
+            "value": { "type": ["number", "null"] },
+            "unit": { "type": ["string", "null"] },
+            "measured_at": {
+              "type": ["string", "null"],
+              "description": "ISO-8601 date or date-time; null until measured."
+            },
+            "artifact_path": {
+              "type": ["string", "null"],
+              "description": "eval/results/<id>.json; null until produced."
+            }
+          }
+        },
+        "decision": {
+          "description": "The adjudicated outcome. REQUIRED on every row. There is deliberately no null, no empty string and no absent representation: an unadjudicated row carries the explicit sentinel 'UNRESOLVED', which must never be read as a PASS. Only an orchestrator-inline step may change this away from 'UNRESOLVED' (M0.18 for EXP-01/EXP-02; future orchestrator-inline steps for the rest). Worker packets populate 'result' and leave 'decision' at 'UNRESOLVED'.",
+          "type": "string",
+          "enum": ["PASS", "FAIL", "AMBIGUOUS", "DEFERRED", "UNRESOLVED"],
+          "default": "UNRESOLVED"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "EXP-01", "EXP-02", "EXP-03", "EXP-04", "EXP-05", "EXP-06",
+              "EXP-07", "EXP-08", "EXP-09", "EXP-10", "EXP-11", "EXP-12",
+              "INSTR-01", "S12-RTT"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "deferred_reason": { "type": ["string", "null"] },
+        "owning_future_phase": {
+          "description": "Milestone/lane that will own this row once deferred. Populated by step M0.17; null until then. Milestone-0 exit criteria require this to be non-null for every deferred row before M0 closes.",
+          "type": ["string", "null"]
+        }
+      },
+      "allOf": [
+        {
+          "description": "A deferred row must carry a non-empty deferred_reason and must be owned by 'deferred', not an M0 step.",
+          "if": { "properties": { "status": { "const": "deferred" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "deferred_reason": { "type": "string", "minLength": 1 },
+              "owner_step": { "const": "deferred" }
+            }
+          }
+        },
+        {
+          "description": "A row claiming status 'complete' must carry a measured value and a real artifact path.",
+          "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "result": {
+                "properties": {
+                  "value": { "type": "number" },
+                  "unit": { "type": "string", "minLength": 1 },
+                  "measured_at": { "type": "string", "minLength": 1 },
+                  "artifact_path": { "type": "string", "pattern": "^eval/results/.+\\.json$" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "A row that has not been run cannot carry an adjudicated decision. not_started / in_progress / blocked / deferred rows stay UNRESOLVED. 'deferred' is in this set deliberately: a deferred row has by definition not been run, so it cannot have an adjudicated outcome. Omitting it was caught by mutation testing -- EXP-05 (deferred) could be set to PASS and the schema accepted it, which is exactly the 'a missing decision reads as a pass' failure this rule exists to prevent. A row that is deferred AND wants to record that fact in the decision field uses status=deferred + decision=UNRESOLVED; the DEFERRED decision value is reserved for an orchestrator-inline step explicitly adjudicating 'we decided not to decide this'.",
+          "if": {
+            "properties": { "status": { "enum": ["not_started", "in_progress", "blocked", "deferred"] } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "decision": { "const": "UNRESOLVED" } } }
+        }
+      ]
+    }
+  }
+}

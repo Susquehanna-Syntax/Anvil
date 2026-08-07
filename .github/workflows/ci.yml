@@ -140,6 +140,33 @@ jobs:
             exit 1
           fi
 
+  # plan/00-SPINE.md S12 permits Python in exactly three places, and the
+  # evaluation harness is one of them. eval/ is a pure-Python tree.
+  #
+  # The register this job validates is the artifact plan step M0.18 reads to
+  # decide whether Anvil's detection-model tier exists at all, so the property
+  # that matters is narrow and absolute: a row whose experiment has not run must
+  # never be readable as a pass. The schema encodes that; this job is what makes
+  # anything actually run the schema. It shipped with nothing in the repository
+  # checking one against the other, and a schema nobody runs is a comment.
+  eval-harness:
+    name: Eval harness (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+
+      - name: Tests, including the register mutation suite
+        run: python -m pytest tests/ -q
+
   # NOTE: there is deliberately no "plan" job here. The planning workspace
   # (plan/) and its verification tooling (tools/) are local-only and gitignored,
   # same posture as research/ -- they are how Anvil was designed and verified,

@@ -1,0 +1,758 @@
+# Anvil — Milestone 0 experiment register
+#
+# Authored by step M0.1 (plan/10-milestone0-evaluation.md lines 33-58).
+# Field list: plan/10-milestone0-evaluation.md "## Experiment Register Schema".
+# Row content: plan/10-milestone0-evaluation.md "## Go/No-Go Decision Table".
+# Validates against: eval/schema/register.schema.json
+#
+# ---------------------------------------------------------------------------
+# HOW TO READ THE `decision` FIELD — read this before acting on any row.
+#
+#   `decision: UNRESOLVED`  means NOBODY HAS DECIDED YET. It is NOT a pass.
+#                           It is NOT a "probably fine". It is the absence of
+#                           a decision, stated out loud.
+#
+# Every row in this file is born UNRESOLVED and stays UNRESOLVED until an
+# orchestrator-inline step writes PASS / FAIL / AMBIGUOUS / DEFERRED into it.
+# There is no null, no empty string and no missing-key representation of an
+# undecided row — the schema forbids all three — precisely so that a row whose
+# decision was never recorded cannot be skimmed as if it had passed.
+#
+# Worker packets populate `result` only. They NEVER touch `decision`.
+# (plan/10-milestone0-evaluation.md, note under "## Experiment Register Schema":
+#  "`decision` is only ever set by an orchestrator-inline step ... never by a
+#  worker packet".)
+#
+# EXP-01 and EXP-02 are the two kill criteria (plan/00-SPINE.md S3.1, S3.2).
+# Step M0.18 reads their rows and decides whether Anvil's small-model detection
+# tier exists at all. If either row still reads UNRESOLVED, M0.18 has no input
+# and no Milestone-1 component-build packet may be dispatched.
+# ---------------------------------------------------------------------------
+#
+# STATE AT AUTHORING (M0.1): nothing has been run.
+#   - 14/14 rows        decision: UNRESOLVED
+#   - 6 rows            status: not_started   (EXP-01..EXP-04, INSTR-01, S12-RTT)
+#   - 8 rows            status: deferred      (EXP-05..EXP-12)
+#   - 14/14 rows        result: all fields null
+#   - `owning_future_phase` is null on every deferred row. Step M0.17 owns
+#     populating it; the milestone exit criteria require it non-null before M0
+#     closes. Null here means "not yet assigned", not "no owner needed".
+
+version: 1
+
+experiments:
+
+  # =========================================================================
+  # KILL CRITERION #1
+  # =========================================================================
+  - id: EXP-01
+    name: Advisory-permutation ablation (Test 4)
+    kind: experiment
+    spine_ref: S3.1
+    source_ref: >-
+      research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row;
+      enumerated as experiment #1 in research/14-critique-and-gaps.md B7 table
+    owner_step: M0.9
+    status: not_started
+    decision_gated: >-
+      Whether the detection model actually reads the advisory, i.e. whether advisory-conditioning is
+      real. PASS: proceed with the three-tier design (research/02) using this candidate model.
+      FAIL: kill criterion #1 — CVE ingestion is decoration (plan/00-SPINE.md S3.1); delete
+      advisory-text conditioning from the SAST adjudicator's design, restrict advisory text to the
+      narrow vendored/backported-code scope only (S1 corrected requirement #8; research/14 B2 fix),
+      and re-evaluate whether Tier 3 should exist at all pending EXP-02.
+    corpus:
+      - name: PrimeVul-Paired
+        licence: MIT
+        licence_ref: >-
+          research/03-detection-training-data-and-method.md S2, via
+          plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+      - name: Qwen/Qwen3.5-2B (primary candidate)
+        licence: Apache-2.0 — pending text-only-variant confirmation (M0.6/M0.8)
+        licence_ref: plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+      - name: Gemma-4 (specific variant TBD, secondary candidate)
+        licence: >-
+          Apache-2.0 for the specific variant only — re-verify per-variant, do not infer from the
+          family-level reversal
+        licence_ref: >-
+          plan/00-SPINE.md S4 caveat, via plan/10-milestone0-evaluation.md
+          "## Pinned Versions And Licences"
+    method: >-
+      Substitute an unrelated advisory for the correct one and measure the EXHIBITS ->
+      DOES_NOT_EXHIBIT verdict flip rate over PrimeVul-Paired. Run against Qwen3.5-2B (primary) and
+      Gemma-4 (secondary) and report per-model breakdown, not a single aggregate — the two candidates
+      may diverge and that divergence is itself model-selection evidence. The permutation must be
+      drawn from the full advisory pool, never a CWE-matched subset (a CWE-matched subset understates
+      the true flip rate and biases toward a false PASS; M0.12 critic gate).
+    metric: >-
+      Flip rate (EXHIBITS -> DOES_NOT_EXHIBIT) on the PrimeVul-Paired test split, reported with a
+      bootstrap 95% confidence interval — n_pairs is only 564, so CI width matters at this sample size.
+    threshold_pass: >-
+      Flip rate > 80% (plan/00-SPINE.md S3.1; research/03-detection-training-data-and-method.md
+      Test 4 row).
+    threshold_fail: >-
+      Flip rate < 50% (plan/00-SPINE.md S3.1) — CVE ingestion is decoration. The 50-80% band is
+      AMBIGUOUS; PROPOSED handling is to run the QLoRA runner-up (research/03) before a final call,
+      and plan/10-milestone0-evaluation.md "## Open Questions" requires M0.18's orchestrator to set an
+      explicit escalation policy for this band before it can occur in practice.
+    reference_baseline: >-
+      research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row
+      (bar: > 80% flip rate)
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  # KILL CRITERION #2
+  # =========================================================================
+  - id: EXP-02
+    name: Code-metrics logistic-regression baseline
+    kind: experiment
+    spine_ref: S3.2
+    source_ref: >-
+      research/02-small-detection-models.md finding B / S3 (arXiv:2509.19117);
+      enumerated as experiment #2 in research/14-critique-and-gaps.md B7 table
+    owner_step: M0.10
+    status: not_started
+    decision_gated: >-
+      Whether the small-model detection tier should exist at all. PASS (logistic regression is
+      significantly worse than the model on both metrics — non-overlapping CIs, LR lower): the model
+      tier is justified. FAIL: kill criterion #2 — the model tier does not exist (plan/00-SPINE.md
+      S3.2); delete Tier 3 (small-model adjudicator) entirely and ship Tier 1 (deterministic
+      pre-filter) plus optional Tier 2 (encoder ranker, or the LR itself) only — research/02's
+      three-tier design demoted to two.
+    corpus:
+      - name: PrimeVul / PrimeVul-Paired
+        licence: MIT
+        licence_ref: >-
+          research/03-detection-training-data-and-method.md S2, via
+          plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+      - name: Qwen/Qwen3.5-2B (model arm, shared with EXP-01)
+        licence: Apache-2.0 — pending text-only-variant confirmation (M0.6/M0.8)
+        licence_ref: plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+    method: >-
+      Train a logistic regression over classic code metrics (cyclomatic complexity, LoC, nesting
+      depth, etc.; full feature list recorded for reproducibility) on PrimeVul and score it against
+      the small model's arm on the identical held-out split and identical metric definitions used by
+      EXP-01, so the comparison is apples-to-apples. Two hard constraints: the LR must not be trained
+      on the paired test split used for evaluation (no leakage), and the training set must not be
+      class-balanced — research/03 and research/14 (S14 citation) both name balanced training as the
+      specific failure mode that manufactures false confidence (the 0.09-precision catastrophe).
+      Both arms reported with bootstrap CIs.
+    metric: >-
+      Test-1 pairwise-correct (P-C) rate and Test-2 precision at recall 0.70, computed for both the
+      LR arm and the model arm, each with a bootstrap 95% confidence interval.
+    threshold_pass: >-
+      The LR is significantly worse than the small model on BOTH metrics — non-overlapping 95% CIs
+      with the LR lower. PROPOSED — no published Anvil-specific equivalence margin exists
+      (research/02-small-detection-models.md S3, arXiv:2509.19117; plan/00-SPINE.md S3.2).
+    threshold_fail: >-
+      The LR's Test-1 P-C and Test-2 precision-at-recall-0.70 fall within or exceed the small model's
+      95% CI. Note plan/10-milestone0-evaluation.md "## Open Questions": this equivalence margin is an
+      engineering judgment call, not a citation — the statistical protocol (sample size, CI method)
+      must be confirmed before EXP-02 runs.
+    reference_baseline: >-
+      research/03-detection-training-data-and-method.md — "Evaluation harness" table: Test 1 bar
+      P-C > 25% with reference GPT-4 CoT 12.94%; Test 2 bar F1 > 5.22% (flag-everything) with
+      reference best fine-tune 5.82%
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on:
+      - EXP-01
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-03
+    name: llama-bench prefill on real hardware
+    kind: experiment
+    spine_ref: S2, S9
+    source_ref: >-
+      research/02-small-detection-models.md S8 and research/05-inference-serving-and-hardware.md;
+      enumerated as experiment #3 in research/14-critique-and-gaps.md B7 table
+    owner_step: M0.11
+    status: not_started
+    decision_gated: >-
+      Every downstream compute claim in the plan. PASS: S2's ~17 min / ~2 min budget and S9's tier
+      assignments stand as written. FAIL: re-derive the candidates-per-scan ceiling from INSTR-01's
+      measured count against the actual throughput; if the recomputed wall-clock exceeds S2's budget,
+      drop to Qwen3.5-0.8B, move Tier 3 to the encoder-only ranker (research/02 flip condition #2),
+      or raise the minimum hardware tier for the detection path.
+    corpus:
+      - name: Qwen/Qwen3.5-2B (primary candidate)
+        licence: Apache-2.0 — pending text-only-variant confirmation (M0.6/M0.8)
+        licence_ref: plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+      - name: Gemma-4 (specific variant TBD, secondary candidate)
+        licence: Apache-2.0 for the specific variant only — re-verify per-variant
+        licence_ref: >-
+          plan/00-SPINE.md S4 caveat, via plan/10-milestone0-evaluation.md
+          "## Pinned Versions And Licences"
+      - name: HuggingFaceTB/SmolLM3-3B (auditability runner-up)
+        licence: Apache-2.0
+        licence_ref: research/02-small-detection-models.md S13
+      - name: llama-bench (ggml-org/llama.cpp, pinned release tag)
+        licence: MIT
+        licence_ref: plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+    method: >-
+      llama-bench prefill sweep for each candidate model at realistic pair-prompt length (~2,000
+      tokens: ~800 advisory/CWE text + ~1,000 code chunk + ~200 instruction), on whatever S9 hardware
+      tier is actually available, recorded against the tier it represents. Raw llama-bench output log
+      retained and the quantisation level used (Q4_K_M or otherwise) recorded — the corpus's own
+      "<1% quality loss for Q4" claim is itself flagged unverified for Anvil's exact task
+      (research/02 Risks). No extrapolation from another model family's numbers: the entire point is
+      that no Qwen3.5/Gemma-4 CPU throughput number has been measured anywhere in the corpus.
+    metric: >-
+      Prefill throughput in tokens/second at a 2,000-token prompt — this is the headline number,
+      because Anvil is prefill-bound (research/02 S8, research/14 B1). Generation throughput is
+      recorded but is explicitly NOT the headline.
+    threshold_pass: >-
+      Measured prefill >= 600 tok/s on Tier-S hardware for the ~2B candidate. PROPOSED, informed by
+      published scaling: the non-generous parameter-scaled estimate in research/14-critique-and-gaps.md
+      B1, scaling research/02 S8's measured 170 tok/s at 7B. (The "2,000 tok/s" figure used elsewhere
+      in the corpus is explicitly "a 3.3x gift to the design" and is not the bar.)
+    threshold_fail: >-
+      Measured prefill < 600 tok/s on Tier-S for the ~2B candidate — triggers the re-derivation of
+      the candidates-per-scan ceiling described in decision_gated.
+    reference_baseline: >-
+      research/02-small-detection-models.md S8 (Malakhov, CEUR-WS Vol-4164) — the measured statement
+      is "a 256-token prompt was about 6.5 s on E5-2695 v2 for a 7B model, 1.5 s on the new Xeon, and
+      3 s on the laptop". The "~170 tok/s prefill at 7B" figure is the arithmetic derivation
+      (256 tok / 1.5 s), not a number printed in the source; the "Xeon Platinum 8480+" SKU is named by
+      plan/10-milestone0-evaluation.md, not by research/02, which says only "the new Xeon".
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-04
+    name: Open-weight vs. frontier patch quality (ARVO / CWE-Bench-Java)
+    kind: experiment
+    spine_ref: S3, S7
+    source_ref: >-
+      research/10-prior-art-and-landscape.md, research/04-remediation-coding-model.md and
+      research/11-fix-validation-and-false-positives.md S7; enumerated as experiment #4 in
+      research/14-critique-and-gaps.md B7 table
+    owner_step: M0.16
+    status: not_started
+    decision_gated: >-
+      Anvil's claimed central differentiator — the "possibly better system" framing in
+      plan/00-SPINE.md S3. PASS: the framing is supported; no redesign forced, since S7's
+      never-auto-merge posture already assumes a low verified-fix rate. FAIL: the coding-agent tier
+      needs a larger or different open-weight model, or the differentiator claim in project messaging
+      should be revised. Either way this does not change the safety posture — S7 already mandates
+      human review regardless of rate.
+    corpus:
+      - name: ARVO (n132/ARVO repo commit SHA + specific n132/arvo:<id>-vul Docker tags)
+        licence: BSD-2-Clause
+        licence_ref: >-
+          research/16-fuzzing-and-dynamic-analysis.md S2/S25 — cite only the canonical 2024-08 paper
+          (arXiv:2408.02153); the 2026 posting is withdrawn
+      - name: CWE-Bench-Java (iris-sast/cwe-bench-java commit SHA)
+        licence: MIT
+        licence_ref: plan/spine-b-open-licences.md section 7
+      - name: Qwen/Qwen3-Coder-Next (coding-agent arm)
+        licence: Apache-2.0
+        licence_ref: >-
+          research/14-critique-and-gaps.md "Held up exactly" table (79.7B params, 512 experts,
+          10 active)
+    method: >-
+      Run the open-weight coding agent over the sampled ARVO and CWE-Bench-Java subsets using the
+      AutoPatchBench-style three-stage validation gate (crash input no longer crashes -> 10-minute
+      fuzz survival -> differential behaviour check) and ARVO's reproduce() contract. The frontier
+      comparison arm is taken from published literature, never re-run: plan/00-SPINE.md S0 requires
+      self-hosted open-weight models only, so no proprietary frontier API is called. The exploit
+      oracle (research/11 gate 9) is mandatory — a patch is never counted "fixed" on test-suite pass
+      alone, because research/11's Vul4J finding is that 10.3% of patches pass tests while remaining
+      exploitable, and ARVO itself found 300+ falsely-patched still-active vulnerabilities in
+      OSS-Fuzz's own "fixed" set. Upstream "fixed" labels are never trusted as ground truth.
+    metric: >-
+      Verified-fix rate per corpus (fraction of cases clearing all three gates with a recorded
+      exploit-oracle re-execution), plus generation success rate and the full gate-failure breakdown
+      (compile_fail, test_fail, exploit_still_triggers, deceptive_pass) — never an aggregate
+      percentage alone.
+    threshold_pass: >-
+      Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
+      5.3%. PROPOSED — derived by analogy, not a number published for Qwen3-Coder-Next specifically;
+      plan/10-milestone0-evaluation.md "## Open Questions" requires explicit sign-off before this
+      drives any messaging claim.
+    threshold_fail: >-
+      Verified-fix rate < 2% on ARVO. PROPOSED, same caveat as threshold_pass.
+    reference_baseline: >-
+      research/11-fix-validation-and-false-positives.md S7 — AutoPatchBench: Gemini 1.5 Pro 61.1%
+      generation / 5.3% fully-verified; supporting context research/16-fuzzing-and-dynamic-analysis.md
+      S18 (DARPA AIxCC 68% of synthetic vulnerabilities patched, ~$152/task) and plan/00-SPINE.md S7
+      ("Best measured security-patch rate on real CVEs is 34.0%")
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  # PERMANENT INSTRUMENT — not a kill gate
+  # =========================================================================
+  - id: INSTR-01
+    name: Candidates-per-scan (permanent instrument)
+    kind: instrumentation
+    spine_ref: S2
+    source_ref: >-
+      plan/00-SPINE.md S2 ("Instrument it on day one"); research/14-critique-and-gaps.md B1
+      and its "Suggested fix"
+    owner_step: M0.14
+    status: not_started
+    decision_gated: >-
+      The single number plan/00-SPINE.md S2 says decides whether Anvil is affordable at all — "it,
+      not model size, determines feasibility". PASS: affordability confirmed at the current
+      recall-tier tuning; carry the measured count into Milestone 1's scheduler design. FAIL:
+      re-scope the recall tier — narrower rules, CWE-class routing, or tighter version-range matching
+      (research/14-critique-and-gaps.md B1 "Suggested fix") — before Milestone 1 proceeds. This row
+      is a permanent instrument, not a kill gate; it is re-run, not retired.
+    corpus:
+      - name: AikidoSec/opengrep-rules (pinned commit SHA, diffed before any future promotion)
+        licence: MIT
+        licence_ref: research/14-critique-and-gaps.md M6
+      - name: opengrep engine (pinned release version, subprocess invocation only)
+        licence: LGPL-2.1
+        licence_ref: plan/00-SPINE.md S4
+    method: >-
+      A re-runnable instrument (a standalone callable, never a throwaway script or notebook cell —
+      S2 asks for a permanent day-one measurement) that runs pinned opengrep plus
+      AikidoSec/opengrep-rules against a target repo and counts candidates emitted per full scan and
+      per push. Exercised in M0 against at least 3 structurally different sample repos (e.g. a small
+      CLI tool, a web-app-shaped repo, a library) so the count is not an artifact of one repo's shape.
+    metric: >-
+      candidates_full_scan and candidates_per_push per target repo, recorded together with the
+      ruleset commit SHA.
+    threshold_pass: >-
+      Fewer than 500 candidates per full scan AND fewer than 50 per push (plan/00-SPINE.md S2, exact
+      figures) — at which the model tier costs ~17 min and ~2 min respectively.
+    threshold_fail: >-
+      Counts "in the thousands" (plan/00-SPINE.md S2) — the design does not work as written and must
+      be re-scoped.
+    reference_baseline: >-
+      research/14-critique-and-gaps.md B1, restating plan/00-SPINE.md S2's figures: < 500 per full
+      scan and < 50 per push
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: S12-RTT
+    name: Encoder HTTP round-trip under realistic pair volume
+    kind: experiment
+    spine_ref: S12
+    source_ref: >-
+      plan/00-SPINE.md S12 — the recorded counter-argument to the Go control-plane pick: "Measure
+      encoder RTT under realistic pair volume during Milestone 0 before this is irreversible"
+    owner_step: M0.15
+    status: not_started
+    decision_gated: >-
+      Whether S12's Go-for-the-control-plane pick survives contact with a measured number. PASS: the
+      pick is confirmed; no action needed. FAIL: record as a "Conflict With Spine" item for the
+      orchestrator — collapsing the encoder and the orchestrator into one Python process becomes the
+      stronger pick per S12's own stated counter-argument. Note that M0 only produces the number; per
+      plan/10-milestone0-evaluation.md "## Conflicts With Spine" the resulting decision belongs to
+      whichever future step owns S12, not to M0.
+    corpus:
+      - name: microsoft/unixcoder-base (Tier-2 encoder candidate)
+        licence: Apache-2.0 weights / MIT repo
+        licence_ref: research/02-small-detection-models.md S18
+      - name: ONNX Runtime (pinned release version, encoder worker)
+        licence: MIT
+        licence_ref: plan/10-milestone0-evaluation.md "## Pinned Versions And Licences"
+    method: >-
+      Serve the Tier-2 encoder candidate via ONNX Runtime as a separate always-on process addressed
+      over HTTP — never an in-process library call, since the in-process case is exactly what S12
+      forbids and measuring it would answer the wrong question — and measure aggregate round-trip
+      time across a realistic pair volume ("thousands of advisory x code-chunk pairs per scan", S12's
+      own framing), at a pair count at least as large as INSTR-01's measured candidates-per-scan for
+      the sample repos used. The pair count and its relationship to INSTR-01's number must be stated
+      explicitly so the overhead-fraction calculation is traceable.
+    metric: >-
+      Total RTT (seconds) and RTT per pair (ms) at the measured pair count, expressed as a fraction
+      of the per-scan model-tier wall clock derived from EXP-03's prefill throughput x INSTR-01's
+      candidate count.
+    threshold_pass: >-
+      Aggregate encoder overhead <= 20% (PROPOSED) of the per-scan model-tier wall clock established
+      by EXP-03 x INSTR-01.
+    threshold_fail: >-
+      Aggregate encoder overhead > 20% (PROPOSED) of that wall clock. The spine explicitly calls this
+      "a cost never measured" (plan/00-SPINE.md S12), so the 20% figure is an engineering proposal,
+      not a sourced bar.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on:
+      - EXP-03
+      - INSTR-01
+    deferred_reason: null
+    owning_future_phase: null
+
+  # =========================================================================
+  # DEFERRED — the eight named experiments M0 schedules but does not run.
+  # Each keeps a threshold. None is "not applicable".
+  # =========================================================================
+  - id: EXP-05
+    name: Batch-size vs. validated-fix-rate curve
+    kind: experiment
+    spine_ref: S7
+    source_ref: >-
+      research/24-coding-agent-consumption.md; enumerated as experiment #5 in
+      research/14-critique-and-gaps.md B7 table ("the consumption protocol's core parameter")
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      The remediation consumption protocol's core parameter — how many fix PRs may be in flight
+      before acceptance rate collapses. PASS: batch size tuned to keep PR acceptance near the ~15%
+      pre-slop order of magnitude. FAIL: reduce batch size / rate limit further.
+    corpus: []
+    method: >-
+      Sweep batch size against validated-fix rate and observed PR acceptance rate, against gate 16's
+      default ceiling of <= 3 open PRs per repo.
+    metric: Validated-fix rate and PR acceptance rate as a function of batch size.
+    threshold_pass: >-
+      PR acceptance rate stays near the ~15% pre-slop order of magnitude
+      (research/11-fix-validation-and-false-positives.md S22). PROPOSED — no published baseline; this
+      is a qualitative floor, not a measured bar.
+    threshold_fail: >-
+      Acceptance rate falls toward the < 5% post-slop regime research/11 S22 records for curl's
+      bounty programme once the noise ratio inverted.
+    reference_baseline: >-
+      research/11-fix-validation-and-false-positives.md S22 — curl bounty confirmation rate fell
+      below 5% once the noise ratio inverted; ~15% was the pre-slop baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Milestone 0 executes only EXP-01..EXP-04, INSTR-01 and S12-RTT
+      (plan/10-milestone0-evaluation.md "## Overview"). This experiment measures a parameter of the
+      remediation consumption protocol, which does not exist yet — there is no PR pipeline to batch.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-06
+    name: SAST<->DAST correlation precision/recall
+    kind: experiment
+    spine_ref: S6
+    source_ref: >-
+      research/18-unified-audit-record.md; enumerated as experiment #6 in
+      research/14-critique-and-gaps.md B7 table ("whether correlation can be trusted at all")
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether SAST<->DAST correlation is trustworthy. PASS: keep the correlationGuid-based design
+      (plan/00-SPINE.md S6). FAIL: treat SAST and DAST as independently-sealed halves with no
+      automatic linkage claim — already the S6 / research/14 B3 fallback, so a FAIL degrades the
+      design rather than breaking it.
+    corpus: []
+    method: >-
+      Measure correlation precision and recall against a seeded corpus in which the true
+      SAST-finding-to-DAST-finding mapping is known by construction.
+    metric: Precision and recall of the correlation linkage against the seeded ground truth.
+    threshold_pass: >-
+      PROPOSED — no published baseline; the success criterion is to be defined against a seeded
+      corpus once plan/00-SPINE.md S6's record schema exists.
+    threshold_fail: >-
+      PROPOSED — undefined until the S6 schema exists. Not permitted to run without a numeric bar
+      agreed in advance.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Its success criterion is explicitly "to be defined against a seeded corpus once S6's schema
+      exists" (plan/10-milestone0-evaluation.md "## Go/No-Go Decision Table", EXP-06 row). The S6
+      record schema does not exist at Milestone 0, so no threshold can be set and the experiment
+      cannot be run without inventing one.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-07
+    name: Static route extraction vs. runtime spec probe
+    kind: experiment
+    spine_ref: S4
+    source_ref: >-
+      research/22-attack-surface-discovery.md; enumerated as experiment #7 in
+      research/14-critique-and-gaps.md B7 table ("whether the DAST inventory design works");
+      reporting form from research/14-critique-and-gaps.md m6
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether plan/00-SPINE.md S4's declared discovery ordering (runtime probe -> repo specs ->
+      static extraction -> browser crawl last) is evidence-backed. PASS: the ordering stands as
+      written. FAIL: reorder or drop the weakest-evidenced stage.
+    corpus: []
+    method: >-
+      Compare routes recovered by static extraction against those recovered by a runtime spec probe
+      on the same targets, reporting the numerator and the provenance mix rather than a coverage
+      percentage — research/14 m6 rejects a coverage percentage as the reporting form, because the
+      denominator (true route count) is unknowable.
+    metric: >-
+      Routes discovered per stage plus provenance mix (which stage first found each route). Not a
+      coverage percentage.
+    threshold_pass: >-
+      PROPOSED — no published baseline. Report the numerator and provenance mix, not a coverage
+      percentage (research/14-critique-and-gaps.md m6).
+    threshold_fail: >-
+      PROPOSED — a stage whose provenance contribution is negligible against its cost is the
+      "weakest-evidenced stage" to be reordered or dropped.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Milestone 0 executes only the six items named in plan/10-milestone0-evaluation.md "## Overview".
+      This experiment measures the DAST attack-surface inventory, which per plan/00-SPINE.md
+      S9-AMENDED ships as a separate distribution artifact and has no implementation at M0 to measure.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-08
+    name: Grammar-constrained DAST confirmation eval
+    kind: experiment
+    spine_ref: S4
+    source_ref: >-
+      research/17-dast-model-selection.md; enumerated as experiment #8 in
+      research/14-critique-and-gaps.md B7 table ("whether the DAST model can be 4B not 9B");
+      informed by research/14-critique-and-gaps.md M1
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether the DAST confirmation model must be the disputed 9B pick or can be smaller. PASS (a
+      2-4B model matches the 9B pick under grammar-constrained tool calling): use the smaller model.
+      FAIL: keep the DAST model at the same size as the SAST model and scale turn budget and context
+      instead of parameters — research/14 M1's stated fix.
+    corpus: []
+    method: >-
+      Head-to-head DAST confirmation eval of a 2-4B model against the 9B pick under
+      grammar-constrained, template-bounded tool calling.
+    metric: Confirmation accuracy of the 2-4B arm relative to the 9B arm under identical constraints.
+    threshold_pass: >-
+      A 2-4B model matches the 9B pick under grammar-constrained tool calling. PROPOSED, informed by
+      research/14-critique-and-gaps.md M1's "same-size-or-smaller" verdict — 5 branches argue against
+      the 9B pick, 2 of them survivor-biased or self-reported.
+    threshold_fail: >-
+      The 2-4B arm does not match the 9B arm; keep parity with the SAST model size and scale turn
+      budget / context instead of parameters (research/14 M1's fix).
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Milestone 0 executes only the six items named in plan/10-milestone0-evaluation.md "## Overview",
+      and no DAST confirmation loop exists to evaluate. Per plan/00-SPINE.md S9-AMENDED, DAST is a
+      separate distribution artifact whose model selection is not an M0 decision.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-09
+    name: runsc vs. runc overhead
+    kind: experiment
+    spine_ref: S9
+    source_ref: >-
+      research/19-target-environment-and-sandboxing.md; enumerated as experiment #9 in
+      research/14-critique-and-gaps.md B7 table ("whether the sandbox fits the budget")
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether gVisor's isolation is affordable at the declared hardware budget. PASS: gVisor overhead
+      fits within Tier-M's 32 GB / 8-core budget (plan/00-SPINE.md S9). FAIL: narrow gVisor to only
+      the highest-risk boundary, or raise the DAST-enabled hardware floor.
+    corpus: []
+    method: >-
+      Run the actual probe workload under runsc and under runc and compare CPU, memory and wall-clock
+      overhead.
+    metric: runsc-vs-runc overhead (CPU, RSS, wall clock) on the actual probe workload.
+    threshold_pass: >-
+      Measured overhead fits within Tier-M's 32 GB / 8-core budget (plan/00-SPINE.md S9). PROPOSED —
+      no published Anvil-specific number.
+    threshold_fail: >-
+      Measured overhead exceeds the Tier-M budget. PROPOSED — no published Anvil-specific number.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Milestone 0 executes only the six items named in plan/10-milestone0-evaluation.md "## Overview".
+      There is no probe workload to sandbox at M0; per plan/00-SPINE.md S9-AMENDED the DAST sandbox
+      belongs to a separate distribution artifact.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-10
+    name: ZAP JVM RSS under a representative full scan
+    kind: experiment
+    spine_ref: S9
+    source_ref: >-
+      research/15-dast-tooling-landscape.md; enumerated as experiment #10 in
+      research/14-critique-and-gaps.md B7 table ("whether ZAP can be always-on"); footprint recorded
+      as unquantified in research/14-critique-and-gaps.md C12
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether ZAP can be always-on. PASS: ZAP's measured RSS fits the opt-in DAST tier budget
+      (plan/00-SPINE.md S9). FAIL: confirms S9's existing default ("do not run ZAP always-on") — no
+      redesign needed, just confirmation. This is the one row where a FAIL changes nothing.
+    corpus: []
+    method: >-
+      Measure ZAP JVM resident set size during a representative full scan; the proposed method is a
+      10-minute docker stats observation (research/14-critique-and-gaps.md C12).
+    metric: Peak and steady-state JVM RSS (MB/GB) during a representative full scan.
+    threshold_pass: >-
+      Measured RSS fits the opt-in DAST tier budget (plan/00-SPINE.md S9). PROPOSED — research/14
+      C12 records the ZAP footprint as "unquantified", so there is no published figure to compare to.
+    threshold_fail: >-
+      Measured RSS exceeds the opt-in DAST tier budget — which merely confirms S9's existing
+      always-on default.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      Milestone 0 executes only the six items named in plan/10-milestone0-evaluation.md "## Overview".
+      No ZAP deployment exists at M0, and per plan/00-SPINE.md S9-AMENDED DAST ships as a separate
+      distribution artifact whose resource budget is not an M0 gate.
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-11
+    name: Task cards vs. raw SARIF
+    kind: experiment
+    spine_ref: S6
+    source_ref: >-
+      research/18-unified-audit-record.md — branch 18's "the single highest-value thing to A/B test
+      early"; the eleventh experiment in research/14-critique-and-gaps.md B7
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Whether the task-card abstraction earns its own schema slot in plan/00-SPINE.md S6. PASS: it
+      does. FAIL: feed raw SARIF excerpts directly to the coding agent and drop the task-card
+      abstraction layer entirely.
+    corpus:
+      - name: ARVO (subset reused from EXP-04)
+        licence: BSD-2-Clause
+        licence_ref: research/16-fuzzing-and-dynamic-analysis.md S2/S25
+      - name: CWE-Bench-Java (subset reused from EXP-04)
+        licence: MIT
+        licence_ref: plan/spine-b-open-licences.md section 7
+    method: >-
+      A/B compare coding-agent fix-success rate given task cards versus raw SARIF excerpts, reusing
+      EXP-04's ARVO / CWE-Bench-Java subset so the two arms differ only in prompt representation.
+    metric: Coding-agent fix-success rate, task-card arm vs. raw-SARIF arm, on the identical subset.
+    threshold_pass: >-
+      The task-card arm's fix-success rate materially exceeds the raw-SARIF arm's. PROPOSED — no
+      published baseline; the A/B design is specified but the margin is not.
+    threshold_fail: >-
+      The task-card arm does not beat raw SARIF excerpts. PROPOSED — no published baseline.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on:
+      - EXP-04
+    deferred_reason: >-
+      Depends on EXP-04's corpus subset and harness, which do not exist until M0.16 runs, and on
+      whether plan/00-SPINE.md S6 gains a task-card schema slot at all. Milestone 0 executes only the
+      six items named in plan/10-milestone0-evaluation.md "## Overview".
+    owning_future_phase: null
+
+  # =========================================================================
+  - id: EXP-12
+    name: llama-server LoRA hot-swap
+    kind: experiment
+    spine_ref: S3, S4
+    source_ref: >-
+      research/05-inference-serving-and-hardware.md — "potentially the highest-leverage unexplored
+      option"; the twelfth experiment in research/14-critique-and-gaps.md B7
+    owner_step: deferred
+    status: deferred
+    decision_gated: >-
+      Only relevant if a later milestone trains adapters: hot-swap latency versus static loading, and
+      therefore whether multi-adapter serving is viable. FAIL / not-applicable while v1 ships
+      zero-training (research/03's primary recommendation). Note plan/00-SPINE.md S4: "Not vLLM in
+      v1 ... requires fine-tuned adapters that must not exist before S3."
+    corpus: []
+    method: >-
+      Measure llama-server LoRA hot-swap latency against static adapter loading, once adapters exist.
+    metric: Hot-swap latency (ms) vs. static-load latency (ms).
+    threshold_pass: >-
+      PROPOSED — entirely contingent on EXP-01/EXP-02 justifying training adapters at all; no bar can
+      be set before that determination.
+    threshold_fail: >-
+      PROPOSED — no bar can be set before EXP-01/EXP-02 resolve. This row is deferred, never "not
+      applicable": if the detection tier survives and a later milestone trains adapters, it becomes
+      live.
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on:
+      - EXP-01
+      - EXP-02
+    deferred_reason: >-
+      Entirely contingent on EXP-01 and EXP-02 justifying training adapters at all
+      (plan/10-milestone0-evaluation.md "## Go/No-Go Decision Table", EXP-12 row), and both of those
+      rows are UNRESOLVED. v1 ships zero-training (research/03 primary recommendation), and
+      plan/00-SPINE.md S3/S4 forbids fine-tuned adapters existing before S3 resolves, so there is
+      nothing to hot-swap.
+    owning_future_phase: null
