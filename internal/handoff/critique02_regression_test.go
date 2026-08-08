@@ -16,6 +16,7 @@
 package handoff
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -618,5 +619,69 @@ func TestProbeM4SideEffectDuplicateAuditIdentity(t *testing.T) {
 		var n int
 		_ = f.db.QueryRow(`SELECT COUNT(*) FROM handoff WHERE fingerprint = ?`, fingerprint).Scan(&n)
 		t.Logf("  rows for the fingerprint: %d", n)
+	}
+}
+
+// TestRunReportsNoSweepErrorOnCancellation pins the fix for the CI-only failure
+// in TestRunSweepsUntilCancelled.
+//
+// Cancelling ctx while a sweep is mid-query made that query return
+// context.Canceled, which Run then handed to observe as a sweep error. On a
+// dev host it almost never reproduced; under -race on Linux it reproduced
+// reliably, because the race detector widens the window.
+//
+// The property under test is not "no error is returned" -- Run correctly
+// returns ctx.Err(). It is that the OBSERVER, whose entire purpose is to make
+// real sweep failures visible, is never told a clean shutdown was a failure.
+func TestRunReportsNoSweepErrorOnCancellation(t *testing.T) {
+	f := newFixture(t, Options{Lease: 20 * time.Minute, MaxAttempts: 2})
+	audit := f.sealedAudit()
+	fingerprint, _ := f.enqueue(4242, record.ConsumptionClassStaticOnly, audit)
+	if _, err := f.q.Claim(fingerprint, "worker-doomed"); err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	f.clock.Advance(21 * time.Minute)
+
+	// Hammer the cancel-during-sweep window rather than hoping to hit it once.
+	for attempt := 0; attempt < 40; attempt++ {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		var mu sync.Mutex
+		var observedErrs []error
+		done := make(chan error, 1)
+		go func() {
+			done <- f.q.Run(ctx, time.Millisecond, func(_ ReapReport, err error) {
+				if err != nil {
+					mu.Lock()
+					observedErrs = append(observedErrs, err)
+					mu.Unlock()
+				}
+			})
+		}()
+
+		// Cancel at a varying offset so cancellation lands at different points
+		// inside the sweep across attempts.
+		time.Sleep(time.Duration(attempt%7) * 300 * time.Microsecond)
+		cancel()
+
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("attempt %d: Run returned %v, want context.Canceled", attempt, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("attempt %d: Run did not return after cancel", attempt)
+		}
+
+		mu.Lock()
+		errs := append([]error(nil), observedErrs...)
+		mu.Unlock()
+		for _, err := range errs {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("attempt %d: observer was told a clean shutdown was a sweep failure: %v\n"+
+					"An error channel that cries wolf on every restart is one nobody reads, "+
+					"which defeats the point of reporting sweep errors at all.", attempt, err)
+			}
+		}
 	}
 }

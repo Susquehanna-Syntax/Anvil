@@ -399,6 +399,19 @@ func (q *Queue) ReapContext(ctx context.Context) (ReapReport, error) {
 // observe may be nil. A sweep error is passed to observe and the loop
 // continues: a transient database error must not silently stop the only thing
 // that unwedges crashed consumers.
+//
+// Cancellation is NOT a sweep error. If ctx is cancelled while a sweep is
+// mid-query, that query returns context.Canceled, and reporting it to observe
+// would put "handoff: scanning leases: context canceled" in the operator's log
+// on every single shutdown. That is not a harmless cosmetic difference: the
+// whole value of reporting sweep errors is that a real one gets noticed, and a
+// channel that cries wolf on every restart is a channel nobody reads. So an
+// interrupted sweep returns ctx.Err() and stays silent.
+//
+// Found by CI, not locally: the race detector slows execution enough to widen
+// the cancel-during-sweep window from rare to reliable. It reproduced on
+// ubuntu-latest under -race while passing every run on the Windows dev host,
+// which is precisely why -race is a required check rather than an optional one.
 func (q *Queue) Run(ctx context.Context, interval time.Duration, observe func(ReapReport, error)) error {
 	if interval <= 0 {
 		interval = DefaultReaperInterval
@@ -411,6 +424,15 @@ func (q *Queue) Run(ctx context.Context, interval time.Duration, observe func(Re
 			return ctx.Err()
 		case <-ticker.C:
 			report, err := q.ReapContext(ctx)
+			// Both conditions are required. ctx.Err() alone would swallow a
+			// genuine database failure that happened to land in the same
+			// instant as a shutdown; errors.Is alone would swallow a
+			// context.Canceled arriving from some caller-supplied context
+			// nested inside the sweep, which IS a real fault worth reporting.
+			if err != nil && ctx.Err() != nil &&
+				(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				return ctx.Err()
+			}
 			if observe != nil {
 				observe(report, err)
 			}
