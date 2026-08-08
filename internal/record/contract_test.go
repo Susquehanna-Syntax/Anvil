@@ -24,9 +24,16 @@ var frozenEnums = map[string][]string{
 	"anvil/status": {
 		"running", "sealed", "failed", "timed_out", "skipped",
 	},
+	// TEN values since the section 6 amendment: `completed_failed` was added
+	// between completed_partial and target_boot_failed because the nine-value
+	// set had no image for "the DAST half itself broke", and DeriveDastStatus
+	// was folding that case into completed_partial -- which makes dast_coverage
+	// uninterpretable for the same reason S6 requires a failed target to be
+	// distinguishable from one scanned clean.
 	"anvil/dastStatus": {
 		"not_run", "skipped_no_manifest", "running", "completed_clean", "completed_findings",
-		"completed_partial", "target_boot_failed", "target_unreachable", "timed_out",
+		"completed_partial", "completed_failed", "target_boot_failed", "target_unreachable",
+		"timed_out",
 	},
 	"anvil/target.provenance": {
 		"booted_clean", "boot_failed", "build_failed", "no_target_declared",

@@ -80,6 +80,7 @@ missing key and an unsealed half must not be the same observation.
 ### 1.3 `anvil/dastStatus` — audit-level DAST outcome (rulings G3 + G6, found twice)
 
 `not_run | skipped_no_manifest | running | completed_clean | completed_findings | completed_partial |
+completed_failed |
 target_boot_failed | target_unreachable | timed_out`
 
 **Producer:** the scan controller, **derived from** the DAST half's `anvil/status` and from
@@ -473,3 +474,37 @@ S6 additions it predates — `anvil/state`, `anvil/version`, `anvil/deadline`, `
 is the schema working**, not a defect; the packet's original "validates the annotated example with zero
 errors" criterion was written before §6's rulings and cannot be satisfied simultaneously with S6's
 "all of these are required."
+
+
+---
+
+## Amendment 2026-08-07 — `anvil/dastStatus` gains `completed_failed`
+
+The frozen enum had **no image for "the DAST half itself broke"**. A half with `anvil/status = failed`
+against a target whose provenance is `booted_clean` had nowhere legal to land, and `R.6` was folding it
+onto `completed_partial` — flagging the compromise rather than absorbing it silently.
+
+That fold is wrong for the same reason S6 requires a failed target to be distinguishable from one
+scanned clean: a half that **crashed** differs from one that **covered part of the surface**. Collapsing
+them makes `dast_coverage` uninterpretable, because a 40% figure could mean "we probed 40% and stopped"
+or "we probed 40% and the engine died". `DeriveDastStatus` is now total — every
+(provenance, half-status) pair has exactly one image.
+
+**This vocabulary lives in five places and all five must move together:**
+
+| # | Location | What it is |
+|---|---|---|
+| 1 | `plan/IMPLEMENTATION-PLAN.md` §6 | the ruling |
+| 2 | `internal/record/contract.go` | the Go constants and `DastStatusValues()` |
+| 3 | `internal/store/schema.sql` | `ck_audit_record_dast_status` |
+| 4 | `schemas/anvil-record-v1.schema.json` | the published wire schema |
+| 5 | this file | the contract other areas are pointed at |
+
+**The amendment initially landed in only 1 and 2, and the tree went red.** `R.4`'s
+`TestEnumCheckConstraintsMatchContractLiteralForLiteral` caught it immediately by comparing the SQL
+CHECK against the Go enum literal-for-literal — the guard working exactly as intended. The operational
+consequence had it shipped was worse than the fold it replaced: an audit whose DAST half crashed could
+not be persisted **at all**, because the derivation produced a literal the store rejected.
+
+Recorded because the lesson generalises: **one vocabulary with five definitions is the same defect §6
+was written to close**, and an amendment is exactly when it recurs.
