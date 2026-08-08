@@ -1,0 +1,78 @@
+{
+  "id": "dast-02-xss-reflected-query",
+  "tier": "dast",
+  "description": "A reflected cross-site scripting finding: payload injected into a query parameter, observed by seeing the payload reflected in the response. Differs from dast-01 in every discriminating field, including both the injection point and the evidence signal.",
+  "input": {
+    "target_id": "t-0003",
+    "rule_id_versioned": "nuclei:xss-reflected@2026.07.1",
+    "http_method": "GET",
+    "route_template": "/search",
+    "injection_point": "query",
+    "param_name": "q",
+    "evidence_signal": "reflectedPayload"
+  },
+  "not_hashed": {
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "port": 41337,
+    "payload": "<script>alert(1)</script>",
+    "response_status": 200,
+    "observed_at": "2026-08-08T12:06:02Z"
+  },
+  "hashed_fields": [
+    "t-0003",
+    "dast",
+    "nuclei:xss-reflected@2026.07.1",
+    "GET",
+    "/search",
+    "query",
+    "q",
+    "reflectedPayload"
+  ],
+  "expected_digest": "bbe1a200328dfd7415d4a209384515a7ae01cb0494a896e69ba2bf565299c489",
+  "mutations": [
+    {
+      "name": "http_method_lowercased",
+      "description": "Method case does not fork identity.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:xss-reflected@2026.07.1",
+        "http_method": "get",
+        "route_template": "/search",
+        "injection_point": "query",
+        "param_name": "q",
+        "evidence_signal": "reflectedPayload"
+      }
+    },
+    {
+      "name": "route_template_carrying_the_injected_query_parameter",
+      "description": "The query string is dropped: injection_point and param_name already record which query parameter was targeted, so keeping it would hash the payload value as well.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:xss-reflected@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+        "injection_point": "query",
+        "param_name": "q",
+        "evidence_signal": "reflectedPayload"
+      }
+    },
+    {
+      "name": "route_template_with_a_trailing_slash",
+      "description": "'/search/' and '/search' are one route.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:xss-reflected@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/search/",
+        "injection_point": "query",
+        "param_name": "q",
+        "evidence_signal": "reflectedPayload"
+      }
+    }
+  ],
+  "notes": [
+    "Paired with dast-01 to demonstrate that two DAST findings on one target stay distinct. Sharing a target_id with dast-01 and dast-03 is deliberate: the target is not what separates them.",
+    "Route templates are case-sensitive and are NOT folded: URL paths are case-sensitive, and '/Search' is a different route from '/search' on most servers."
+  ]
+}

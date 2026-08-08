@@ -1,0 +1,103 @@
+{
+  "id": "sast-01-go-sql-string-concat",
+  "tier": "sast",
+  "description": "Go SQL injection by string concatenation, inside a named method. The baseline SAST fixture: a non-empty enclosing symbol, ordinal 0, two string literals and one abstracted local flowing into a preserved callee name.",
+  "input": {
+    "target_id": "t-0001",
+    "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+    "repo_rel_path": "internal/api/store.go",
+    "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+    "snippet": "rows, err := db.Query(\"SELECT * FROM users WHERE name = '\" + name + \"'\")",
+    "ordinal": 0
+  },
+  "not_hashed": {
+    "line": 128,
+    "column": 9,
+    "end_line": 128,
+    "advisory_id": "CWE-89",
+    "evidence_class": "sast_static_only",
+    "scanned_at": "2026-08-08T12:00:00Z",
+    "comment": "Every value in this object was available to the producer and MUST NOT appear in the hash input. plan/40-record-and-storage.md: 'NEVER hashed: line number, column number, the literal (non-normalized) snippet text, advisory_id.'"
+  },
+  "hashed_fields": [
+    "t-0001",
+    "sast",
+    "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+    "internal/api/store.go",
+    "internal/api/store.go::Store.FindByName",
+    "$1, $2 := $3.Query(<STR> + $4 + <STR>)",
+    "0"
+  ],
+  "expected_digest": "13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6",
+  "mutations": [
+    {
+      "name": "shifted_down_three_lines_and_reindented",
+      "description": "The match moved down the file and was reindented. This is the line-number-only mutation R.2's validation requires: SastInput carries no line field, so the strongest available form is to change everything a line move implies.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+        "repo_rel_path": "internal/api/store.go",
+        "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+        "snippet": "\n\n\n        rows, err := db.Query(\"SELECT * FROM users WHERE name = '\" + name + \"'\")\n",
+        "ordinal": 0
+      },
+      "not_hashed": {
+        "line": 131,
+        "column": 9
+      }
+    },
+    {
+      "name": "crlf_endings_and_trailing_comment_naming_the_old_line",
+      "description": "A Windows checkout plus a reviewer comment that literally records the old line number. Comments are stripped and CRLF is folded to LF before hashing.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+        "repo_rel_path": "internal/api/store.go",
+        "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+        "snippet": "rows, err := db.Query(\"SELECT * FROM users WHERE name = '\" + name + \"'\") // was line 128\r\n",
+        "ordinal": 0
+      }
+    },
+    {
+      "name": "leading_comment_line_added",
+      "description": "A triage annotation added above the match. Comments carry no identity.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+        "repo_rel_path": "internal/api/store.go",
+        "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+        "snippet": "// SECURITY: reviewed 2026-01-14, tracked as ANV-412\nrows, err := db.Query(\"SELECT * FROM users WHERE name = '\" + name + \"'\")",
+        "ordinal": 0
+      }
+    },
+    {
+      "name": "locals_renamed_and_literal_text_changed",
+      "description": "A pure rename refactor plus a different SQL string. This is the metavariable-abstraction property the specification adopts from Semgrep's match_based_id: local identifiers become positional $1..$N and string literals become <STR>, so neither a rename nor a literal edit forks the finding's identity.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+        "repo_rel_path": "internal/api/store.go",
+        "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+        "snippet": "records, e := conn.Query(\"SELECT * FROM accounts WHERE label = '\" + userName + \"'\")",
+        "ordinal": 0
+      }
+    },
+    {
+      "name": "repo_rel_path_in_windows_form",
+      "description": "The same file reported by a Windows producer. repo_relpath is canonicalised to POSIX form before hashing, so two producers scanning one repository agree.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",
+        "repo_rel_path": ".\\internal\\api\\store.go",
+        "enclosing_symbol_path": "internal/api/store.go::Store.FindByName",
+        "snippet": "rows, err := db.Query(\"SELECT * FROM users WHERE name = '\" + name + \"'\")",
+        "ordinal": 0
+      }
+    }
+  ],
+  "notes": [
+    "Field order is target_id, \"sast\", rule_id_versioned, repo_relpath, enclosing_symbol_path, normalized_match, ordinal.",
+    "The tier token in position 2 is the literal \"sast\" for both sast_reachable and sast_static_only findings, so promoting a static-only finding to reachable does not change its identity.",
+    "Normalization of the snippet: `db` is a receiver bound to a local, so it is abstracted to $3; `Query` follows a '.' selector so it is preserved as API surface."
+  ]
+}
