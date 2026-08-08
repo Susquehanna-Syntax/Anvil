@@ -1,0 +1,148 @@
+{
+  "id": "dast-01-sqli-error-based-body",
+  "tier": "dast",
+  "description": "A dynamically-confirmed SQL injection: payload injected into a JSON body parameter, observed as a database error string in the response. The baseline DAST fixture.",
+  "input": {
+    "target_id": "t-0003",
+    "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+    "http_method": "POST",
+    "route_template": "/api/v1/users/{id}/orders",
+    "injection_point": "body",
+    "param_name": "sortBy",
+    "evidence_signal": "dbErrorString"
+  },
+  "not_hashed": {
+    "scheme": "https",
+    "host": "staging-7f3a.ephemeral.internal",
+    "port": 8443,
+    "concrete_url": "https://staging-7f3a.ephemeral.internal:8443/api/v1/users/4192/orders",
+    "payload": "' OR 1=1--",
+    "response_time_ms": 1204,
+    "observed_at": "2026-08-08T12:04:11Z",
+    "comment": "plan/40-record-and-storage.md: 'NEVER hashed: host, port, scheme, the concrete payload string, any timestamp.' A redeployed container, a rotated ephemeral port, or a staging-to-prod move must not fork identity, and a fuzzer varying its payload must not mint N findings for one bug."
+  },
+  "hashed_fields": [
+    "t-0003",
+    "dast",
+    "nuclei:sqli-error-based@2026.07.1",
+    "POST",
+    "/api/v1/users/<VAR>/orders",
+    "body",
+    "sortBy",
+    "dbErrorString"
+  ],
+  "expected_digest": "199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90",
+  "mutations": [
+    {
+      "name": "http_method_lowercased",
+      "description": "A producer emitting 'post' must not fork identity from one emitting 'POST'; the method is uppercased before hashing.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "post",
+        "route_template": "/api/v1/users/{id}/orders",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "http_method_padded",
+      "description": "Whitespace from a parsed request line is trimmed.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": " POST ",
+        "route_template": "/api/v1/users/{id}/orders",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_carrying_the_payload_in_a_query_string",
+      "description": "The single most important DAST canonicalisation. A producer that smuggles the concrete payload into the 'template' would otherwise mint one finding per fuzzer iteration; everything from the first '?' is dropped.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "/api/v1/users/{id}/orders?debug=1&sortBy=%27%20OR%201%3D1--",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_carrying_a_fragment",
+      "description": "Everything from the first '#' is dropped for the same reason.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "/api/v1/users/{id}/orders#results",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_with_a_trailing_slash",
+      "description": "A trailing slash is removed (except on the root path).",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "/api/v1/users/{id}/orders/",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_with_duplicate_slashes_and_no_leading_slash",
+      "description": "Slash runs collapse and a leading slash is added, so a crawler joining path segments naively agrees with one that does not.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "api//v1/users/{id}//orders",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_carrying_the_concrete_numeric_id_this_scan_requested",
+      "description": "The route this fixture's not_hashed.concrete_url actually carried. CanonicalRouteTemplate replaces the all-digit segment '4192' with <VAR>, so the producer does not have to template the route itself. Before the R.3 blocker-2 ruling this input produced a THIRD digest for the same defect.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "/api/v1/users/4192/orders",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    },
+    {
+      "name": "route_template_in_express_placeholder_syntax",
+      "description": "A producer reading the repository's own Express route table emits ':id'; a producer reading its OpenAPI document emits '{id}'. Both normalise to <VAR>, so the two producers agree.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
+        "http_method": "POST",
+        "route_template": "/api/v1/users/:id/orders",
+        "injection_point": "body",
+        "param_name": "sortBy",
+        "evidence_signal": "dbErrorString"
+      }
+    }
+  ],
+  "notes": [
+    "Field order is target_id, \"dast\", rule_id_versioned, http_method, route_template, injection_point, param_name, evidence_class_detail.",
+    "DIGEST CHANGED 2026-08-08 under the R.3 blocker-2 ruling, from ca801b8d64fdabf43aad112e3b62c53211cf369a66683c12352081357eb9d125. The hashed route_template moved from '/api/v1/users/{id}/orders' to '/api/v1/users/<VAR>/orders' because CanonicalRouteTemplate now DERIVES the template, as the specification always said it should ('route_template := numeric/UUID/hash path segments replaced with a placeholder token'). Nothing was stored under the old digest - anvil-fp/v1 has not shipped - so this is a correction, not a v2 event. See internal/record/FINGERPRINT-SPEC.md section 6.",
+    "injection_point (WHERE the payload went in) and evidence_class_detail (HOW the defect was observed) are independent hashed fields. research/07 had only the former and research/18 only the latter; the resolution hashes both, because an SQL injection proved by a database error string and one proved by a timing side channel on the same parameter are different findings with different remediation evidence.",
+    "param_name is a parameter NAME, never a parameter VALUE.",
+    "Both literals are lowercase snake_case-free tokens frozen in R.1's contract.go (InjectionPoint, EvidenceSignal); an unfrozen or SCREAMING_CASE literal is rejected rather than hashed."
+  ]
+}
