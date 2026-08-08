@@ -1,0 +1,89 @@
+{
+  "id": "sast-02-python-shell-command",
+  "tier": "sast",
+  "description": "Python command injection at module level: the SECOND of two byte-identical call sites in one file, so this fixture exercises ordinal 1 and an EMPTY enclosing_symbol_path (top-level module code has no enclosing symbol).",
+  "input": {
+    "target_id": "t-0001",
+    "rule_id_versioned": "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+    "repo_rel_path": "scripts/deploy.py",
+    "enclosing_symbol_path": "",
+    "snippet": "os.system(\"rm -rf \" + path)",
+    "ordinal": 1
+  },
+  "not_hashed": {
+    "line": 41,
+    "column": 5,
+    "advisory_id": "CWE-78",
+    "evidence_class": "sast_reachable",
+    "sibling_call_site_line": 12,
+    "comment": "The identical call site at line 12 gets ordinal 0 and this one gets ordinal 1. Without the ordinal field the two would share a digest and one finding would be lost on upsert against UNIQUE (target_id, fingerprint)."
+  },
+  "hashed_fields": [
+    "t-0001",
+    "sast",
+    "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+    "scripts/deploy.py",
+    "",
+    "$1.system(<STR> + $2)",
+    "1"
+  ],
+  "expected_digest": "d2239ee40c3f9da1cc9db3417962e3794b0c5baca0409015ff331a0aea095242",
+  "mutations": [
+    {
+      "name": "shifted_down_and_reindented_into_a_block",
+      "description": "The statement moved and gained indentation. Neither line position nor indentation is hashed.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+        "repo_rel_path": "scripts/deploy.py",
+        "enclosing_symbol_path": "",
+        "snippet": "\n\n    os.system(\"rm -rf \" + path)\n",
+        "ordinal": 1
+      },
+      "not_hashed": {
+        "line": 58,
+        "column": 9
+      }
+    },
+    {
+      "name": "hash_line_comment_appended",
+      "description": "A '#' comment is stripped like any other comment, which is why the normalizer treats '#' as a line comment across languages.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+        "repo_rel_path": "scripts/deploy.py",
+        "enclosing_symbol_path": "",
+        "snippet": "os.system(\"rm -rf \" + path)  # noqa: was line 41",
+        "ordinal": 1
+      }
+    },
+    {
+      "name": "local_renamed_and_literal_changed",
+      "description": "`path` renamed and the shell string edited; both are abstracted, so identity holds.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+        "repo_rel_path": "scripts/deploy.py",
+        "enclosing_symbol_path": "",
+        "snippet": "os.system(\"rm -rf --one-file-system \" + target_dir)",
+        "ordinal": 1
+      }
+    },
+    {
+      "name": "repo_rel_path_with_dot_slash_prefix",
+      "description": "'./scripts/deploy.py' and 'scripts/deploy.py' are one path after canonicalisation.",
+      "input": {
+        "target_id": "t-0001",
+        "rule_id_versioned": "opengrep.python.lang.security.audit.dangerous-system-call@2026.07.1",
+        "repo_rel_path": "./scripts/deploy.py",
+        "enclosing_symbol_path": "",
+        "snippet": "os.system(\"rm -rf \" + path)",
+        "ordinal": 1
+      }
+    }
+  ],
+  "notes": [
+    "An empty enclosing_symbol_path is hashed as an empty field rather than dropped, so the SAST tier always joins exactly seven fields. Dropping it instead would let a match with no symbol collide with a shorter field list.",
+    "`os` is abstracted to $1: a lexer cannot distinguish a module qualifier from a receiver variable, and guessing wrong in the other direction would fork the digest of unchanged code."
+  ]
+}

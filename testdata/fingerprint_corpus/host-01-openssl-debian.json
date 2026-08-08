@@ -1,0 +1,88 @@
+{
+  "id": "host-01-openssl-debian",
+  "tier": "host",
+  "description": "An operating-system package on the scanned host that matched a vulnerable version range. Host findings are read-only for the agent (plan/00-SPINE.md S7, remediable_by_agent=false) but still need a stable identity so they can be tracked, suppressed, and reported as resolved.",
+  "input": {
+    "target_id": "t-0002",
+    "advisory_id": "CVE-2022-0778",
+    "purl": "pkg:deb/debian/openssl@1.1.1n-0+deb11u3",
+    "package_manager": "apt",
+    "host_identifier": "openssl:amd64"
+  },
+  "not_hashed": {
+    "installed_version": "1.1.1n-0+deb11u3",
+    "fixed_version": "1.1.1n-0+deb11u4",
+    "hostname": "build-runner-04",
+    "scanned_at": "2026-08-08T12:00:00Z"
+  },
+  "hashed_fields": [
+    "t-0002",
+    "host",
+    "CVE-2022-0778",
+    "pkg:deb/debian/openssl",
+    "apt:openssl:amd64"
+  ],
+  "expected_digest": "c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953",
+  "mutations": [
+    {
+      "name": "version_bumped",
+      "description": "A Debian point release. The version lives only in the purl and is stripped before hashing.",
+      "input": {
+        "target_id": "t-0002",
+        "advisory_id": "CVE-2022-0778",
+        "purl": "pkg:deb/debian/openssl@1.1.1w-0+deb11u1",
+        "package_manager": "apt",
+        "host_identifier": "openssl:amd64"
+      }
+    },
+    {
+      "name": "purl_carrying_an_arch_qualifier",
+      "description": "Qualifiers are stripped with the version.",
+      "input": {
+        "target_id": "t-0002",
+        "advisory_id": "CVE-2022-0778",
+        "purl": "pkg:deb/debian/openssl@1.1.1n-0+deb11u3?arch=amd64",
+        "package_manager": "apt",
+        "host_identifier": "openssl:amd64"
+      }
+    },
+    {
+      "name": "package_manager_uppercased",
+      "description": "'APT' and 'apt' are the same manager. The manager segment of the locator is lowercased, because a case difference between two scanner versions would otherwise fork every host finding at once.",
+      "input": {
+        "target_id": "t-0002",
+        "advisory_id": "CVE-2022-0778",
+        "purl": "pkg:deb/debian/openssl@1.1.1n-0+deb11u3",
+        "package_manager": "APT",
+        "host_identifier": "openssl:amd64"
+      }
+    },
+    {
+      "name": "package_manager_and_identifier_padded",
+      "description": "Surrounding whitespace from a parsed CLI table is trimmed.",
+      "input": {
+        "target_id": "t-0002",
+        "advisory_id": "CVE-2022-0778",
+        "purl": "pkg:deb/debian/openssl@1.1.1n-0+deb11u3",
+        "package_manager": "  apt  ",
+        "host_identifier": "  openssl:amd64  "
+      }
+    },
+    {
+      "name": "purl_already_version_free",
+      "description": "PurlBase is idempotent, so a producer that already stripped the version agrees with one that did not.",
+      "input": {
+        "target_id": "t-0002",
+        "advisory_id": "CVE-2022-0778",
+        "purl": "pkg:deb/debian/openssl",
+        "package_manager": "apt",
+        "host_identifier": "openssl:amd64"
+      }
+    }
+  ],
+  "notes": [
+    "The host tier shares the SCA formula, parameterised by detector_kind. Its locator is '<package_manager>:<host_identifier>'.",
+    "host_identifier keeps its architecture suffix verbatim: 'openssl:amd64' and 'openssl:i386' are two installed packages the manager treats separately, so they are two findings.",
+    "The locator therefore contains more than one ':'. That is fine - it is a composed field, not a parsed one - but package_manager itself is rejected if it contains ':', because that would make the composition ambiguous."
+  ]
+}

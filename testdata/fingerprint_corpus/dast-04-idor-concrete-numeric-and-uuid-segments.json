@@ -1,0 +1,200 @@
+{
+  "id": "dast-04-idor-concrete-numeric-and-uuid-segments",
+  "tier": "dast",
+  "description": "An insecure-direct-object-reference finding whose observed route carries BOTH a concrete numeric id and a concrete UUID. This is the fixture CRITIQUE-01 said the corpus was missing: dast-01 through dast-03 all arrived pre-templated, so no fixture could tell whether CanonicalRouteTemplate templated anything at all. Every mutation below is a different concrete instance of the SAME defect and must produce the SAME digest.",
+  "input": {
+    "target_id": "t-0003",
+    "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+    "http_method": "GET",
+    "route_template": "/api/v1/users/12345/orders/3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    "injection_point": "path",
+    "param_name": "",
+    "evidence_signal": "statusCodeFlip"
+  },
+  "not_hashed": {
+    "scheme": "https",
+    "host": "staging-7f3a.ephemeral.internal",
+    "port": 8443,
+    "concrete_url": "https://staging-7f3a.ephemeral.internal:8443/api/v1/users/12345/orders/3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    "authenticated_as": "user 4192",
+    "observed_status_flip": "403 -> 200",
+    "observed_at": "2026-08-08T16:41:09Z",
+    "comment": "The numeric id and the UUID are volatile in the strongest sense: the next scan against a freshly seeded ephemeral target will observe different ones for the same defect. If they were hashed, every scan would open a new finding and 'verified fixed' could never be proved - which is precisely why plan/00-SPINE.md S7's fix-verification gate depends on this tier."
+  },
+  "hashed_fields": [
+    "t-0003",
+    "dast",
+    "nuclei:idor-object-reference@2026.07.1",
+    "GET",
+    "/api/v1/users/<VAR>/orders/<VAR>",
+    "path",
+    "",
+    "statusCodeFlip"
+  ],
+  "expected_digest": "84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b",
+  "mutations": [
+    {
+      "name": "different_numeric_id",
+      "description": "THE mutation the R.3 ruling demands. A second scan lands on user 98765 instead of user 12345; it is the same defect and must keep the same identity. Without route templating this input produced a different digest and the finding was reported resolved and re-opened as new.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/98765/orders/3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "different_uuid",
+      "description": "The order id is a freshly minted UUID on every seeded run.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/12345/orders/9e107d9d-372b-b682-6bd8-1d3542a419d6",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "both_ids_different_at_once",
+      "description": "The realistic re-scan: nothing about the concrete instance survives, and the identity still holds.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/1/orders/00000000-0000-0000-0000-000000000000",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "uuid_uppercased",
+      "description": "The UUID predicate is case-insensitive: the same identifier rendered in upper hex is the same identifier.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/12345/orders/3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "uuid_without_dashes",
+      "description": "A 32-character dash-free UUID is caught by the long-hex rule (>= 16 hex characters) rather than the UUID rule. Both land on the same token, so a service that renders ids with dashes and one that renders them without do not fork identity.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/12345/orders/3f2504e04f8911d39a0c0305e82c3301",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "sha256_hex_object_id",
+      "description": "A content-addressed order id: 64 hex characters, also caught by the long-hex rule.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/12345/orders/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "opaque_base64ish_order_token",
+      "description": "A 22-character alphanumeric token carrying both letters and digits, caught by the long-opaque rule (>= 20 characters). Note it is alphanumeric only: a base64url token containing '-' or '_' is deliberately NOT templated, because hyphenated slugs are route structure and over-templating merges distinct routes.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/12345/orders/dXNlcjEyMzQ1Njc4OTAxMg",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "openapi_curly_placeholders",
+      "description": "The repository's own OpenAPI document spells both segments '{userId}' and '{orderId}'. Different placeholder NAMES must not fork identity either - the token replaces the whole segment, name included.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/{userId}/orders/{orderId}",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "express_colon_placeholders",
+      "description": "Express, Rails and Sinatra spell the same route ':userId'/':orderId'.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/:userId/orders/:orderId",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "flask_angle_placeholders_with_converters",
+      "description": "Flask and Werkzeug spell it '<int:user_id>'/'<uuid:order_id>', converter prefix and all.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/<int:user_id>/orders/<uuid:order_id>",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "already_carrying_the_canonical_placeholder_token",
+      "description": "Idempotence. A canonicalised route fed back through CanonicalRouteTemplate is a fixed point, so a record read out of the store and re-fingerprinted keeps its identity.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/api/v1/users/<VAR>/orders/<VAR>",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    },
+    {
+      "name": "concrete_ids_with_query_string_trailing_slash_and_duplicate_slashes",
+      "description": "Templating composes with the pre-existing canonicalisation: query string dropped, slash runs collapsed, trailing slash removed, leading slash added, and only then are the segments templated.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
+        "http_method": "get",
+        "route_template": "api//v1/users/12345//orders/3f2504e0-4f89-11d3-9a0c-0305e82c3301/?debug=1&as=4192",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      }
+    }
+  ],
+  "notes": [
+    "This fixture exists because of CRITIQUE-01 blocker 2: 'All three DAST fixtures arrive already templated, so the corpus cannot detect this. There is no test anywhere that feeds a concrete numeric or UUID segment.'",
+    "route_template is a DERIVED field. Area 40 owns the fingerprint, so area 40 canonicalises: area D emits whatever route it observed and CanonicalRouteTemplate templates it. Pushing templating to the producer would give the field two owners and let two producers emit three digests for one defect.",
+    "The placeholder token is <VAR>, frozen. Angle brackets cannot appear unencoded in a URI path (RFC 3986), so no literal segment can collide with it, and <VAR> is itself recognised as an already-templated segment, which makes the function idempotent.",
+    "The templating rules are conservative on purpose. Over-templating merges two distinct routes into one identity and loses a finding on upsert; under-templating only leaves a volatile route un-merged, which a producer can still fix by emitting '{id}' itself. The exact predicates and their length thresholds are in internal/record/FINGERPRINT-SPEC.md section 6.",
+    "Note the deliberate NON-mutations: '/api/v1/users/me/orders/...' and '/api/v1/users/12345/invoices/...' are DIFFERENT routes and must produce different digests. TestCanonicalRouteTemplateDoesNotOverTemplate in fingerprint_test.go pins the segments that must survive untouched."
+  ]
+}

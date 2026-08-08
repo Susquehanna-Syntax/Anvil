@@ -1,0 +1,102 @@
+{
+  "id": "sca-01-log4shell-maven",
+  "tier": "sca",
+  "description": "A repository dependency (Log4Shell, declared in a monorepo service's pom.xml) that matched a vulnerable version range. This is the fixture that pins the single most load-bearing exclusion in the specification: the version string is never hashed.",
+  "input": {
+    "target_id": "t-0001",
+    "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+    "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+    "manifest_rel_path": "services/api/pom.xml"
+  },
+  "not_hashed": {
+    "resolved_version": "2.14.1",
+    "fixed_version": "2.15.0",
+    "first_seen_at": "2026-08-08T12:00:00Z",
+    "comment": "plan/40-record-and-storage.md: 'NEVER hashed: the version string - bumping 1.2.3->1.2.4 while still inside the vulnerable range must not mint a new finding; resolution is proved by re-evaluating advisory_affects, not by identity change.'"
+  },
+  "hashed_fields": [
+    "t-0001",
+    "sca",
+    "GHSA-jfh8-c2jp-5v3q",
+    "pkg:maven/org.apache.logging.log4j/log4j-core",
+    "services/api/pom.xml"
+  ],
+  "expected_digest": "c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8",
+  "mutations": [
+    {
+      "name": "version_bumped_inside_the_vulnerable_range",
+      "description": "2.14.1 -> 2.14.0. Still vulnerable, still the same finding. If this changed the digest, first_seen_at would reset and any fingerprint-keyed suppression would silently stop applying.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.0",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "version_bumped_out_of_the_vulnerable_range",
+      "description": "2.14.1 -> 2.17.1. The identity is still the same; resolution is proved by re-evaluating advisory_affects, never by the fingerprint changing.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "purl_carrying_qualifiers",
+      "description": "Qualifiers are stripped by PurlBase along with the version.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1?type=jar&classifier=sources",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "purl_carrying_qualifiers_and_a_subpath",
+      "description": "Subpath ('#') is stripped as well.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1?type=jar#META-INF/MANIFEST.MF",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "purl_scheme_and_type_uppercased",
+      "description": "The purl specification defines the scheme and type as case-insensitive with a lowercase canonical form, so 'PKG:MAVEN/...' and 'pkg:maven/...' are one package. The namespace and name are NOT folded, because their case-sensitivity is type-dependent.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "PKG:MAVEN/org.apache.logging.log4j/log4j-core@2.14.1",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "purl_already_version_free",
+      "description": "A producer that strips the version itself gets the same digest as one that does not; PurlBase is idempotent.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core",
+        "manifest_rel_path": "services/api/pom.xml"
+      }
+    },
+    {
+      "name": "manifest_path_in_windows_form",
+      "description": "The locator is canonicalised to POSIX form like any other repo-relative path.",
+      "input": {
+        "target_id": "t-0001",
+        "advisory_id": "GHSA-jfh8-c2jp-5v3q",
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+        "manifest_rel_path": "services\\api\\pom.xml"
+      }
+    }
+  ],
+  "notes": [
+    "Field order is target_id, detector_kind, advisory_id, purl_base, locator. For the SCA tier the locator is the manifest or lockfile path: the same vulnerable package pulled in by two manifests in a monorepo is two findings, with two owners and two fixes.",
+    "advisory_id is hashed verbatim, not case-folded. GHSA identifiers mix case meaningfully and folding them would fork identity against the advisory table.",
+    "detector_kind is what keeps this fixture from colliding with host-01 when a repository dependency and a host package share an advisory."
+  ]
+}

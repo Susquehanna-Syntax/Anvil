@@ -1,0 +1,33 @@
+-- 0001_init — the initial Anvil schema.
+--
+-- This migration deliberately contains no DDL of its own. Its body is R.4's
+-- internal/store/schema.sql, included verbatim by the directive below and
+-- expanded by migrate.go at load time from the string ddl.go already embeds.
+--
+-- WHY AN INCLUDE AND NOT A COPY. plan/40-record-and-storage.md declares
+-- schema.sql a frozen interface and R.4 built ddl.go explicitly as the "Go
+-- wrapper exposing the DDL as an embedded string for R.5's migrations". A
+-- second, byte-identical copy of 26 KB of DDL in this directory would be a
+-- second definition of that interface: the two would drift the first time
+-- someone edited one of them, and the drift would be invisible until a fresh
+-- install and an upgraded install disagreed about the shape of a table. There
+-- is exactly one copy of the schema in this repository, and this is a pointer
+-- to it.
+--
+-- CHECKSUM SENSITIVITY. migrate.go checksums the EXPANDED text — this file's
+-- bytes with the directive line replaced by schema.sql's bytes. So editing
+-- either file changes migration 0001's checksum, and a database that has
+-- already applied the old text refuses to start rather than silently running
+-- on a schema nobody applied. That is the whole point of the ledger.
+--
+-- FORWARD-ONLY. There is no 0001_init.down.sql and there never will be, per
+-- research/07-database-design.md §7: the rollback story is the
+-- `VACUUM INTO 'anvil-pre-v{N}.db'` snapshot migrate.go takes before touching
+-- an existing database, not reversible DDL nobody ever tests.
+--
+-- NO PRAGMA HERE. migrate.go runs every migration inside BEGIN ... COMMIT and
+-- `PRAGMA journal_mode = WAL` cannot run in a transaction. Connection pragmas
+-- are ddl.go's ConnectionPragmas(); `PRAGMA user_version` is set by migrate.go
+-- inside the same transaction as this file's DDL.
+
+-- @anvil:include schema.sql

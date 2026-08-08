@@ -1,0 +1,105 @@
+{
+  "id": "dast-03-path-traversal-no-param-name",
+  "tier": "dast",
+  "description": "A path-traversal finding injected into a templated path segment. There is no named parameter, so this fixture pins the EMPTY param_name case, and it observes the defect by a stack trace in the response body rather than by reflection.",
+  "input": {
+    "target_id": "t-0003",
+    "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+    "http_method": "GET",
+    "route_template": "/files/{path}",
+    "injection_point": "path",
+    "param_name": "",
+    "evidence_signal": "responseStackTrace"
+  },
+  "not_hashed": {
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "port": 41337,
+    "payload": "../../../../etc/passwd",
+    "response_body_sha256": "referenced, never inlined - plan/00-SPINE.md S7 names the DAST response body the highest-risk field",
+    "observed_at": "2026-08-08T12:07:44Z"
+  },
+  "hashed_fields": [
+    "t-0003",
+    "dast",
+    "nuclei:path-traversal@2026.07.1",
+    "GET",
+    "/files/<VAR>",
+    "path",
+    "",
+    "responseStackTrace"
+  ],
+  "expected_digest": "5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550",
+  "mutations": [
+    {
+      "name": "http_method_lowercased",
+      "description": "Method case does not fork identity.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+        "http_method": "get",
+        "route_template": "/files/{path}",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "responseStackTrace"
+      }
+    },
+    {
+      "name": "route_template_with_duplicate_leading_slashes",
+      "description": "Slash runs collapse to one.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+        "http_method": "GET",
+        "route_template": "//files/{path}",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "responseStackTrace"
+      }
+    },
+    {
+      "name": "route_template_carrying_the_traversal_payload_as_a_query_string",
+      "description": "The payload smuggled into the template is dropped with the rest of the query string.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/files/{path}?f=..%2F..%2F..%2Fetc%2Fpasswd",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "responseStackTrace"
+      }
+    },
+    {
+      "name": "route_template_in_flask_placeholder_syntax",
+      "description": "Flask and Werkzeug spell a variable segment '<path:filename>'. It normalises to the same <VAR> as '{path}' and ':path'.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/files/<path:filename>",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "responseStackTrace"
+      }
+    },
+    {
+      "name": "route_template_already_carrying_the_canonical_placeholder_token",
+      "description": "Idempotence: feeding a canonicalised route back through CanonicalRouteTemplate must be a fixed point, or a record round-tripped through the store would fork its own identity.",
+      "input": {
+        "target_id": "t-0003",
+        "rule_id_versioned": "nuclei:path-traversal@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/files/<VAR>",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "responseStackTrace"
+      }
+    }
+  ],
+  "notes": [
+    "An empty param_name is legal and is hashed as an empty field, keeping the DAST field count at exactly eight. A whole-body, raw-request, or path-segment injection has no single named parameter, and rejecting those would make them unfingerprintable.",
+    "DIGEST CHANGED 2026-08-08 under the R.3 blocker-2 ruling, from 84fe311debbc87f852e1f4e17a3242d071169448c5852a00b1b32316fb30b036. The hashed route_template moved from '/files/{path}' to '/files/<VAR>' because CanonicalRouteTemplate now normalises an already-templated segment onto the one frozen placeholder token rather than trusting the producer's choice of syntax. Nothing was stored under the old digest - anvil-fp/v1 has not shipped. See internal/record/FINGERPRINT-SPEC.md section 6.",
+    "The input's '{path}' was the ONLY normalization the old corpus exercised on this field, and it exercised it by arriving pre-templated - which is exactly why CRITIQUE-01 could not detect that CanonicalRouteTemplate did no templating at all. dast-04 is the fixture that closes that hole, with a concrete numeric id and a concrete UUID."
+  ]
+}
