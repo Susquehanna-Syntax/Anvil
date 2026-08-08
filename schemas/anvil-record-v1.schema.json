@@ -52,6 +52,7 @@
         "completed_clean",
         "completed_findings",
         "completed_partial",
+        "completed_failed",
         "target_boot_failed",
         "target_unreachable",
         "timed_out"

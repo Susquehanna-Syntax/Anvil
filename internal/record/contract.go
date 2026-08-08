@@ -319,14 +319,24 @@ func ValidateHalfStatus(v string) error {
 // by two critics. Area 40 declared seven values and area D declared five with
 // ZERO literal overlap — D could not have written a single row into 40's NOT
 // NULL column. The frozen set is the union of both plus D's `partial`
-// (renamed `completed_partial`), which is nine values. D.26 emits these.
+// (renamed `completed_partial`), which was nine values. D.26 emits these.
+//
+// AMENDED — a TENTH value, `completed_failed`, was added to
+// plan/IMPLEMENTATION-PLAN.md §6 after the R.10 critic (CRITIQUE-02 F8/rule 8)
+// showed the nine-value set had no image for "the DAST half itself broke".
+// DeriveDastStatus was mapping a HalfStatusFailed half against a target that
+// booted cleanly onto `completed_partial`, which is the same category error
+// plan/00-SPINE.md S6 forbids one level down: a half that CRASHED is not a
+// half that COVERED PART of the surface, and collapsing them makes
+// `dast_coverage` uninterpretable — the reader cannot tell a 31-of-50 scan
+// from a scan that died at endpoint 1. See DastStatusCompletedFailed.
 //
 // This value is DERIVED from the DAST half's HalfStatus and from
 // TargetProvenance (the boot/reachability outcome), never from
 // TargetProvisioning (which provisioning path was used).
 type DastStatus string
 
-// The nine legal anvil/dastStatus literals.
+// The ten legal anvil/dastStatus literals.
 //
 // WHY DastStatusSkippedNoManifest IS DISTINCT FROM DastStatusNotRun — do not
 // merge them:
@@ -363,6 +373,23 @@ const (
 	// coverage detail lives in DastCoverage, which is what makes this value
 	// interpretable rather than merely worrying.
 	DastStatusCompletedPartial DastStatus = "completed_partial"
+	// DastStatusCompletedFailed: the target booted cleanly and the DAST half
+	// then FAILED mid-scan — the scanner crashed, lost its connection, or was
+	// killed. Derived from HalfStatusFailed against
+	// TargetProvenanceBootedClean, and from nothing else: a half that never
+	// had a target reports target_boot_failed, target_unreachable or
+	// skipped_no_manifest, all of which outrank this value.
+	//
+	// It is DISTINCT from completed_partial on purpose. Both mean "less than
+	// the whole surface was probed", but only completed_partial means the
+	// coverage numbers in DastCoverage describe a scan that ran to its own
+	// conclusion. Reporting a crash as completed_partial invites a consumer to
+	// read "31 of 50 endpoints" as a deliberate scope, when in fact the run
+	// died and the denominator is meaningless.
+	//
+	// Like every value except completed_clean, MeansDynamicallyScannedClean is
+	// false for it.
+	DastStatusCompletedFailed DastStatus = "completed_failed"
 	// DastStatusTargetBootFailed: the target never booted, so nothing was
 	// scanned. Derived from TargetProvenanceBootFailed or
 	// TargetProvenanceBuildFailed.
@@ -379,12 +406,13 @@ func DastStatusValues() []DastStatus {
 	return []DastStatus{
 		DastStatusNotRun, DastStatusSkippedNoManifest, DastStatusRunning,
 		DastStatusCompletedClean, DastStatusCompletedFindings,
-		DastStatusCompletedPartial, DastStatusTargetBootFailed,
-		DastStatusTargetUnreachable, DastStatusTimedOut,
+		DastStatusCompletedPartial, DastStatusCompletedFailed,
+		DastStatusTargetBootFailed, DastStatusTargetUnreachable,
+		DastStatusTimedOut,
 	}
 }
 
-// Valid reports whether s is one of the nine legal anvil/dastStatus literals.
+// Valid reports whether s is one of the ten legal anvil/dastStatus literals.
 func (s DastStatus) Valid() bool { return inEnum(s, DastStatusValues()) }
 
 // ValidateDastStatus reports whether v is a legal anvil/dastStatus literal.
