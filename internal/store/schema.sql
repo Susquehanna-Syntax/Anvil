@@ -189,7 +189,7 @@ CREATE TABLE audit_record (
     sast_status IS NULL OR sast_status IN ('running', 'sealed', 'failed', 'timed_out', 'skipped')),
   CONSTRAINT ck_audit_record_dast_status CHECK (
     dast_status IN ('not_run', 'skipped_no_manifest', 'running', 'completed_clean',
-                    'completed_findings', 'completed_partial', 'target_boot_failed',
+                    'completed_findings', 'completed_partial', 'completed_failed', 'target_boot_failed',
                     'target_unreachable', 'timed_out')),
   CONSTRAINT ck_audit_record_target_provenance CHECK (
     target_provenance IN ('booted_clean', 'boot_failed', 'build_failed',
