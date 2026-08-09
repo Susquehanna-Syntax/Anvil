@@ -371,19 +371,39 @@
 // limit that is implied is a trap. IT IS NOT A CENSUS. Assume there are holes
 // not listed here.
 //
-// LIMIT 1 — NO PRODUCTION IMPORTER EXISTS. NOTHING IN THIS REPOSITORY CALLS
-// THIS PACKAGE. As of 2026-08-09, `grep -rn "ingest/sanitize" --include=*.go .`
-// finds this package's own files and nothing else: every control in here is
-// exercised only by its own tests. A green `go test ./...` therefore proves
-// that the sanitizer WOULD neutralise these inputs, and proves nothing about
-// any advisory in any cache, because no advisory has been through it.
-// A.7 (internal/ingest/poller, plan/20-lane-a-ingestion-sca.md) is the step
-// that wires it: its Forbidden actions already say "Never write raw fetched
-// text into the cache without routing it through Sanitize() (A.3)". Until A.7
-// lands, A.3's stop condition — a claim about "every write path into
-// `advisory`, `affected` and `advisory_fts`" — is satisfied VACUOUSLY and must
-// not be recorded as verified. internal/ingest/license is in the same position
-// with respect to its Gate(); its own doc is not this package's to edit.
+// LIMIT 1 — WIRED, AND WHAT THAT DOES AND DOES NOT BUY. Until 2026-08-09 this
+// package had NO production importer: every control was exercised only by its
+// own tests, so a green `go test ./...` proved the sanitizer WOULD neutralise
+// these inputs and proved nothing about any advisory in any cache. A tripwire
+// test asserted that state and fired the moment it stopped being true.
+//
+// It has now fired. Four production callers exist:
+//
+//	internal/ingest/poller/poller.go        A.7  the conditional-GET poller
+//	internal/ingest/bootstrap/bootstrap.go  A.8  the bulk-archive importer
+//	internal/collector/host/collect.go      A.9  the host collector
+//	internal/collector/repo/trivy.go        A.10 the repo SCA collector
+//
+// So A.3's stop condition — a claim about "every write path into `advisory`,
+// `affected` and `advisory_fts`" — is no longer satisfied VACUOUSLY. But read
+// what it is now satisfied BY: TestNoIngestWriterBindsAnUnsanitizedString, an
+// AST walk over the ingest packages that flags a function binding an advisory
+// write shape without reaching this package. That is a static reachability
+// check with an allowlist, and this repository has learned three times what
+// such a check is worth — see internal/record/readpath_test.go's KNOWN LIMITS,
+// where the equivalent guard was defeated eight ways out of sixteen.
+//
+// Concretely: it establishes that each writer CALLS Sanitize. It does not
+// establish that a writer calls it on EVERY string it stores, nor that it
+// obeys the answer. Reaching a gate is not the same as obeying it, and that
+// exact distinction was a live production defect in internal/scanctl (a seal
+// obtained honestly and then used stale) before it was closed at runtime.
+// The poller is the one caller that currently goes further than the guard
+// requires: it DROPS a value the sanitizer modified rather than storing the
+// modified form. That is a property of A.7, not a property of this package.
+//
+// internal/ingest/license is in the same position with respect to its Gate(),
+// and its own doc is not this package's to edit.
 //
 // LIMIT 2 — TAG-SHAPED HIDING IS NOT REMOVED. See the ruling above. A tag can
 // hide text from a reviewer who reads a rendered view, and this package

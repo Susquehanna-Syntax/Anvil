@@ -1,0 +1,23 @@
+# The warm-start accelerator's cache, if anyone ever points Config.CacheDir
+# back inside this directory.
+#
+# The default root is no longer here — DefaultCacheDir() resolves under the OS
+# user cache directory, outside any working tree — and this file is the SECOND
+# belt, not the first. The two failure modes are independent: moving the
+# location stops git from seeing the artifact, and this rule stops git from
+# carrying it if the location is ever configured back. Neither implies the
+# other, so both exist.
+#
+# What is being kept out of git: the compiled Trivy DB (~100 MB) and Grype DB
+# (~65 MB). Both builders are Apache-2.0 for their CODE; neither Aqua nor
+# Anchore states redistribution terms for the built database, and unstated
+# terms are not permissive terms. A `git add -A` here would put those bytes in
+# a public repository, which IS redistribution, and it is unrecoverable once
+# pushed. The Go-level guarantee that this package never serves the artifact
+# says nothing about it: `git push` is not a Go code path.
+#
+# Same posture and the same reasoning as mirror/.gitignore and
+# eval/tools/opengrep/.gitignore — "a file that git cannot carry is a file no
+# Anvil commit can author." TestTheCacheDirectoryCannotBeCommitted pins this
+# file, because a .gitignore with no test is a line somebody deletes in a merge.
+.cache/
