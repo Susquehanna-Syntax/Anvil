@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anvil.invalid/schemas/policy.schema.json",
+  "title": "Anvil trigger policy (.anvil/policy.yml) v1",
+  "description": "THE definition of Anvil's trigger-policy file. Ground truth: plan/70-orchestration-ci.md step O.5 and its 'Trigger Policy Schema' section; shape from research/09-orchestration-and-github-actions.md Recommendation 2 (Renovate `packageRules` convention -- match keys prefixed `match*`, applied in ARRAY ORDER, later rules override earlier). plan/00-SPINE.md S1 makes 'no hard-coded triggers' a hard constraint: every matchable value -- event names, ref globs, path globs, semver-bump kinds, schedule cadences, timeouts, severity gates -- is DATA parsed from this file. A literal such as \"push\" or \"major\" used as a match condition anywhere in Anvil outside the parser is a defect, not a shortcut. Renovate is AGPL-3.0: this file copies the CONVENTION only, no Renovate code or types are vendored (research/09 Risks 9).",
+
+  "x-anvil-owner": "plan/70-orchestration-ci.md step O.5. This file is the SINGLE schema for .anvil/policy.yml. plan/IMPLEMENTATION-PLAN.md section 6 closed ten defects whose shared shape was 'two areas each defined the vocabulary from their own side'; a second policy schema would be the eleventh. Consumers -- internal/policy/engine.go (O.6), internal/policy/semver.go (O.7), the GitHub Action (O.8), and area D's DAST overrides -- validate against THIS file and extend it here. They do not fork it.",
+  "x-anvil-consumers": [
+    "internal/policy/locate.go (O.5) -- finds the file; see x-anvil-searchOrder",
+    "internal/policy/engine.go (O.6) -- Renovate-shaped match/apply evaluation, generic over whatever scanRules this file contains",
+    "internal/policy/semver.go (O.7) -- computes the value matchSemverBump is matched against; GitHub's payload has no previous tag, so it is derived, never read from the event",
+    "action/action.yml (O.8) -- evaluates policy on the runner before waking the daemon (thin Action, fat daemon)",
+    "area D (DAST) -- extends #/$defs/dastOverrides IN THIS FILE"
+  ],
+  "x-anvil-searchOrder": [
+    ".anvil/policy.yml",
+    ".anvil/policy.yaml",
+    ".anvil/policy.toml",
+    "anvil.toml",
+    ".github/anvil.yml"
+  ],
+  "x-anvil-searchOrderNote": "Stop at first match, mirroring Renovate (research/09 Recommendation 2). The list is implemented ONCE, in internal/policy/locate.go, and exported as policy.SearchOrder() so the Action and any other consumer read the same order rather than re-listing it. The .toml entries are locations only -- this schema describes the document shape; a TOML encoding of the same shape validates against this schema after decoding.",
+  "x-anvil-strictness": "Every object here sets additionalProperties:false ON PURPOSE. In a design whose entire premise is 'the policy is data', a typo such as `matchEvent:` for `matchEvents:` would otherwise parse cleanly and silently match nothing -- a scan that never fires and never errors. Rejecting unknown keys converts that class of silent failure into a load-time error.",
+  "x-anvil-yamlHeader": "Publish this schema at a stable URL and honour a `# yaml-language-server: $schema=` header the way Renovate publishes renovate-schema.json (research/09 Recommendation 2). The daemon also serves it locally so schema resolution never requires live internet access (plan/70-orchestration-ci.md 'Trigger Policy Schema').",
+
+  "x-anvil-aggregateBounds": "THIS FILE IS BOUNDED IN AGGREGATE, NOT ONLY PER ITEM. #/$defs/glob caps the cost of ONE pattern (CRITIQUE O.4 finding O4-M4: 8.51 seconds for a single crafted pattern). That says nothing about HOW MANY patterns there are, and the same denial of service is reachable by MULTIPLICATION -- ten thousand cheap rules are the same outage as one expensive one, and this file is read FROM THE REPOSITORY UNDER SCAN in both cases. So `scanRules` carries maxItems (internal/policy.MaxScanRules) and every list-valued key carries maxItems (internal/policy.MaxListItems). TWO FURTHER BOUNDS EXIST THAT JSON SCHEMA CANNOT EXPRESS, because they are properties of an EVALUATION rather than of this document: internal/policy.MaxChangedPaths caps how many changed paths one evaluation will consider, and internal/policy.MaxEvaluationMatchOps caps the worst-case number of pattern matches the whole evaluation may perform -- which is the bound that actually closes the multiplication, since rules x patterns x paths at the three caps above is 134 million matches. The engine enforces all four, because a policy can reach it without ever passing through this schema. Exceeding any of them is a REFUSAL naming the bound and its limit (policy.ErrPolicyTooLarge), never a truncation: an operator who believes a rule is in force when it was silently dropped is worse off than one whose policy was rejected.",
+  "x-anvil-aggregateBoundsDrift": "TestPolicySchemaAggregateBoundsMatchTheEngineCaps (internal/policy/schema_test.go) fails if any maxItems here drifts from the Go constant it mirrors.",
+
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Policy-file schema version. NOT an Anvil release version. Only 1 exists; a future 2 must add a value here rather than reinterpret 1, so an old daemon fails loudly on a new file instead of misreading it.",
+      "type": "integer",
+      "const": 1
+    },
+    "defaults": {
+      "description": "Baseline settings, merged UNDER every matched rule. DAST is opt-in and stays opt-in because this object's `detectors` omits it -- that default lives in the user's data, not in Anvil's code. A policy with no `defaults` key inherits nothing implicitly: the engine's own fallback is the empty settings object, and a rule that sets nothing resolves to nothing.",
+      "$ref": "#/$defs/settings"
+    },
+    "scanRules": {
+      "description": "Match/apply rules in Renovate `packageRules` order. SEMANTICS, and the engine (O.6) must implement exactly this: evaluate EVERY rule in array order; a rule whose match* keys all match contributes its settings; later matching rules override earlier ones FIELD BY FIELD, they do not replace the whole resolved rule and evaluation does NOT short-circuit on first match. Precedence is therefore: last matching rule's field > earlier matching rule's field > `defaults` field. Rule ORDER is significant; put broad rules first and narrow overrides last. An empty or absent array means only `defaults` applies. `name` should be unique across the array -- this schema cannot express that constraint, so the loader enforces it. BOUNDED ON PURPOSE: maxItems is internal/policy.MaxScanRules. Because evaluation does not short-circuit, EVERY rule costs work on EVERY event, so the rule count is a multiplier on the whole evaluation -- see x-anvil-aggregateBounds. 256 is roughly sixty times the owner's own fixture and beyond any hand-maintained trigger policy; a file past it is refused whole, never trimmed.",
+      "x-anvil-engineCap": "internal/policy.MaxScanRules",
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/scanRule" }
+    }
+  },
+
+  "$defs": {
+    "duration": {
+      "description": "A Go time.ParseDuration string, e.g. \"20m\", \"90m\", \"1h30m\". Anvil never compiles a default duration in as a match condition; every timeout here is parsed from this file.",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))*$"
+    },
+
+    "glob": {
+      "description": "A glob pattern, matched by the engine against a ref or path supplied by the trigger context. The pattern itself is never a Go literal: it is whatever the user wrote here. BOUNDED ON PURPOSE: this file is read FROM THE REPOSITORY UNDER SCAN, so on the public-repo path a pattern is untrusted input reaching a matcher. maxLength is the same 1024-byte cap internal/policy enforces as policy.MaxGlobPatternBytes, and the engine also caps a pattern at 64 `/`-separated segments (policy.MaxGlobPatternSegments); a pattern past either bound is refused with policy.ErrPatternTooComplex at load time rather than matched. See CRITIQUE O.4 finding O4-M4, which measured the previous unbounded matcher at 8.5 seconds for one pattern against one path.",
+      "x-anvil-engineCap": "internal/policy.MaxGlobPatternBytes (maxLength here) and internal/policy.MaxGlobPatternSegments (segments, which JSON Schema cannot express); TestPolicySchemaGlobBoundMatchesTheEngineCap fails if they drift apart",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+
+    "globList": {
+      "description": "A non-empty, duplicate-free list of glob patterns. An ABSENT list and an EMPTY list are deliberately different: absent means 'this dimension is not constrained by this rule' (the rule still matches); empty would mean 'constrained to nothing' (the rule could never match), which is always an authoring mistake, so minItems forbids it. BOUNDED AT THE OTHER END TOO: maxItems is internal/policy.MaxListItems. #/$defs/glob caps the cost of one pattern; this caps how many of them a single key may carry, which is the other half of the same denial of service -- see x-anvil-aggregateBounds. 64 is the same number as the engine's per-pattern segment cap and for the same reason: wider than a human writes. CodeQL's path filters, which matchPaths borrows its naming from, run to a dozen or two.",
+      "x-anvil-engineCap": "internal/policy.MaxListItems",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" }
+    },
+
+    "tokenList": {
+      "description": "A non-empty, duplicate-free list of opaque lowercase tokens. See globList on why empty is rejected, and on why maxItems is internal/policy.MaxListItems -- the loader's duplicate check is a linear scan per item and therefore QUADRATIC in the list length, so an unbounded token list is a denial of service in the decoder before a single glob is compiled.",
+      "x-anvil-engineCap": "internal/policy.MaxListItems",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+
+    "detectorList": {
+      "description": "Which detector tiers this rule runs. The legal token set is area 40's DetectorKind vocabulary (sast | dast | sca | host) -- see internal/record/contract.go and schemas/anvil-record-v1.schema.json#/$defs/detectorKind. It is deliberately NOT re-enumerated here: copying another area's enum into this file is exactly the defect class plan/IMPLEMENTATION-PLAN.md section 6 closed ten instances of. The loader validates each token against internal/record.DetectorKind, which is the one definition, and rejects unknown tokens at load time.",
+      "x-anvil-enumSource": "internal/record.DetectorKind -- schemas/anvil-record-v1.schema.json#/$defs/detectorKind",
+      "$ref": "#/$defs/tokenList"
+    },
+
+    "depth": {
+      "description": "How much of the tree a scan covers. `delta` is the changed-surface pass the Action may run inline on the runner; `full` is the whole-tree pass that is dispatched to the daemon (thin Action, fat daemon -- research/09 Recommendation 3). This enum IS owned here, by O.5, because no other area declares it; O.6 and O.8 consume these two tokens rather than declaring a third.",
+      "x-anvil-enumOwner": "schemas/policy.schema.json (O.5)",
+      "type": "string",
+      "enum": ["delta", "full"]
+    },
+
+    "semverBump": {
+      "description": "Kinds of version bump a tag may represent. Anvil COMPUTES the bump (O.7, `git describe --tags --abbrev=0 <tag>^`) because the GitHub event payload carries no previous tag -- which is why the Action must check out with fetch-depth: 0 and fetch-tags: true, an operational footgun worth stating loudly (research/09 Recommendation 2). This enum is owned here, by O.5, and consumed by O.7; O.7 does not declare a second one.",
+      "x-anvil-enumOwner": "schemas/policy.schema.json (O.5); computed by internal/policy/semver.go (O.7)",
+      "type": "string",
+      "enum": ["major", "minor", "patch", "prerelease"]
+    },
+
+    "settings": {
+      "description": "The overridable settings block. The SAME field definitions are reachable from `defaults` and from each scanRule, by design: one definition per field, merged field-by-field with later-overrides-earlier precedence.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "detectors": { "$ref": "#/$defs/detectorList" },
+        "depth": { "$ref": "#/$defs/depth" },
+        "timeout": {
+          "description": "Wall-clock budget for the scan this rule resolves to. Distinct from the record's retention deadline (O.1 DeadlinePolicy): a timeout bounds the work, deadline_at bounds how long the record lives.",
+          "$ref": "#/$defs/duration"
+        },
+        "failOn": {
+          "description": "Severity at or above which the scan reports failure to the caller -- Trivy's `severity` + `exit-code` pair, borrowed for familiarity (research/09 Recommendation 2). NOT enumerated here on purpose: Anvil's severity vocabulary is area 40's (SARIF result.level plus the anvil/* extension), and duplicating it into this file would create a second definition. The loader maps this token through area 40's vocabulary and rejects anything unmapped. OPEN CROSS-AREA ITEM, flagged by O.5: research/09's example writes `failOn: high`, while SARIF result.level is none|note|warning|error -- the mapping from the policy token to the record level needs one named owner before O.6 ships.",
+          "x-anvil-enumSource": "internal/record (SARIF result.level and the anvil/* severity extension)",
+          "type": "string",
+          "minLength": 1
+        },
+        "publish": {
+          "description": "Result sinks to publish to, e.g. sarif. Not enumerated: the sink set is a registry other areas add to (SARIF file, GitHub code scanning, DefectDojo), and freezing it here would fork it. The loader validates each token against the registered sinks.",
+          "$ref": "#/$defs/tokenList"
+        },
+        "dast": { "$ref": "#/$defs/dastOverrides" }
+      }
+    },
+
+    "dastOverrides": {
+      "description": "DAST-half settings. Only meaningful when this rule's resolved `detectors` includes the dast token; the engine warns rather than silently ignoring it otherwise. AREA D EXTENDS THIS OBJECT IN PLACE. additionalProperties is false, so a new DAST knob must be added here -- that is the point: a second dast policy schema is the fork this file exists to prevent.",
+      "x-anvil-extendedBy": "area D (DAST) -- add fields to this $def, do not fork",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "description": "Named DAST profile, e.g. authenticated. Opaque to the engine and to this schema -- profile names are the user's and area D's data, never Go literals here.",
+          "type": "string",
+          "minLength": 1
+        },
+        "maxDuration": {
+          "description": "Upper bound on the DAST half's own runtime. Independent of `timeout`, and bounded in turn by the controller's dast_deadline (O.1): a ZAP full scan that outruns the retention window is cut off there and the half seals with the frozen anvil/dastStatus token for a timeout, whatever this file says.",
+          "$ref": "#/$defs/duration"
+        }
+      }
+    },
+
+    "schedule": {
+      "description": "Cadence for a rule matching a scheduled event. The daemon-side systemd clock is authoritative; GitHub's `schedule:` is a mirror only, because GitHub auto-disables scheduled workflows after 60 days of repository inactivity (plan/70-orchestration-ci.md 'Trigger Policy Schema').",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onCalendar": {
+          "description": "A systemd OnCalendar= expression, e.g. \"*-*-* 03:17:00\", PASSED THROUGH VERBATIM to the timer unit. Anvil neither parses nor normalises it, and no cadence is compiled in: this string is the whole cadence definition.",
+          "type": "string",
+          "minLength": 1
+        },
+        "persistent": {
+          "description": "systemd Persistent=. True means a run missed while the host was down fires on the next boot -- the property that makes the daemon clock, not GitHub's, authoritative for the nightly regression pass.",
+          "type": "boolean"
+        },
+        "randomizedDelay": {
+          "description": "systemd RandomizedDelaySec=, expressed as a duration. Spreads load when many repositories share one calendar expression.",
+          "$ref": "#/$defs/duration"
+        }
+      }
+    },
+
+    "scanRule": {
+      "description": "One match/apply rule. The match* keys are ANDed: every match* key present must match for the rule to contribute. A rule with NO match* keys matches everything -- legal, and the idiomatic way to write a broad baseline rule that later rules narrow. Because later matching rules override earlier ones field by field (see scanRules), a rule need only carry the fields it changes.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Stable identifier for this rule. Appears in diagnostics and in the record's policy reference, so renaming a rule changes what an audit record points at. Should be unique within scanRules; the loader enforces uniqueness, which JSON Schema cannot express here.",
+          "type": "string",
+          "minLength": 1
+        },
+
+        "matchEvents": {
+          "description": "Trigger event names this rule applies to, e.g. push, release, schedule, workflow_dispatch. DELIBERATELY NOT ENUMERATED. Event names are the platform's vocabulary and the owner's hard constraint is that none of them is compiled into Anvil; the engine compares the trigger context's event string against whatever tokens appear here. Note the research finding behind the usual `[push, release]` pairing: pushing more than three tags at once drops the plain push events, so a tag rule that lists only push can silently miss releases.",
+          "$ref": "#/$defs/tokenList"
+        },
+        "matchRefs": {
+          "description": "Git ref globs this rule applies to, e.g. refs/heads/** or refs/tags/v*. Matched against the trigger context's fully-qualified ref.",
+          "$ref": "#/$defs/globList"
+        },
+        "matchRefsIgnore": {
+          "description": "Git ref globs that EXCLUDE the rule. Applied after matchRefs: a ref matching any pattern here does not match the rule even if matchRefs accepted it.",
+          "$ref": "#/$defs/globList"
+        },
+        "matchPaths": {
+          "description": "Changed-path globs this rule applies to, naming borrowed from the CodeQL config file (research/09 Recommendation 2). The rule matches if ANY changed path in the trigger context matches any pattern here.",
+          "$ref": "#/$defs/globList"
+        },
+        "matchPathsIgnore": {
+          "description": "Changed-path globs that EXCLUDE the rule, e.g. docs/** or **/*.md. Applied after matchPaths, and applied PER PATH: a change set is excluded only when every changed path matches an ignore pattern, so a commit touching both docs/ and source still triggers the rule.",
+          "$ref": "#/$defs/globList"
+        },
+        "matchSemverBump": {
+          "description": "Kinds of version bump this rule applies to. Only meaningful for ref globs that select tags; for a non-tag ref the trigger context carries no bump and a rule listing this key does not match. The bump is computed by Anvil (O.7), never read from the event payload. Together with matchEvents and matchRefs this is the minimum triple that expresses the owner's explicit requirement -- SAST on every push, SAST+DAST on tagged releases -- with no event name or bump kind compiled into Anvil. maxItems is internal/policy.MaxListItems, applied here for uniformity rather than for cost: uniqueItems over a four-value enum already bounds this list at four. The engine applies the SAME cap to every list-valued key, and a key exempted from a uniform rule is the key a later edit forgets.",
+          "x-anvil-engineCap": "internal/policy.MaxListItems",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/semverBump" }
+        },
+
+        "schedule": { "$ref": "#/$defs/schedule" },
+
+        "detectors": { "$ref": "#/$defs/detectorList" },
+        "depth": { "$ref": "#/$defs/depth" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "failOn": {
+          "description": "Overrides defaults.failOn for this rule. See #/$defs/settings for the full field description.",
+          "type": "string",
+          "minLength": 1
+        },
+        "publish": { "$ref": "#/$defs/tokenList" },
+        "dast": { "$ref": "#/$defs/dastOverrides" }
+      }
+    }
+  }
+}

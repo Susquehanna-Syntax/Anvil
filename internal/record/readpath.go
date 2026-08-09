@@ -868,7 +868,7 @@ func (rd *Reader) ManifestFromLog(l *SARIFLog) (Manifest, error) {
 			Half:        run.Properties.Half,
 			Status:      run.Properties.Status,
 			Readable:    seal.Readable(),
-			ReadRefusal: halfReadRefusal(seal),
+			ReadRefusal: halfReadRefusal(seal).reason,
 			Results:     len(run.Results),
 			Cards:       cardsPerHalf[run.Properties.Half],
 			Tool:        run.Tool.Driver.Name,
