@@ -188,14 +188,141 @@ func TerminalHalfStatuses() []HalfStatus {
 // sense — cleanly sealed, broken, out of clock, or never run.
 func IsTerminalHalfStatus(s HalfStatus) bool { return inEnum(s, TerminalHalfStatuses()) }
 
-// IsReadableHalfStatus reports whether a consumer may read the half's
-// results. It is true for HalfStatusSealed and for nothing else.
+// IsReadableHalfStatus reports whether the half's STATUS arm of the read gate
+// is open. It is true for HalfStatusSealed and for nothing else.
 //
 // Written as a named predicate on purpose: `if status != HalfStatusRunning`
 // and `if IsTerminalHalfStatus(status)` are both wrong here and both look
 // plausible at a glance. A failed half is not a clean half; a skipped half
 // has no results at all.
+//
+// IT IS HALF OF THE GATE, NOT THE GATE. Every caller that wants to know
+// whether a consumer may read a half's results must call HalfReadGate (or
+// HalfSeal.Readable, which is the same answer as a bool) — see the read-gate
+// section below for why calling this predicate alone is a bug that has now
+// been made four times.
 func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
+
+// ---------------------------------------------------------------------------
+// THE READ GATE — one predicate, one answer, and the reason there is only one
+// ---------------------------------------------------------------------------
+//
+// "May a consumer read this half's results?" is a TWO-ARM question:
+//
+//	IsReadableHalfStatus(status)  AND  the audit has not expired
+//
+// Four independent authors have now derived that answer locally instead of
+// calling one gate, and each got a different arm wrong:
+//
+//	CRITIQUE-02 M2 — ReadPacket checked neither arm.
+//	CRITIQUE-02 M3 — Sealer.Inspect handed out HalfSeals with no state at all,
+//	                 so Readable() said true on an audit ReadHalf refused.
+//	CRITIQUE-03 B1 — the GitHub projection consulted neither arm and published
+//	                 an unsealed half's results to a third party.
+//	CRITIQUE-03 M1 — readpath.go's readOrder and ManifestFromLog checked the
+//	                 status arm only, so an EXPIRED audit was fully readable and
+//	                 handed a coding agent actionable task cards against a claim
+//	                 window that had already closed.
+//
+// The pattern, not any one of those four, is the defect. So the question is
+// answered in exactly ONE function body — halfReadRefusal — and every other
+// spelling in this package is a thin wrapper over it:
+//
+//	HalfReadGate      the typed refusal, for a caller that must report WHY.
+//	HalfSeal.Readable the same answer as a bool, for a caller that must branch.
+//	Sealer.ReadHalf   the in-memory consumer gate.
+//	Sealer.ReadyForConsumption
+//	                  the per-half form R.4's handoff rows key on.
+//	readpath.go / taskcard.go / sarif_github.go
+//	                  the record-side callers, via halfSealOfRun.
+//
+// THREE GUARDS WATCH THIS, and it took three rounds to get them to fail on
+// purpose. None of them is sufficient alone:
+//
+//	TestEveryResultBearingEntryPointIsGated (readpath_test.go)
+//	  BEHAVIOUR. Runs every listed entry point against every state in which no
+//	  half may be read and fails if anything comes back. It is the only one
+//	  that executes the code, and it only covers entry points someone listed.
+//
+//	TestResultReachingEntryPointsAreGated (readpath_test.go)
+//	  SOURCE REACHABILITY. Walks the package's own AST and fails when an
+//	  exported entry point can reach a half's results while nothing in its call
+//	  graph reaches this gate. It replaced a whitelist of return TYPES, which
+//	  did not name Result, []string or []byte and so let three leaks through.
+//
+//	TestReadGateArmsAppearOnlyInsideTheGate (sealing_test.go)
+//	  ONE-ARM DETECTION. Fails when IsReadableHalfStatus is called, or a state
+//	  compared against StateExpired, or a status against HalfStatusSealed,
+//	  anywhere outside halfReadRefusal without an allowlisted reason. It
+//	  replaced a check that required BOTH arms in one body — which is why it
+//	  could not see CRITIQUE-03 M1, whose defect was one arm.
+//
+// The last two carry negative controls that re-introduce the historical
+// defects on every run, because a guard that has never been seen to fail has
+// not been tested. This package has now paid for that lesson three times.
+
+// halfReadRefusal returns the reason a consumer may NOT read this half's
+// results, or "" when the gate is open. It is THE definition of readability
+// and the only place the two arms are combined.
+//
+// The expiry arm is checked FIRST so that an expired audit holding a cleanly
+// sealed half reports the expiry — the fact the caller can act on — rather
+// than a status that is, on its own, fine.
+func halfReadRefusal(h HalfSeal) string {
+	if h.AuditState == StateExpired {
+		return "the claim timeout elapsed and the payload was dropped"
+	}
+	if !IsReadableHalfStatus(h.Status) {
+		return "this half has no readable results"
+	}
+	return ""
+}
+
+// HalfReadGate is the ONE read gate. It returns nil when a consumer may read
+// h's results, and a *ReadGateError naming the arm that refused when it may
+// not.
+//
+// Every refusal it returns satisfies errors.Is(err, ErrHalfNotSealed) and
+// carries the half, its status and the audit state, so a caller can report the
+// refusal instead of merely obeying it. auditID is used only to build that
+// message; pass "" when there is no audit context to name.
+//
+// Callers hold a HalfSeal because that is the value that already carries every
+// input the gate needs — status and audit state — and because reusing it means
+// there is no second vocabulary for "a half's readiness". A record-side caller
+// builds one with halfSealOfRun.
+func HalfReadGate(auditID string, h HalfSeal) error {
+	reason := halfReadRefusal(h)
+	if reason == "" {
+		return nil
+	}
+	return &ReadGateError{
+		AuditID: auditID, Half: h.Half, Status: h.Status, State: h.AuditState,
+		Reason: reason,
+	}
+}
+
+// halfSealOfRun projects one run of an ASSEMBLED RECORD onto the HalfSeal the
+// gate takes: the per-half seal from `run.properties` and the audit-level
+// lifecycle state from `sarifLog.properties`.
+//
+// It exists so that no reader of a record ever has to remember that the second
+// arm of the gate lives on a different object from the first. That is exactly
+// the mistake CRITIQUE-03 M1 records: `run.Properties.Status` is right there
+// and `l.Properties.State` is one dereference further away, so three of four
+// call sites reached for the near one and stopped.
+func halfSealOfRun(l *SARIFLog, run *Run) HalfSeal {
+	var state State
+	if l != nil {
+		state = l.Properties.State
+	}
+	return HalfSeal{
+		Half:       run.Properties.Half,
+		Status:     run.Properties.Status,
+		SealedAt:   copyTime(run.Properties.SealedAt),
+		AuditState: state,
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Value types
@@ -241,13 +368,11 @@ type HalfSeal struct {
 
 // Readable reports whether a consumer may read this half's results.
 //
-// It is the same predicate ReadHalf enforces, in both arms: the half's status
-// must be exactly HalfStatusSealed AND the audit must not have expired, whose
-// payload the reaper has dropped. TestInspectAgreesWithReadHalfOnEveryState
-// asserts the two never disagree for any (state, status) pair.
-func (h HalfSeal) Readable() bool {
-	return IsReadableHalfStatus(h.Status) && h.AuditState != StateExpired
-}
+// It is HalfReadGate as a bool — literally the same function body — so a
+// caller that branches and a caller that reports a typed refusal can never
+// disagree. TestInspectAgreesWithReadHalfOnEveryState asserts the two never
+// disagree for any (state, status) pair.
+func (h HalfSeal) Readable() bool { return halfReadRefusal(h) == "" }
 
 // DastOutcome is what the DAST half (or its absence) reports, and the sole
 // input from which the audit-level DastStatus is derived.
@@ -795,10 +920,13 @@ func (s *Sealer) ReadyForConsumption(auditID string) (sastReady, dastReady bool)
 	defer s.mu.Unlock()
 
 	a, ok := s.audits[auditID]
-	if !ok || a.state == StateExpired {
+	if !ok {
 		return false, false
 	}
-	return IsReadableHalfStatus(a.sastStatus), IsReadableHalfStatus(a.dastStatus)
+	// The SAME gate ReadHalf enforces, asked twice. Asking
+	// IsReadableHalfStatus here and handling expiry separately is how the two
+	// answers drift apart; see the read-gate section above.
+	return a.halfSeal(HalfSast).Readable(), a.halfSeal(HalfDast).Readable()
 }
 
 // ReadHalf is the consumer's read gate. It returns the half's seal only when
@@ -831,17 +959,8 @@ func (s *Sealer) ReadHalf(auditID string, half Half) (HalfSeal, error) {
 	}
 
 	seal := a.halfSeal(half)
-	if a.state == StateExpired {
-		return HalfSeal{}, &ReadGateError{
-			AuditID: auditID, Half: half, Status: seal.Status, State: a.state,
-			Reason: "the claim timeout elapsed and the payload was dropped",
-		}
-	}
-	if !IsReadableHalfStatus(seal.Status) {
-		return HalfSeal{}, &ReadGateError{
-			AuditID: auditID, Half: half, Status: seal.Status, State: a.state,
-			Reason: "this half has no readable results",
-		}
+	if err := HalfReadGate(auditID, seal); err != nil {
+		return HalfSeal{}, err
 	}
 	return seal, nil
 }

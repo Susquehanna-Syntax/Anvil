@@ -1,0 +1,22 @@
+# anvil-fp/v1 conformance golden — sca-01-log4shell-maven
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:version_bumped_inside_the_vulnerable_range	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:version_bumped_out_of_the_vulnerable_range	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:purl_carrying_qualifiers	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:purl_carrying_qualifiers_and_a_subpath	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:purl_scheme_and_type_uppercased	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:purl_already_version_free	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8
+digest	mutation:manifest_path_in_windows_form	c3208f00ab0f426a1c2cbb2ccf0033881bb4bf6cb506763dea0840f03dd24cd8

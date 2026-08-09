@@ -1,0 +1,23 @@
+# anvil-fp/v1 conformance golden — dast-01-sqli-error-based-body
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:http_method_lowercased	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:http_method_padded	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_carrying_the_payload_in_a_query_string	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_carrying_a_fragment	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_with_a_trailing_slash	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_with_duplicate_slashes_and_no_leading_slash	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_carrying_the_concrete_numeric_id_this_scan_requested	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90
+digest	mutation:route_template_in_express_placeholder_syntax	199c3b5fa4615b4caa74c05394d08e78cc84d2d2c40ffd3178f268c02bf7db90

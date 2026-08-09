@@ -1,0 +1,20 @@
+# anvil-fp/v1 conformance golden — dast-03-path-traversal-no-param-name
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
+digest	mutation:http_method_lowercased	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
+digest	mutation:route_template_with_duplicate_leading_slashes	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
+digest	mutation:route_template_carrying_the_traversal_payload_as_a_query_string	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
+digest	mutation:route_template_in_flask_placeholder_syntax	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
+digest	mutation:route_template_already_carrying_the_canonical_placeholder_token	5fc15c556531a9a7b6d6fe4a56c36a5383bbc2a0555c4e6ba60e686c0dd21550
