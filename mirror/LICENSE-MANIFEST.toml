@@ -1,0 +1,243 @@
+# Anvil A.4 — pinned acquisition manifest for publisher licence texts.
+#
+# Scope: this file is DATA ONLY. It records, per feed, WHERE the publisher's own
+# licence text comes from, WHAT it must hash to, and WHICH SPDX identifier it is
+# claimed to be. Nothing here downloads anything; see acquire-license-bodies.sh.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS FILE EXISTS
+# ---------------------------------------------------------------------------
+# plan/00-SPINE.md S8 requires a licence gate that reads "LICENSE file bodies,
+# never API metadata". The point of that rule is that THE BODY IS THE
+# PUBLISHER'S EVIDENCE.
+#
+# Before this file existed, every body internal/ingest/license read was Anvil
+# prose — LICENSE-NOTES.md blocks and tier-2 LICENSE files, written in the same
+# commit as the feed row they were validating. That is circular. It is worse
+# than reading API metadata, because a reviewer sees a gate reading a file and
+# stops asking who wrote the file.
+#
+# The shape below is the one M0.7 already established in this repository for the
+# opengrep engine (eval/tools/opengrep/MANIFEST.toml): pin the artefact, keep the
+# bytes out of git, acquire deliberately, verify on fetch, and refuse to run
+# without it.
+#
+# ---------------------------------------------------------------------------
+# EVERY ENTRY BELOW IS UNPINNED, AND THEREFORE EVERY FEED IS REFUSED.
+# ---------------------------------------------------------------------------
+# `sha256 = ""` means NO DIGEST HAS BEEN ESTABLISHED. Establishing one requires
+# downloading the licence text, and no download has been performed or
+# authorised. A digest written from memory would be a fabrication; a placeholder
+# digest would admit feeds on a number nobody checked. So the honest value is
+# empty, and the gate refuses every entry that carries it.
+#
+# A fresh clone of Anvil therefore mirrors NOTHING. That is deliberate and it is
+# the correct state for a licence gate to ship in. To leave it, an operator:
+#
+#   1. runs `sh mirror/acquire-license-bodies.sh` (or the .ps1 on Windows),
+#      which fetches each text_url below to <tier>/<dir>/LICENSE.full.txt and
+#      prints its sha256;
+#   2. READS the fetched text and satisfies themselves it is the operative
+#      licence for that feed;
+#   3. records the printed digest in the `sha256` field of that entry;
+#   4. re-runs the script, which now VERIFIES rather than reports, and re-runs
+#      `go test ./internal/ingest/license/`.
+#
+# From then on any change to the publisher's text — or to the acquired file —
+# is a digest mismatch and a refusal, never a silent re-classification.
+#
+# ---------------------------------------------------------------------------
+# A PIN IS NECESSARY AND NOT SUFFICIENT FOR TIERS 0 AND 1
+# ---------------------------------------------------------------------------
+# Tiers 0 and 1 are publishable. A feed reaches one only if the acquired text IS
+# one of the permissive licences enumerated in
+# internal/ingest/license/publishable.go — which takes BOTH a positive
+# identification of exactly one of them AND the absence of any other
+# licence-like content anywhere in the document. Unrecognised is refused,
+# exactly as share-alike is, and so is a permissive licence with a second set of
+# terms wrapped around it: unknown is not publishable and neither is ambiguous.
+# See mirror/README.md.
+#
+# Three text_urls below are HTML PAGES rather than plain licence files —
+# spdx.org/licenses/cve-tou.html (cvelistv5), cwe.mitre.org/about/termsofuse.html
+# (cwe) and the NVD General FAQs (nvd). The phrases that identify those three
+# were taken from the sentences research/01 quotes, because nobody has fetched
+# the pages. If an acquired page does not match, the gate refuses the feed and
+# TestPinnedLicenceBodiesMatchTheirPins names the file. That refusal is the
+# correct direction. The response to it is to READ the acquired text and record
+# its operative wording in publishable.go — never to widen a signature until
+# something passes.
+#
+# THOSE SAME THREE ARE ALSO THE LIKELIEST FALSE REFUSALS UNDER THE SECOND
+# CONDITION. A web page carries navigation, footers and boilerplate that a plain
+# licence file does not, and any licence name in that chrome is read as a second
+# set of terms. The response is the same in shape and opposite in direction:
+# re-pin a plain operative text. Deleting a veto marker so that one page passes
+# weakens the check for every feed.
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE OF THE URLs
+# ---------------------------------------------------------------------------
+# text_url and claim_url are transcribed from the source table of
+# research/01-vuln-data-sources-and-licensing.md, whose rows were fetched
+# 2026-08-05/06. The creativecommons.org legalcode URLs are the canonical
+# published locations of those licence texts and were NOT fetched in-session —
+# they are the addresses already named in mirror/tier2/*/LICENSE. If one is
+# wrong the acquisition script fails loudly on it, which is the intended way to
+# find out.
+#
+# claim_source is the citation for the claim that a feed is under the named
+# licence. It is separate from text_url because the two are often different
+# documents, and the gap between them is the whole measure of how strong a
+# licence conclusion is. Ubuntu is the worked example: the TEXT is the
+# CC-BY-SA-4.0 legalcode, but the CLAIM that Ubuntu's data is under it rests on
+# OSV's source table, not on anything Canonical has ever said.
+#
+# ---------------------------------------------------------------------------
+# WHAT IS DELIBERATELY ABSENT
+# ---------------------------------------------------------------------------
+# EPSS (feed id `epss`, tier 3) HAS NO ENTRY AND MUST NOT BE GIVEN ONE.
+# research/01 S18/S19 record no licence document and no SPDX identifier for it;
+# "attribution is requested" is a request, not a grant of rights. There is no
+# publisher licence text to pin, so there is no pin, so the gate refuses the
+# feed with ErrUnpinnedLicenseBody. That refusal is the correct and permanent
+# answer for a source that has never licensed its data, and inventing an entry
+# to make the refusal go away would be the exact defect this file was written
+# to remove.
+
+schema_version = 1
+generated_utc = "2026-08-09"
+generated_by = "Anvil implementation plan, step A.4 (post-A.6 rework)"
+
+# ===========================================================================
+# TIER 0 — always mirrored, licence-clean, no copyleft
+# ===========================================================================
+
+[[body]]
+feed_id = "cvelistv5"
+tier = 0
+dir = "cvelistv5"
+spdx_id = "CVE-TOU"
+text_url = "https://spdx.org/licenses/cve-tou.html"
+sha256 = ""
+claim_url = "https://www.cve.org/Legal/TermsOfUse"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S1, S2, S45"
+note = "text_url is SPDX's published transcription of the CVE Program Terms of Use, which is the licence text itself; claim_url is the CVE Program's own page, which S45 records as returning a heading only to an automated fetch. If the operator can retrieve the cve.org text, prefer it and re-pin."
+
+[[body]]
+feed_id = "cisa-vulnrichment"
+tier = 0
+dir = "cisa-vulnrichment"
+spdx_id = "CC0-1.0"
+text_url = "https://raw.githubusercontent.com/cisagov/vulnrichment/develop/LICENSE"
+sha256 = ""
+claim_url = "https://raw.githubusercontent.com/cisagov/vulnrichment/develop/README.md"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S14, S15"
+note = "The publisher's own LICENSE file. This is the strongest footing in the table: text and claim are the same document, written by the publisher."
+
+[[body]]
+feed_id = "cisa-kev"
+tier = 0
+dir = "cisa-kev"
+spdx_id = "CC0-1.0"
+text_url = "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt"
+sha256 = ""
+claim_url = "https://raw.githubusercontent.com/cisagov/kev-data/develop/README.md"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S16, S17"
+note = "Spine S8's worked example. The GitHub API reports NOASSERTION for cisagov/kev-data (S17) while the repository README states CC0 (S16). The claim is the README; the text is the CC0 legalcode the README names. A metadata gate rejects a public-domain feed here."
+
+[[body]]
+feed_id = "cwe"
+tier = 0
+dir = "cwe"
+spdx_id = "LicenseRef-MITRE-CWE-ToU"
+text_url = "https://cwe.mitre.org/about/termsofuse.html"
+sha256 = ""
+claim_url = "https://cwe.mitre.org/about/termsofuse.html"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S20, S21"
+note = "STALE-RISK: the terms document is dated 2023-07-20 (S20). No SPDX list identifier exists for these terms, which is why the feed row declares a LicenseRef- id and carries the operative sentence as its manual note."
+
+[[body]]
+feed_id = "nvd"
+tier = 0
+dir = "nvd"
+spdx_id = "LicenseRef-US-Gov-Public-Domain"
+text_url = "https://nvd.nist.gov/general/FAQ-Sections/General-FAQs"
+sha256 = ""
+claim_url = "https://nvd.nist.gov/general/FAQ-Sections/General-FAQs"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S5"
+note = "CITATION CORRECTED (A.6 M3): this conclusion was previously cited to research/01 S6, which is NIST's April 2026 announcement about enrichment volume and says nothing about licensing. The licence statement is S5, the NVD General FAQs: \"All NIST publications are available in the public domain.\" S5 also records the requested attribution notice and the prohibition on implying NIST endorsement, neither of which the earlier record mentioned."
+
+# ===========================================================================
+# TIER 1 — mirrored, attribution required, keep a NOTICE file
+# ===========================================================================
+
+[[body]]
+feed_id = "ghsa"
+tier = 1
+dir = "ghsa"
+spdx_id = "CC-BY-4.0"
+text_url = "https://raw.githubusercontent.com/github/advisory-database/main/LICENSE.md"
+sha256 = ""
+claim_url = "https://raw.githubusercontent.com/github/advisory-database/main/README.md"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S11, S12"
+note = "The publisher ships the licence in the repository. NOTICE entry: GitHub Security Advisory Database, GitHub, Inc."
+
+[[body]]
+feed_id = "redhat-csaf"
+tier = 1
+dir = "redhat-csaf"
+spdx_id = "CC-BY-4.0"
+text_url = "https://creativecommons.org/licenses/by/4.0/legalcode.txt"
+sha256 = ""
+claim_url = "https://access.redhat.com/security/data"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S25"
+note = "Red Hat names CC-BY-4.0 on its security data page; the licence text itself is Creative Commons'. NOTICE entry: Red Hat CSAF/VEX security data, Red Hat, Inc."
+
+[[body]]
+feed_id = "osv-pypi"
+tier = 1
+dir = "osv-pypi"
+spdx_id = "CC-BY-4.0"
+text_url = "https://creativecommons.org/licenses/by/4.0/legalcode.txt"
+sha256 = ""
+claim_url = "https://google.github.io/osv.dev/data/"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S7, S8"
+note = "PER SOURCE DATABASE, NEVER THE AGGREGATE. OSV's table records the PyPI database as CC-BY-4.0. The merged all.zip inherits CC-BY-SA-4.0 through its bundled Ubuntu source and is pinned separately at tier 2 as osv-merged. NOTICE entry: OSV PyPI advisory database."
+
+# ===========================================================================
+# TIER 2 — share-alike. QUARANTINE. Never merged into a tier 0/1 artifact.
+# ===========================================================================
+
+[[body]]
+feed_id = "ubuntu-osv"
+tier = 2
+dir = "ubuntu"
+spdx_id = "CC-BY-SA-4.0"
+text_url = "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt"
+sha256 = ""
+claim_url = "https://google.github.io/osv.dev/data/"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S7 (claim), S29 (Canonical states nothing)"
+note = "THE WEAKEST CLAIM IN THIS TABLE, recorded rather than smoothed over. Canonical's own security pages state no licence at all (S29); the CC-BY-SA-4.0 assignment rests entirely on OSV's characterisation of the upstream (S7). It points the safe way — quarantining data that turns out to be permissive costs nothing, publishing data that turns out to be share-alike is unrecoverable — but it must be re-verified against a Canonical legal page before Ubuntu is ingested directly rather than through OSV."
+
+[[body]]
+feed_id = "alpine-secdb"
+tier = 2
+dir = "alpine"
+spdx_id = "CC-BY-SA-4.0"
+text_url = "https://secdb.alpinelinux.org/license.txt"
+sha256 = ""
+claim_url = "https://secdb.alpinelinux.org/license.txt"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S30, S31"
+note = "A publisher statement, at the secdb root: the strongest footing available and stronger than the Ubuntu row's. Recorded caveat: the file S31 read is dated 2021-06-25, which predates 2024 and should be re-read before a 1.0 release."
+
+[[body]]
+feed_id = "osv-merged"
+tier = 2
+dir = "osv"
+spdx_id = "CC-BY-SA-4.0"
+text_url = "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt"
+sha256 = ""
+claim_url = "https://google.github.io/osv.dev/data/"
+claim_source = "research/01-vuln-data-sources-and-licensing.md S7, S9; research/06-ingestion-and-scraping.md S14"
+note = "INHERITED, NOT DECLARED. The aggregate has no unified licence: its constituents are CC-BY-4.0, CC0-1.0, MIT, BSD, Apache-2.0 and CC-BY-SA-4.0 depending on origin (S7). Merged into one artifact it inherits the strongest duty any constituent imposes, and all.zip bundles the CC-BY-SA-4.0 Ubuntu database. The feed row declares NOASSERTION because no single identifier is true of the aggregate; this pin records the duty the aggregate actually carries. The correct fix is not to argue with this entry, it is to stop pulling the aggregate and use the per-ecosystem rows."

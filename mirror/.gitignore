@@ -1,0 +1,16 @@
+# Acquired publisher licence texts: fetched from the URLs pinned in
+# LICENSE-MANIFEST.toml, verified against the sha256 pinned there, never
+# committed. The pin lives in git; the bytes do not.
+#
+# This is the same split M0.7 uses for the opengrep engine
+# (eval/tools/opengrep/.gitignore). It is what makes the licence gate's
+# evidence the PUBLISHER'S document rather than something Anvil wrote: a file
+# that git cannot carry is a file no Anvil commit can author.
+LICENSE.full.txt
+
+# The mirrored feed data itself. mirror/ holds licence records and pins; the
+# advisory payloads A.7 and A.8 write land here at runtime and are not part of
+# the repository.
+tier*/*/data/
+*.zip
+*.json.gz
