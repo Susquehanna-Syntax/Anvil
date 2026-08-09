@@ -1,0 +1,18 @@
+# anvil-fp/v1 conformance golden — dast-02-xss-reflected-query
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	bbe1a200328dfd7415d4a209384515a7ae01cb0494a896e69ba2bf565299c489
+digest	mutation:http_method_lowercased	bbe1a200328dfd7415d4a209384515a7ae01cb0494a896e69ba2bf565299c489
+digest	mutation:route_template_carrying_the_injected_query_parameter	bbe1a200328dfd7415d4a209384515a7ae01cb0494a896e69ba2bf565299c489
+digest	mutation:route_template_with_a_trailing_slash	bbe1a200328dfd7415d4a209384515a7ae01cb0494a896e69ba2bf565299c489

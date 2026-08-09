@@ -3,6 +3,13 @@ package record
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1271,4 +1278,419 @@ func TestInspectAgreesWithReadHalfOnEveryState(t *testing.T) {
 			}
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CRITIQUE-03 B1/M1 — one gate, every spelling, every (state, status) pair
+// ---------------------------------------------------------------------------
+
+// TestEverySpellingOfTheReadGateAgrees drives the whole cross product of
+// anvil/state and anvil/status through every exported way this package answers
+// "may a consumer read this half's results?" and asserts they never disagree.
+//
+// The four historical bypasses (sealing.go's read-gate section) were all one
+// shape: a second answer to a question that already had one. This test is what
+// makes a second answer visible immediately, without waiting for a critic to
+// find the consumer that acted on it.
+func TestEverySpellingOfTheReadGateAgrees(t *testing.T) {
+	for _, state := range StateValues() {
+		for _, status := range HalfStatusValues() {
+			seal := HalfSeal{Half: HalfSast, Status: status, AuditState: state}
+
+			// (1) The bool spelling, which is what a caller branches on.
+			readable := seal.Readable()
+
+			// (2) The typed spelling, which is what a caller reports.
+			err := HalfReadGate("audit-1", seal)
+			if (err == nil) != readable {
+				t.Errorf("state=%q status=%q: HalfReadGate says %v but Readable() says %t",
+					state, status, err, readable)
+			}
+			if err != nil {
+				if !errors.Is(err, ErrHalfNotSealed) {
+					t.Errorf("state=%q status=%q: refusal does not match ErrHalfNotSealed: %v",
+						state, status, err)
+				}
+				var rge *ReadGateError
+				if !errors.As(err, &rge) {
+					t.Errorf("state=%q status=%q: refusal is %T, want a *ReadGateError", state, status, err)
+				} else {
+					if rge.Status != status || rge.State != state || rge.Half != HalfSast {
+						t.Errorf("state=%q status=%q: refusal reports half=%q status=%q state=%q",
+							state, status, rge.Half, rge.Status, rge.State)
+					}
+					if rge.Reason == "" {
+						t.Errorf("state=%q status=%q: refusal carries no reason", state, status)
+					}
+				}
+			}
+
+			// (3) The record-side spelling, built from a run and its envelope.
+			// This is the projection readpath.go, taskcard.go and
+			// sarif_github.go all go through, and the one CRITIQUE-03 found
+			// two callers reaching around.
+			l := &SARIFLog{
+				Properties: AuditProperties{AuditID: "audit-1", State: state},
+				Runs:       []Run{{Properties: RunProperties{Half: HalfSast, Status: status}}},
+			}
+			if got := halfSealOfRun(l, &l.Runs[0]).Readable(); got != readable {
+				t.Errorf("state=%q status=%q: halfSealOfRun(...).Readable() = %t, want %t",
+					state, status, got, readable)
+			}
+
+			// (4) The two arms are BOTH load-bearing, and neither alone is the
+			// gate. This is the assertion that fails if someone "simplifies"
+			// the gate back to one of its halves.
+			statusArm := IsReadableHalfStatus(status)
+			if statusArm && state == StateExpired && readable {
+				t.Errorf("state=%q status=%q: the status arm alone opened the gate; "+
+					"an expired audit's payload has been dropped", state, status)
+			}
+			if !statusArm && readable {
+				t.Errorf("state=%q status=%q: the gate opened on a half that is not sealed",
+					state, status)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// THE HALF-GATE DETECTOR — what the previous version of this test could not see
+// ---------------------------------------------------------------------------
+//
+// The previous version counted function bodies that mentioned BOTH
+// `StateExpired` AND `IsReadableHalfStatus`, and required exactly one such
+// body (halfReadRefusal). It could not detect the defect it was written to
+// detect. CRITIQUE-03 M1's original bug, character for character, was
+//
+//	if !IsReadableHalfStatus(run.Properties.Status) { continue }
+//
+// in readOrder — ONE arm. A body carrying one arm never matched the
+// two-literal test, so the count stayed at 1 and the suite stayed green while
+// an expired audit handed out nine task cards.
+//
+// The hazard is not a second COMPLETE gate. Nobody writes one of those; a
+// complete gate is correct. The hazard is a HALF-gate: a site that decides
+// readability from one arm and never learns about the other. So this test
+// looks for the arms THEMSELVES, anywhere outside the one function that is
+// allowed to combine them:
+//
+//	IsReadableHalfStatus(...)        the status arm, called
+//	x == / != StateExpired           the expiry arm, hand-rolled
+//	x == / != HalfStatusSealed       the status arm, hand-rolled (which is
+//	                                 what IsReadableHalfStatus itself is)
+//
+// Finding any of them outside halfReadRefusal is the signal. Not every hit is
+// a bug — the Sealer's lifecycle transitions legitimately ask "is this audit
+// expired?" before accepting a seal, and contract.go's validator legitimately
+// asks "is this half sealed?" before requiring a sealedAt — but every hit must
+// have been LOOKED AT, and the allowlist below is that record. A site is
+// keyed by file, function AND arm, so adding the missing arm to a function
+// that was cleared for one of them still trips.
+
+// gateArmSite is one place an arm of the read gate is spelled.
+type gateArmSite struct {
+	file string // base filename
+	fn   string // "Func" or "Recv.Method"
+	arm  string // the sentinel spelled there
+}
+
+func (s gateArmSite) key() string { return s.file + ":" + s.fn + ":" + s.arm }
+
+// gateArmSentinels are the three spellings of half a gate. IsReadableHalfStatus
+// is matched as a CALL; the other two as comparisons (`==`, `!=`, or a switch
+// case), never as a bare mention, because `string(HalfStatusSealed)` inside an
+// error message is prose about the gate and not a use of it.
+var gateArmSentinels = map[string]bool{
+	"IsReadableHalfStatus": true,
+	"StateExpired":         true,
+	"HalfStatusSealed":     true,
+}
+
+// gateArmAllowlist names the sites where an arm of the read gate is spelled
+// outside halfReadRefusal for a reason that is not a readability decision.
+//
+// Each entry is file:function:arm. Every one of them has been read; the reason
+// says what the site is deciding INSTEAD of readability. The test fails if an
+// entry stops matching a real site, so the list cannot outlive the code it
+// describes.
+func gateArmAllowlist() map[string]string {
+	return map[string]string{
+		// ---- lifecycle: may this audit still accept writes? --------------
+		"sealing.go:Sealer.RecordDastOutcome:StateExpired": "refuses an outcome update on a " +
+			"terminal audit. It decides whether the SEALER accepts a WRITE, not whether a " +
+			"consumer may read; the read direction is ReadHalf, which calls the gate.",
+		"sealing.go:Sealer.SealHalf:StateExpired": "refuses a seal on a terminal audit — the " +
+			"same write-side question as RecordDastOutcome.",
+		"sealing.go:Sealer.Consume:StateExpired": "refuses consumption of an expired audit. " +
+			"Consumption is a state transition on the audit, not a read of a half.",
+		"sealing.go:Sealer.ExpireIfDue:StateExpired": "the expiry transition itself: already " +
+			"expired means there is nothing to do. This is where StateExpired is PRODUCED.",
+
+		// ---- lifecycle: stamping and deriving, not gating ----------------
+		"sealing.go:Sealer.SealHalf:HalfStatusSealed": "stamps SealedAt only for a clean seal, " +
+			"per contract.go's rule that sealedAt is null unless the status is sealed. It is " +
+			"writing the field the gate later reads, not reading it.",
+		"sealing.go:DeriveDastStatus:HalfStatusSealed": "derives the audit-level DastStatus " +
+			"from the DAST half's outcome. It is a projection of the half's status onto a " +
+			"different enum; DastStatus is not a readability answer, and R.6 keeps " +
+			"'completed_clean' distinct from 'readable' on purpose.",
+
+		// ---- the status arm's own definition ------------------------------
+		"sealing.go:IsReadableHalfStatus:HalfStatusSealed": "IS the comparison, named. This is " +
+			"the one site allowed to spell the status arm as a literal, and sealing.go's own " +
+			"doc comment on it says in capitals that it is HALF OF THE GATE, NOT THE GATE. " +
+			"Every other site asks HalfReadGate, which asks halfReadRefusal, which asks this.",
+
+		// ---- the producer-side validator ---------------------------------
+		"contract.go:SARIFLog.validateStateAgainstHalves:HalfStatusSealed": "derives which " +
+			"anvil/state the halves imply, so the envelope and the runs cannot disagree. It " +
+			"runs on the PRODUCER side, on records no half of which may be readable yet.",
+		"contract.go:SARIFLog.validateStateAgainstHalves:StateExpired": "exempts the two " +
+			"terminal states from that derivation, because consumed and expired are not " +
+			"derivable from the halves. Same validator, same producer side.",
+		"contract.go:Run.validate:HalfStatusSealed": "enforces contract.go's sealedAt " +
+			"invariant — required when sealed, null otherwise — so that 'never cleanly " +
+			"sealed' and 'we forgot to write it' cannot be the same observation. It is a " +
+			"well-formedness check on one run, not a decision about a consumer.",
+	}
+}
+
+// TestReadGateArmsAppearOnlyInsideTheGate reads the package as data and reports
+// every site outside halfReadRefusal that spells an arm of the read gate. See
+// the section above for why it looks for ARMS and not for whole gates.
+//
+// It is a source assertion of the same kind as TestPatentRiskIsFlaggedInSource,
+// and it exists because the defect this package keeps re-acquiring is not a
+// wrong answer but a SECOND, PARTIAL answer. A behavioural test cannot see one
+// until some consumer calls it; this can.
+func TestReadGateArmsAppearOnlyInsideTheGate(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parsing the package source: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("parsed no packages; this test asserts nothing unless it reads the source")
+	}
+
+	allow := gateArmAllowlist()
+	matched := map[string]bool{}
+	gateArms := map[string]bool{}
+	sites := 0
+
+	for _, pkg := range pkgs {
+		for path, file := range pkg.Files {
+			base := filepath.Base(path)
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				name := fn.Name.Name
+				if fn.Recv != nil && len(fn.Recv.List) == 1 {
+					if recv := gateBaseTypeName(fn.Recv.List[0].Type); recv != "" {
+						name = recv + "." + name
+					}
+				}
+				isTheGate := base == "sealing.go" && name == "halfReadRefusal"
+
+				for _, arm := range gateArmsIn(fn) {
+					site := gateArmSite{file: base, fn: name, arm: arm}
+					if isTheGate {
+						gateArms[arm] = true
+						continue
+					}
+					sites++
+					if reason, ok := allow[site.key()]; ok {
+						matched[site.key()] = true
+						if strings.TrimSpace(reason) == "" {
+							t.Errorf("%s is allowlisted with an empty reason", site.key())
+						}
+						continue
+					}
+					t.Errorf("%s spells %q outside the read gate.\n"+
+						"    ONE ARM IS NOT THE GATE. Readability is\n"+
+						"        IsReadableHalfStatus(status) AND the audit has not expired,\n"+
+						"    and CRITIQUE-03 M1 was exactly this: readOrder asked the status arm\n"+
+						"    alone, so an expired audit handed a coding agent nine task cards.\n"+
+						"    Call HalfReadGate (or HalfSeal.Readable), or — if this site is\n"+
+						"    deciding something OTHER than readability — add it to\n"+
+						"    gateArmAllowlist with the reason.",
+						site.key(), arm)
+				}
+			}
+		}
+	}
+
+	// The gate must still BE the gate: both arms, in the one body.
+	for _, arm := range []string{"IsReadableHalfStatus", "StateExpired"} {
+		if !gateArms[arm] {
+			t.Errorf("halfReadRefusal no longer spells %q. It is the ONE place both arms are "+
+				"combined; if it has lost one, the gate is now half a gate and this test is "+
+				"reporting on a function that no longer decides anything.", arm)
+		}
+	}
+
+	// A stale exemption is how the next real one gets waved through.
+	for key := range allow {
+		if !matched[key] {
+			t.Errorf("gateArmAllowlist names %q, which is not a site in the current source. "+
+				"Delete the entry — an allowlist that outlives the code it describes is a "+
+				"standing exemption nobody has read.", key)
+		}
+	}
+	t.Logf("read-gate arms: %d sites outside halfReadRefusal, %d allowlisted", sites, len(matched))
+}
+
+// gateHalfGateProbeSource is the negative control for the detector above: two
+// half-gates and one innocent function, as source text.
+//
+// readOrderStatusArmOnly is CRITIQUE-03 M1's original defect, character for
+// character — the status arm alone, in readOrder, which the previous
+// two-literal test could not see because one arm never matched a check that
+// required both.
+//
+// expiryArmOnly is the mirror-image half-gate nobody has written yet.
+//
+// prosePloneNamesTheArms is the false-positive control: it TALKS about both
+// arms in comments and puts one in an error string, and must not fire. The
+// detector matching on the AST rather than on text is the whole reason it can
+// tell those apart, and sealing.go's header would trip a text search on every
+// run.
+const gateHalfGateProbeSource = `package record
+
+import "fmt"
+
+func readOrderStatusArmOnly(l *SARIFLog) int {
+	n := 0
+	for ri := range l.Runs {
+		if !IsReadableHalfStatus(l.Runs[ri].Properties.Status) {
+			continue
+		}
+		n += len(l.Runs[ri].Results)
+	}
+	return n
+}
+
+func expiryArmOnly(l *SARIFLog) bool {
+	if l.Properties.State == StateExpired {
+		return false
+	}
+	return true
+}
+
+// prosePloneNamesTheArms explains that readability is IsReadableHalfStatus AND
+// the audit is not StateExpired, and that HalfStatusSealed is the only readable
+// status. It decides nothing.
+func prosePloneNamesTheArms() error {
+	return fmt.Errorf("anvil/status must be %q", string(HalfStatusSealed))
+}
+`
+
+// TestTheHalfGateDetectorCatchesTheDefectItsPredecessorMissed is the negative
+// control for TestReadGateArmsAppearOnlyInsideTheGate.
+//
+// It runs gateArmsIn — the same function the detector calls — over three
+// synthetic functions and asserts the two half-gates are seen and the prose is
+// not. Without it, this test would be another guard that has never been
+// observed to fail, which is exactly how the previous one shipped: it counted
+// bodies carrying BOTH arms, so the one-arm defect it was written for went
+// through it twice.
+func TestTheHalfGateDetectorCatchesTheDefectItsPredecessorMissed(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "zz_half_gate_probe.go", gateHalfGateProbeSource, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parsing the synthetic half-gate file: %v", err)
+	}
+
+	want := map[string][]string{
+		"readOrderStatusArmOnly": {"IsReadableHalfStatus"},
+		"expiryArmOnly":          {"StateExpired"},
+		"prosePloneNamesTheArms": nil,
+	}
+	seen := map[string]bool{}
+	allow := gateArmAllowlist()
+
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		exp, ok := want[fn.Name.Name]
+		if !ok {
+			t.Fatalf("the probe file grew a function %q the control does not check", fn.Name.Name)
+		}
+		seen[fn.Name.Name] = true
+		got := gateArmsIn(fn)
+		if strings.Join(got, ",") != strings.Join(exp, ",") {
+			if len(exp) == 0 {
+				t.Errorf("%s spells no arm of the gate but the detector reported %v; a comment "+
+					"or an error message discussing the gate is not a decision about it",
+					fn.Name.Name, got)
+			} else {
+				t.Errorf("%s is a half-gate spelling %v, but the detector reported %v. This is "+
+					"the exact shape of CRITIQUE-03 M1, and a detector that cannot see it is "+
+					"the detector this one replaced.", fn.Name.Name, exp, got)
+			}
+		}
+		// And a hit must actually be REPORTED, not silently pre-cleared.
+		for _, arm := range got {
+			key := gateArmSite{file: "readpath.go", fn: fn.Name.Name, arm: arm}.key()
+			if _, ok := allow[key]; ok {
+				t.Errorf("%s is already in gateArmAllowlist, so the control proves nothing", key)
+			}
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("the control never examined %q; the probe file did not parse as expected", name)
+		}
+	}
+}
+
+// gateArmsIn returns the arms of the read gate spelled in fn's body, sorted
+// and deduplicated.
+//
+// Matching is on the AST, not on text, so a comment naming an arm is never a
+// use of one — sealing.go's header discusses both arms at length, deliberately,
+// and prose is not a decision. `IsReadableHalfStatus` counts as a CALL; the two
+// enum literals count only in a comparison (`==`, `!=`) or a switch case, so
+// `string(HalfStatusSealed)` inside an error message does not fire.
+func gateArmsIn(fn *ast.FuncDecl) []string {
+	found := map[string]bool{}
+
+	note := func(e ast.Expr) {
+		if id, ok := e.(*ast.Ident); ok && gateArmSentinels[id.Name] {
+			found[id.Name] = true
+		}
+	}
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.CallExpr:
+			if id, ok := e.Fun.(*ast.Ident); ok && id.Name == "IsReadableHalfStatus" {
+				found[id.Name] = true
+			}
+		case *ast.BinaryExpr:
+			if e.Op == token.EQL || e.Op == token.NEQ {
+				note(e.X)
+				note(e.Y)
+			}
+		case *ast.CaseClause:
+			for _, expr := range e.List {
+				note(expr)
+			}
+		}
+		return true
+	})
+
+	out := make([]string, 0, len(found))
+	for arm := range found {
+		out = append(out, arm)
+	}
+	sort.Strings(out)
+	return out
 }

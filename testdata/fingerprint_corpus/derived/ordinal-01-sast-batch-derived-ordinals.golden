@@ -1,0 +1,34 @@
+# anvil-fp/v1 conformance golden — ordinal-01-sast-batch-derived-ordinals
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+ordinal	candidate:at-line-220-first-in-batch	1
+digest	candidate:at-line-220-first-in-batch	93097339e68234a6f61dd65176518beb51aa03cf065438c52b103a95d542c162
+ordinal	candidate:at-line-42-earliest-in-the-file	0
+digest	candidate:at-line-42-earliest-in-the-file	7855ab98b4973b45e9c399ec241dcc237a5330fd6fa241cccbed04dc0e252d9d
+ordinal	candidate:at-line-220-duplicate-position-second-in-batch	2
+digest	candidate:at-line-220-duplicate-position-second-in-batch	bf8c83929893191aae5da95e5de3a4c5bf19afbb5d3232a5dff9f16f6b0f37da
+ordinal	candidate:different-path-same-normalized-match	0
+digest	candidate:different-path-same-normalized-match	5f83f90740d4e3273d3f36362bd87aa684eea190dcebf9ca1858f1c5c1c87bd5
+ordinal	candidate:different-rule-same-normalized-match	0
+digest	candidate:different-rule-same-normalized-match	bc56c39b9947d8614af0718ca28ec8b69614731467a6fca2be9f29b02b8cb802
+ordinal	candidate:different-target-same-everything	0
+digest	candidate:different-target-same-everything	724d19d66c7dda27eaee02e5fb2ce694c6f5dd4298ea18ae0950fe54527c8aa9
+ordinal	candidate:at-line-900-via-a-windows-path	3
+digest	candidate:at-line-900-via-a-windows-path	fab727d4e4cd03d3d3457fa32078be96b02aebaeec6d987c6dfab3e0ace0b46b
+ordinal	candidate:block-comment-backtick-raw-string-and-number	0
+digest	candidate:block-comment-backtick-raw-string-and-number	82bf3a0b6d997db0b5815d60105b1be067cc3046c430048d6cc1f2a67bdc53c2
+ordinal	candidate:namespace-qualifier-across-a-newline	0
+digest	candidate:namespace-qualifier-across-a-newline	f227218b4d61168c4673edd7664e9493e9dd7fed2767abb261367bb571d9b00f
+ordinal	candidate:non-ascii-whitespace-separators	0
+digest	candidate:non-ascii-whitespace-separators	cdcba75f0e1dc47cd61dc3efcd9af4224b4c0716858f4d40cda9cb6fd063ff45
