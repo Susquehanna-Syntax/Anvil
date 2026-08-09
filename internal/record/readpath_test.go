@@ -2024,10 +2024,12 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 //     13 and it is closed.
 //   - Reaching the gate in the call graph is not the same as OBEYING it with
 //     the RIGHT seal. The call must now be a call and its result must be
-//     used, but nothing here checks that the seal handed to the gate is the
-//     seal of the half whose results are being returned. That is attacks 14
-//     and 15, and they are open: read the KNOWN LIMITS section before you
-//     trust a green run.
+//     used, but nothing THIS TEST checks pairs the seal handed to the gate
+//     with the half whose results are being returned. That is attacks 14 and
+//     15. Attack 14 is now closed, at RUNTIME rather than here — HalfSeal
+//     carries unexported provenance and HalfReadGate refuses a seal no
+//     producer minted — and attack 15 is still OPEN. Read the KNOWN LIMITS
+//     section before you trust a green run.
 //   - `readOrder` counts as reaching the gate, so if readOrder ITSELF were
 //     rewritten to ask one arm — which is precisely what CRITIQUE-03 M1 was —
 //     this test would still pass. MEASURED, by putting that defect back: this
@@ -2080,6 +2082,13 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // without a different technique (go/types + SSA def-use, or the runtime
 // redesign described under attack 15, which is the one worth doing).
 //
+// ONE OF THOSE TWO GAPS IS NOW COVERED ELSEWHERE, and it is worth being
+// precise about which. "The RIGHT SEAL" is now enforced at runtime, by seal
+// provenance in sealing.go: a seal the caller built, edited, or held across a
+// state change is refused by HalfReadGate itself. "The RIGHT HALVES" is not,
+// and is attack 15. This test is unchanged by either — it never checked
+// either one — so a green run here means precisely what it meant before.
+//
 // THREE FURTHER OPEN HOLES, found by the second adversary after the six
 // cheap ones were closed. Not fixed; recorded so the list is honest.
 //
@@ -2127,16 +2136,23 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // results it went on to return". Those are dataflow questions — which value
 // flowed into which parameter, and which values flowed out — and an AST
 // reachability walk that pretended to answer them would hand out exactly the
-// false confidence this whole exercise exists to avoid. Two attacks live in
-// that gap. Both were run against this guard. Both won. Both still win.
+// false confidence this whole exercise exists to avoid. Two attacks lived in
+// that gap. Both were run against this guard and both won. ONE OF THEM — the
+// fabricated seal — is now closed, in the production code rather than here.
+// The other still wins.
 //
 // ---------------------------------------------------------------------------
-// LIMIT 1 (adversary attack 14) — THE FABRICATED SEAL
+// LIMIT 1 (adversary attack 14) — THE FABRICATED SEAL — **CLOSED AT RUNTIME**
 // ---------------------------------------------------------------------------
 //
-// Call the gate. Check the error. Return the results. But hand the gate a
-// HalfSeal you built yourself rather than the seal of the half you are about
-// to read:
+// STILL OPEN TO THIS TEST, and that has not changed: everything below about
+// what the static analysis can and cannot see is still true. What changed is
+// that the gate itself now refuses the attack, so the hole this test cannot
+// see is no longer a hole anything can walk through.
+//
+// THE ATTACK. Call the gate. Check the error. Return the results. But hand the
+// gate a HalfSeal you built yourself rather than the seal of the half you are
+// about to read:
 //
 //	func (rd *Reader) LeakViaFabricatedSeal(l *SARIFLog) []Result {
 //	        seal := HalfSeal{Half: HalfSast, Status: HalfStatusSealed, ...}
@@ -2152,27 +2168,78 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 //
 // To this guard that is a textbook obedient function: a real *ast.CallExpr on
 // HalfReadGate, the returned error consumed by an `if`, an early return on
-// refusal. Every structural property it checks is satisfied. The gate was
-// asked a question about a half that does not exist and it answered honestly.
+// refusal. Every structural property it checks is satisfied.
 //
-// WHAT A READER MUST NOT CONCLUDE: that a green
-// TestResultReachingEntryPointsAreGated means the gate was consulted ABOUT the
-// data returned. It means a gate call happened somewhere in the call graph and
-// its result was not thrown away. The seal's provenance is unchecked.
+// IT WAS NOT HYPOTHETICAL, AND IT DID NOT TAKE AN ADVERSARY. CRITIQUE O.4
+// found this exact shape occurring NATURALLY in internal/scanctl within hours:
+// AuditRecord.HalfSeal assembled a record.HalfSeal out of caller-held fields
+// (the half's status, the record's state) with no refresh path and handed it
+// to the gate, which then answered truthfully about a seal that could be
+// arbitrarily stale. Nobody was attacking anything. It is simply the natural
+// way to write it, which is why documenting the hole was not enough.
 //
-// WHAT WOULD ACTUALLY CATCH IT: dataflow. The HalfSeal argument at the call
-// site must be traced to its definition and required to originate from
-// halfSealOfRun (or Sealer.HalfSeal) applied to the same record the results
-// are read from — a def-use chain, needing go/types and SSA, not an
-// ast.Inspect. Or, cheaper and stronger, a RUNTIME assertion: give HalfSeal an
-// unexported provenance field that only halfSealOfRun and the Sealer can set,
-// and have HalfReadGate refuse any seal without it. A fabricated composite
-// literal then cannot be handed to the gate at all, and the hole closes in the
-// production code rather than in a test that inspects it.
+// HOW IT IS CLOSED (sealing.go, "SEAL PROVENANCE"). HalfSeal carries an
+// UNEXPORTED field, prov. Exactly two functions set it —
+//
+//	halfSealOfRun   the record-side projection over an assembled *SARIFLog
+//	audit.halfSeal  the Sealer's projection over a live in-flight audit
+//
+// — and HalfReadGate refuses any seal for which it is nil, with a distinct
+// typed reason (*SealProvenanceError, matching errors.Is(err,
+// ErrSealNotFromProducer) as well as ErrHalfNotSealed) that names both
+// producers. The enforcement is the COMPILER: an unexported field cannot
+// appear in a composite literal outside internal/record, so the fabricated
+// seal above cannot be built by a consumer at all, and inside this package
+// TestOnlyTwoProducersStampProvenance fails if a third producer appears.
+//
+// PROVENANCE ALSO CARRIES STALENESS, WHICH IS THE PART THAT MATTERED. Marking
+// a seal "a producer made this" would not have caught O.4: scanctl's seal was
+// made by a legitimate-looking projection and then held across a state change.
+// So prov holds a LIVE HANDLE on what the seal was minted from — the
+// (*SARIFLog, *Run) for the record side, the *audit plus a published revision
+// for the Sealer — together with the facts as they read at minting, and the
+// gate RE-READS the origin on every call. Four faults come out of it: absent
+// (nobody minted it), tampered (minted, then an exported field was assigned
+// to), origin_gone (Sealer.Forget dropped the audit), and stale (the origin
+// moved on). All but the first match errors.Is(err, ErrSealStale).
+//
+// PROVEN, NOT ASSERTED. provenance_test.go's TestGateRefusesAHandBuiltHalfSeal
+// rebuilds scanctl's literal field for field and requires the gate to refuse
+// it, with a POSITIVE CONTROL that reads successfully through a real seal
+// carrying identical facts — so the test cannot pass against a gate that has
+// simply been broken shut. Each of the other three faults has its own test and
+// its own control. Every one of them was MEASURED failing by neutering the
+// check it covers.
+//
+// WHAT IS STILL TRUE OF THIS TEST: a green
+// TestResultReachingEntryPointsAreGated still does not mean the gate was
+// consulted ABOUT the data returned. It means a gate call happened somewhere
+// in the call graph and its result was not thrown away. The runtime check, not
+// this one, is what makes the seal trustworthy.
+//
+// WHAT REMAINS OPEN WITHIN LIMIT 1. Provenance binds a seal to an origin; it
+// does not bind the origin to the RECORD THE CALLER IS ABOUT TO READ. A
+// function handed two records can mint a genuine seal from record A, pass the
+// gate, and return record B's results. Catching that is the same dataflow
+// problem as before — the def-use chain from the gate's argument to the
+// results that leave — and nothing here or in sealing.go attempts it. It is
+// also, unlike the fabricated seal, not a shape anyone has written by accident.
+// Separately, the record-side origin has no revision counter (a *SARIFLog is a
+// plain value), so its currency check is content equality alone: a record
+// mutated back to the facts it had at minting reads as current. Statuses and
+// states only move forwards, so that means un-sealing a sealed half, which
+// nothing in this package does.
 //
 // ---------------------------------------------------------------------------
-// LIMIT 2 (adversary attack 15) — OBEY FOR ONE HALF, RETURN BOTH
+// LIMIT 2 (adversary attack 15) — OBEY FOR ONE HALF, RETURN BOTH — **OPEN**
 // ---------------------------------------------------------------------------
+//
+// STILL OPEN. Seal provenance closed attack 14 and did NOT close this one, and
+// the reason is worth stating before the attack rather than after it: attack 15
+// never fabricates anything. Its seal is genuine, freshly minted, current, and
+// about a half that really is readable. Provenance checks where a seal came
+// from and whether it is still live. It has nothing to say about a caller that
+// asks an honest question about one half and then hands out two.
 //
 // Call the gate. Check the error. Obey it — for the SAST half. Then return
 // every result in the record, DAST included:
@@ -2194,11 +2261,23 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 //	        return out
 //	}
 //
-// Here the seal is genuine — halfSealOfRun over the real record — so even the
-// provenance idea above would not fire. The defect is that the SET of halves
-// the gate was consulted about is smaller than the SET of halves whose results
-// were returned. An unsealed DAST half walks out behind a sealed SAST half's
-// permission.
+// Here the seal is genuine — halfSealOfRun over the real record — so the
+// provenance check above does not fire, and MEASURED that is exactly what
+// happens: run this body against a record with a sealed SAST half and an
+// unsealed DAST half and every DAST result still walks out. The defect is that
+// the SET of halves the gate was consulted about is smaller than the SET of
+// halves whose results were returned. An unsealed DAST half walks out behind a
+// sealed SAST half's permission.
+//
+// DOES PROVENANCE NARROW IT AT ALL? Only at the very edge, and not in a way
+// worth crediting. One VARIANT is now caught: obtain a real SAST seal, relabel
+// it (`seal.Half = HalfDast`) and present it as the DAST half's permission.
+// Editing an exported field on a minted seal is the "tampered" fault, and
+// TestGateRefusesAnEditedSeal covers it. But attack 15 as written never needs
+// to relabel anything — it does not present a DAST seal at all, it simply
+// stops asking — so the variant that is closed is not the attack. Anyone
+// tempted to record this limit as "partially closed" should read the body
+// above again: not one line of it changes.
 //
 // WHAT A READER MUST NOT CONCLUDE: that a gated entry point is gated for every
 // half it can return. This guard counts gate calls; it does not pair them with
@@ -2244,6 +2323,15 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // and counts what came back. It would catch both attacks above — on the entry
 // points that are IN gateAuditedEntryPoints. That list is maintained by hand.
 // The source guard's whole job is to notice when something is missing from it.
+//
+// THE PAIR IS NOW A TRIO, and the third member is not a test. Seal provenance
+// (sealing.go) is a check the SHIPPED CODE performs on every gate call, so
+// unlike both guards above it covers entry points nobody listed, callers in
+// other packages, and code written after this comment. It answers exactly one
+// question — "is this seal a live seal from a real producer?" — and it answers
+// it always. What it does not answer is which halves the caller went on to
+// return, which is why attack 15 is still in this section rather than in the
+// closed one.
 //
 // So the honest summary of the pair is: the source guard says "a new exported
 // function that reaches results without asking the gate cannot be added
@@ -3049,11 +3137,16 @@ func TestTheSourceGuardCatchesTheLeaksThatDefeatedItsPredecessor(t *testing.T) {
 // ===========================================================================
 //
 // An adversary ran sixteen attacks at this guard and won eight. Six of the
-// eight are closed, and each closed shape lives below as source text so the
-// guard is re-defeated-and-caught on every run. The two that are NOT closed —
-// the fabricated seal and partial obedience — are documented in KNOWN LIMITS
-// above and deliberately have no probe here, because a probe that passed would
-// be a lie about what this analysis can see.
+// eight are closed AGAINST THIS ANALYSIS, and each closed shape lives below as
+// source text so the guard is re-defeated-and-caught on every run.
+//
+// The other two — the fabricated seal (14) and partial obedience (15) — are
+// documented in KNOWN LIMITS above and deliberately have no probe here,
+// because a probe that passed would be a lie about what this analysis can see.
+// That is still true of both, INCLUDING 14: attack 14 is now closed at
+// RUNTIME, by seal provenance in sealing.go, and this analysis cannot see that
+// either. Its probe lives with the mechanism that closed it, in
+// provenance_test.go, where it belongs.
 //
 // Every function below is written the way the bypass would actually be
 // written. None of them is exotic; that is the point.

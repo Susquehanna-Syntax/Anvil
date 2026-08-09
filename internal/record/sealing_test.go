@@ -1295,7 +1295,19 @@ func TestInspectAgreesWithReadHalfOnEveryState(t *testing.T) {
 func TestEverySpellingOfTheReadGateAgrees(t *testing.T) {
 	for _, state := range StateValues() {
 		for _, status := range HalfStatusValues() {
-			seal := HalfSeal{Half: HalfSast, Status: status, AuditState: state}
+			// The seal is OBTAINED FROM A PRODUCER — halfSealOfRun over a
+			// real one-run record — and not built here. It used to be
+			// `HalfSeal{Half: HalfSast, Status: status, AuditState: state}`,
+			// which is adversary attack 14's exact shape: a seal handed to
+			// the gate that no producer minted. Seal provenance now refuses
+			// those, so a hand-built literal would have made every one of the
+			// assertions below compare two provenance refusals and prove
+			// nothing about either arm of the gate.
+			l := &SARIFLog{
+				Properties: AuditProperties{AuditID: "audit-1", State: state},
+				Runs:       []Run{{Properties: RunProperties{Half: HalfSast, Status: status}}},
+			}
+			seal := halfSealOfRun(l, &l.Runs[0])
 
 			// (1) The bool spelling, which is what a caller branches on.
 			readable := seal.Readable()
@@ -1328,11 +1340,9 @@ func TestEverySpellingOfTheReadGateAgrees(t *testing.T) {
 			// (3) The record-side spelling, built from a run and its envelope.
 			// This is the projection readpath.go, taskcard.go and
 			// sarif_github.go all go through, and the one CRITIQUE-03 found
-			// two callers reaching around.
-			l := &SARIFLog{
-				Properties: AuditProperties{AuditID: "audit-1", State: state},
-				Runs:       []Run{{Properties: RunProperties{Half: HalfSast, Status: status}}},
-			}
+			// two callers reaching around. Re-projected rather than reusing
+			// `seal`, so that two separately-minted seals over the same
+			// record still agree.
 			if got := halfSealOfRun(l, &l.Runs[0]).Readable(); got != readable {
 				t.Errorf("state=%q status=%q: halfSealOfRun(...).Readable() = %t, want %t",
 					state, status, got, readable)
@@ -1422,6 +1432,10 @@ func gateArmAllowlist() map[string]string {
 			"consumer may read; the read direction is ReadHalf, which calls the gate.",
 		"sealing.go:Sealer.SealHalf:StateExpired": "refuses a seal on a terminal audit — the " +
 			"same write-side question as RecordDastOutcome.",
+		"sealing.go:Sealer.SealDastIfDeadlineDue:StateExpired": "refuses to force clock 3's " +
+			"DAST timeout on a terminal audit — the same write-side question as SealHalf. It " +
+			"decides whether the SEALER accepts a WRITE, not whether a consumer may read; a " +
+			"forced timeout is a seal, and seals stop at a terminal audit.",
 		"sealing.go:Sealer.Consume:StateExpired": "refuses consumption of an expired audit. " +
 			"Consumption is a state transition on the audit, not a read of a half.",
 		"sealing.go:Sealer.ExpireIfDue:StateExpired": "the expiry transition itself: already " +
