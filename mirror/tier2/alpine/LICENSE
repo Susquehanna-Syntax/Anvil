@@ -1,0 +1,258 @@
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0)
+
+===============================================================================
+TIER 2 QUARANTINE. READ THIS BEFORE COPYING ANYTHING OUT OF THIS DIRECTORY.
+===============================================================================
+
+Everything under this directory is Alpine Linux security data (secdb) and it
+carries a SHARE-ALIKE duty.
+
+The operative obligation, from CC-BY-SA-4.0 section 3(b): where Adapted
+Material is shared, "the Adapter's License You apply must be a Creative
+Commons license with the same License Elements". A database that incorporates
+this data and is then published can be an adaptation of it, and the same terms
+would then attach to that database.
+
+That is why this directory exists at all. Anvil's own findings database is a
+Tier 0/1 publishable artifact, and a share-alike term reaching it is not a
+warning, a caveat or a TODO: it is an obligation on everything Anvil ships,
+and it cannot be withdrawn once published.
+
+===============================================================================
+WHAT IS ENFORCED IN CODE, AND WHAT IS NOT
+===============================================================================
+
+THIS SECTION IS ON ITS FIFTH REVISION AND THE FIRST FOUR WERE ALL FALSE. The
+history is kept because it is the reason for the rule this revision follows.
+
+  v1 presented the whole list as "enforced by internal/ingest/license (step
+     A.4) and not merely written here". FALSE for the rule that matters most,
+     the one about not publishing a merged corpus: no code in this repository
+     can observe a publication.
+  v2 claimed the gate refuses a tier 0/1 route for ANY source whose licence
+     evidence carries a share-alike duty. FALSE. The detection was a table of
+     substrings, and a substring table does not match licence prose: it was
+     defeated by OSL-3.0's real operative wording, and then more damningly by
+     mere FORMATTING — a hard line wrap, a non-breaking space, a doubled space,
+     a full-width character. Every one of those is what a real licence file
+     looks like.
+  v3 replaced that with "reachable only by positive identification" and said
+     "everything else is refused". FALSE, in a way the sentence hid rather than
+     stated: the gate asked whether a permissive licence was PRESENT in the
+     body, and a document can contain one while being something else entirely.
+     A LICENSE reading "this tree is MIT; the vendored subtree under
+     third_party/ is CDDL-1.0" contains exactly one enumerated permissive
+     licence. Eight bodies of that shape published at tier 0 and tier 1 with
+     the reciprocal terms attached.
+  v4 fixed that, and then claimed at item 1(b) that admission requires that
+     "NO OTHER LICENCE-LIKE CONTENT appears anywhere in the text", and at item
+     3 that "every code point that RENDERS AS NOTHING is dropped". BOTH WERE
+     FALSE, and both were disproved by bodies that publish today: an MIT
+     LICENSE naming a subtree "under the GPL", a British-spelled "Eclipse
+     Public Licence", an Apache-2.0 file bundling Apache-1.1, "under either the
+     MIT License or the GPL", and a licence name split by a combining mark or
+     an html tag.
+
+THE RULE THIS REVISION FOLLOWS: A CLAIM THAT CANNOT BE DEMONSTRATED IS DELETED,
+NOT QUALIFIED. Four rounds of more careful wording produced four false
+documents; the pattern is the claiming, not the wording. Every item in the
+first section below is a property that a NAMED TEST drives over its whole
+domain. Everything that used to be in that section and is not there now has
+moved to the second section, which is now the longer of the two. That is the
+honest shape of this gate.
+
+ENFORCED IN CODE by internal/ingest/license:
+
+  1. ON A FRESH CLONE, NO FEED IS ADMITTED AT ALL — including this one.
+     The gate refuses a feed outright unless the publisher's verbatim licence
+     text has been acquired into this directory as LICENSE.full.txt and matches
+     the sha256 pinned in mirror/LICENSE-MANIFEST.toml. No licence body is
+     checked into this repository and EVERY sha256 in that manifest is empty,
+     so no file can satisfy any pin. This is the item every other item rests
+     on, and it is why the limits in the second section are not live today.
+     Tests: TestFreshCloneAdmitsNoFeed, TestAnvilProseAloneCannotAdmitAnyFeed.
+
+  2. NOTHING REACHES TIER 0 OR TIER 1 WITHOUT MATCHING AN ENUMERATED
+     PERMISSIVE SIGNATURE. The publishable tiers are reachable only by a body
+     that matches one of the licences ENUMERATED in
+     internal/ingest/license/publishable.go, by a signature that is a
+     contiguous phrase or a bounded window and that is not sitting inside an
+     explicit denial within 96 bytes. Unrecognised, ambiguous and empty bodies
+     are refused. UNKNOWN IS NOT PUBLISHABLE.
+     This is the DEFAULT that matters: it does not depend on RECOGNISING a
+     share-alike duty, so a reciprocal licence nobody anticipated is
+     quarantined because it matched nothing, rather than by luck.
+     WHAT IT IS NOT: proof that a matching body IS that licence. See item 8.
+     Test: TestOnlyPositivelyIdentifiedPermissiveTextsReachThePublishableTiers,
+     which drives bodies that are no enumerated licence at all — the operative
+     clauses of OSL-3.0, EPL-2.0 3.2, CDDL-1.0 3.1 and MS-PL 3(D), each quoted
+     so that it never names its own licence, plus an html-sourced, hard-wrapped,
+     NBSP-laden CC-BY-SA deed. It asserts separately that the share-alike
+     marker table does not classify four of those five, so it cannot be
+     satisfied by adding a marker.
+
+  3. A SHARE-ALIKE OR RESTRICTED DUTY THE MARKER TABLE RECOGNISES IS REFUSED A
+     TIER 0/1 ROUTE, AND IS REFUSED FOR THAT REASON rather than as merely
+     unrecognised. One it does NOT recognise is refused by item 2 instead,
+     which is why item 2 is first. The obligation is read from the publisher's
+     licence text, never from the feed table's label, and the STRONGEST match
+     wins — so an Apache-2.0 identifier sitting over a GNU General Public
+     License sentence classifies as share-alike.
+     RECOGNISES IS THE OPERATIVE WORD: this is a table of substrings and it
+     matches the wordings it lists and no others.
+     Tests: TestSyntheticTier2RowCannotBeRoutedToTier0Or1,
+     TestPermissiveTagOverShareAlikeBodyIsRefused,
+     TestNONEDeclarationCannotHideAShareAlikeSource.
+
+  4. MATCHING HAPPENS ONCE, AGAINST TEXT NORMALISED IN ONE PLACE. Whitespace
+     runs (newlines and NBSP included) are collapsed to one space,
+     compatibility forms are folded, case is folded, and every member of the
+     shared invisible class is removed. Hard wrapping, an html &nbsp;, a
+     doubled space and full-width characters no longer decide a licence
+     conclusion.
+     Test: TestNormalisationDefeatsTheFormattingEvasions, which asserts both
+     that a plain substring match misses each marker and that the normalised
+     match finds it.
+
+     THE CLASS, PRECISELY, BECAUSE THIS ITEM USED TO OVERSTATE IT. It is not
+     "every code point that renders as nothing" — nobody can enumerate that
+     offline. It is: unicode.Cf, the TAG block, the zero-width and bidi block,
+     the whole of Variation_Selector, the whole of
+     Other_Default_Ignorable_Code_Point, and a declared eight-member supplement
+     of blank glyphs that carry no property saying so. It has ONE owner,
+     internal/ingest/invisible, shared with internal/ingest/sanitize.
+     Test: TestBothConsumersDropEveryMemberOfTheClass, which sweeps the entire
+     Unicode code space with no list on either side and no exclusions.
+     THE TEST THIS ITEM USED TO CITE, TestBothConsumersAgree, IS NOW SKIPPED.
+     It claimed the two consumers agree everywhere; they disagree on 959,049
+     non-graphic code points, and the test excluded exactly that range in order
+     to be green. It is kept, unexcluded and skipped, with the count in its
+     skip message. A combining mark, an unassigned or private-use code point
+     and an html tag all still split a marker — see item 8.
+
+  5. license.CheckWritePath REFUSES any write path that does not belong to the
+     tier that produced it, including Windows-separator and ../ forms. Data
+     under mirror/tier2/ cannot reach mirror/tier0/ or mirror/tier1/ that way.
+     Test: TestSyntheticTier2RowCannotBeRoutedToTier0Or1.
+
+  6. This directory's tier and name are BOUND to the feed row through
+     mirror/LICENSE-MANIFEST.toml, so a caller cannot point the gate at another
+     source's licence file and inherit its conclusion.
+     Test: TestPinIsBoundToTheFeedRow.
+
+  7. EVERY REFUSAL CARRIES A TIER THAT IS NOT A VALID TIER (NoTier, -1), from
+     license.Resolve as well as license.Gate, and a refused Decision projects
+     onto NO license_dir_manifest row. A caller who ignores the error cannot
+     read tier 0 — the most permissive tier there is — out of a refusal, and
+     cannot write one into the A.2 cache's record of what may be merged.
+     Tests: TestResolveRefusalNeverCarriesAPublishableTier,
+     TestARefusalHasNoManifestRow.
+
+NOT ENFORCED IN CODE. THE OPERATOR CARRIES THESE:
+
+  8. THE ADMISSION PATH IS NOT TRUSTWORTHY. The refusal path is: nothing the
+     gate refuses can be published, whatever the reason was. But an ADMISSION
+     is a substring judgement wearing the word "identified", and there is no
+     control here that establishes a body IS the licence it matched, or that it
+     carries no second set of terms. EIGHT WORKING WAYS THROUGH IT ARE
+     RECORDED, each with a body that publishes today, in the KNOWN LIMITS
+     section at the top of internal/ingest/license/known_limits_test.go, and
+     each is demonstrated by TestTheAdmissionPathIsNotTrustworthy:
+
+       V1 ABBREVIATION. "the GPL", "the LGPL", "the AGPL" match no marker, and
+          a bare "gpl" entry would fire on ordinary prose. An MIT LICENSE
+          ending "The scripts in scripts/ are under the GPL." publishes.
+       V2 BRITISH SPELLING. Every marker is spelled "license". "Eclipse Public
+          Licence" and "Mozilla Public Licence 2.0" match nothing.
+       V3 THE FAMILY EXEMPTION OVER-FIRES. A licence naming itself is exempted
+          from the veto, and the families are coarser than the licences: an
+          Apache-2.0 file that also bundles code under the Apache License,
+          Version 1.1 — a different licence, with an advertising clause — is
+          not vetoed. The same holds across the BSD family.
+       V4 DUAL-LICENCE WORDING. "under either the MIT License or the GPL, at
+          your choosing" and "the MIT License or, alternatively, the GPL
+          version 3" match no scoping marker.
+       V5 TITLE COLLISION. A signature is a phrase in the text, not a statement
+          about the document. A commentary titled "Apache License, Version 2.0"
+          whose body says "all rights are reserved" is identified as Apache-2.0.
+       V6 LICENCE QUOTED IN PROSE. A CHANGELOG that quotes the MIT grant
+          sentence is identified as MIT while the next sentence says the rest
+          of the repository is proprietary.
+       V7 NEGATION BEYOND THE 96-BYTE WINDOW. A document that denies the
+          licence in its opening paragraph and states the grant 300 bytes later
+          is admitted; the denial is out of range. Lengthening the window moves
+          the hole rather than closing it.
+       V8 CHARACTER SPLITTING, WHAT IS LEFT OF IT. The shared invisible class
+          no longer splits a marker, but a COMBINING MARK ("Mozilla Pub" +
+          U+0301 + "lic License"), an UNASSIGNED, PRIVATE-USE or NONCHARACTER
+          code point (U+0378, U+E000, U+FDD0), and an HTML TAG ("Mozilla
+          Pub<b></b>lic License") all still do.
+
+     THAT LIST IS NOT A CENSUS. Three review rounds have run on this gate and
+     each found new vectors after the previous round was called closed. Assume
+     there are more. THE REAL FIX IS A LICENCE IDENTIFIER OVER A REAL CORPUS —
+     a normalised full-text comparison against the SPDX licence list with a
+     confidence score, the way askalono and licensee do it — and not more
+     substrings; every vector above is a counter-example to a table, and
+     patching each one individually creates the next.
+
+     WHAT THIS MEANS FOR YOU. An operator who acquires licence bodies and
+     switches feeds on MUST READ EACH ACQUIRED LICENCE TEXT. The gate is a
+     second pair of eyes with the limits above, not a first pair. Item 1 is
+     what makes this safe today, and item 1 stops being true the moment you
+     fill in a digest.
+
+  9. Do not publish a merged, normalised corpus that includes this data, and
+     keep findings derived from it attributable to this tier. NO CODE IN THIS
+     REPOSITORY CAN OBSERVE A PUBLICATION. The directory quarantine above is
+     defence in depth against the mistake; it is not a guarantee against it,
+     and no future version of A.4 can make it one.
+ 10. Attribution to the Alpine Linux project accompanies any redistribution
+     of this data, alongside a link to the licence and an indication of
+     changes made. Also unobservable from inside Anvil: no component here
+     sees what you ship.
+ 11. This directory keeps its own licence file and is neither covered by nor a
+     contributor to the repository's top-level LICENSE. A test asserts that the
+     file exists and is non-empty. Nothing asserts that a downstream packager
+     honoured the separation.
+
+===============================================================================
+PROVENANCE OF THIS LICENCE CONCLUSION
+===============================================================================
+
+Confirmed from the publisher's own licence file at the secdb root
+(research/01-vuln-data-sources-and-licensing.md S31) — a publisher statement,
+which is the strongest footing available and stronger than the Ubuntu
+directory's.
+
+Recorded caveat: the publisher's file the corpus read is dated 2021-06-25.
+Terms that old should be re-read before a 1.0 release, and the feed row's
+sync path is marked unpinned in `feeds.example.yaml` for a separate reason
+(the location of the last-update timestamp file was never confirmed).
+
+===============================================================================
+THIS FILE IS ANVIL'S RECORD. IT IS NOT THE PUBLISHER'S LICENCE TEXT.
+===============================================================================
+
+Everything above was written by Anvil. It records the identifier, the operative
+obligation and the provenance of the conclusion, which is what a human needs in
+order to act correctly — and it is deliberately NOT what the licence gate
+admits a feed on. A document Anvil wrote in the same commit as the claim it
+validates is not evidence of that claim.
+
+The publisher's verbatim licence text lives beside this file as
+
+    LICENSE.full.txt
+
+which is NOT in git. mirror/LICENSE-MANIFEST.toml pins where it comes from and
+what it must hash to; an operator acquires it deliberately with
+
+    sh mirror/acquire-license-bodies.sh
+
+and internal/ingest/license refuses this feed until that file is present and
+matches its pin. The gate classifies THAT text. This file can only ever make
+the gate stricter — if Anvil's record establishes a stronger duty than the
+publisher's text does, the stronger one wins — and it can never admit a feed on
+its own. See mirror/README.md.
