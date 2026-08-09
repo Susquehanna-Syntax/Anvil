@@ -183,6 +183,19 @@ jobs:
           sudo install -m 0755 trivy /usr/local/bin/trivy
           trivy --version
 
+      # The collector invokes Trivy with --skip-db-update --offline-scan, which
+      # is the correct posture -- S0 says Anvil never browses the live web at
+      # inference time -- but it means Trivy REFUSES TO RUN AT ALL until a
+      # database exists locally. The first run of this job proved that: FATAL
+      # "--skip-db-update cannot be specified on the first run".
+      #
+      # That is a genuine operational dependency, not a CI quirk, and no test
+      # against recorded Trivy output could have surfaced it. In production the
+      # database is what A.11's warm-start accelerator supplies; here we seed it
+      # the ordinary way so the E2E control exercises the real invocation.
+      - name: Seed the Trivy vulnerability database
+        run: trivy image --download-db-only
+
       - name: The opt-in is set, so a missing binary must FAIL rather than skip
         env:
           ANVIL_TRIVY_E2E: "1"
