@@ -1,0 +1,351 @@
+{
+  "id": "route-01-dast-placeholder-and-threshold-boundaries",
+  "kind": "dast_cases",
+  "resolves": ["Z3"],
+  "description": "FINGERPRINT-SPEC.md section 6.3's volatile-segment predicates, exercised at their boundaries. Appendix Z3 records that rule P's prose -- 'length >= 2 and (starts { and ends }) or (starts < and ends >) or starts :' -- is genuinely ambiguous about and/or precedence, and that the two parses differ for a one-character `:` segment. dast-04 in the main corpus proves templating HAPPENS; nothing proved where it STOPS. Over-templating is the unrecoverable direction (section 6.4): it merges two distinct routes onto one identity and loses a finding on upsert against UNIQUE (target_id, fingerprint), silently. These cases pin both sides of every threshold.",
+  "notes": [
+    "Every case varies ONLY route_template. target_id, rule_id_versioned, http_method, injection_point, param_name and evidence_class_detail are held constant, so any digest difference is attributable to CanonicalRouteTemplate alone.",
+    "Cases that canonicalise to the same route are EXPECTED to share a digest -- that is section 6's whole purpose (one defect, one identity, whatever syntax the producer used). The distinctness assertion belongs on the canonicalised routes, not on the case list.",
+    "Z3 resolution: read as `len >= 2 AND (A or B or C)`. `bare_colon_segment_is_not_a_placeholder` and `bare_open_brace_is_not_a_placeholder` are the two cases that separate the readings; under the alternative parse (`len>=2 AND A` or `B` or `C`) the bare `:` would template and the digest would move.",
+    "The threshold cases come in pairs, one on each side: 16 vs 15 hex characters for rule H, 20 vs 19 alphanumerics for rule O. A one-character change to either constant in section 8 changes a digest here, which is what makes routeHexSegmentMinLen and routeOpaqueSegmentMinLen anvil-fp/v2 material rather than tuning knobs.",
+    "`already_canonical_token_is_idempotent` is the property that lets a record be read out of the store and re-fingerprinted without losing its identity: <VAR> is itself a rule-P segment, so CanonicalRouteTemplate is idempotent."
+  ],
+  "candidates": [
+    {
+      "name": "bare_colon_segment_is_not_a_placeholder",
+      "description": "Z3. A one-character `:` fails rule P's length gate under the chosen parse, so the segment survives verbatim.",
+      "canonical_route": "/a/:/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/:/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/:/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "bare_open_brace_is_not_a_placeholder",
+      "description": "Z3, the other half: a one-character `{` also fails the length gate and is not a well-formed placeholder in any syntax.",
+      "canonical_route": "/a/{/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/{/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/{/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "colon_placeholder_at_the_minimum_length",
+      "description": "Rule P at exactly length 2: Express/Rails/Sinatra syntax.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/:x/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "curly_placeholder_at_the_minimum_length",
+      "description": "Rule P at exactly length 2: an empty OpenAPI/ASP.NET placeholder. Rule P ignores the placeholder's NAME, so an empty name is still a placeholder.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/{}/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "angle_placeholder_at_the_minimum_length",
+      "description": "Rule P at exactly length 2: Flask/Werkzeug syntax with an empty name.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/<>/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "already_canonical_token_is_idempotent",
+      "description": "<VAR> is itself a rule-P segment, so re-fingerprinting a record read back out of the store keeps its identity.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/<VAR>/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "hex_segment_at_the_threshold_is_volatile",
+      "description": "Rule H at exactly routeHexSegmentMinLen = 16.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/e3b0c44298fc1c14/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "hex_segment_one_below_the_threshold_is_preserved",
+      "description": "Rule H at 15 characters: under-templating is the recoverable direction, so the segment survives.",
+      "canonical_route": "/a/cafebabecafebab/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/cafebabecafebab/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/cafebabecafebab/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "opaque_segment_at_the_threshold_is_volatile",
+      "description": "Rule O at exactly routeOpaqueSegmentMinLen = 20, alphanumeric with both a digit and a letter.",
+      "canonical_route": "/a/<VAR>/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/abcdefghij123456789k/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/<VAR>/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "opaque_segment_one_below_the_threshold_is_preserved",
+      "description": "Rule O at 19 characters.",
+      "canonical_route": "/a/abcdefghij123456789/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/abcdefghij123456789/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/abcdefghij123456789/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "twenty_letters_without_a_digit_is_preserved",
+      "description": "Rule O's digit requirement, which is what carries most of the safety at length 20: 'internationalization' is exactly 20 characters and is route structure, not an identifier.",
+      "canonical_route": "/a/internationalization/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/internationalization/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/internationalization/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "hyphenated_dated_slug_is_preserved",
+      "description": "Rule O's alphanumeric-only requirement. 'release-notes-2026-08' is 21 characters and carries digits; merging every dated release note onto one digest is exactly the over-templating failure section 6.4 warns about. The accepted cost is that a base64url token containing '-' or '_' is left un-templated.",
+      "canonical_route": "/a/release-notes-2026-08/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/a/release-notes-2026-08/b",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/release-notes-2026-08/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "root_path_survives_step_seven",
+      "description": "Section 6.2 step 7: a route of exactly '/' is the root path and is returned unchanged rather than being trimmed to the empty string, which the DAST tier would reject.",
+      "canonical_route": "/",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "/",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    },
+    {
+      "name": "query_string_duplicate_slashes_and_missing_leading_slash",
+      "description": "Section 6.2 steps 1, 3, 5 and 6 in one input: 'a//b/?x=1' loses its query string, collapses its duplicate slash, gains a leading slash and loses its trailing one.",
+      "canonical_route": "/a/b",
+      "input": {
+        "target_id": "t-9003",
+        "rule_id_versioned": "nuclei:route-canonicalisation-probe@2026.07.1",
+        "http_method": "GET",
+        "route_template": "a//b/?x=1",
+        "injection_point": "path",
+        "param_name": "",
+        "evidence_signal": "statusCodeFlip"
+      },
+      "hashed_fields": [
+        "t-9003",
+        "dast",
+        "nuclei:route-canonicalisation-probe@2026.07.1",
+        "GET",
+        "/a/b",
+        "path",
+        "",
+        "statusCodeFlip"
+      ]
+    }
+  ]
+}

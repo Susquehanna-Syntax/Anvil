@@ -1,0 +1,28 @@
+# anvil-fp/v1 conformance golden — route-01-dast-placeholder-and-threshold-boundaries
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	case:bare_colon_segment_is_not_a_placeholder	3b8e9c477e8c61b850f09cd4e9edf1dd0d3302c31ba8e7f6b11c9990cdf1d078
+digest	case:bare_open_brace_is_not_a_placeholder	e8bed342ee40ef83c1d80c4c9e5e6f4cb6fa40d09cd69713627b529ceec42126
+digest	case:colon_placeholder_at_the_minimum_length	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:curly_placeholder_at_the_minimum_length	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:angle_placeholder_at_the_minimum_length	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:already_canonical_token_is_idempotent	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:hex_segment_at_the_threshold_is_volatile	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:hex_segment_one_below_the_threshold_is_preserved	fcb68f3f235bb3ea1198041a5891110d3e23e8942a6eb2fa02c272fd9964b37b
+digest	case:opaque_segment_at_the_threshold_is_volatile	1f831d799b66ef0a23f3d279200e7f745acdaa570adcf391e3aef2419571f08c
+digest	case:opaque_segment_one_below_the_threshold_is_preserved	e7e58828a73e63659f799745c0c81f3d4de8569aa9b8f1d090f157ef13b567f1
+digest	case:twenty_letters_without_a_digit_is_preserved	6a51d974e1476428a520597a00ecf32dc6d046b03c2786101edde01e9830725e
+digest	case:hyphenated_dated_slug_is_preserved	124c00ac4296f5330ee8f1193eca9a5748f0241a6947b4e99130025aa5728c66
+digest	case:root_path_survives_step_seven	b2a389327c48e3abdcd1ffddab37ae72cf47f30b7ac83d119cce8b94fcfa1e4a
+digest	case:query_string_duplicate_slashes_and_missing_leading_slash	9181fdd3bc5c899893ebca4a91786f70310903f5e96a780899eaccfb5fed474d

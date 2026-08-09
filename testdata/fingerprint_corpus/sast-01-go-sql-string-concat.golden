@@ -1,0 +1,20 @@
+# anvil-fp/v1 conformance golden — sast-01-go-sql-string-concat
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6
+digest	mutation:shifted_down_three_lines_and_reindented	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6
+digest	mutation:crlf_endings_and_trailing_comment_naming_the_old_line	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6
+digest	mutation:leading_comment_line_added	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6
+digest	mutation:locals_renamed_and_literal_text_changed	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6
+digest	mutation:repo_rel_path_in_windows_form	13c60ccf8ec84530e075db4190005b03bc87050210065398fd48088683bb1aa6

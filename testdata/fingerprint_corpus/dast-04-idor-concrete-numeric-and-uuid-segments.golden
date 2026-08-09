@@ -1,0 +1,27 @@
+# anvil-fp/v1 conformance golden — dast-04-idor-concrete-numeric-and-uuid-segments
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:different_numeric_id	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:different_uuid	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:both_ids_different_at_once	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:uuid_uppercased	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:uuid_without_dashes	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:sha256_hex_object_id	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:opaque_base64ish_order_token	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:openapi_curly_placeholders	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:express_colon_placeholders	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:flask_angle_placeholders_with_converters	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:already_carrying_the_canonical_placeholder_token	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b
+digest	mutation:concrete_ids_with_query_string_trailing_slash_and_duplicate_slashes	84f96a6be8790384b52dda96908acc0ca9c493ada224d996f065d9eb3be4605b

@@ -1,0 +1,20 @@
+# anvil-fp/v1 conformance golden — host-01-openssl-debian
+#
+# PRODUCED BY: scripts/compute_golden_fingerprints.py, an implementation of
+# internal/record/FINGERPRINT-SPEC.md written WITHOUT reading
+# internal/record/fingerprint.go.  These values were NOT produced by the code
+# they gate, and they are NOT a copy of the fixture's `expected_digest`.
+#
+# DO NOT regenerate this file to make a test pass.  A changed digest means every
+# stored finding under it loses its identity, silently: `first_seen_at` resets,
+# every fingerprint-keyed suppression stops applying, and every handoff row is
+# orphaned.  That is an anvil-fp/v2 event with a dual-write migration
+# (FINGERPRINT-SPEC.md section 0), never a v1 edit and never a re-seal.
+#
+# Format: TSV — kind <TAB> label <TAB> value.
+digest	base	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953
+digest	mutation:version_bumped	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953
+digest	mutation:purl_carrying_an_arch_qualifier	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953
+digest	mutation:package_manager_uppercased	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953
+digest	mutation:package_manager_and_identifier_padded	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953
+digest	mutation:purl_already_version_free	c6d2c1a505849bf987d9a03a5a3ce8ab6053a9ae5e0d154d332b464bb69e5953

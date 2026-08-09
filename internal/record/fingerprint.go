@@ -180,6 +180,29 @@ package record
 // That mutual check is the mechanism that would have caught research/07 and
 // research/18 shipping two different /v1 algorithms under one name.
 //
+// R.16 IS SHIPPED. The three pieces, and what each one is for:
+//
+//	scripts/compute_golden_fingerprints.py
+//	    the oracle. A from-scratch Python implementation of
+//	    FINGERPRINT-SPEC.md that parses the reserved-word list and the
+//	    algorithm constants OUT OF the document rather than transcribing them,
+//	    and that imports nothing which could reach this file.
+//	testdata/fingerprint_corpus/**/*.golden
+//	    the committed output of that oracle. NEVER regenerate one to make a
+//	    test pass; see FINGERPRINT-SPEC.md §0.
+//	internal/record/fingerprint_conformance_test.go
+//	    the gate. It reads the goldens — it never runs the oracle, so the Go
+//	    build has no Python dependency and no path can re-seal mid-test.
+//
+// THE ORDINAL GROUPING KEY IS NOW UNDER TEST. FINGERPRINT-SPEC.md Appendix Z4
+// recorded that it was not: every SAST fixture in the main corpus supplies a
+// pre-computed `ordinal`, so AssignSastOrdinals' grouping key could have been
+// wrong in any of its four components and still reproduced all eight committed
+// digests. testdata/fingerprint_corpus/derived/ closes that — its candidates
+// supply no ordinal and force it to be derived. Changing the grouping key, the
+// ordering rule, or the stability of the sort in AssignSastOrdinals now moves a
+// committed digest, which is an anvil-fp/v2 event.
+//
 // Sources: plan/40-record-and-storage.md ("Fingerprint Specification");
 // plan/00-SPINE.md S1, S6, S7; plan/IMPLEMENTATION-PLAN.md §6 (this file
 // declares no shared enum — it consumes contract.go's DetectorKind,
@@ -1062,6 +1085,15 @@ type SastCandidate struct {
 //
 // Any input whose fields are invalid is returned as an error rather than
 // silently given ordinal 0, because a bad ordinal is invisible in the digest.
+//
+// EVERY LINE OF THIS FUNCTION IS PINNED BY
+// testdata/fingerprint_corpus/derived/ordinal-01-sast-batch-derived-ordinals.json,
+// which supplies a deliberately shuffled batch with NO ordinals and asserts the
+// derived ones against a golden computed by the independent oracle. It varies
+// each component of the group key one at a time — including reporting one file
+// through a Windows path, so grouping on the raw rather than the canonicalised
+// path is detectable — and includes two candidates at an identical (Line,
+// Column) so the stable-sort tiebreak is not vacuous.
 func AssignSastOrdinals(cands []SastCandidate) ([]SastInput, error) {
 	type keyed struct {
 		idx int

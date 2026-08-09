@@ -1,0 +1,248 @@
+{
+  "id": "ordinal-01-sast-batch-derived-ordinals",
+  "kind": "sast_ordinal_batch",
+  "resolves": ["Z1", "Z2", "Z4", "Z5"],
+  "description": "The fixture FINGERPRINT-SPEC.md Appendix Z4 says the corpus was missing. Every SAST fixture in the main corpus supplies a pre-computed `ordinal` in its input, so section 4's grouping key and ordering rule were NOT EXERCISED AT ALL: an independent implementation could get the grouping key wrong and still reproduce all eight committed digests. Here no candidate supplies an ordinal. The batch is presented deliberately OUT of source order, and each of the four components of the grouping key (target_id, rule_id_versioned, CANONICALISED repo_relpath, normalized_match) is varied one at a time so that getting any one of them wrong changes an ordinal and therefore a digest.",
+  "notes": [
+    "Section 4 grouping key: target_id U+001F rule_id_versioned U+001F CanonicalRepoRelPath(repo_relpath) U+001F normalized_match. Joined for COMPARISON only; the key itself is never hashed.",
+    "Section 4 ordering within a group: ascending by source line, then source column, then the candidate's original index in the batch. The sort must be stable. Line and column are used ONLY for this ordering and never reach the digest -- which is why they live beside `input` here rather than inside it.",
+    "Candidates `at-line-220-first-in-batch` and `at-line-220-duplicate-position-second-in-batch` are byte-identical in every hashed field EXCEPT the derived ordinal. That is the whole reason section 4 exists: without an ordinal they would collide on one fingerprint and the second finding would be LOST on upsert against UNIQUE (target_id, fingerprint). Losing a finding is worse than churning one.",
+    "`at-line-42-earliest-in-the-file` differs from the others by a pure local rename AND by a different enclosing_symbol_path, yet lands in the SAME group. Two separate facts are pinned there: locals abstract to $N so a rename does not fork identity, and enclosing_symbol_path is NOT part of the grouping key. The second is a KNOWN, OPEN defect -- FINGERPRINT-SPEC.md section 9, CRITIQUE-01 finding 4: deleting an unrelated function above a match can churn that match's ordinal and therefore its digest. It is pinned here as CURRENT BEHAVIOUR, not endorsed. If it is ever ruled on in the critic's favour that is an anvil-fp/v2 event and this fixture's ordinals move with it.",
+    "`at-line-900-via-a-windows-path` reports the same file as `.\\internal\\api\\repo.go`. It joins the same group only because the grouping key applies CanonicalRepoRelPath (section 7.1) before comparing. An implementation that grouped on the raw path would give it ordinal 0 instead of 3 and emit a different digest -- silently.",
+    "Appendix Z5: `block-comment-backtick-raw-string-and-number` is the first fixture anywhere to exercise section 3.2 rule 4 (block comments), section 3.3's rule that backslash escapes are NOT honoured inside a backtick raw string, section 3.4's <NUM> token, and a reserved word (`const`, clause (a)). The bulk of the 193-word reserved list is still unexercised by any fixture; fingerprint_spec_test.go locks the list's CONTENT, which is a different guarantee from its APPLICATION.",
+    "Appendix Z2: `namespace-qualifier-across-a-newline` puts a newline between `Ns` and `::`. Clause (c) asks whether 'the next non-space input characters are ::'; reading 'non-space' as section 3.2 rule 1's full whitespace class preserves `Ns`, while a narrower reading (literal U+0020 only) would abstract it to $1. This fixture makes the two readings produce different digests instead of silently agreeing.",
+    "Appendix Z1: `non-ascii-whitespace-separators` separates its tokens with U+00A0 (NBSP) and U+2028 (LINE SEPARATOR, category Zl). Both must be treated as whitespace by rule 1. Note the counter-constraint that fixes the class from the other side: section 9 requires a raw U+001F in a snippet to SURVIVE normalization so section 1.2 can reject it, so the class is Unicode White_Space and NOT any broader class that swallows the C0 separators."
+  ],
+  "candidates": [
+    {
+      "name": "at-line-220-first-in-batch",
+      "description": "Group G1, second in source order. First of two candidates at the identical (line, column).",
+      "line": 220,
+      "column": 4,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 1,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Delete",
+        "$1.Exec(<STR> + $2)",
+        "1"
+      ]
+    },
+    {
+      "name": "at-line-42-earliest-in-the-file",
+      "description": "Group G1, first in source order despite appearing second in the batch. Locals are renamed and the enclosing symbol differs; neither affects the grouping key.",
+      "line": 42,
+      "column": 8,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Purge",
+        "snippet": "conn.Exec(\"DELETE FROM u WHERE key = \" + k)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Purge",
+        "$1.Exec(<STR> + $2)",
+        "0"
+      ]
+    },
+    {
+      "name": "at-line-220-duplicate-position-second-in-batch",
+      "description": "Group G1. Identical to `at-line-220-first-in-batch` in every hashed field and in (line, column); only section 4's third ordering component -- the original index in the batch -- separates them. A non-stable sort would swap these two identities on some runs and not others.",
+      "line": 220,
+      "column": 4,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 2,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Delete",
+        "$1.Exec(<STR> + $2)",
+        "2"
+      ]
+    },
+    {
+      "name": "different-path-same-normalized-match",
+      "description": "Group G2. Same target, same rule, same normalized match, DIFFERENT file: repo_relpath is in the grouping key, so this restarts at ordinal 0.",
+      "line": 7,
+      "column": 2,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/other.go",
+        "enclosing_symbol_path": "internal/api/other.go::Other.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/other.go",
+        "internal/api/other.go::Other.Delete",
+        "$1.Exec(<STR> + $2)",
+        "0"
+      ]
+    },
+    {
+      "name": "different-rule-same-normalized-match",
+      "description": "Group G3. Same target, same file, same line and column, same normalized match, DIFFERENT rule: rule_id_versioned is in the grouping key, so this restarts at ordinal 0 rather than becoming G1's fourth member.",
+      "line": 220,
+      "column": 4,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.dangerous-db-exec@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.dangerous-db-exec@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Delete",
+        "$1.Exec(<STR> + $2)",
+        "0"
+      ]
+    },
+    {
+      "name": "different-target-same-everything",
+      "description": "Group G4. Identical to `at-line-220-first-in-batch` except for target_id. Section 4 adds target_id to the specification's (rule, path, normalized) key precisely so that passing two targets' candidates in one batch cannot cross-index them; without it this candidate would take an ordinal from G1's run and both targets' findings would move.",
+      "line": 220,
+      "column": 4,
+      "input": {
+        "target_id": "t-9002",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9002",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Delete",
+        "$1.Exec(<STR> + $2)",
+        "0"
+      ]
+    },
+    {
+      "name": "at-line-900-via-a-windows-path",
+      "description": "Group G1, last in source order. The same file reported by a Windows producer as `.\\internal\\api\\repo.go`. It joins G1 only because the grouping key canonicalises the path first (section 7.1); an implementation that grouped on the raw string would emit ordinal 0 and a different digest.",
+      "line": 900,
+      "column": 1,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": ".\\internal\\api\\repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.Delete",
+        "snippet": "db.Exec(\"DELETE FROM t WHERE id = \" + id)"
+      },
+      "expected_ordinal": 3,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.Delete",
+        "$1.Exec(<STR> + $2)",
+        "3"
+      ]
+    },
+    {
+      "name": "block-comment-backtick-raw-string-and-number",
+      "description": "Group G5, alone. Appendix Z5: a leading /* block comment */ (rule 4), the reserved word `const` preserved verbatim by clause (a), a hex literal collapsing to <NUM> (section 3.4), and a backtick raw string whose embedded backslash-n is ORDINARY CONTENT because section 3.3 does not honour escapes inside a backtick literal. An implementation that honoured the escape would consume past the closing backtick and normalise the tail differently.",
+      "line": 300,
+      "column": 5,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "internal/api/repo.go::Repo.List",
+        "snippet": "/* legacy */ const limit = 0xFF\nrows, err := db.Query(`SELECT * FROM t WHERE a = \\n`)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "internal/api/repo.go::Repo.List",
+        "const $1 = <NUM> $2, $3 := $4.Query(<STR>)",
+        "0"
+      ]
+    },
+    {
+      "name": "namespace-qualifier-across-a-newline",
+      "description": "Group G6, alone. Appendix Z2: a newline sits between `Ns` and `::`. Clause (c) preserves `Ns` only if 'the next non-space input characters' is read with rule 1's whitespace class. Note also that the newline still emits a space, so the output carries `Ns ::Helper(...)` -- clause (b) then fires for `Helper` because it ignores TRAILING spaces when inspecting the output. An empty enclosing_symbol_path is legal (section 2.1) and hashed as a zero-length field.",
+      "line": 310,
+      "column": 3,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "",
+        "snippet": "Ns\n::Helper(v)"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "",
+        "Ns ::Helper($1)",
+        "0"
+      ]
+    },
+    {
+      "name": "non-ascii-whitespace-separators",
+      "description": "Group G7, alone. Appendix Z1: the tokens are separated by U+00A0 (NBSP, named explicitly by rule 1) and U+2028 (LINE SEPARATOR, category Zl, reached only by reading 'the Unicode space separators' as the White_Space property). Both collapse to one U+0020, so the normalized match is plain ASCII and passes the section 1.2 field guard. An implementation that emitted U+2028 verbatim would produce a valid-looking but incompatible digest.",
+      "line": 320,
+      "column": 3,
+      "input": {
+        "target_id": "t-9001",
+        "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "repo_rel_path": "internal/api/repo.go",
+        "enclosing_symbol_path": "",
+        "snippet": "a\u00a0=\u2028b"
+      },
+      "expected_ordinal": 0,
+      "hashed_fields": [
+        "t-9001",
+        "sast",
+        "opengrep.go.lang.security.audit.sqli-exec-concat@2026.07.1",
+        "internal/api/repo.go",
+        "",
+        "$1 = $2",
+        "0"
+      ]
+    }
+  ]
+}
