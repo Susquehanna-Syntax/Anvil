@@ -165,11 +165,20 @@ jobs:
       - name: Install Trivy
         run: |
           set -euo pipefail
-          # Pinned. S8 wants versions pinned and archived, and an unpinned
-          # scanner makes this job's result unreproducible run to run.
-          TRIVY_VERSION=0.58.2
+          # Pinned by VERSION AND DIGEST. S8 wants versions pinned; a digest is
+          # what makes the pin mean something, since a tag can be moved.
+          #
+          # Both values were read from the GitHub releases API rather than written
+          # from memory -- the first version here was invented and 404'd, which is
+          # the same assert-from-memory failure this project keeps catching in its
+          # own code. The digest is GitHub's, computed over the stored bytes: a
+          # primary source, but not an independent re-hash, and that distinction
+          # is the same one M0.7 flagged about its own opengrep pins.
+          TRIVY_VERSION=0.73.0
+          TRIVY_SHA256=2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
           curl -sSfL -o trivy.tar.gz \
             "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum -c -
           tar -xzf trivy.tar.gz trivy
           sudo install -m 0755 trivy /usr/local/bin/trivy
           trivy --version
