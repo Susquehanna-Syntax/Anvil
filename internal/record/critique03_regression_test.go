@@ -153,11 +153,31 @@ func TestXVM1ExpiredAuditIsRefusedEverywhere(t *testing.T) {
 	}
 }
 
+// xvOneRunSeal returns a REAL half seal for a one-run record in the given
+// (state, status), by going through halfSealOfRun — one of the two producers
+// the gate accepts provenance from. A test that wants a seal must obtain one
+// the way production code does; building the struct is the defect, not the
+// setup.
+func xvOneRunSeal(state State, status HalfStatus) HalfSeal {
+	l := &SARIFLog{
+		Properties: AuditProperties{AuditID: "xv-audit", State: state},
+		Runs:       []Run{{Properties: RunProperties{Half: HalfSast, Status: status}}},
+	}
+	return halfSealOfRun(l, &l.Runs[0])
+}
+
 // TestXVM1ExpiredIsDistinctFromUnsealed asserts the refusal STRINGS differ, so
 // "the window closed" and "never sealed" do not arrive as one observation.
 func TestXVM1ExpiredIsDistinctFromUnsealed(t *testing.T) {
-	expired := halfReadRefusal(HalfSeal{Half: HalfSast, Status: HalfStatusSealed, AuditState: StateExpired})
-	unsealed := halfReadRefusal(HalfSeal{Half: HalfSast, Status: HalfStatusRunning, AuditState: StateCollecting})
+	// The two seals are OBTAINED FROM A PRODUCER, not hand-built. This test
+	// used to write `HalfSeal{Half: ..., Status: ..., AuditState: ...}`
+	// literals, which is adversary attack 14's shape — a seal the gate was
+	// asked to answer about that no producer minted — and since seal
+	// provenance landed the gate refuses those before it reaches either arm,
+	// so the literals would have compared two provenance refusals to each
+	// other and asserted nothing about expiry or sealing at all.
+	expired := halfReadRefusal(xvOneRunSeal(StateExpired, HalfStatusSealed)).reason
+	unsealed := halfReadRefusal(xvOneRunSeal(StateCollecting, HalfStatusRunning)).reason
 	t.Logf("expired refusal  = %q", expired)
 	t.Logf("unsealed refusal = %q", unsealed)
 	if expired == "" || unsealed == "" {
