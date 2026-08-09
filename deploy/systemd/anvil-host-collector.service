@@ -1,0 +1,151 @@
+### Anvil host package collector — systemd unit (step A.9 of
+### plan/20-lane-a-ingestion-sca.md).
+###
+### THIS IS NOT A DAEMON. research/12-linux-host-scanning.md's recommendation
+### is explicit — "Host agent: don't build a daemon — build a collector, and
+### copy Vuls Server Mode": the process enumerates packages, emits an
+### inventory and exits. There is no watchdog to write and no resident memory
+### footprint between runs. Type=oneshot and the absent Restart= directive are
+### that decision expressed in the unit; Lane A exit criterion 14 requires it,
+### and internal/collector/host/collect_test.go asserts it against this file.
+###
+### The cadence is NOT here. A .timer (or plan/00-SPINE.md S4's
+### `.anvil/policy.yml` trigger policy) supplies it, because research/12 hard
+### boundary #5 puts scan cadence in config with a documented default and none
+### compiled in.
+###
+### THE COLLECTOR IS READ-ONLY (plan/00-SPINE.md S7, research/12 hard boundary
+### #1). That is enforced first in the Go source — the set of executable
+### command lines is a compile-time constant containing only `dpkg-query -W`,
+### `rpm -qa`, `apk list --installed` and `apk info -v`, with no argv
+### parameter anywhere and no shell — and this unit is the SECOND, independent
+### layer: ProtectSystem=strict plus an empty CapabilityBoundingSet mean that
+### even a collector that somehow tried to mutate the host would be denied by
+### the kernel. Neither layer is the excuse for the other.
+
+[Unit]
+Description=Anvil read-only host package collector (oneshot)
+Documentation=https://github.com/Susquehanna-Syntax/Anvil
+# The collector reads only local package databases. It is not ordered after
+# the network because nothing here reaches the network; publication of the
+# inventory is a separate concern with its own unit.
+
+[Service]
+Type=oneshot
+# The binary is cmd/anvil-host-collector, installed to this path:
+#
+#   go build -trimpath -o /usr/lib/anvil/anvil-host-collector ./cmd/anvil-host-collector
+#
+# It takes NO arguments and refuses any it is given. THIS IS THE ONLY Exec*
+# DIRECTIVE THIS UNIT MAY HAVE. systemd runs ExecStartPre=, ExecStartPost=,
+# ExecCondition=, ExecReload=, ExecStop= and ExecStopPost= with the same
+# identity and privileges as ExecStart=, so a package-manager call in any of
+# them is plan/00-SPINE.md S7 violated at the deployment layer rather than in
+# the code — and a review that reads only ExecStart= will not see it. The
+# earlier version of collect_test.go checked exactly that one directive;
+# TestTheUnitGuardScansEveryExecDirective now checks every key beginning with
+# "Exec", every occurrence of each, and refuses the `+`, `!` and `!!` prefixes
+# that would run a command outside everything below.
+ExecStart=/usr/lib/anvil/anvil-host-collector
+
+# ---------------------------------------------------------------------------
+# Root-free. research/12 §6: "Root is not required for the useful 90%" — Vuls
+# documents Fast Scan as "Scan without root privilege, no dependencies".
+# /var/lib/dpkg/status, /var/lib/rpm and /lib/apk/db/installed are all
+# world-readable, so the collector needs no privilege at all.
+# DynamicUser gives it a transient unprivileged uid with no home, no shell and
+# no persistence between runs.
+# ---------------------------------------------------------------------------
+DynamicUser=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SecureBits=noroot-locked
+UMask=0077
+
+# ---------------------------------------------------------------------------
+# Read-only filesystem. ProtectSystem=strict mounts the ENTIRE filesystem
+# hierarchy read-only for this unit except /dev, /proc and /sys; ProtectHome
+# removes /home, /root and /run/user entirely. A package-manager mutation
+# needs to write /var/lib/dpkg, /var/lib/rpm or /lib/apk/db, and under this
+# unit those writes fail at the kernel regardless of what the process asks
+# for.
+#
+# If a future rpm build needs scratch space for a read-only rpmdb open, it
+# gets PrivateTmp's /tmp and nothing else. Do NOT add a ReadWritePaths= entry
+# for a package database to make something work: that is the one edit this
+# unit exists to prevent.
+#
+# THIS IS NOT ONLY A BELT — IT IS THE ONLY MITIGATION THAT EXISTS FOR THE ONE
+# CASE WHERE THE COLLECTOR IS NOT FILESYSTEM-READ-ONLY. `rpm -qa` against a
+# Berkeley-DB-backed rpmdb (RHEL/CentOS 7 and 8, SLES 12 and 15, Amazon Linux
+# 2 — anything whose /var/lib/rpm holds `Packages` rather than `rpmdb.sqlite`)
+# CREATES AND UPDATES /var/lib/rpm/__db.001..__db.003 when the calling process
+# can write that directory, which in practice means when it runs as root. rpm
+# offers no flag that suppresses it, and internal/collector/host refuses to
+# branch on the effective uid to avoid it. DynamicUser=yes (never uid 0) and
+# ProtectSystem=strict (/var read-only at the kernel) are jointly what stops
+# it: rpm falls back to a private mapping and the query still succeeds.
+# Removing either, or running the binary as root outside this unit, re-opens
+# it. internal/collector/host's package comment carries the full statement and
+# its limits.
+# ---------------------------------------------------------------------------
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# The collector makes NO network calls: it reads local package databases and
+# writes an inventory. AF_UNIX is retained for journald only. Publication is a
+# separate concern with its own unit, and if it ever shares this one, widening
+# this line must be a deliberate, reviewed edit rather than something that
+# happens by accident.
+RestrictAddressFamilies=AF_UNIX
+
+# ---------------------------------------------------------------------------
+# Resource confinement — research/12 §6, verified systemd directive semantics,
+# calibrated against osquery's field-proven watchdog defaults (200 MB / 10%
+# CPU normal, 100 MB / 5% restrictive).
+#
+# MemoryHigh= is the PRIMARY control and MemoryMax= is only a backstop, which
+# is research/12's explicit design note: MemoryHigh throttles ("processes are
+# heavily slowed down"), while MemoryMax "invoke[s]" the OOM killer — and an
+# Anvil scan that summons the OOM killer has CAUSED an incident rather than
+# reported one. The collector's own maxQueryOutputBytes cap is the in-process
+# half of the same guarantee.
+# ---------------------------------------------------------------------------
+CPUQuota=20%
+CPUWeight=20
+MemoryHigh=256M
+MemoryMax=512M
+TasksMax=64
+IOWeight=50
+Nice=10
+
+# A collection that has not finished in five minutes is not going to; failing
+# loudly beats occupying the cgroup until the next timer fires.
+TimeoutStartSec=300
+
+# NO Restart= DIRECTIVE, DELIBERATELY. Restart=always on a Type=oneshot unit
+# is how a collector becomes the resident daemon research/12 says not to
+# build. A failed collection is reported and retried by the timer.
+
+[Install]
+# No WantedBy= target: this unit is activated by its timer (or by an operator
+# running `systemctl start anvil-host-collector.service`), never enabled to
+# run at boot on its own.

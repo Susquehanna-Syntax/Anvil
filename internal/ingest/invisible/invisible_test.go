@@ -567,8 +567,15 @@ func TestBothConsumersAgree(t *testing.T) {
 func TestTheReservedDefaultIgnorablesAreInTheClass(t *testing.T) {
 	odi := unicode.Properties["Other_Default_Ignorable_Code_Point"]
 	if odi == nil {
-		t.Skip("this toolchain does not ship Other_Default_Ignorable_Code_Point, so the " +
-			"reserved half of the class rests on nothing this test can read")
+		// NOT a skip, for the same reason as the twin check in
+		// internal/ingest/sanitize: this table is not platform-specific, and
+		// "the reserved half of the class rests on nothing this test can read"
+		// is precisely a reason to go red. The hole this test is the regression
+		// for -- 3,738 reserved default-ignorables that render as nothing and
+		// split a share-alike marker -- would come back invisibly.
+		t.Fatal("this toolchain does not ship Other_Default_Ignorable_Code_Point, so the reserved " +
+			"half of the invisible class was NOT checked. This fails rather than skips: " +
+			"see internal/SKIPPED-CONTROLS.md.")
 	}
 	reserved := 0
 	for r := rune(0); r <= unicode.MaxRune; r++ {

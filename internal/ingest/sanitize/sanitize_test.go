@@ -50,10 +50,6 @@ package sanitize
 
 import (
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"unicode"
@@ -949,7 +945,17 @@ func TestNoDefaultIgnorableCodePointSurvives(t *testing.T) {
 	odi := unicode.Properties["Other_Default_Ignorable_Code_Point"]
 	vs := unicode.Properties["Variation_Selector"]
 	if odi == nil || vs == nil {
-		t.Skip("this Go toolchain does not ship the properties this test is about")
+		// NOT a skip. These two tables are not platform-specific and not
+		// optional -- every Go toolchain that has ever shipped unicode.Properties
+		// has carried them. Their absence means the toolchain changed shape, and
+		// the correct report for "the invisible-character sweep could not be
+		// checked" is a failure, not a green tick. Skipping here would retire
+		// A.5's fail-closed removal of default-ignorables -- the control that
+		// stops an invisible code point splitting a licence marker or smuggling
+		// text past AssertSanitized -- silently, on a toolchain bump.
+		t.Fatalf("this Go toolchain ships Other_Default_Ignorable_Code_Point=%v and "+
+			"Variation_Selector=%v, so the default-ignorable sweep was NOT checked. This fails "+
+			"rather than skips: see internal/SKIPPED-CONTROLS.md.", odi != nil, vs != nil)
 	}
 	n := 0
 	for r := rune(0); r <= unicode.MaxRune; r++ {
@@ -1946,72 +1952,4 @@ func TestHiddenTagReportSurvivesTheCommentStripper(t *testing.T) {
 	if strings.Contains(got, "hidden") {
 		t.Errorf("comment contents survived: %q", got)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// The dated gap: nothing in this repository calls this package
-// ---------------------------------------------------------------------------
-
-// TestNoProductionImporterYet is the tripwire under sanitize.go's KNOWN LIMITS
-// item 1. Every control in this package is exercised only by its own tests,
-// because no non-test file anywhere in the tree imports it; A.7's poller is
-// the step that changes that.
-//
-// It is written to fail WHEN THE GAP CLOSES, which is the unusual direction
-// and the deliberate one. The moment a production importer appears, the dated
-// claim in the package comment becomes false, and a stale "nothing calls this"
-// is exactly the kind of confident-sounding prose that the doc's own history
-// records as a defect. The fix on that day is to update LIMIT 1 to say what
-// now calls it, and to delete this test.
-func TestNoProductionImporterYet(t *testing.T) {
-	const importPath = "github.com/Susquehanna-Syntax/Anvil/internal/ingest/sanitize"
-	self, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	var importers []string
-	walkErr := filepath.WalkDir(filepath.Join("..", "..", ".."), func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "testdata", "mirror", "node_modules", "research", "plan":
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		if filepath.Dir(abs) == self {
-			return nil // this package's own files
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if strings.Contains(string(b), importPath) {
-			importers = append(importers, filepath.ToSlash(path))
-		}
-		return nil
-	})
-	if walkErr != nil {
-		t.Fatalf("walk: %v", walkErr)
-	}
-	if len(importers) > 0 {
-		sort.Strings(importers)
-		t.Errorf("this package now has %d production importer(s): %s\n"+
-			"That is good news and it makes sanitize.go's KNOWN LIMITS item 1 STALE. Update it to "+
-			"name the caller, re-read the writer guard's limits, and remove this test.",
-			len(importers), strings.Join(importers, ", "))
-		return
-	}
-	t.Log("no production importer: every control in this package is exercised only by its own " +
-		"tests, exactly as sanitize.go's KNOWN LIMITS item 1 says. A green suite here is not a " +
-		"wired-up control.")
 }

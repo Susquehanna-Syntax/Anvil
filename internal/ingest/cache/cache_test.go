@@ -964,10 +964,18 @@ func TestFeedStateRoundTripsForTheConditionalGETPoller(t *testing.T) {
 func TestFeedStateAcceptsEveryFeedIDInTheShippedConfig(t *testing.T) {
 	feeds, err := config.Load(filepath.Join("..", "config", "feeds.example.yaml"))
 	if err != nil {
-		t.Skipf("A.1's example config is unavailable, so the feed_id domain cannot be cross-checked: %v", err)
+		// NOT a skip. feeds.example.yaml is CHECKED IN at a fixed relative
+		// path; it is not an optional artefact and not a platform fact. A
+		// skip here reports "the produce/consume edge between A.1 and A.2 was
+		// verified" whenever the file moves, is renamed, or stops parsing --
+		// which is the exact failure mode internal/SKIPPED-CONTROLS.md is
+		// about.
+		t.Fatalf("A.1's example config could not be loaded, so the feed_id domain shared by A.1 "+
+			"and A.2 was NOT cross-checked: %v", err)
 	}
 	if len(feeds.Feeds) == 0 {
-		t.Skip("A.1's example config declares no feeds")
+		t.Fatal("A.1's example config declares no feeds, so this test proved nothing about the " +
+			"feed_id domain (internal/ingest/config's own tests also fail on an empty table)")
 	}
 
 	db, _ := openMigrated(t)

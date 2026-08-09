@@ -314,8 +314,27 @@ func TestXVM3RelatedLocationsAreCapped(t *testing.T) {
 				// GitHub requires a physical location; a result with an empty
 				// `locations` array is dropped outright and ledgered. That is
 				// a different rule from the cap and not what this probe is
-				// measuring.
-				t.Skipf("result dropped before the cap ran: %s", GitHubLossOf(files).Summary())
+				// measuring -- but it excuses ONLY the case that genuinely has
+				// no locations to begin with.
+				//
+				// The skip used to be unconditional, so the day
+				// ProjectForGitHub started dropping results it should have
+				// kept, every subtest here would have turned green-by-skip and
+				// the silent-truncation ledger would have gone unchecked. A
+				// disappearing result is a failure for every other case.
+				if tc.locs != 0 {
+					t.Fatalf("the result was dropped before the cap could run, although it carried "+
+						"%d locations. The cap and the overflow ledger were NOT exercised: %s",
+						tc.locs, GitHubLossOf(files).Summary())
+				}
+				// Even in the excused case the drop must be COUNTED, never
+				// silent -- that is the property this file is named for.
+				loss := GitHubLossOf(files)
+				if loss.TotalDropped() == 0 {
+					t.Fatalf("a result was dropped and nothing was ledgered: %s", loss.Summary())
+				}
+				t.Skipf("a result with zero locations is dropped by a different rule than the cap; "+
+					"the drop is ledgered: %s", loss.Summary())
 			}
 			out := files[0].Log.Runs[0].Results[0]
 			total := len(out.Locations) + len(out.RelatedLocations)

@@ -28,6 +28,20 @@ build/
 .DS_Store
 Thumbs.db
 
+# Warm-start accelerator cache (internal/mirror/accelerator). The Trivy DB and
+# Grype DB are consume-only: neither Aqua nor Anchore states redistribution
+# terms for the compiled artifact, and unstated terms are not permissive terms.
+# Committing ~165 MB of it into this Apache-2.0 repository WOULD BE
+# redistribution, and redistribution is unrecoverable once pushed.
+#
+# The accelerator's default cache root now lives under the OS user cache
+# directory, outside any working tree, so this rule is the second of two
+# independent belts: the location stops git from seeing it, and this stops git
+# from carrying it if anyone points CacheDir back inside a checkout. Same
+# posture, and the same reasoning, as mirror/.gitignore — "a file that git
+# cannot carry is a file no Anvil commit can author."
+internal/mirror/accelerator/.cache/
+
 # Anvil runtime artifacts
 *.db
 *.sqlite
