@@ -140,6 +140,81 @@ jobs:
             exit 1
           fi
 
+  # The one control in this repository that cannot be proven without a real
+  # third-party binary: that a real scanner does not report a vulnerable fixture
+  # clean. Everything else about the SCA collector can be tested against
+  # recorded output, but "the tool ran and found nothing" and "the tool was not
+  # there" are indistinguishable to a caller, and for a security scanner that is
+  # the worst possible failure -- an empty result reads as a clean repository.
+  #
+  # internal/SKIPPED-CONTROLS.md item N1 recorded this as OPEN: the test was
+  # correctly made fatal-when-opted-in rather than skip-when-opted-in, which
+  # made it honest, but no machine anywhere set the opt-in, so the control was
+  # proven on NOTHING. This job is what closes it. If it is ever removed, that
+  # control silently stops existing again.
+  trivy-e2e:
+    name: SCA end-to-end (real Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          # Pinned by VERSION AND DIGEST. S8 wants versions pinned; a digest is
+          # what makes the pin mean something, since a tag can be moved.
+          #
+          # Both values were read from the GitHub releases API rather than written
+          # from memory -- the first version here was invented and 404'd, which is
+          # the same assert-from-memory failure this project keeps catching in its
+          # own code. The digest is GitHub's, computed over the stored bytes: a
+          # primary source, but not an independent re-hash, and that distinction
+          # is the same one M0.7 flagged about its own opengrep pins.
+          TRIVY_VERSION=0.73.0
+          TRIVY_SHA256=2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
+          curl -sSfL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum -c -
+          tar -xzf trivy.tar.gz trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+          trivy --version
+
+      # The collector invokes Trivy with --skip-db-update --offline-scan, which
+      # is the correct posture -- S0 says Anvil never browses the live web at
+      # inference time -- but it means Trivy REFUSES TO RUN AT ALL until a
+      # database exists locally. The first run of this job proved that: FATAL
+      # "--skip-db-update cannot be specified on the first run".
+      #
+      # That is a genuine operational dependency, not a CI quirk, and no test
+      # against recorded Trivy output could have surfaced it. In production the
+      # database is what A.11's warm-start accelerator supplies; here we seed it
+      # the ordinary way so the E2E control exercises the real invocation.
+      - name: Seed the Trivy vulnerability database
+        run: trivy image --download-db-only
+
+      - name: The opt-in is set, so a missing binary must FAIL rather than skip
+        env:
+          ANVIL_TRIVY_E2E: "1"
+        run: go test -count=1 -v -run TestRealTrivyScansAFixtureRepo ./internal/collector/repo/
+
+      - name: Negative control -- the job must fail if Trivy disappears
+        env:
+          ANVIL_TRIVY_E2E: "1"
+        run: |
+          set -uo pipefail
+          sudo mv /usr/local/bin/trivy /usr/local/bin/trivy.hidden
+          if go test -count=1 -run TestRealTrivyScansAFixtureRepo ./internal/collector/repo/; then
+            sudo mv /usr/local/bin/trivy.hidden /usr/local/bin/trivy
+            echo "::error::The E2E test PASSED with no Trivy binary present. The opt-in gate is not fatal, so this job proves nothing."
+            exit 1
+          fi
+          sudo mv /usr/local/bin/trivy.hidden /usr/local/bin/trivy
+          echo "confirmed: with ANVIL_TRIVY_E2E=1 and no binary, the test fails rather than skipping"
+
   # plan/00-SPINE.md S12 permits Python in exactly three places, and the
   # evaluation harness is one of them. eval/ is a pure-Python tree.
   #

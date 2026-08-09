@@ -482,7 +482,23 @@ func TestProbeM5ValidatedRequiresDynamicEvidence(t *testing.T) {
 			auditRecID, err := f.tryNewAudit(record.StateBothSealed, record.HalfStatusSealed,
 				c.dast, f.clock.Now().Add(8*time.Hour))
 			if err != nil {
-				t.Skipf("the schema will not hold dast_status=%q: %v", c.dast, err)
+				// NARROW, NOT CATCH-ALL. This used to skip on ANY fixture
+				// error, so a broken fixture retired M5 -- the gate that stops
+				// a requires_dynamic_confirmation finding being recorded
+				// 'validated' with no reproduction behind it -- and the package
+				// still printed ok. Only the one known schema-constraint gap
+				// (schema.sql is a frozen interface that lags internal/record's
+				// dast_status enum) buys a skip; everything else is a failure.
+				// This mirrors TestValidatedRequiresDynamicEvidence, which was
+				// already narrow.
+				if strings.Contains(err.Error(), "ck_audit_record_dast_status") {
+					t.Skipf("ck_audit_record_dast_status does not admit %q yet; schema.sql needs it "+
+						"in the enum. The classification itself is still asserted without a database "+
+						"by TestHasDynamicEvidenceClassifiesEveryDastStatus: %v", c.dast, err)
+				}
+				t.Fatalf("the M5 fixture could not be built for dast_status=%q, so the gate was NOT "+
+					"exercised for it. This fails rather than skips: a fixture that stops building "+
+					"must not silently retire a security control. %v", c.dast, err)
 			}
 			fingerprint, _ := f.enqueue(61, c.class, auditRecID)
 			h, err := f.q.Claim(fingerprint, "w1")
