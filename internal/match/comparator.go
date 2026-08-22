@@ -325,10 +325,47 @@ type Refusal struct {
 	Ecosystem string
 	Package   string
 	Purl      string
-	Version   string
-	Source    string
-	SourceID  string
-	Detail    string
+	// PurlType is the purl `type` segment, in its canonical lowercase form,
+	// when THAT is the token this comparator does not implement.
+	//
+	// IT IS A SEPARATE FIELD FROM Ecosystem ON PURPOSE. A record may carry an
+	// ecosystem this comparator DOES implement next to a purl whose type it
+	// does not — `{Ecosystem: "deb", Purl: "pkg:npm/lodash@4.17.20"}` is a
+	// real shape when a collector fills the ecosystem column from the host and
+	// the purl from a lockfile — and the refusal has to name the token that
+	// was actually refused. Writing the purl type into Ecosystem would put
+	// "deb" on the operator's implement-next list, which is worse than leaving
+	// it empty: it would name a scheme that IS implemented.
+	//
+	// CoverageReport.EcosystemsRefused reads this field for the purl route and
+	// Ecosystem for the ecosystem route. See refusedIdentityToken.
+	PurlType string
+	Version  string
+	Source   string
+	SourceID string
+	Detail   string
+}
+
+// refusedIdentityToken returns the vocabulary token whose absence from this
+// comparator's implementation caused the refusal, or "" when the refusal was
+// not about an unimplemented scheme.
+//
+// It is the ONE place that decides what feeds
+// CoverageReport.EcosystemsRefused, because that list answers a question — "what
+// must Anvil implement next?" — whose answer does not depend on which of the
+// two identity routes the input happened to arrive by. A refusal that arrives
+// through the purl route is the same fact about coverage as one that arrives
+// through the ecosystem route, and counting only the second makes the list
+// quietly wrong in the direction that looks better: empty exactly when the
+// input was WELL-FORMED enough to carry a purl.
+func (r Refusal) refusedIdentityToken() string {
+	switch r.Reason {
+	case RefusalUnsupportedEcosystem:
+		return r.Ecosystem
+	case RefusalUnsupportedPurlType:
+		return r.PurlType
+	}
+	return ""
 }
 
 // Error renders the refusal. It always names the reason first, so grepping a
@@ -357,6 +394,9 @@ func (r *Refusal) Error() string {
 	if r.Purl != "" {
 		b.WriteString(" purl=" + strconv.Quote(r.Purl))
 	}
+	if r.PurlType != "" {
+		b.WriteString(" purlType=" + strconv.Quote(r.PurlType))
+	}
 	if r.Source != "" || r.SourceID != "" {
 		b.WriteString(" advisory=" + strconv.Quote(r.Source+"/"+r.SourceID))
 	}
@@ -371,7 +411,7 @@ func (r *Refusal) Error() string {
 func (r Refusal) sortKey() string {
 	return strings.Join([]string{
 		string(r.Reason), string(r.Scheme), r.Ecosystem, r.Package,
-		r.Purl, r.Version, r.Source, r.SourceID, r.Detail,
+		r.Purl, r.PurlType, r.Version, r.Source, r.SourceID, r.Detail,
 	}, "\x00")
 }
 
@@ -1215,9 +1255,23 @@ type CoverageReport struct {
 	// consumer reading a stored CoverageReport knows what the producing
 	// build could compare without having to guess from its version.
 	SchemesImplemented []Scheme
-	// EcosystemsRefused is the distinct, sorted set of ecosystem strings that
-	// were refused. It is the list an operator uses to decide what to
-	// implement next.
+	// EcosystemsRefused is the distinct, sorted set of identity tokens that
+	// were refused for an unimplemented scheme. It is the list an operator
+	// uses to decide what to implement next.
+	//
+	// BOTH IDENTITY ROUTES FEED IT: a record refused on its `ecosystem`
+	// column (RefusalUnsupportedEcosystem) contributes that column, and a
+	// record refused on its purl `type` (RefusalUnsupportedPurlType)
+	// contributes the type in its canonical lowercase form. The two routes
+	// are the same fact about coverage, and for deb/rpm/apk the two
+	// vocabularies are the same strings, so they deduplicate rather than
+	// double-count.
+	//
+	// IT DID NOT ALWAYS DO THIS. Only the ecosystem route fed the list
+	// until A.21, which meant the list was EMPTY exactly when the input was
+	// well-formed enough to carry a purl — every repo-SCA finding, and what
+	// every collector is encouraged to supply. PackagesRefusedScheme counted
+	// them; nothing said what they were.
 	EcosystemsRefused []string
 
 	// Refusals, Defences, UpstreamOnlyAdvisories and
@@ -1499,8 +1553,8 @@ func (m *Matcher) Match(ctx context.Context, inventory []PackageRecord) ([]Match
 		anyRefusal = true
 		if r, ok := asRefusal(err); ok {
 			refusalsCollect = append(refusalsCollect, *r)
-			if r.Reason == RefusalUnsupportedEcosystem && r.Ecosystem != "" {
-				refusedEcos[r.Ecosystem] = true
+			if tok := r.refusedIdentityToken(); tok != "" {
+				refusedEcos[tok] = true
 			}
 			return
 		}

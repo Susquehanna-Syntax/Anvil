@@ -292,7 +292,7 @@ func (b *Bootstrapper) bloblessClone(
 		start = 0
 	}
 
-	dc := &decodeCtx{feedID: feed.ID}
+	dc := newDecodeCtx(feed.ID)
 	meter := &readMeter{}
 	for i := start; i < len(files); i++ {
 		rel := files[i]
@@ -300,7 +300,7 @@ func (b *Bootstrapper) bloblessClone(
 			return w.add(ctx, rec)
 		})
 		if err != nil {
-			res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats, meter.MaxRead, meter.Total
+			res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats(), meter.MaxRead, meter.Total
 			return res, err
 		}
 		res.EntriesRead++
@@ -308,11 +308,11 @@ func (b *Bootstrapper) bloblessClone(
 			res.EntriesSkipped++
 		}
 		if err := w.entryDone(ctx, i, rel); err != nil {
-			res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats, meter.MaxRead, meter.Total
+			res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats(), meter.MaxRead, meter.Total
 			return res, err
 		}
 	}
-	res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats, meter.MaxRead, meter.Total
+	res.Sanitizer, res.PeakReadBytes, res.BytesRead = dc.stats(), meter.MaxRead, meter.Total
 
 	if err := w.finish(ctx); err != nil {
 		return res, err
