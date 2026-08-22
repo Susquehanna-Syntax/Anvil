@@ -1,0 +1,45 @@
+{
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "Debian:11",
+        "name": "openssl",
+        "purl": "pkg:deb/debian/openssl"
+      },
+      "ranges": [
+        {
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "1.1.1n-0+deb11u4"
+            }
+          ],
+          "type": "ECOSYSTEM"
+        }
+      ]
+    }
+  ],
+  "aliases": [
+    "CVE-2026-1001"
+  ],
+  "details": "The Debian security team tracks CVE-2026-1001 for the openssl source package.",
+  "id": "GHSA-deb1-2026-0001",
+  "modified": "2026-02-02T00:00:00Z",
+  "published": "2026-01-15T00:00:00Z",
+  "references": [
+    {
+      "type": "ADVISORY",
+      "url": "https://example.invalid/dsa/CVE-2026-1001"
+    }
+  ],
+  "schema_version": "1.6.0",
+  "severity": [
+    {
+      "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "type": "CVSS_V3"
+    }
+  ],
+  "summary": "openssl is vulnerable in Debian 11"
+}
