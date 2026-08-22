@@ -1,0 +1,139 @@
+# golangci-lint configuration for Anvil.
+#
+# =============================================================================
+# READ THIS BEFORE TRUSTING ANYTHING IN THIS FILE
+# =============================================================================
+#
+# This file is NOT the authorization kernel's build-time guard. It is an
+# editor- and pre-commit-speed echo of it. Two facts about this repository make
+# that distinction load-bearing rather than modest:
+#
+#   1. .github/workflows/ci.yml does not run golangci-lint. CI runs gofmt,
+#      go vet, go build and `go test -race -count=1 ./...`. So on the machine
+#      that decides whether a change lands, the rules below are inert until a
+#      lint job is added -- and ci.yml is outside plan step D.9's write scope,
+#      so D.9 could not add one.
+#   2. Rule `egress-choke-point` below is a DENYLIST, and a denylist loses. It
+#      names net, net/http, crypto/tls and the ones we thought of. It does not
+#      know about the networking package that appears in Go 1.28, or a
+#      third-party client somebody vendors next month, and its failure mode
+#      when it does not know is a PASS.
+#
+# The guards that actually hold are Go tests, they run in the CI job that
+# already exists, and they are built the other way up -- they enumerate what is
+# PERMITTED and refuse everything else, so a networking API nobody has heard of
+# is caught by default rather than by memory:
+#
+#   internal/dast/authz/egress_chokepoint_test.go   gate 3, allowlist of inert
+#                                                   imports, whole-repo scan
+#   internal/dast/authz/kernel_depgraph_test.go     gate 2, `go list -deps`,
+#                                                   resolved by import PATH
+#   cmd/anvil/split_test.go                         S9-AMENDED artifact split
+#
+# If a rule here and a test there ever disagree, the test is right.
+#
+# UNVERIFIED, and recorded rather than glossed: no golangci-lint binary exists
+# on the machine that wrote this file, so the rules below have never been
+# executed. The YAML parses; that is the whole of what has been demonstrated
+# about them. Settling condition: a lint job in ci.yml, at which point this
+# comment comes out and the rules are either proven or corrected.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - depguard
+
+  settings:
+    depguard:
+      rules:
+        # -------------------------------------------------------------------
+        # GATE 2 -- the kernel's dependency graph must not invert.
+        #
+        # This one IS an allowlist, because depguard can express it: strict
+        # mode denies every import that is not listed. It mirrors
+        # kernelImportAllowlist in internal/dast/authz/phase0_build.go, which
+        # is the reviewed copy; the authoritative check is
+        # TestGate2KernelClosureIsStdlibPlusTheAllowlist, which walks the
+        # TRANSITIVE closure with `go list -deps`. depguard only sees the
+        # imports written in the file in front of it, so it cannot see an
+        # inference package reached two hops away through an innocently named
+        # intermediary. The test can, and has a fixture proving it.
+        #
+        # plan/00-SPINE.md S7: the authorization kernel is "compiled separately
+        # from the model runtime, with a build-time test that fails if the
+        # dependency graph inverts. No model ever holds a network handle."
+        # -------------------------------------------------------------------
+        kernel-dependency-graph:
+          list-mode: strict
+          files:
+            - "**/internal/dast/**"
+          allow:
+            - $gostd
+            - github.com/Susquehanna-Syntax/Anvil/internal/dast
+            - github.com/Susquehanna-Syntax/Anvil/internal/record
+          deny:
+            # Redundant against strict mode, and kept for the message. S7
+            # names these three shapes; a contributor who trips one should be
+            # told which rule they tripped, not just that their import is
+            # unlisted.
+            - pkg: github.com/Susquehanna-Syntax/Anvil/internal/inference
+              desc: >-
+                S7: the authorization kernel is compiled separately from the
+                model runtime. No model ever holds a network handle.
+            - pkg: github.com/Susquehanna-Syntax/Anvil/internal/model
+              desc: >-
+                S7: the authorization kernel is compiled separately from the
+                model runtime. No model ever holds a network handle.
+            - pkg: github.com/Susquehanna-Syntax/Anvil/internal/llm
+              desc: >-
+                S7: the authorization kernel is compiled separately from the
+                model runtime. No model ever holds a network handle.
+
+        # -------------------------------------------------------------------
+        # GATE 3 -- the egress choke point.
+        #
+        # EARLY WARNING ONLY. This is the denylist described at the top of the
+        # file, kept because a fast red squiggle in an editor stops a mistake
+        # earlier than a test run does, and deleted the moment it is mistaken
+        # for the control.
+        #
+        # The `files` list is the inverse of the two allowlists in
+        # internal/dast/authz/phase0_build.go: the kernel (the choke point
+        # itself) and the three Lane A packages that fetch advisory data and
+        # do not probe targets. Test files are excluded here and are NOT
+        # excluded by the real scanner inside internal/dast -- another reason
+        # this file is the echo and not the guard.
+        # -------------------------------------------------------------------
+        egress-choke-point:
+          list-mode: lax
+          files:
+            - "!$test"
+            - "!**/internal/dast/authz/**"
+            - "!**/internal/ingest/bootstrap/**"
+            - "!**/internal/ingest/poller/**"
+            - "!**/internal/mirror/accelerator/**"
+          deny:
+            - pkg: net
+              desc: >-
+                Every outbound connection in Anvil's dynamic tier is
+                constructed by internal/dast/authz, against an Authorization
+                that Adjudicate minted for that exact pinned address
+                (research/20 gate 3). A socket the kernel did not open is a
+                handle it did not authorize. Route it through Adjudicate and
+                PinnedDialAddress. If this is a non-probing fetch outside the
+                DAST tree, add the package to nonKernelEgressAllowlist in
+                internal/dast/authz/phase0_build.go with a justification.
+            - pkg: net/http
+              desc: >-
+                See "net" above. Construct requests through the kernel's
+                gated request layer, not directly.
+            - pkg: crypto/tls
+              desc: >-
+                See "net" above. tls.Dial is a socket like any other.
+            - pkg: golang.org/x/net
+              desc: >-
+                See "net" above. A networking API outside the standard library
+                is still a networking API; this entry exists because it is the
+                first thing a denylist like this one forgets.
