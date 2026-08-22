@@ -1780,10 +1780,14 @@ func TestCoverageCountsTheFalseNegativeRiskClass(t *testing.T) {
 	if cov.PackagesWithNoAdvisoryData != 1 {
 		t.Errorf("PackagesWithNoAdvisoryData = %d, want 1", cov.PackagesWithNoAdvisoryData)
 	}
-	want := []string{"npm"}
+	// BOTH refused packages appear: "npm" arrived on the ecosystem column and
+	// "pypi" on the purl type. Before A.21 this was []string{"npm"} alone,
+	// and the entry that went missing was the one whose record was BETTER
+	// formed. See TestBothRefusalRoutesReachEcosystemsRefused.
+	want := []string{"npm", "pypi"}
 	if !reflect.DeepEqual(cov.EcosystemsRefused, want) {
-		t.Errorf("EcosystemsRefused = %v, want %v (the purl-typed refusal reports its type in Detail, "+
-			"not as an ecosystem)", cov.EcosystemsRefused, want)
+		t.Errorf("EcosystemsRefused = %v, want %v (one refusal came by the ecosystem column and one "+
+			"by the purl type; both are the same fact about coverage)", cov.EcosystemsRefused, want)
 	}
 	if cov.Complete {
 		t.Error("Complete is true despite five refusals")
@@ -3771,5 +3775,126 @@ func TestDependencyGraphGuardFiresOnAPackageThatViolatesIt(t *testing.T) {
 	if !sawDriver {
 		t.Fatalf("the negative control did not see internal/ingest/cache's SQL driver, so "+
 			"nonStdlibDeps cannot be trusted to see one below internal/match either. Got: %v", got)
+	}
+}
+
+// TestBothRefusalRoutesReachEcosystemsRefused is A.21's finding, asserted.
+//
+// EcosystemsRefused answers ONE question — "what must Anvil implement next?" —
+// and the answer cannot depend on which of the two identity routes a record
+// happened to arrive by. A record carrying an unimplemented `ecosystem` column
+// and a record carrying an unimplemented purl `type` are the same fact about
+// coverage.
+//
+// The Lane A conformance harness reported this as a live defect: every
+// repo-SCA finding carries a purl, so every one of them was refused as
+// RefusalUnsupportedPurlType, and the operator-facing list was EMPTY exactly
+// when the input was well-formed. PackagesRefusedScheme said "1 refused"; the
+// thing to implement next was invisible.
+//
+// The three cases below refuse the SAME ecosystem by each route in turn, so a
+// regression that drops either one is a diff in this test rather than a
+// silently shorter list.
+func TestBothRefusalRoutesReachEcosystemsRefused(t *testing.T) {
+	cases := []struct {
+		name   string
+		record PackageRecord
+		reason RefusalReason
+	}{
+		{
+			name: "ecosystem column only",
+			record: PackageRecord{
+				Collector: CollectorRepoSCA, Ecosystem: "npm",
+				Name: "lodash", Version: "4.17.20",
+			},
+			reason: RefusalUnsupportedEcosystem,
+		},
+		{
+			name: "purl only",
+			record: PackageRecord{
+				Collector: CollectorRepoSCA, Name: "lodash", Version: "4.17.20",
+				Purl: "pkg:npm/lodash@4.17.20",
+			},
+			reason: RefusalUnsupportedPurlType,
+		},
+		{
+			// Both columns present and agreeing, which is what a collector
+			// that fills everything it knows actually produces. The purl is
+			// consulted FIRST, so this is the purl route too — and it is the
+			// exact shape that used to leave the list empty.
+			name: "ecosystem column and purl together",
+			record: PackageRecord{
+				Collector: CollectorRepoSCA, Ecosystem: "npm",
+				Name: "lodash", Version: "4.17.20",
+				Purl: "pkg:npm/lodash@4.17.20",
+			},
+			reason: RefusalUnsupportedPurlType,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := NewMatcher(NewStaticSource(nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			results, cov, err := m.Match(context.Background(), []PackageRecord{tc.record})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != 0 {
+				t.Fatalf("a refused package produced findings: %+v", results)
+			}
+			if cov.PackagesRefusedScheme != 1 {
+				t.Errorf("PackagesRefusedScheme = %d, want 1", cov.PackagesRefusedScheme)
+			}
+			if len(cov.Refusals) != 1 || cov.Refusals[0].Reason != tc.reason {
+				t.Fatalf("want exactly one %s refusal, got %+v", tc.reason, cov.Refusals)
+			}
+			want := []string{"npm"}
+			if !reflect.DeepEqual(cov.EcosystemsRefused, want) {
+				t.Errorf("EcosystemsRefused = %v, want %v. The count says a package was refused "+
+					"for an unimplemented scheme; the list is what tells an operator WHICH one, "+
+					"and it must not depend on the route the refusal arrived by.",
+					cov.EcosystemsRefused, want)
+			}
+			if cov.Complete {
+				t.Error("a run that refused a package reported Complete")
+			}
+		})
+	}
+}
+
+// TestAnImplementedEcosystemNeverEntersEcosystemsRefused is the negative
+// control for the change above, and the reason PurlType is its own field.
+//
+// `{Ecosystem: "deb", Purl: "pkg:npm/..."}` is refused on the PURL TYPE. If the
+// purl route had been wired by writing the type into Refusal.Ecosystem — or by
+// reading Refusal.Ecosystem for both routes — this record would put "deb" on
+// the implement-next list: a scheme this comparator DOES implement. That is
+// worse than the empty list it replaced, because it is confidently wrong.
+func TestAnImplementedEcosystemNeverEntersEcosystemsRefused(t *testing.T) {
+	m, err := NewMatcher(NewStaticSource(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cov, err := m.Match(context.Background(), []PackageRecord{{
+		Collector: CollectorRepoSCA, Ecosystem: EcosystemDeb,
+		Name: "lodash", Version: "4.17.20", Purl: "pkg:npm/lodash@4.17.20",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range cov.EcosystemsRefused {
+		if _, implemented := ecosystemAllowlist[got]; implemented {
+			t.Errorf("EcosystemsRefused names %q, which IS implemented (%v). The list is what an "+
+				"operator implements next; naming an implemented scheme sends them to write code "+
+				"that already exists.", got, cov.EcosystemsRefused)
+		}
+	}
+	want := []string{"npm"}
+	if !reflect.DeepEqual(cov.EcosystemsRefused, want) {
+		t.Errorf("EcosystemsRefused = %v, want %v (the refused token is the purl type, not the "+
+			"ecosystem column that sat beside it)", cov.EcosystemsRefused, want)
 	}
 }
