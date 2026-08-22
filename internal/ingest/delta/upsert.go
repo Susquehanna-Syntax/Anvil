@@ -69,6 +69,7 @@ import (
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/cache"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/config"
+	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/decode"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/license"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/sanitize"
 )
@@ -195,98 +196,23 @@ func queryRowDB(ctx context.Context, db *sql.DB, q string, args ...any) (*sql.Ro
 // The record model
 // ---------------------------------------------------------------------------
 
-// AffectedRange is one row of the cache's `affected` table: a package, an
-// ecosystem, and the version window a comparator answers against.
+// AffectedRange and Record are the row shapes internal/ingest/decode defines.
 //
-// plan/00-SPINE.md S1 is why these rows are the point of Lane A at all:
-// "CVE/OSV/GHSA describe vulnerable PACKAGE VERSIONS, and a version comparator
-// answers that exactly and for free."
-type AffectedRange struct {
-	Ecosystem string
-	Package   string
-	PURL      string
-
-	// Introduced and Fixed bound the vulnerable window. Either may be empty:
-	// an OSV entry with a `last_affected` event and no `fixed` has no fixed
-	// version, and that is a fact about the advisory, not a parse failure.
-	Introduced string
-	Fixed      string
-
-	// DistroBackport marks a range that came from a vendor or distro advisory
-	// rather than from upstream. research/12 §3: a distro backports a fix
-	// without moving the upstream version, so an upstream range calls a
-	// patched package vulnerable. This column is what A.17 needs to not do
-	// that.
-	DistroBackport bool
-}
-
-// Record is one decoded advisory, already sanitized, ready to bind.
-//
-// It is EXPORTED because A.15's reconciliation writes the same rows through
-// the same path. A second write path for the same table is how a schema
+// THEY ARE GO TYPE ALIASES AND NOT CONVERSIONS, and they are EXPORTED because
+// A.15's reconciliation and A.16's drift handler build the same rows and reach
+// the same statements — a second write path for one table is how a schema
 // invariant survives in one writer and not the other.
-type Record struct {
-	// Source is the feed id and SourceID the native id within it. Together
-	// they are the primary key, and it is NEVER the CVE id: research/06 Risk
-	// #2 requires a cvelistV5 outage to be survivable by swapping sources,
-	// and GHSA advisories frequently carry no CVE at all.
-	Source   string
-	SourceID string
-
-	// CVEID is the nullable, indexed alias. Aliases carries the one-to-many.
-	CVEID   string
-	Aliases []string
-
-	Published string
-	Modified  string
-
-	// State is one of cache.AdvisoryPublished / AdvisoryWithdrawn /
-	// AdvisoryRejected. A non-published state MUST carry TombstonedAt, and
-	// the schema's advisory_tombstone_paired CHECK refuses the row otherwise
-	// — withdrawn advisories are tombstoned, never deleted, so that findings
-	// that depended on them become invalidated rather than vanishing.
-	State        string
-	TombstonedAt string
-
-	Severity   string
-	CVSSVector string
-
-	// CVSSScore and EPSSScore are `any` so that "no score" is SQL NULL rather
-	// than 0.0. A zero CVSS base score is a real value, and a comparator that
-	// cannot tell it from "absent" ranks an unscored advisory as harmless.
-	CVSSScore any
-	EPSSScore any
-	EPSSAsOf  string
-
-	KEV bool
-
-	Description string
-	References  []string
-
-	Affected []AffectedRange
-
-	// DataVersion is the record schema version the document declared, and
-	// ParseDegraded is spine S6's field for "this was persisted anyway".
-	// A.2 exit criterion 23: an unknown CVE dataVersion is PERSISTED with
-	// parse_degraded = 1, never dropped, because silently discarding a record
-	// from a newer schema is how a vulnerability disappears from a security
-	// tool with no error anywhere.
-	DataVersion   string
-	ParseDegraded bool
-
-	// StalenessSeconds overrides the batch-wide value when the record carries
-	// its own age. Zero means "use the batch's".
-	StalenessSeconds int
-
-	// Raw is the document verbatim, stored in advisory.raw_json. It is never
-	// sanitized: the column is the publisher's bytes, and CVE-TOU requires
-	// records be stored byte-verbatim (research/06 §"License").
-	Raw []byte
-}
-
-// ReferencesText is the `references_text` column of advisory_fts: the
-// references as one newline-separated string, each element already sanitized.
-func (r Record) ReferencesText() string { return strings.Join(r.References, "\n") }
+//
+// The types moved out of this package under orchestrator ruling G11. Until
+// A.21, internal/ingest/bootstrap's decoders were unexported, so this package
+// re-derived CVE 5.x, OSV and KEV decoding, and the cache had two producers
+// writing one table from one wire format. If they had drifted, A.15's weekly
+// self-heal would have restored the same rows forever with nothing surfacing
+// it. There is now one decoder; see internal/ingest/decode.
+type (
+	AffectedRange = decode.AffectedRange
+	Record        = decode.Record
+)
 
 // BatchStats counts what one Apply wrote. Every field counts WRITES, not net
 // growth: `affected` and `cve_alias` are replaced per advisory, so a re-upsert
@@ -651,22 +577,33 @@ func parseTimestamp(s string) (time.Time, bool) {
 // claimed.
 const MaxDocumentBytes = 16 << 20
 
-// decoder is A.3 applied field by field, accumulating what was removed.
+// decoder is this package's binding to internal/ingest/decode.
 //
-// The `s` method is named rather than inlined for the same reason A.8 names
-// its own: internal/ingest/sanitize's writer guard resolves the package-local
-// call graph by NAME, so a decoder that reaches the sanitizer through one
-// method is visible to the guard, and there is exactly one place a field could
-// be bound without passing through it — which is none.
+// EVERY WIRE FORMAT IS DECODED THERE AND NOWHERE ELSE (ruling G11). What stays
+// here is the DISPATCH below, and it stays because this package's answer to an
+// unreadable document is genuinely different from A.8's: see Decode.
 type decoder struct {
 	feedID string
-	stats  sanitize.SanitizeStats
+	dec    *decode.Decoder
 }
 
-func (dc *decoder) s(raw string) string {
-	clean, st := sanitize.Sanitize(raw)
-	dc.stats.Merge(st)
-	return clean
+// decodeKEV reads the whole catalogue into memory, which is the one place this
+// path deliberately differs from A.8's traversal of the same array.
+//
+// The reason is the caller. A.8 streams because it walks a 570 MB archive whose
+// members it has not seen; this path is handed a body A.7 already read into
+// memory under Options.MaxBodyBytes, so a streaming parse here would buy
+// nothing and would need a second bounded reader to enforce a bound that has
+// already been enforced. MaxDocumentBytes is the backstop. The per-entry
+// mapping is the SHARED one, so both importers write the same row for the same
+// catalogue entry — including raw_json byte for byte, because neither
+// re-marshals a decoded struct.
+func (dc *decoder) decodeKEV(raw []byte) ([]Record, error) {
+	recs, err := dc.dec.KEVDocument(raw)
+	if err != nil {
+		return nil, refuse(ErrUnrecognisedShape, "feed %q: a KEV-shaped document did not parse: %v", dc.feedID, err)
+	}
+	return recs, nil
 }
 
 // Decode turns one fetched document into advisory records.
@@ -685,9 +622,9 @@ func (dc *decoder) s(raw string) string {
 // change was dropped, and the caller needs to route the feed to a path that
 // does understand it. SyncDelta does exactly that.
 func Decode(feedID string, raw []byte) ([]Record, sanitize.SanitizeStats, error) {
-	dc := &decoder{feedID: feedID}
+	dc := &decoder{feedID: feedID, dec: decode.New(feedID)}
 	recs, err := dc.decode(raw, 0)
-	return recs, dc.stats, err
+	return recs, dc.dec.Stats(), err
 }
 
 // maxDecodeDepth bounds the array-of-documents recursion. One level of nesting
@@ -750,14 +687,14 @@ func (dc *decoder) decode(raw []byte, depth int) ([]Record, error) {
 		return dc.decodeKEV(trimmed)
 
 	case bytes.Contains(head, []byte(`"CVE_RECORD"`)):
-		rec, ok, err := dc.decodeCVE5(trimmed)
+		rec, ok, err := dc.dec.CVE5(trimmed)
 		if err != nil || !ok {
 			return nil, refuse(ErrUnrecognisedShape, "feed %q: a CVE_RECORD document did not decode: %v", dc.feedID, err)
 		}
 		return []Record{rec}, nil
 
 	default:
-		rec, ok, err := dc.decodeOSV(trimmed)
+		rec, ok, err := dc.dec.OSV(trimmed)
 		if err != nil || !ok {
 			return nil, refuse(ErrUnrecognisedShape,
 				"feed %q: the document is a JSON object in no shape this decoder recognises "+
@@ -767,362 +704,6 @@ func (dc *decoder) decode(raw []byte, depth int) ([]Record, error) {
 	}
 }
 
-// --- OSV, and therefore GHSA: github/advisory-database is OSV format ---
-
-type osvDoc struct {
-	SchemaVersion string         `json:"schema_version"`
-	ID            string         `json:"id"`
-	Withdrawn     string         `json:"withdrawn"`
-	Published     string         `json:"published"`
-	Modified      string         `json:"modified"`
-	Summary       string         `json:"summary"`
-	Details       string         `json:"details"`
-	Aliases       []string       `json:"aliases"`
-	Related       []string       `json:"related"`
-	Severity      []osvSeverity  `json:"severity"`
-	References    []osvReference `json:"references"`
-	Affected      []osvAffected  `json:"affected"`
-}
-
-type osvSeverity struct {
-	Type  string `json:"type"`
-	Score string `json:"score"`
-}
-
-type osvReference struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
-}
-
-type osvAffected struct {
-	Package struct {
-		Ecosystem string `json:"ecosystem"`
-		Name      string `json:"name"`
-		PURL      string `json:"purl"`
-	} `json:"package"`
-	Ranges []struct {
-		Type   string `json:"type"`
-		Events []struct {
-			Introduced string `json:"introduced"`
-			Fixed      string `json:"fixed"`
-			LastAffect string `json:"last_affected"`
-		} `json:"events"`
-	} `json:"ranges"`
-	Versions []string `json:"versions"`
-}
-
-func (dc *decoder) decodeOSV(raw []byte) (Record, bool, error) {
-	var d osvDoc
-	if err := json.Unmarshal(raw, &d); err != nil {
-		return Record{}, false, err
-	}
-	if d.ID == "" {
-		return Record{}, false, nil
-	}
-
-	rec := Record{
-		Source:   dc.feedID,
-		SourceID: dc.s(d.ID),
-		State:    cache.AdvisoryPublished,
-		Raw:      raw,
-	}
-	if d.Withdrawn != "" {
-		rec.State = cache.AdvisoryWithdrawn
-		rec.TombstonedAt = dc.s(d.Withdrawn)
-	}
-	rec.Published = dc.s(d.Published)
-	rec.Modified = dc.s(d.Modified)
-	rec.Description = dc.s(strings.TrimSpace(d.Summary + "\n\n" + d.Details))
-	for _, s := range d.Severity {
-		if strings.HasPrefix(strings.ToUpper(s.Type), "CVSS") {
-			rec.CVSSVector = dc.s(s.Score)
-			break
-		}
-	}
-	for _, r := range d.References {
-		if r.URL != "" {
-			rec.References = append(rec.References, dc.s(r.URL))
-		}
-	}
-
-	for _, a := range append(append([]string{}, d.Aliases...), d.Related...) {
-		if IsCVEID(a) {
-			rec.Aliases = appendUnique(rec.Aliases, dc.s(a))
-		}
-	}
-	if IsCVEID(d.ID) {
-		rec.CVEID = rec.SourceID
-		rec.Aliases = appendUnique(rec.Aliases, rec.SourceID)
-	} else if len(rec.Aliases) > 0 {
-		rec.CVEID = rec.Aliases[0]
-	}
-
-	for _, a := range d.Affected {
-		eco := dc.s(a.Package.Ecosystem)
-		pkg := dc.s(a.Package.Name)
-		if eco == "" || pkg == "" {
-			continue
-		}
-		purl := dc.s(a.Package.PURL)
-		backport := isDistroEcosystem(eco)
-		emitted := false
-		for _, rg := range a.Ranges {
-			var introduced string
-			for _, ev := range rg.Events {
-				switch {
-				case ev.Introduced != "":
-					introduced = dc.s(ev.Introduced)
-				case ev.Fixed != "":
-					rec.Affected = append(rec.Affected, AffectedRange{
-						Ecosystem: eco, Package: pkg, PURL: purl,
-						Introduced: introduced, Fixed: dc.s(ev.Fixed), DistroBackport: backport,
-					})
-					emitted = true
-				case ev.LastAffect != "":
-					rec.Affected = append(rec.Affected, AffectedRange{
-						Ecosystem: eco, Package: pkg, PURL: purl,
-						Introduced: introduced, DistroBackport: backport,
-					})
-					emitted = true
-				}
-			}
-		}
-		if !emitted {
-			rec.Affected = append(rec.Affected, AffectedRange{
-				Ecosystem: eco, Package: pkg, PURL: purl, DistroBackport: backport,
-			})
-		}
-	}
-	return rec, true, nil
-}
-
-// isDistroEcosystem marks the ecosystems whose advisories carry BACKPORTED
-// fixes. research/12 §3, the CVE-2023-32681 / RHSA-2023:4520 class: a distro
-// patches without moving the upstream version, so an upstream range calls a
-// fixed package vulnerable.
-//
-// The list matches A.8's exactly. It is duplicated for the same reason the
-// decoders are, and the same conformance test covers it: a divergence changes
-// `affected.distro_backport` for the same bytes depending on which importer ran.
-func isDistroEcosystem(eco string) bool {
-	lower := strings.ToLower(eco)
-	for _, p := range []string{
-		"ubuntu", "debian", "alpine", "red hat", "redhat", "rocky", "almalinux",
-		"suse", "photon", "chainguard", "wolfi", "mageia",
-	} {
-		if strings.HasPrefix(lower, p) {
-			return true
-		}
-	}
-	return false
-}
-
-// --- CVE 5.x, the shape the deltaLog names ---
-
-type cve5Doc struct {
-	DataType    string `json:"dataType"`
-	DataVersion string `json:"dataVersion"`
-	CVEMetadata struct {
-		CVEID     string `json:"cveId"`
-		State     string `json:"state"`
-		Published string `json:"datePublished"`
-		Updated   string `json:"dateUpdated"`
-		Rejected  string `json:"dateRejected"`
-	} `json:"cveMetadata"`
-	Containers struct {
-		CNA cve5Container   `json:"cna"`
-		ADP []cve5Container `json:"adp"`
-	} `json:"containers"`
-}
-
-type cve5Container struct {
-	Descriptions []struct {
-		Lang  string `json:"lang"`
-		Value string `json:"value"`
-	} `json:"descriptions"`
-	References []struct {
-		URL string `json:"url"`
-	} `json:"references"`
-	Metrics []struct {
-		CVSSv31 *cve5CVSS `json:"cvssV3_1"`
-		CVSSv30 *cve5CVSS `json:"cvssV3_0"`
-		CVSSv40 *cve5CVSS `json:"cvssV4_0"`
-	} `json:"metrics"`
-	Affected []struct {
-		Vendor   string   `json:"vendor"`
-		Product  string   `json:"product"`
-		PackageN string   `json:"packageName"`
-		Repo     string   `json:"repo"`
-		CPEs     []string `json:"cpes"`
-		Versions []struct {
-			Version     string `json:"version"`
-			LessThan    string `json:"lessThan"`
-			LessOrEqual string `json:"lessThanOrEqual"`
-			Status      string `json:"status"`
-		} `json:"versions"`
-	} `json:"affected"`
-}
-
-type cve5CVSS struct {
-	VectorString string  `json:"vectorString"`
-	BaseScore    float64 `json:"baseScore"`
-	BaseSeverity string  `json:"baseSeverity"`
-}
-
-// knownCVEDataVersions are the record schema versions this decoder was written
-// against. An UNKNOWN one is PERSISTED with parse_degraded = 1 and never
-// dropped (A.2 exit criterion 23, spine S6): silently discarding a record from
-// a newer schema is how a vulnerability disappears from a security tool with no
-// error anywhere.
-//
-// It matches A.8's list, and the conformance test is what keeps it matching.
-var knownCVEDataVersions = map[string]bool{"5.0": true, "5.1": true, "5.2": true}
-
-func (dc *decoder) decodeCVE5(raw []byte) (Record, bool, error) {
-	var d cve5Doc
-	if err := json.Unmarshal(raw, &d); err != nil {
-		return Record{}, false, err
-	}
-	if d.CVEMetadata.CVEID == "" {
-		return Record{}, false, nil
-	}
-
-	rec := Record{
-		Source:        dc.feedID,
-		SourceID:      dc.s(d.CVEMetadata.CVEID),
-		CVEID:         dc.s(d.CVEMetadata.CVEID),
-		Published:     dc.s(d.CVEMetadata.Published),
-		Modified:      dc.s(d.CVEMetadata.Updated),
-		State:         cache.AdvisoryPublished,
-		DataVersion:   dc.s(d.DataVersion),
-		ParseDegraded: !knownCVEDataVersions[strings.TrimSpace(d.DataVersion)],
-		Raw:           raw,
-	}
-	rec.Aliases = append(rec.Aliases, rec.CVEID)
-	if strings.EqualFold(d.CVEMetadata.State, "REJECTED") {
-		rec.State = cache.AdvisoryRejected
-		rec.TombstonedAt = dc.s(firstNonEmpty(d.CVEMetadata.Rejected, d.CVEMetadata.Updated))
-	}
-
-	containers := append([]cve5Container{d.Containers.CNA}, d.Containers.ADP...)
-	for _, c := range containers {
-		for _, desc := range c.Descriptions {
-			if rec.Description == "" && (desc.Lang == "" || strings.HasPrefix(strings.ToLower(desc.Lang), "en")) {
-				rec.Description = dc.s(desc.Value)
-			}
-		}
-		for _, ref := range c.References {
-			if ref.URL != "" {
-				rec.References = appendUnique(rec.References, dc.s(ref.URL))
-			}
-		}
-		for _, m := range c.Metrics {
-			for _, v := range []*cve5CVSS{m.CVSSv40, m.CVSSv31, m.CVSSv30} {
-				if v == nil || v.VectorString == "" || rec.CVSSVector != "" {
-					continue
-				}
-				rec.CVSSVector = dc.s(v.VectorString)
-				rec.Severity = dc.s(v.BaseSeverity)
-				score := v.BaseScore
-				rec.CVSSScore = score
-			}
-		}
-		for _, a := range c.Affected {
-			pkg := dc.s(firstNonEmpty(a.PackageN, a.Product))
-			if pkg == "" {
-				continue
-			}
-			eco := dc.s(firstNonEmpty(a.Vendor, "cpe"))
-			for _, v := range a.Versions {
-				if strings.EqualFold(v.Status, "unaffected") {
-					continue
-				}
-				rec.Affected = append(rec.Affected, AffectedRange{
-					Ecosystem:  eco,
-					Package:    pkg,
-					Introduced: dc.s(v.Version),
-					Fixed:      dc.s(firstNonEmpty(v.LessThan, v.LessOrEqual)),
-				})
-			}
-		}
-	}
-	return rec, true, nil
-}
-
-// --- CISA KEV ---
-
-// kevDoc keeps its entries as RAW MESSAGES rather than as decoded structs.
-//
-// That is not a style choice: `advisory.raw_json` stores the publisher's bytes
-// verbatim, and re-marshalling a decoded struct would store Anvil's rendering
-// of the entry instead — different key order, dropped unknown fields, and a
-// different digest from the one A.8 writes for the same catalogue entry. The
-// conformance test compares those bytes.
-type kevDoc struct {
-	CatalogVersion  string            `json:"catalogVersion"`
-	Vulnerabilities []json.RawMessage `json:"vulnerabilities"`
-}
-
-type kevEntry struct {
-	CVEID             string `json:"cveID"`
-	VendorProject     string `json:"vendorProject"`
-	Product           string `json:"product"`
-	VulnerabilityName string `json:"vulnerabilityName"`
-	DateAdded         string `json:"dateAdded"`
-	ShortDescription  string `json:"shortDescription"`
-	RequiredAction    string `json:"requiredAction"`
-	DueDate           string `json:"dueDate"`
-	Notes             string `json:"notes"`
-}
-
-// decodeKEV reads the whole catalogue into memory rather than streaming it,
-// which is the one place this decoder deliberately differs from A.8's.
-//
-// The reason is the caller. A.8 streams because it walks a 570 MB archive whose
-// members it has not seen; this decoder is handed a body A.7 already read into
-// memory under Options.MaxBodyBytes, so a streaming parse here would buy
-// nothing and would need a second bounded reader to enforce a bound that has
-// already been enforced. MaxDocumentBytes is the backstop.
-func (dc *decoder) decodeKEV(raw []byte) ([]Record, error) {
-	var d kevDoc
-	if err := json.Unmarshal(raw, &d); err != nil {
-		return nil, refuse(ErrUnrecognisedShape, "feed %q: a KEV-shaped document did not parse: %v", dc.feedID, err)
-	}
-	out := make([]Record, 0, len(d.Vulnerabilities))
-	for _, entryRaw := range d.Vulnerabilities {
-		var e kevEntry
-		if err := json.Unmarshal(entryRaw, &e); err != nil || e.CVEID == "" {
-			// A single malformed catalogue entry is skipped, not fatal: the
-			// KEV catalogue is one document holding every entry, and one bad
-			// entry must not cost the rest. This is the one place a skip is
-			// right, and it is bounded to a single element.
-			continue
-		}
-		rec := Record{
-			Source:      dc.feedID,
-			SourceID:    dc.s(e.CVEID),
-			CVEID:       dc.s(e.CVEID),
-			Published:   dc.s(e.DateAdded),
-			State:       cache.AdvisoryPublished,
-			KEV:         true,
-			Description: dc.s(strings.TrimSpace(e.VulnerabilityName + "\n\n" + e.ShortDescription + "\n\n" + e.RequiredAction)),
-			Raw:         append([]byte(nil), entryRaw...),
-		}
-		rec.Aliases = append(rec.Aliases, rec.CVEID)
-		if pkg := dc.s(e.Product); pkg != "" {
-			rec.Affected = append(rec.Affected, AffectedRange{
-				Ecosystem: dc.s(firstNonEmpty(e.VendorProject, "vendor")),
-				Package:   pkg,
-			})
-		}
-		if e.Notes != "" {
-			rec.References = append(rec.References, dc.s(e.Notes))
-		}
-		out = append(out, rec)
-	}
-	return out, nil
-}
-
 // ---------------------------------------------------------------------------
 // Small shared helpers
 // ---------------------------------------------------------------------------
@@ -1130,59 +711,15 @@ func (dc *decoder) decodeKEV(raw []byte) ([]Record, error) {
 // IsCVEID is the ALLOWLIST that decides whether a string from a feed may be
 // treated as a CVE identifier.
 //
-// It is exported because it is not only a parsing convenience: the deltaLog
-// route in delta.go uses it as the ONLY thing that may cross from feed content
-// into a fetch, so its strictness is a security property and not a nicety. See
-// checkRecordName.
+// It is re-exported from internal/ingest/decode rather than re-implemented,
+// because it is not only a parsing convenience: the deltaLog route in delta.go
+// uses it as the ONLY thing that may cross from feed content into a fetch, so
+// its strictness is a security property and not a nicety. See checkRecordName.
+// Two copies of a security allowlist is two allowlists, and the second one is
+// always the one nobody re-reads.
 //
-// The shape is CVE-<4+ digits>-<1+ digits> and nothing else. It is an allowlist
-// of characters and structure, not a denylist of dangerous ones: this project
-// has lost three guards to a symbol, a verb or a wording nobody listed, and
+// The shape is CVE-<4+ digits>-<1+ digits> and nothing else: an allowlist of
+// characters and structure, not a denylist of dangerous ones. This project has
+// lost three guards to a symbol, a verb or a wording nobody listed, and
 // `CVE-2024-0001/../../etc/passwd` is precisely the string a denylist misses.
-func IsCVEID(s string) bool {
-	t := strings.TrimSpace(s)
-	if !strings.HasPrefix(t, "CVE-") || len(t) < 8 {
-		return false
-	}
-	rest := t[4:]
-	dash := strings.Index(rest, "-")
-	if dash < 4 {
-		return false
-	}
-	for _, r := range rest[:dash] {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	tail := rest[dash+1:]
-	if tail == "" {
-		return false
-	}
-	for _, r := range tail {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func appendUnique(list []string, v string) []string {
-	if v == "" {
-		return list
-	}
-	for _, e := range list {
-		if e == v {
-			return list
-		}
-	}
-	return append(list, v)
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
+func IsCVEID(s string) bool { return decode.IsCVEID(s) }

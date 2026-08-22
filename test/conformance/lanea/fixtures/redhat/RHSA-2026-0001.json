@@ -1,0 +1,44 @@
+{
+  "document": {
+    "category": "csaf_vex",
+    "csaf_version": "2.0",
+    "notes": [
+      {
+        "category": "description",
+        "text": "A synthetic backported fix: the upstream version is not moved, only the release."
+      }
+    ],
+    "references": [
+      {
+        "url": "https://example.invalid/errata/RHSA-2026:0001"
+      }
+    ],
+    "title": "Red Hat Security Advisory: python3-requests security update",
+    "tracking": {
+      "current_release_date": "2026-02-02T00:00:00Z",
+      "id": "RHSA-2026:0001",
+      "initial_release_date": "2026-01-30T00:00:00Z",
+      "status": "final"
+    }
+  },
+  "vulnerabilities": [
+    {
+      "cve": "CVE-2026-1004",
+      "product_status": {
+        "fixed": [
+          "Red Hat Enterprise Linux 9:python3-requests-0:2.25.1-3.el9.noarch"
+        ]
+      },
+      "scores": [
+        {
+          "cvss_v3": {
+            "baseScore": 5.9,
+            "baseSeverity": "MEDIUM",
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+          }
+        }
+      ],
+      "title": "python3-requests: synthetic header leak"
+    }
+  ]
+}

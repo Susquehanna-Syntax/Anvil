@@ -1,0 +1,32 @@
+{
+  "apkurl": "{{urlprefix}}/{{distroversion}}/{{reponame}}/{{arch}}/{{pkg.name}}-{{pkg.ver}}.apk",
+  "archs": [
+    "x86_64",
+    "aarch64"
+  ],
+  "distroversion": "v3.19",
+  "packages": [
+    {
+      "pkg": {
+        "name": "openssl",
+        "secfixes": {
+          "3.1.4-r5": [
+            "CVE-2026-1001"
+          ]
+        }
+      }
+    },
+    {
+      "pkg": {
+        "name": "busybox",
+        "secfixes": {
+          "1.36.1-r16": [
+            "CVE-2026-1005"
+          ]
+        }
+      }
+    }
+  ],
+  "reponame": "main",
+  "urlprefix": "https://example.invalid/alpine"
+}

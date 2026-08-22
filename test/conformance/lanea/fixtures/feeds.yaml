@@ -1,0 +1,94 @@
+# Anvil Lane A conformance corpus — the feed table this harness runs against.
+#
+# IT IS A YAML FILE AND NOT A GO SLICE, deliberately. Lane A exit criterion 1
+# says no feed URL and no cadence may exist as a Go literal, and a harness that
+# built its own feed rows in Go would be exempting itself from the rule it is
+# there to check. Every row below is parsed by internal/ingest/config, so the
+# loader is inside the chain under test rather than beside it.
+#
+# ${BASE} is substituted with the httptest server's origin at run time. It is
+# the ONE thing the harness supplies, because the port is assigned by the
+# kernel and cannot be written down in advance. Nothing else about a feed —
+# cadence, tier, licence, auth, bootstrap mechanism — is decided in Go.
+#
+# Every row is synthetic. No host here resolves and no request leaves the
+# process: the server is an in-process httptest TLS listener.
+
+version: 1
+
+feeds:
+  # The CVE 5.x baseline: three records, one of them in a dataVersion the
+  # parser has never seen and one REJECTED, bootstrapped from a bulk archive.
+  - id: cvelistv5-fixture
+    url: ${BASE}/cvelistv5/all.zip
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_etag
+    interval_seconds: 900
+    reconcile_interval_seconds: 86400
+    baseline_interval_seconds: 604800
+    freshness_slo_seconds: 21600
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    bootstrap_mechanism: bulk_archive
+
+  # Alpine secdb: the one publisher in this corpus whose decoder writes the
+  # cache's own short ecosystem vocabulary ("apk"), which is why it is the one
+  # that reaches the comparator. See the harness's ECOSYSTEM VOCABULARY note.
+  - id: alpine-secdb-fixture
+    url: ${BASE}/alpine/all.zip
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_last_modified
+    interval_seconds: 86400
+    freshness_slo_seconds: 172800
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    bootstrap_mechanism: bulk_archive
+
+  # Red Hat CSAF/VEX: a backported fix, written into `affected` with
+  # distro_backport = 1 and the ecosystem "rpm".
+  - id: redhat-csaf-fixture
+    url: ${BASE}/redhat/all.zip
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_etag
+    interval_seconds: 86400
+    freshness_slo_seconds: 172800
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    bootstrap_mechanism: bulk_archive
+
+  # CISA KEV. Its forge metadata reports NOASSERTION over a CC0 body, which is
+  # exit criterion 10: the LICENCE FILE BODY decides and the metadata does not,
+  # and the disagreement makes spine S8's manual note mandatory.
+  - id: cisa-kev-fixture
+    url: ${BASE}/kev/known_exploited_vulnerabilities.json
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_etag
+    interval_seconds: 900
+    freshness_slo_seconds: 7200
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    license_manual_note: "The GitHub API reports NOASSERTION for this repository; the checked-in README states the catalog is public domain under CC0 1.0. Trust the LICENSE/README text, not the API metadata (research/01 S16/S17)."
+    bootstrap_mechanism: incremental_api
+
+  # A Debian OSV export, carried in the publisher's own ecosystem spelling
+  # ("Debian:11"). It is in this corpus to demonstrate a gap, not to pass a
+  # check: see the harness's ECOSYSTEM VOCABULARY note.
+  - id: osv-debian-fixture
+    url: ${BASE}/osv/GHSA-deb-2026-0001.json
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_last_modified
+    interval_seconds: 86400
+    freshness_slo_seconds: 172800
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    bootstrap_mechanism: incremental_api
