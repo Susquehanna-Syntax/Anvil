@@ -188,10 +188,17 @@ func SchemeForEcosystem(ecosystem string) (Scheme, error) {
 // lowercased first because the purl specification defines the type segment as
 // case-insensitive with a lowercase canonical form.
 func SchemeForPurlType(purlType string) (Scheme, error) {
-	s, ok := purlTypeAllowlist[strings.ToLower(purlType)]
+	canonical := strings.ToLower(purlType)
+	s, ok := purlTypeAllowlist[canonical]
 	if !ok {
 		return "", &Refusal{
 			Reason: RefusalUnsupportedPurlType,
+			// PurlType carries the CANONICAL form because
+			// CoverageReport.EcosystemsRefused deduplicates on it: "npm" and
+			// "NPM" are one thing to implement, not two. Detail keeps the
+			// spelling that actually arrived, because that is what an
+			// operator greps their collector output for.
+			PurlType: canonical,
 			Detail: "no version comparator is implemented for purl type " + strconv.Quote(purlType) +
 				"; implemented schemes are " + joinSchemes(schemeOrder),
 		}

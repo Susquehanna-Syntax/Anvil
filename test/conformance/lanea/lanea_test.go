@@ -94,6 +94,32 @@
 //
 // No network. The only listener is an in-process httptest TLS server and the
 // only hosts named anywhere are .invalid.
+//
+// ===========================================================================
+// THE ONE INPUT THAT IS NOT A FIXTURE: THE HOST INVENTORY
+// ===========================================================================
+//
+// internal/collector/host is the only Lane A component this harness can run
+// FOR REAL, on the machine the test is running on, and it does so whenever it
+// can. The rule is in hostInventoryForChain and it is one sentence:
+//
+//	host.Collect's REAL OUTPUT whenever a supported package manager is present
+//	on this machine, and the corpus probe alone when none is.
+//
+// Both branches run the full chain. What differs is what the ledger may claim:
+// on a Linux CI host the host-inventory link is PROVEN and names the collected
+// package count, and on a developer's Windows machine it stays UNPROVEN and
+// says so. THE LEDGER LINE NAMES WHICH — a run that proved the collector and a
+// run that proved only a file must not render the same, because telling those
+// two apart is the entire point of that link.
+//
+// This replaced a tripwire that FAILED THE RUN when a package manager appeared
+// ("the fixture inventory is no longer the best available evidence"). It fired
+// on CI, correctly, and the fix is to honour it rather than to quieten it. The
+// tripwires that remain point the other way: a present package manager that
+// enumerates nothing, or real packages collected and then not submitted, both
+// fail — those are the shapes in which the better evidence gets acquired and
+// then dropped on the floor.
 package lanea_test
 
 import (
@@ -272,6 +298,20 @@ type chainOutput struct {
 	fts       []string
 	feedState []string
 
+	// hostSourceLabel and hostRows are the host-side INPUT, carried into the
+	// two-run comparison rather than only the output.
+	//
+	// WHY THE INPUT IS COMPARED TOO. On a machine with a package manager the
+	// host packages come from host.Collect, which reads a live package
+	// database, and none of those packages matches this corpus's synthetic
+	// advisories — so a difference between two collections would produce no
+	// difference in any of the fields below and the determinism claim would
+	// be true about a chain that never saw the data. Comparing the rows makes
+	// the collector's own output part of what "byte-identical across two
+	// runs" asserts.
+	hostSourceLabel string
+	hostRows        []string
+
 	matches      []match.MatchResult
 	coverage     match.CoverageReport
 	emissionJSON []byte
@@ -303,14 +343,20 @@ func TestLaneAChain(t *testing.T) {
 		led.proven(linkDeterminism, fmt.Sprintf(
 			"two consecutive runs produced byte-identical output across %d advisory rows, "+
 				"%d affected rows, %d cve_alias rows, %d advisory_fts rows, %d feed_state rows, "+
-				"%d match results and %d bytes of emitted records (zero deltas)",
+				"%d match results and %d bytes of emitted records (zero deltas). The INPUT is "+
+				"compared too: %d host package row(s) from %s were identical across the two "+
+				"independent collections. Read that source label before weighing it — on a host "+
+				"with a package manager it says host.Collect read a live package database twice "+
+				"and got the same bytes; where it says \"corpus probe ONLY\" it says a file was "+
+				"read twice, and proves correspondingly less",
 			len(first.advisory), len(first.affected), len(first.alias), len(first.fts),
-			len(first.feedState), len(first.matches), len(first.emissionJSON)))
+			len(first.feedState), len(first.matches), len(first.emissionJSON),
+			len(first.hostRows), first.hostSourceLabel))
 	})
 
 	// The links this run could not exercise, each re-checked against the
-	// machine so a stale reason fails rather than persists.
-	decideHostCollector(t, led)
+	// machine so a stale reason fails rather than persists. The host link is
+	// NOT here: it is decided inside runChain, where its evidence is produced.
 	decideRepoCollector(t, led)
 	decideNotWired(t, led)
 
@@ -443,9 +489,22 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 	out.feedState = dump(t, db, feedStateDumpSQL)
 
 	// --- LINK 5: the comparator ----------------------------------------
-	inventory := hostInventory(t)
+	// The host side is real collector output wherever a package manager
+	// exists and the corpus probe where none does; see hostInventoryForChain
+	// for the rule and decideHostLink for what each case entitles the ledger
+	// to claim.
+	hostSrc := hostInventoryForChain(t)
+	out.hostSourceLabel = hostSrc.label()
+	out.hostRows = hostSrc.rows()
+
 	scan := repoScan(t)
-	records := append(hostPackageRecords(inventory), repoPackageRecords(scan)...)
+	// Mapped SEPARATELY so decideHostLink can assert that every REAL package
+	// reached the comparator. A single combined count could not tell a
+	// dropped collector package from a probe package standing in its place.
+	collectedRecords := hostPackageRecords(hostSrc.collected)
+	probeRecords := hostPackageRecords(hostSrc.probe)
+	hostRecords := append(collectedRecords, probeRecords...)
+	records := append(hostRecords, repoPackageRecords(scan)...)
 
 	m, err := match.NewMatcher(&cacheSource{db: db})
 	if err != nil {
@@ -458,6 +517,7 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 	out.matches, out.coverage = results, cov
 
 	assertComparatorSeams(t, db, cov, results)
+	decideHostLink(t, led, hostSrc, len(collectedRecords), results)
 	led.proven(linkComparator, fmt.Sprintf(
 		"the comparator ran over %d collector-shaped packages against the cache's own `affected` "+
 			"rows and produced %d findings with a populated CoverageReport (Complete=%v, "+
@@ -465,10 +525,12 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 			"here: the Debian OSV export landed with ecosystem %q and could not be consulted for a "+
 			"deb host package, and the repository collector's %q findings were refused as an "+
 			"unimplemented scheme (%d refused, ecosystems %v). Complete is FALSE because of that "+
-			"refusal, which is the report doing its job",
+			"refusal, which is the report doing its job. HOST INPUT: %s — read that before "+
+			"quoting the submitted count, because the findings below come from the corpus probe "+
+			"and NOT from any real package this machine has installed",
 		cov.PackagesSubmitted, len(results), cov.Complete, cov.RangesConsidered,
 		cov.PackagesWithNoAdvisoryData, "Debian:11", "npm",
-		cov.PackagesRefusedScheme, cov.EcosystemsRefused))
+		cov.PackagesRefusedScheme, cov.EcosystemsRefused, hostSrc.label()))
 
 	// --- LINK 6: record emission ---------------------------------------
 	emissions := emitAll(t, db, out.feeds, results, led)
@@ -743,16 +805,145 @@ func bridgeEcosystem(s string) (string, bool) {
 	return "", false
 }
 
-func hostInventory(t *testing.T) []host.Package {
+// ---------------------------------------------------------------------------
+// The host inventory: real output where it exists, a probe where it does not
+// ---------------------------------------------------------------------------
+//
+// TWO DIFFERENT THINGS USED TO LIVE IN ONE FIXTURE FILE, AND CONFLATING THEM
+// IS WHAT THE TRIPWIRE CAUGHT.
+//
+//	(a) EVIDENCE FOR THE HOST-INVENTORY LINK — that internal/collector/host
+//	    produces an inventory this chain can consume. A hand-written file is
+//	    the WORST possible evidence for that and is superseded the moment a
+//	    package manager exists, which is exactly what decideHostLink's
+//	    predecessor fired about on CI.
+//
+//	(b) HOST-SHAPED PACKAGES THE SYNTHETIC ADVISORY CORPUS CAN DECIDE. The
+//	    corpus holds CVE-2026-1001..1005 against openssl 3.1.3-r0 (apk) and
+//	    python3-requests 2.25.1-3.el9 (rpm). No real machine has those
+//	    versions, and no real machine ever will, so a REAL inventory cannot
+//	    serve this purpose — not on CI, not anywhere. Deleting the file
+//	    would delete the comparator's and the emitter's only decidable input
+//	    and turn two PROVEN links into vacuous ones.
+//
+// So the two are now separate. (a) is host.Collect, wherever it runs. (b) is
+// fixtures/inventory/corpus-probe-packages.json, which is named for what it is
+// and is NEVER cited as evidence for the host link.
+
+// hostInventorySource is which host packages this run submitted, and where
+// each group came from. Nothing else in this file decides that question.
+type hostInventorySource struct {
+	// real is true when host.Collect ran to completion on this machine.
+	real bool
+	// inv is what host.Collect returned. Non-nil on both paths — the
+	// collector returns an inventory alongside ErrNoPackageManager — but
+	// Packages is empty when real is false.
+	inv *host.Inventory
+	// collected is host.Collect's own output, empty when real is false. It
+	// is the ONLY thing that may be cited as evidence for linkHostCollect.
+	collected []host.Package
+	// probe is the corpus probe: host-shaped packages the synthetic advisory
+	// corpus can decide. Present on BOTH paths, evidence for NEITHER path's
+	// host-collector claim.
+	probe []host.Package
+}
+
+// submitted is every host package the chain hands the comparator, real output
+// first so the two groups are distinguishable in a failure dump.
+func (s hostInventorySource) submitted() []host.Package {
+	out := make([]host.Package, 0, len(s.collected)+len(s.probe))
+	out = append(out, s.collected...)
+	return append(out, s.probe...)
+}
+
+// label is the one-line "which inventory did this run use" the ledger and the
+// determinism comparison both print. A run that proved the collector and a run
+// that proved only the probe MUST NOT render the same, because telling those
+// two apart is the whole point of the host link.
+func (s hostInventorySource) label() string {
+	if s.real {
+		return fmt.Sprintf("host.Collect (GOOS=%s): %d real package(s) + %d corpus probe package(s)",
+			runtime.GOOS, len(s.collected), len(s.probe))
+	}
+	return fmt.Sprintf("corpus probe ONLY (GOOS=%s, no package manager): %d package(s)",
+		runtime.GOOS, len(s.probe))
+}
+
+// rows renders every submitted package for the two-run byte comparison.
+func (s hostInventorySource) rows() []string {
+	out := make([]string, 0, len(s.collected)+len(s.probe))
+	render := func(origin string, pkgs []host.Package) {
+		for _, p := range pkgs {
+			out = append(out, fmt.Sprintf("origin=%s ecosystem=%s package=%s version=%s arch=%s",
+				origin, p.Ecosystem, p.Name, p.Version, p.Arch))
+		}
+	}
+	render("collected", s.collected)
+	render("probe", s.probe)
+	return out
+}
+
+// hostInventoryForChain decides which host inventory the chain runs on. It is
+// the ONLY place that decides, and the rule is one sentence:
+//
+//	host.Collect's REAL OUTPUT whenever a supported package manager is present
+//	on this machine, and the corpus probe alone when none is.
+//
+// The branch is the error return, not a build tag, an environment variable or
+// a flag: host.Collect answers "is there a package manager here" by trying,
+// and a harness that asked any other way could disagree with the collector
+// about the machine it is running on.
+//
+// THERE IS NO SKIP ON EITHER BRANCH. Both run the full chain; what differs is
+// what the ledger is entitled to claim afterwards.
+func hostInventoryForChain(t *testing.T) hostInventorySource {
+	t.Helper()
+	src := hostInventorySource{probe: corpusProbePackages(t)}
+
+	inv, err := host.Collect(context.Background(), host.Options{
+		// The same instant as everything else in this run, so CollectedAt
+		// and AsOf cannot make two runs differ.
+		Now: func() time.Time { return fixtureClock },
+	})
+	switch {
+	case err == nil:
+		// A supported package manager exists. Its output is better evidence
+		// than anything written by hand, so the chain takes it.
+		src.real = true
+		src.inv = inv
+		src.collected = inv.Packages
+	case errors.Is(err, host.ErrNoPackageManager):
+		src.inv = inv
+	default:
+		t.Fatalf("host.Collect failed for a reason this harness does not understand: %v", err)
+	}
+	return src
+}
+
+// corpusProbePackages loads (b) above: host-shaped packages chosen to
+// intersect the synthetic advisory corpus.
+//
+// IT IS NOT A RECORDING AND MUST NEVER BE READ AS ONE. It carries no purl,
+// because host.Package carries no purl — that absence is SEAM 2 and is
+// asserted in emitAll rather than described.
+func corpusProbePackages(t *testing.T) []host.Package {
 	t.Helper()
 	var doc struct {
 		Packages []host.Package `json:"packages"`
 	}
-	if err := json.Unmarshal(readFixture(t, "fixtures/inventory/host-packages.json"), &doc); err != nil {
-		t.Fatalf("reading the host inventory fixture: %v", err)
+	if err := json.Unmarshal(readFixture(t, "fixtures/inventory/corpus-probe-packages.json"), &doc); err != nil {
+		t.Fatalf("reading the corpus probe packages: %v", err)
 	}
 	if len(doc.Packages) == 0 {
-		t.Fatal("the host inventory fixture is empty")
+		t.Fatal("the corpus probe is empty, so the comparator and the emitter have no decidable " +
+			"host input and both links would pass vacuously")
+	}
+	for _, p := range doc.Packages {
+		if strings.TrimSpace(p.Ecosystem) == "" || strings.TrimSpace(p.Name) == "" ||
+			strings.TrimSpace(p.Version) == "" {
+			t.Fatalf("corpus probe package %+v is missing a field host.Package requires; the file "+
+				"is keyed on host.Package's JSON tags so that a struct change breaks it here", p)
+		}
 	}
 	return doc.Packages
 }
@@ -1025,19 +1216,30 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 		t.Errorf("no entry in CoverageReport.Refusals names the ecosystem that was refused: %+v",
 			cov.Refusals)
 	}
-	// FINDING, logged rather than failed because internal/match is outside this
-	// packet's write scope: EcosystemsRefused is documented as "the list an
-	// operator uses to decide what to implement next", and it is populated ONLY
-	// from RefusalUnsupportedEcosystem. A record carrying a purl — which is
-	// every repo-SCA finding, and what every collector is encouraged to
-	// supply — is refused as RefusalUnsupportedPurlType instead, so the
-	// operator-facing list is empty exactly when the input was well-formed.
+	// THIS WAS A LOGGED FINDING AND IS NOW AN ASSERTION. A.21 reported that
+	// EcosystemsRefused — documented as "the list an operator uses to decide
+	// what to implement next" — was populated only from
+	// RefusalUnsupportedEcosystem, so a record carrying a purl (every repo-SCA
+	// finding, and what every collector is encouraged to supply) was refused
+	// as RefusalUnsupportedPurlType and vanished from the list. The count was
+	// visible; the thing to implement next was not. internal/match now feeds
+	// both routes into the list (see Refusal.refusedIdentityToken), and this
+	// is the end-to-end guard against it regressing.
 	if cov.PackagesRefusedScheme > 0 && len(cov.EcosystemsRefused) == 0 {
-		t.Logf("FINDING (internal/match, not fixed here): %d package(s) were refused for an "+
-			"unimplemented scheme and CoverageReport.EcosystemsRefused is EMPTY, because the "+
-			"refusal came through the purl path (RefusalUnsupportedPurlType) and only "+
-			"RefusalUnsupportedEcosystem feeds that list. The count is visible; the thing to "+
-			"implement next is not.", cov.PackagesRefusedScheme)
+		t.Errorf("%d package(s) were refused for an unimplemented scheme and "+
+			"CoverageReport.EcosystemsRefused is EMPTY. The count is visible and the thing to "+
+			"implement next is not, which is the exact defect A.21 reported and internal/match "+
+			"fixed: a refusal arriving by the purl route (RefusalUnsupportedPurlType) is the same "+
+			"fact about coverage as one arriving by the ecosystem route. Refusals: %+v",
+			cov.PackagesRefusedScheme, cov.Refusals)
+	}
+	// And specifically: this corpus's refusal arrives by the PURL route, so
+	// the assertion above cannot be satisfied by the ecosystem route alone.
+	if !containsString(cov.EcosystemsRefused, "npm") {
+		t.Errorf("the repository collector's npm dependency was refused, but %q is not in "+
+			"EcosystemsRefused (%v). The refusal reaches the comparator carrying a purl, so this "+
+			"is the purl route specifically — an operator reading the list would not learn that "+
+			"npm is what Anvil cannot yet handle.", "npm", cov.EcosystemsRefused)
 	}
 	if cov.Complete {
 		t.Error("the run refused a package and still reported Complete; Complete must be false " +
@@ -1066,34 +1268,65 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 // The links this machine cannot prove
 // ---------------------------------------------------------------------------
 
-func decideHostCollector(t *testing.T, led *ledger) {
+// decideHostLink writes the host-inventory link's ledger entry, and it is
+// called FROM INSIDE runChain, at the point the packages were actually
+// submitted — not afterwards from a second host.Collect whose output nothing
+// consumed. A ledger entry written somewhere other than where the evidence was
+// produced can claim something the chain did not do; that is precisely the
+// failure this file exists to prevent, and it is how the fixture inventory came
+// to be cited for a link it never exercised.
+//
+// The two branches say DIFFERENT THINGS on purpose. A reader must be able to
+// tell a run that proved the collector from a run that proved only the probe,
+// and both the verdict (PROVEN / UNPROVEN) and the text differ accordingly.
+func decideHostLink(t *testing.T, led *ledger, src hostInventorySource, collectedSubmitted int, results []match.MatchResult) {
 	t.Helper()
-	inv, err := host.Collect(context.Background(), host.Options{
-		Now: func() time.Time { return fixtureClock },
-	})
-	switch {
-	case err == nil:
-		// A package manager exists here after all. That is a better world,
-		// and it means this harness must stop using a fixture inventory.
-		led.proven(linkHostCollect, fmt.Sprintf(
-			"host.Collect ran to completion on this machine and returned %d packages across %d "+
-				"families", len(inv.Packages), len(inv.Coverage)))
-		t.Errorf("a supported package manager is present on this host, so the fixture inventory " +
-			"is no longer the best available evidence. Feed host.Collect's output into the chain " +
-			"and delete fixtures/inventory/host-packages.json.")
-	case errors.Is(err, host.ErrNoPackageManager):
-		led.unproven(linkHostCollect,
-			"no dpkg, rpm or apk exists on this host ("+"GOOS="+runtime.GOOS+"), so host.Collect "+
-				"cannot produce an inventory here and the chain runs on a fixture inventory in "+
-				"host.Package's own JSON shape. The collector's REFUSAL is proven — it ran to "+
-				"completion and returned a named error rather than hanging or inventing rows — "+
-				"but its output is not.",
-			"run this harness on a Linux host with one of the three package managers installed; "+
-				"the fixture inventory is then redundant and hostInventory should read from "+
-				"host.Collect instead")
-	default:
-		t.Fatalf("host.Collect failed for a reason this harness does not understand: %v", err)
+
+	for _, p := range hostSourceProblems(src, collectedSubmitted) {
+		t.Error(p)
 	}
+
+	if !src.real {
+		led.unproven(linkHostCollect,
+			"no dpkg, rpm or apk exists on this host (GOOS="+runtime.GOOS+"), so host.Collect "+
+				"cannot produce an inventory here and the chain's host side is the CORPUS PROBE "+
+				"alone (fixtures/inventory/corpus-probe-packages.json, "+
+				strconv.Itoa(len(src.probe))+" hand-written packages in host.Package's own JSON "+
+				"shape). The collector's REFUSAL is proven — it ran to completion and returned "+
+				"ErrNoPackageManager rather than hanging or inventing rows — but its OUTPUT is "+
+				"not, and no probe package is evidence about the collector.",
+			"run this harness on a host with one of the three package managers installed; "+
+				"hostInventoryForChain then takes host.Collect's real output automatically and "+
+				"this entry becomes PROVEN with the collected package count. The probe file stays "+
+				"either way: it is the only host input the synthetic advisory corpus can decide, "+
+				"and a real inventory cannot replace it")
+		return
+	}
+
+	var families []string
+	for _, c := range src.inv.Coverage {
+		families = append(families, fmt.Sprintf("%s=%s(%d)", c.Ecosystem, c.Status, c.Packages))
+	}
+	hostFindings := 0
+	for _, r := range results {
+		if r.Collector == cache.CollectorHost {
+			hostFindings++
+		}
+	}
+
+	led.proven(linkHostCollect, fmt.Sprintf(
+		"host.Collect ran to completion on this machine (GOOS=%s) and returned %d package(s); "+
+			"families %v; parse_degraded=%v. ALL %d were mapped through the documented "+
+			"PackageRecord field mapping and submitted to the comparator IN THIS RUN, so this "+
+			"entry rests on the collector's own output and not on any file in fixtures/. "+
+			"NOTE WHAT THIS DOES NOT SAY: none of those packages produced a finding, and none can "+
+			"— this corpus holds only synthetic CVE-2026-xxxx advisories against versions no real "+
+			"machine has. The %d host finding(s) below come from the corpus probe, which is "+
+			"submitted alongside and is NOT evidence about the collector. What is proven here is "+
+			"that a real inventory traverses the chain: collect -> ecosystem mapping -> identity "+
+			"-> comparator, at real size, byte-identically across two runs",
+		runtime.GOOS, len(src.collected), families, src.inv.ParseDegraded,
+		collectedSubmitted, hostFindings))
 }
 
 func decideRepoCollector(t *testing.T, led *ledger) {
@@ -1169,6 +1402,19 @@ func diffChains(a, b chainOutput) []string {
 	cmp("advisory_fts", a.fts, b.fts)
 	cmp("feed_state", a.feedState, b.feedState)
 
+	// The host INPUT. Two runs that read the host's package database twice
+	// must read the same thing, and on a real host that is a claim worth
+	// making at 1000+ rows: host.Collect is documented read-only and sorts
+	// its output, so a diff here is either a package that was installed or
+	// removed mid-test or a collector that is not deterministic. Either one
+	// is a finding, and the diff below is its report. DO NOT relax this to
+	// "compare counts" — a swap of two versions keeps the count.
+	if a.hostSourceLabel != b.hostSourceLabel {
+		out = append(out, fmt.Sprintf("host inventory source: %q then %q",
+			a.hostSourceLabel, b.hostSourceLabel))
+	}
+	cmp("host inventory", a.hostRows, b.hostRows)
+
 	if len(a.matches) != len(b.matches) {
 		out = append(out, fmt.Sprintf("match results: %d then %d", len(a.matches), len(b.matches)))
 	} else {
@@ -1194,13 +1440,15 @@ func diffChains(a, b chainOutput) []string {
 // a sentence about the detector rather than about the chain.
 func TestTheDiffDetectorSeesADifference(t *testing.T) {
 	base := chainOutput{
-		advisory:     []string{"source=a source_id=1"},
-		affected:     []string{"source=a source_id=1 package=openssl"},
-		alias:        []string{"cve_id=CVE-2026-1001"},
-		fts:          []string{"source=a source_id=1 indexed"},
-		feedState:    []string{"feed_id=a"},
-		matches:      []match.MatchResult{{Source: "a", SourceID: "1", Package: "openssl"}},
-		emissionJSON: []byte("{}"),
+		advisory:        []string{"source=a source_id=1"},
+		affected:        []string{"source=a source_id=1 package=openssl"},
+		alias:           []string{"cve_id=CVE-2026-1001"},
+		fts:             []string{"source=a source_id=1 indexed"},
+		feedState:       []string{"feed_id=a"},
+		hostSourceLabel: "corpus probe ONLY",
+		hostRows:        []string{"origin=probe ecosystem=apk package=openssl version=3.1.3-r0 arch="},
+		matches:         []match.MatchResult{{Source: "a", SourceID: "1", Package: "openssl"}},
+		emissionJSON:    []byte("{}"),
 	}
 	if d := diffChains(base, base); len(d) != 0 {
 		t.Fatalf("two identical outputs were reported as differing: %v", d)
@@ -1215,6 +1463,16 @@ func TestTheDiffDetectorSeesADifference(t *testing.T) {
 		"a match result":     func(c *chainOutput) { c.matches[0].Package = "busybox" },
 		"an emitted record":  func(c *chainOutput) { c.emissionJSON = []byte("{ }") },
 		"the number of rows": func(c *chainOutput) { c.advisory = nil },
+		// The host input, both halves: WHICH inventory was used, and what it
+		// contained. Without these two the determinism claim would say
+		// nothing about a real inventory, because a real inventory produces
+		// no findings against this corpus and would leave every other field
+		// untouched.
+		"the host inventory source": func(c *chainOutput) { c.hostSourceLabel = "host.Collect" },
+		"a host package version": func(c *chainOutput) {
+			c.hostRows = []string{"origin=probe ecosystem=apk package=openssl version=3.1.4-r0 arch="}
+		},
+		"the number of host packages": func(c *chainOutput) { c.hostRows = nil },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -1224,6 +1482,7 @@ func TestTheDiffDetectorSeesADifference(t *testing.T) {
 			other.alias = append([]string(nil), base.alias...)
 			other.fts = append([]string(nil), base.fts...)
 			other.feedState = append([]string(nil), base.feedState...)
+			other.hostRows = append([]string(nil), base.hostRows...)
 			other.matches = append([]match.MatchResult(nil), base.matches...)
 			other.emissionJSON = append([]byte(nil), base.emissionJSON...)
 			mutate(&other)
@@ -1700,3 +1959,249 @@ func digestOf(b []byte) string {
 }
 
 func shortDigest(b []byte) string { return digestOf(b)[:16] }
+
+func containsString(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// hostSourceProblems is decideHostLink's tripwire set, written as a PURE
+// FUNCTION over the source so that its negative control can call the shipping
+// code instead of a re-implementation of it. Same argument as checkLedger.
+//
+// EVERY ENTRY POINTS THE SAME WAY: better evidence was available and the run
+// did not use all of it. The tripwire that used to live here pointed the other
+// way — it failed BECAUSE a package manager existed — and the answer to that
+// one was to wire the collector in, not to keep firing. What must still fail
+// is the collector's output being acquired and then quietly dropped, because
+// that produces a ledger entry claiming a proof over nothing.
+func hostSourceProblems(src hostInventorySource, collectedSubmitted int) []string {
+	var problems []string
+	if !src.real {
+		if len(src.collected) > 0 {
+			problems = append(problems, fmt.Sprintf(
+				"the host source says no package manager is present and carries %d collected "+
+					"package(s). One of the two is wrong, and the ledger is about to describe "+
+					"whichever the reader trusts less.", len(src.collected)))
+		}
+		return problems
+	}
+	if len(src.collected) == 0 {
+		problems = append(problems, "host.Collect returned no error on a host that HAS a package "+
+			"manager, and ZERO packages. That is the silent-clean reading exit criterion 20 "+
+			"forbids: a present package manager that enumerates nothing is a failed collection, "+
+			"not a clean host. Read Inventory.Coverage for which family failed.")
+	}
+	if collectedSubmitted != len(src.collected) {
+		problems = append(problems, fmt.Sprintf(
+			"host.Collect returned %d package(s) but %d of them became comparator records; the "+
+				"rest were dropped between the collector and the comparator (bridgeEcosystem "+
+				"recognises only deb, rpm and apk). The ledger entry would then be a claim about "+
+				"output the chain did not consume.", len(src.collected), collectedSubmitted))
+	}
+	return problems
+}
+
+// TestTheHostLedgerLineNamesWhichInventoryItUsed is the control for the one
+// thing the host link exists to communicate.
+//
+// THE REAL PATH CANNOT RUN ON A WINDOWS DEVELOPMENT HOST — there is no dpkg,
+// rpm or apk, so host.Collect refuses and the chain above takes the probe
+// branch every time. Everything DOWNSTREAM of that call is host-independent
+// and is exercised here against two synthetic sources: a run that collected
+// real packages and a run that did not. They must not render the same, in the
+// verdict or in the words, because a reader's only way to tell "this proved
+// the collector" from "this proved a file" is the line the ledger prints.
+func TestTheHostLedgerLineNamesWhichInventoryItUsed(t *testing.T) {
+	probe := []host.Package{{Ecosystem: host.EcosystemAPK, Name: "openssl", Version: "3.1.3-r0"}}
+	collected := []host.Package{
+		{Ecosystem: host.EcosystemDeb, Name: "libc6", Version: "2.35-0ubuntu3.6", Arch: "amd64"},
+		{Ecosystem: host.EcosystemDeb, Name: "openssl", Version: "3.0.2-0ubuntu1.15", Arch: "amd64"},
+	}
+	collectedSrc := hostInventorySource{
+		real:      true,
+		collected: collected,
+		probe:     probe,
+		inv: &host.Inventory{
+			Packages: collected,
+			Coverage: []host.FamilyCoverage{
+				{Ecosystem: host.EcosystemDeb, Status: host.FamilyCollected, Packages: 2},
+				{Ecosystem: host.EcosystemRPM, Status: host.FamilyAbsent},
+				{Ecosystem: host.EcosystemAPK, Status: host.FamilyAbsent},
+			},
+		},
+	}
+	probeOnly := hostInventorySource{probe: probe, inv: &host.Inventory{}}
+
+	collectedLed, probeLed := newLedger(), newLedger()
+	decideHostLink(t, collectedLed, collectedSrc, len(collectedSrc.collected), nil)
+	decideHostLink(t, probeLed, probeOnly, 0, nil)
+
+	rv, ok := collectedLed.v[linkHostCollect]
+	if !ok || !rv.proven {
+		t.Fatalf("a run that collected %d real packages did not prove the host link: %+v",
+			len(collected), rv)
+	}
+	if !strings.Contains(rv.evidence, "host.Collect") {
+		t.Errorf("the PROVEN entry does not name host.Collect as its source: %q", rv.evidence)
+	}
+	pv := probeLed.v[linkHostCollect]
+	if pv.proven {
+		t.Fatalf("a run with no package manager claimed the host link PROVEN: %+v", pv)
+	}
+	if !strings.Contains(pv.missing, "CORPUS PROBE") {
+		t.Errorf("the UNPROVEN entry does not name the corpus probe as what it ran on: %q", pv.missing)
+	}
+	if rv.evidence == pv.missing {
+		t.Error("the two branches render identically, so the ledger cannot distinguish a run that " +
+			"proved the collector from one that proved only a file")
+	}
+	if p := checkLedger(newLedgerWith(linkHostCollect, rv)); len(p) != 0 {
+		t.Errorf("the PROVEN host entry does not satisfy the ledger's own validator: %v", p)
+	}
+	if p := checkLedger(newLedgerWith(linkHostCollect, pv)); len(p) != 0 {
+		t.Errorf("the UNPROVEN host entry does not satisfy the ledger's own validator: %v", p)
+	}
+
+	// The determinism comparison reads label() and rows(); both must carry the
+	// distinction too, or two runs on different sources would compare equal.
+	if collectedSrc.label() == probeOnly.label() {
+		t.Errorf("both sources render the same label %q", collectedSrc.label())
+	}
+	if d := diffChains(
+		chainOutput{hostSourceLabel: collectedSrc.label(), hostRows: collectedSrc.rows()},
+		chainOutput{hostSourceLabel: probeOnly.label(), hostRows: probeOnly.rows()},
+	); len(d) == 0 {
+		t.Error("diffChains sees no difference between a real inventory and the probe alone, so " +
+			"the two-run comparison would not notice the chain switching sources mid-test")
+	}
+	if len(collectedSrc.submitted()) != len(collected)+len(probe) {
+		t.Errorf("the real path submitted %d packages, want %d collected + %d probe",
+			len(collectedSrc.submitted()), len(collected), len(probe))
+	}
+}
+
+// newLedgerWith builds a full ledger with one entry replaced, so a single
+// verdict can be put through checkLedger.
+func newLedgerWith(id linkID, v verdict) *ledger {
+	l := newLedger()
+	for _, other := range chainLinks {
+		l.proven(other, "evidence")
+	}
+	l.v[id] = v
+	return l
+}
+
+// TestTheHostTripwiresFireOnDroppedEvidence is hostSourceProblems' negative
+// control. A guard that has never rejected anything has not been tested, and
+// these are the shapes in which better evidence is collected and then not used.
+func TestTheHostTripwiresFireOnDroppedEvidence(t *testing.T) {
+	pkgs := []host.Package{
+		{Ecosystem: host.EcosystemDeb, Name: "libc6", Version: "2.35-0ubuntu3.6"},
+		{Ecosystem: host.EcosystemDeb, Name: "openssl", Version: "3.0.2-0ubuntu1.15"},
+	}
+	cases := []struct {
+		name      string
+		src       hostInventorySource
+		submitted int
+		want      string
+	}{
+		{
+			name:      "a real inventory fully submitted",
+			src:       hostInventorySource{real: true, collected: pkgs},
+			submitted: 2,
+		},
+		{
+			name: "no package manager, probe only",
+			src:  hostInventorySource{probe: pkgs[:1]},
+		},
+		{
+			name:      "a present package manager that enumerated nothing",
+			src:       hostInventorySource{real: true},
+			submitted: 0,
+			want:      "ZERO packages",
+		},
+		{
+			name:      "real packages collected and then dropped",
+			src:       hostInventorySource{real: true, collected: pkgs},
+			submitted: 1,
+			want:      "the chain did not consume",
+		},
+		{
+			name:      "a probe-only source carrying collected packages",
+			src:       hostInventorySource{collected: pkgs},
+			submitted: 0,
+			want:      "One of the two is wrong",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := hostSourceProblems(tc.src, tc.submitted)
+			if tc.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("a well-formed source was flagged: %v", got)
+				}
+				return
+			}
+			if len(got) == 0 {
+				t.Fatalf("hostSourceProblems accepted %q", tc.name)
+			}
+			if !strings.Contains(strings.Join(got, "\n"), tc.want) {
+				t.Errorf("flagged %q but not for the expected reason: %v", tc.name, got)
+			}
+		})
+	}
+}
+
+// TestTheChainUsesTheBestAvailableHostEvidence is the tripwire that replaced
+// the one CI fired, pointed the right way round.
+//
+// The old guard failed the run when a package manager appeared, because the
+// chain was reading a hand-written file and the file had stopped being the
+// best available evidence. Wiring host.Collect in answers that — but only for
+// as long as the wiring stays. This test re-asks the machine DIRECTLY, without
+// going through hostInventoryForChain, and fails if the chain's host input is
+// not the best thing this machine can offer.
+//
+// It is deliberately not a statement about which branch is correct HERE: on a
+// Windows development host it asserts the probe branch, on a Linux CI host it
+// asserts the collected branch, and either way it asserts that the chain and
+// the machine agree.
+func TestTheChainUsesTheBestAvailableHostEvidence(t *testing.T) {
+	_, err := host.Collect(context.Background(), host.Options{
+		Now: func() time.Time { return fixtureClock },
+	})
+	switch {
+	case err == nil, errors.Is(err, host.ErrNoPackageManager):
+	default:
+		t.Fatalf("host.Collect failed for a reason this harness does not understand: %v", err)
+	}
+	managerPresent := err == nil
+
+	src := hostInventoryForChain(t)
+	if managerPresent != src.real {
+		t.Fatalf("this machine %s a supported package manager, and the chain's host source says "+
+			"real=%v. The chain must run on host.Collect's output wherever it exists and on the "+
+			"corpus probe only where it does not; a disagreement here means the ledger's host "+
+			"line describes an inventory the chain did not use.",
+			map[bool]string{true: "HAS", false: "does not have"}[managerPresent], src.real)
+	}
+	if managerPresent && len(src.collected) == 0 {
+		t.Error("the chain took the real branch and collected nothing; see hostSourceProblems")
+	}
+	if !managerPresent && len(src.collected) != 0 {
+		t.Errorf("the chain took the probe branch and still carries %d collected package(s)",
+			len(src.collected))
+	}
+	// The probe is present on BOTH branches and is never evidence about the
+	// collector. If it ever went missing the comparator and emission links
+	// would lose their only decidable host input and pass vacuously.
+	if len(src.probe) == 0 {
+		t.Error("the corpus probe is empty on this branch")
+	}
+	t.Logf("host evidence: %s", src.label())
+}
