@@ -54,6 +54,53 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
 
+      # THE SECOND LANE, and it is not redundant with the one above.
+      #
+      # internal/dast/authz/phase1_scopebytes_race_test.go carries
+      # `//go:build !race`, so `go test -race` DOES NOT COMPILE IT. That build
+      # tag is legitimate -- the harness works by racing a writer against the
+      # caller's scope buffer, which is a data race by construction, and the
+      # detector reports it against the FIX on a correct tree. What was not
+      # legitimate is that this workflow ran only the -race lane, so
+      # TestScopeBytesAreReadOnceUnderAConcurrentWriter -- the behavioural
+      # control whose measured numbers are in internal/SKIPPED-CONTROLS.md
+      # under G4-1 (0 of 200 constructed Scopes mismatched on the shipped tree,
+      # 89 of 200 with the copy deleted, 102 of 200 with the copy replaced by
+      # `rawAlias := raw[:]`) -- was compiled in ZERO CI lanes. Recorded as N3;
+      # this step is what closes it.
+      #
+      # -count=1 for the reason the artifact-split job spells out at length.
+      - name: go test without -race (the !race lane compiles here and nowhere else)
+        run: go test -count=1 ./...
+
+      # A `go test -run X` that matches NOTHING exits 0 and prints
+      # "no tests to run". That is exactly how this lane would rot: the file is
+      # renamed or the build tag spreads, the step above still passes, and the
+      # control is gone again. So assert the named test actually ran and
+      # actually passed, and fail the job on either.
+      - name: The !race concurrency harness really ran, and passed
+        run: |
+          set +e
+          out=$(go test -count=1 -v -run TestScopeBytesAreReadOnceUnderAConcurrentWriter ./internal/dast/authz/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            echo "::error::the !race concurrency harness FAILED"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q -- '--- PASS: TestScopeBytesAreReadOnceUnderAConcurrentWriter'; then
+            echo "::error::TestScopeBytesAreReadOnceUnderAConcurrentWriter did not run. A -run pattern that matches nothing exits 0; this lane proves nothing until the test is actually compiled and executed."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "confirmed: the !race harness compiled, ran and passed in the non-race lane"
+
       # The Lane A exit gate prints a chain ledger naming which of its twelve
       # links it PROVED and which it could not, and it is the deliverable of
       # that packet -- "an UNPROVEN link is not a passing link". Go only shows

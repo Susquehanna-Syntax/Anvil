@@ -3,8 +3,12 @@ package authz
 import (
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/netip"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -336,10 +340,17 @@ func TestDecideNeverPermitsThroughAnIncompleteChain(t *testing.T) {
 		t.Fatalf("Decide's error does not unwrap to ErrRefused: %v", r.Err())
 	}
 	if missing != GateUnspecified {
-		if r.Reason() != ReasonGateNotRegistered {
+		// The token names THE MISSING GATE, not gate 21. GateRecord.Validate
+		// refuses a row whose reason names a different gate from the row
+		// itself, and Adjudicate validates every row before writing any, so a
+		// gate21.* token here loses the entire audit trail of the denial. See
+		// structuralRefusal.
+		wantReason := Reason(missing.String() + "." + slugGateNotRegistered)
+		if r.Reason() != wantReason {
 			t.Fatalf("%s has no implementation and Decide refused with reason %q; expected "+
 				"%q so that the refusal says the gate stack is incomplete rather than "+
-				"blaming the input", missing, string(r.Reason()), string(ReasonGateNotRegistered))
+				"blaming the input, AND names the gate it is attributed to so the audit "+
+				"row for it validates", missing, string(r.Reason()), string(wantReason))
 		}
 		if r.Gate() != missing {
 			t.Fatalf("the refusal names %s; the first unimplemented gate is %s", r.Gate(), missing)
@@ -408,8 +419,12 @@ func TestChainRefusesEveryMissingGateIndividually(t *testing.T) {
 			if r.Gate() != missing {
 				t.Fatalf("refusal attributed to %s; the missing gate was %s", r.Gate(), missing)
 			}
-			if r.Reason() != ReasonGateNotRegistered {
-				t.Fatalf("reason %q; want %q", string(r.Reason()), string(ReasonGateNotRegistered))
+			wantReason := Reason(missing.String() + "." + slugGateNotRegistered)
+			if r.Reason() != wantReason {
+				t.Fatalf("reason %q; want %q. A refusal attributed to %s whose reason "+
+					"names some other gate cannot be written as an audit row at all: "+
+					"GateRecord.Validate rejects exactly that mismatch",
+					string(r.Reason()), string(wantReason), missing)
 			}
 		})
 	}
@@ -462,8 +477,13 @@ func TestChainRefusesAGateThatSignsSomeoneElsesName(t *testing.T) {
 	if r.Permits() {
 		t.Fatalf("the chain accepted a ruling signed by a different gate: %s", r)
 	}
-	if r.Reason() != ReasonGateIdentityMismatch {
-		t.Fatalf("reason %q; want %q", string(r.Reason()), string(ReasonGateIdentityMismatch))
+	wantReason := Reason(Gate10ReservedRanges.String() + "." + slugGateIdentityMismatch)
+	if r.Reason() != wantReason {
+		t.Fatalf("reason %q; want %q", string(r.Reason()), string(wantReason))
+	}
+	if r.Gate() != Gate10ReservedRanges {
+		t.Fatalf("the refusal is attributed to %s; gate 10 is the gate that signed "+
+			"someone else's name", r.Gate())
 	}
 }
 
@@ -805,9 +825,14 @@ func TestDecideRefusesAnAttestationForADifferentScope(t *testing.T) {
 }
 
 // TestRevalidateRunsTheRedirectChain covers gate 13's dependency: the
-// revalidation chain re-runs SCOPE MEMBERSHIP plus gates 8, 9 and 10, and
-// refuses an unconstructed target, which is the shape a half-parsed Location
-// header takes.
+// revalidation chain re-runs SCOPE MEMBERSHIP and THE LIVE ATTESTATION plus
+// gates 8, 9 and 10, and refuses an unconstructed target, which is the shape a
+// half-parsed Location header takes.
+//
+// GATE 5 IS IN THE CHAIN, and TestAnAttestationThatExpiresMidRunStopsTheNextRequest
+// is what drives it. Gate 14 permits thirty minutes of wall clock per target,
+// so an attestation can expire during a run, and gate 5 is "refuse to probe
+// without a live attestation" per REQUEST rather than per admission.
 //
 // GATE 4 IS IN THE CHAIN, and that is the orchestrator's ruling. Gates 8-10
 // canonicalize, pin and screen reserved ranges; not one of them asks whether
@@ -816,10 +841,14 @@ func TestDecideRefusesAnAttestationForADifferentScope(t *testing.T) {
 // 13 row is "re-validate scope on every request including every redirect hop",
 // and the scope allow-list match is gate 4.
 func TestRevalidateRunsTheRedirectChain(t *testing.T) {
-	want := []GateID{Gate4ScopeFile, Gate8Canonicalize, Gate9ResolveAndPin, Gate10ReservedRanges}
+	want := []GateID{
+		Gate4ScopeFile, Gate5Attestation,
+		Gate8Canonicalize, Gate9ResolveAndPin, Gate10ReservedRanges,
+	}
 	if len(revalidationChain) != len(want) {
-		t.Fatalf("the revalidation chain is %v; gate 13 re-runs scope membership and gates "+
-			"8-10 on every request and every redirect hop", revalidationChain)
+		t.Fatalf("the revalidation chain is %v; gate 13 re-runs scope membership, the "+
+			"live attestation and gates 8-10 on every request and every redirect hop",
+			revalidationChain)
 	}
 	for i, g := range want {
 		if revalidationChain[i] != g {
@@ -863,9 +892,260 @@ func TestRevalidateRunsTheRedirectChain(t *testing.T) {
 	}
 }
 
+// TestRevalidateDocNamesTheChainItRuns is D.9's LOW 8.
+//
+// Revalidate's doc comment said it "re-runs gates 8, 9 and 10 for gate 13"
+// after Ruling 3 had put gate 4 in the chain. A reader of the EXPORTED API
+// would have concluded that gate 13 does not re-check scope membership — the
+// exact misreading Ruling 3 was issued to correct, and the one ZAP issue #2546
+// is a record of. Gate 5 has since joined the chain too.
+//
+// A doc comment is not usually pinnable, but this one is: it makes a checkable
+// claim about a list this file also declares. The expected sentence is built
+// FROM revalidationChain, so changing the chain without changing the sentence
+// turns this red, in either direction.
+//
+// Whitespace is normalised before the search, so reflowing the comment is not a
+// failure; changing what it says is.
+func TestRevalidateDocNamesTheChainItRuns(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "kernel.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse kernel.go: %v", err)
+	}
+	var doc string
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name.Name == "Revalidate" && fn.Doc != nil {
+			doc = fn.Doc.Text()
+		}
+	}
+	if doc == "" {
+		t.Fatal("Revalidate has no doc comment in kernel.go, so this guard measured " +
+			"nothing. It is an exported function on the kernel's surface and a reader " +
+			"of it decides what gate 13 re-checks")
+	}
+	doc = strings.Join(strings.Fields(doc), " ")
+
+	want := "re-runs " + gateListPhrase(revalidationChain)
+	if !strings.Contains(doc, want) {
+		t.Fatalf("Revalidate's doc does not say %q.\n\nrevalidationChain is %v, and the "+
+			"doc of the exported function is where a caller learns what gate 13 "+
+			"re-checks. The older wording said \"re-runs gates 8, 9 and 10\" after gate "+
+			"4 had been added, so the exported API described a gate 13 that does NOT "+
+			"re-check scope membership — the misreading Ruling 3 was issued to correct.\n"+
+			"\ndoc: %s", want, revalidationChain, doc)
+	}
+}
+
+// gateListPhrase renders a gate list as "gates 4, 5, 8, 9 and 10".
+func gateListPhrase(gates []GateID) string {
+	nums := make([]string, 0, len(gates))
+	for _, g := range gates {
+		nums = append(nums, strconv.Itoa(int(g)))
+	}
+	switch len(nums) {
+	case 0:
+		return "no gates"
+	case 1:
+		return "gate " + nums[0]
+	}
+	return "gates " + strings.Join(nums[:len(nums)-1], ", ") + " and " + nums[len(nums)-1]
+}
+
 // ===========================================================================
 // GATE 21 — the audit write is part of the decision
 // ===========================================================================
+
+// TestStructuralRefusalNamesTheGateItRefusesAt pins the kernel's structural
+// refusal tokens.
+//
+// The kernel mints two refusals about the GATE STACK rather than about the
+// inputs — "this chain position has no implementation compiled in" and "this
+// implementation signed someone else's name" — and both must name the gate
+// they are attributed to. A gateNN ruling carrying a gate21.* token is not a
+// cosmetic mis-filing: GateRecord.Validate rejects exactly that mismatch and
+// Adjudicate validates every row before writing any, so the whole audit of the
+// denial is discarded. See TestAdjudicateWritesAuditRowsForARealChainDenial.
+//
+// It also pins the two slugs against the gate-21 constants they mirror, so the
+// two spellings cannot drift apart, and drives the invalid-gate fallback.
+func TestStructuralRefusalNamesTheGateItRefusesAt(t *testing.T) {
+	// The slugs and the chain-level constants are the same words.
+	if got := Reason("gate21." + slugGateNotRegistered); got != ReasonGateNotRegistered {
+		t.Fatalf("gate21.%s is %q and ReasonGateNotRegistered is %q; the per-gate and "+
+			"chain-level spellings of one refusal have drifted apart",
+			slugGateNotRegistered, string(got), string(ReasonGateNotRegistered))
+	}
+	if got := Reason("gate21." + slugGateIdentityMismatch); got != ReasonGateIdentityMismatch {
+		t.Fatalf("gate21.%s is %q and ReasonGateIdentityMismatch is %q",
+			slugGateIdentityMismatch, string(got), string(ReasonGateIdentityMismatch))
+	}
+
+	// Every one of the 21 gates can name itself, and the ruling it produces
+	// is one an audit row can be built from.
+	for g := Gate1DastShipsDisabled; g.Valid(); g++ {
+		for _, slug := range []string{slugGateNotRegistered, slugGateIdentityMismatch} {
+			r := structuralRefusal(g, slug, "fixture")
+			if r.Gate() != g {
+				t.Fatalf("structuralRefusal(%s, %q) is attributed to %s", g, slug, r.Gate())
+			}
+			if !r.WellFormedDenial() {
+				t.Fatalf("structuralRefusal(%s, %q) = %s is not a well-formed denial, so "+
+					"the chain would convert it into a second refusal and the audit row "+
+					"for it would not validate", g, slug, r)
+			}
+			named, err := r.Reason().Gate()
+			if err != nil || named != g {
+				t.Fatalf("structuralRefusal(%s, %q) minted reason %q, which names %s "+
+					"(%v). GateRecord.Validate refuses a row whose reason names a "+
+					"different gate from the row itself", g, slug, string(r.Reason()),
+					named, err)
+			}
+			if want := Reason(g.String() + "." + slug); r.Reason() != want {
+				t.Fatalf("structuralRefusal(%s, %q) minted %q; want %q",
+					g, slug, string(r.Reason()), string(want))
+			}
+		}
+	}
+
+	// A gate that is not one of the 21 cannot name itself, so the refusal
+	// falls back to gate 21 — the gate that has failed when the kernel cannot
+	// say which gate failed. It must still be a well-formed denial.
+	for _, bad := range []GateID{GateUnspecified, GateID(22), GateID(255)} {
+		r := structuralRefusal(bad, slugGateNotRegistered, "fixture")
+		if r.Gate() != Gate21ImmutableAudit {
+			t.Fatalf("structuralRefusal(%s) is attributed to %s; an invalid gate cannot "+
+				"name itself in a token, so the refusal belongs to gate 21", bad, r.Gate())
+		}
+		if r.Reason() != ReasonGateNotRegistered || !r.WellFormedDenial() {
+			t.Fatalf("structuralRefusal(%s) = %s; want a well-formed gate-21 denial", bad, r)
+		}
+	}
+}
+
+// TestAdjudicateWritesAuditRowsForARealChainDenial is D.9's HIGH 1, written as
+// the measurement the critic made.
+//
+// WHAT WAS MEASURED, AND WHY NOTHING SAW IT. chain.runTraced minted the
+// missing-implementation refusal as refuse(Gate11RobotsDeny,
+// ReasonGateNotRegistered, ...) — a gate21.* token attributed to gate 11.
+// GateRecord.Validate rejects that mismatch, and Adjudicate validates every row
+// before it writes any, so the whole write loop aborted: seven gates consulted,
+// a denial issued, "audit rows written: 0", and the decision came back as
+// gate21.audit_key_incomplete instead of as the gate-11 refusal it was. Gate 21
+// says a decision is not "allowed" if its paired audit write fails; a DENIAL
+// whose rows all vanish is the same control failing in the direction nobody
+// looks at, and a run refused a thousand times then looks like a run nobody
+// attempted.
+//
+// It was invisible because EVERY OTHER Adjudicate test substitutes
+// permitAll(admissionChain) and never runs the real chain — they exercised a
+// chain that cannot deny. THIS TEST CALLS THE EXPORTED Adjudicate, over the
+// compiled-in registry, and drives it to a denial two different ways: a gate
+// that refuses on the merits, and the structural refusal at the first
+// unimplemented gate.
+func TestAdjudicateWritesAuditRowsForARealChainDenial(t *testing.T) {
+	scope := mustScope(t, ModeExternal)
+	att := attestFor(t, scope)
+	en := mustEnablement(t, scope, att)
+	clk := mustClock(t)
+
+	// assertAudited is the whole point: a denial is a decision, and gate 21
+	// requires every decision to be recorded.
+	assertAudited := func(t *testing.T, sink *recordingSink, d Decision, wantRows int) {
+		t.Helper()
+		if d.Allowed() {
+			t.Fatalf("Adjudicate ALLOWED through the real admission chain: %v", d.Err())
+		}
+		if len(sink.rows) == 0 {
+			t.Fatalf("audit rows written: 0, for a denial at %s (%s). Gate 21 is an "+
+				"immutable audit of EVERY gate decision, allow and deny alike; a denial "+
+				"that records nothing is the audit failing in the direction nobody "+
+				"looks at", d.Gate(), string(d.Reason()))
+		}
+		if len(sink.rows) != wantRows {
+			t.Fatalf("%d audit rows written; %d gates were consulted before the refusal",
+				len(sink.rows), wantRows)
+		}
+		if d.Reason() == ReasonAuditKeyIncomplete {
+			t.Fatalf("the decision came back as %q. That is the kernel saying it could "+
+				"not build a keyable row for its own refusal — the D.9 HIGH 1 shape",
+				string(ReasonAuditKeyIncomplete))
+		}
+		last := sink.rows[len(sink.rows)-1]
+		if err := last.Validate(); err != nil {
+			t.Fatalf("the last audit row does not validate: %v", err)
+		}
+		if last.Gate != d.Gate() || last.Reason != d.Reason() {
+			t.Fatalf("the decision is %s/%s and the last row records %s/%s",
+				d.Gate(), string(d.Reason()), last.Gate, string(last.Reason))
+		}
+		if last.Outcome != OutcomeDeny {
+			t.Fatalf("the last row's outcome is %q for a refused decision", string(last.Outcome))
+		}
+		for i, row := range sink.rows {
+			if err := row.Validate(); err != nil {
+				t.Fatalf("audit row %d (%s) does not validate: %v", i, row.Gate, err)
+			}
+		}
+	}
+
+	t.Run("a gate refuses on the merits", func(t *testing.T) {
+		// cdn.example.net is routable, on no deny list, in no reserved range
+		// — and in nobody's allow list. Gate 4 is the first gate in the chain
+		// and it refuses, so exactly one gate was consulted.
+		offScope := mustTarget(t, "cdn.example.net", 443, "93.184.216.35")
+		sink := &recordingSink{}
+		d := Adjudicate(sink, en, offScope, scope, att, clk)
+		assertAudited(t, sink, d, 1)
+		if d.Gate() != Gate4ScopeFile {
+			t.Fatalf("an off-scope target was refused by %s; the allow-list match is "+
+				"gate 4, so this fixture is not testing what it claims", d.Gate())
+		}
+	})
+
+	t.Run("the chain stops at an unimplemented gate", func(t *testing.T) {
+		missing := firstUnregisteredAdmissionGate()
+		inScope := mustTarget(t, "target.example.com", 443, "93.184.216.34")
+		sink := &recordingSink{}
+		d := Adjudicate(sink, en, inScope, scope, att, clk)
+
+		if missing == GateUnspecified {
+			// The stack is complete, so this fixture must be ALLOWED and every
+			// gate must still have been recorded. The assertion narrows on its
+			// own as later packets land rather than needing an edit.
+			if !d.Allowed() {
+				t.Fatalf("the admission stack is fully implemented and refused a fully "+
+					"valid fixture: %v", d.Err())
+			}
+			if len(sink.rows) != len(admissionChain) {
+				t.Fatalf("%d rows for %d gates", len(sink.rows), len(admissionChain))
+			}
+			return
+		}
+
+		// Every gate up to and including the missing one was consulted, so
+		// every one of them must have a row.
+		consulted := 0
+		for _, g := range admissionChain {
+			consulted++
+			if g == missing {
+				break
+			}
+		}
+		assertAudited(t, sink, d, consulted)
+		if d.Gate() != missing {
+			t.Fatalf("the refusal names %s; the first unimplemented gate is %s",
+				d.Gate(), missing)
+		}
+		if want := Reason(missing.String() + "." + slugGateNotRegistered); d.Reason() != want {
+			t.Fatalf("reason %q; want %q", string(d.Reason()), string(want))
+		}
+		t.Logf("%d audit rows written for a denial at %s (%s)",
+			len(sink.rows), d.Gate(), string(d.Reason()))
+	})
+}
 
 // TestAdjudicateAllowsOnlyWhenTheAuditWriteSucceeds is gate 21 stated as a
 // test: "a gate decision is not 'allowed' if its paired audit write fails."

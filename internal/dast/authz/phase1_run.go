@@ -478,6 +478,52 @@ func LoadScopeFile(path string, decl ModeDeclaration) (Scope, GateResult) {
 // There is no third outcome and no partial parse: a scope file that was 90%
 // readable produces no Scope at all, because the 10% that did not parse is
 // exactly where a deny entry would have been.
+//
+// # The caller's bytes are read exactly once
+//
+// An earlier shape read the caller's slice TWICE: decodeStrict parsed it, and
+// then sealScope hashed it with ScopeHashOf. D.9's critic demonstrated the gap
+// between the two reads in a scratch module — two same-length scope documents,
+// 1000 entries so that the decode takes about 1.4ms, one goroutine calling
+// NewScope while another rewrote the buffer — and produced a Scope whose
+// ENTRIES permitted *.evil.example.com while its HASH was the benign
+// document's.
+//
+// That is not a tidiness bug. Gate 5 binds an attestation to the scope hash,
+// and that binding is the whole reason an attestation is specific to a SCOPE
+// rather than merely to a session: "editing the scope file invalidates the
+// attestation" (research/20 gate 5) is only true while the hash is a hash of
+// the entries. A Scope carrying one document's entries under another
+// document's hash defeats it exactly.
+//
+// So the bytes are copied ONCE, here, and everything downstream — the strict
+// parse and ScopeHashOf alike — reads the copy. A concurrent writer can still
+// tear the copy, and the copy is then simply a different document; what it
+// cannot do is put the parse and the hash on opposite sides of a write.
+//
+// # The two guards, and which lane each runs in
+//
+// TestGate4ReadsTheCallersScopeBytesExactlyOnce (phase1_run_test.go) parses
+// this file and asserts the SOURCE-LEVEL property: the parameter is rebound to
+// a copy of itself before any use of it other than len. It runs in every lane,
+// including -race, because it starts no goroutines. It carries five positive
+// controls, one of which is `rawAlias := raw[:]` — the one-line mutation that
+// defeated the earlier, denylist-shaped version of the same analysis.
+//
+// TestScopeBytesAreReadOnceUnderAConcurrentWriter
+// (phase1_scopebytes_race_test.go) is the BEHAVIOURAL regression: a goroutine
+// rewriting the caller's buffer while this function runs, asserting that every
+// constructed Scope's entries and hash came from one document. Measured: 0 of
+// 200 on this tree, 89 of 200 with the copy deleted, 102 of 200 with the copy
+// replaced by that alias.
+//
+// That second one is built `!race` AND THAT IS NOT A HEDGE — it is what the
+// harness is. Racing the caller's buffer is the only way to make one read of
+// it differ from another, so the harness is a data race by construction, and
+// `go test -race` reports it against THIS FILE'S COPY on a correct build. It
+// therefore cannot run in the -race lane without failing a correct tree.
+// Recorded in internal/SKIPPED-CONTROLS.md as G4-1, with the literal race
+// report.
 func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
 	// ONE guard, not two. An earlier draft checked decl.Declared() first and
 	// decl.Mode()'s error second. Declared() is true exactly when Mode()
@@ -504,6 +550,13 @@ func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
 				maxScopeFileBytes),
 			fmt.Sprintf("size: %d bytes", len(raw)))
 	}
+
+	// THE ONE READ. Everything below — decodeStrict and, through sealScope,
+	// ScopeHashOf — sees this copy and never the caller's slice again, so the
+	// entries and the hash come from one document. The two length checks above
+	// read only the slice HEADER, which is already a copy and cannot be
+	// changed by a writer holding the same backing array.
+	raw = append([]byte(nil), raw...)
 
 	var doc scopeDocument
 	if reason, err := decodeStrict(raw, &doc); err != nil {
@@ -1528,6 +1581,7 @@ type RunInitiation struct {
 	att        Attestation
 	trigger    TriggerContext
 	enablement DastEnablement
+	clock      Clock
 	sealed     bool
 }
 
@@ -1589,6 +1643,7 @@ func InitiateRun(req RunRequest) (RunInitiation, GateResult) {
 		att:        att,
 		trigger:    req.Trigger,
 		enablement: enablement,
+		clock:      req.Clock,
 		sealed:     true,
 	}, gatePassed(Gate7TriggerProvenance)
 }
@@ -1596,7 +1651,23 @@ func InitiateRun(req RunRequest) (RunInitiation, GateResult) {
 // Initiated reports whether this run passed Phase 1. False for the zero value.
 func (r RunInitiation) Initiated() bool {
 	return r.sealed && r.enablement.Enabled() && r.scope.Constructed() &&
-		r.att.Constructed() && r.decl.Declared() && r.trigger.Constructed()
+		r.att.Constructed() && r.decl.Declared() && r.trigger.Constructed() &&
+		r.clock.Valid()
+}
+
+// RunClock returns THE run's clock: the instant this run was initiated at,
+// sealed so that no caller can mint another one.
+//
+// This is the only exported route to a RunClock in the package, which is what
+// makes Phase 4's embargo comparisons comparisons against a run rather than
+// against whatever instant the next call was handed. See types.go's RunClock
+// for the defeat that made it necessary, and phase4_disclosure.go's header for
+// the sequence it refuses.
+func (r RunInitiation) RunClock() (RunClock, error) {
+	if !r.Initiated() {
+		return RunClock{}, fmt.Errorf("run: %w", ErrUnconstructed)
+	}
+	return sealRunClock(r.clock), nil
 }
 
 // Scope returns the run's scope, or an error if the run was never initiated.

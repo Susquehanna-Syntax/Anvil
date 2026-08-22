@@ -101,6 +101,7 @@ const (
 	ReasonHopMethodUnrecognised     Reason = "gate13.method_not_on_the_allowlist"
 	ReasonHopPathMalformed          Reason = "gate13.request_path_is_malformed"
 	ReasonHopRevalidated            Reason = "gate13.hop_revalidated_against_scope"
+	ReasonHopAttestationNotLive     Reason = "gate13.attestation_is_not_live_for_this_request"
 )
 
 // Gate 14 reasons.
@@ -435,9 +436,19 @@ func (i RequestIntent) CrossHost() bool {
 //
 // # What it re-runs, and why that is not all of it
 //
-// It calls kernel.go's Revalidate, which runs gates 4, 8, 9 and 10 against the
-// destination — SCOPE MEMBERSHIP, canonicalize, judge the pinned address,
-// reserved-range denylist.
+// It calls kernel.go's Revalidate, which runs gates 4, 5, 8, 9 and 10 against
+// the destination — SCOPE MEMBERSHIP, A LIVE ATTESTATION, canonicalize, judge
+// the pinned address, reserved-range denylist.
+//
+// GATE 5 IS IN THAT CHAIN BECAUSE AN ATTESTATION EXPIRES AT AN INSTANT. Gate 14
+// permits thirty minutes of wall clock per target and a run has many targets,
+// so an attestation can expire mid-run; D.9's critic measured a Revalidate at
+// base+365d permitting an attestation whose window ended at base+29d, and this
+// function passing an OriginInitial intent at the same instant. Gate 5 is
+// "refuse to probe without a live attestation" per REQUEST, and it is gate 5's
+// own gateFunc that makes the comparison — not a private expiry check written
+// here, which would be a second implementation that can disagree with the
+// first.
 //
 // plan/50-dast.md D.6 specifies "re-runs gates 8–10", and gates 8–10 are not
 // enough. None of the three asks whether the host is in the allow list, so a
@@ -515,11 +526,22 @@ func CheckGate13Revalidate(intent RequestIntent, scope Scope, att Attestation, c
 		}
 	}
 
-	// The revalidation chain: gates 4, 8, 9 and 10, against the destination
+	// The revalidation chain: gates 4, 5, 8, 9 and 10, against the destination
 	// this request would actually reach. This is the call the whole gate
 	// exists to make, and it is made for every origin, on every hop, not only
 	// on the first request.
 	if r := Revalidate(intent.Next(), scope, att, clock); !r.Permits() {
+		if r.Gate() == Gate5Attestation {
+			return gateFailed(g, ReasonHopAttestationNotLive,
+				"the attestation covering this run is not live for this request. It is "+
+					"checked per request and not once per run: gate 14 permits thirty "+
+					"minutes of wall clock per target, a run has many targets, and an "+
+					"attestation that was live at admission can have expired by the time "+
+					"this hop is issued. There is no grace period.",
+				"refused at:  "+r.Gate().String(),
+				"reason:      "+string(r.Reason()),
+				"destination: "+redactedOrigin(intent.Next()))
+		}
 		if r.Gate() == Gate4ScopeFile {
 			return gateFailed(g, ReasonHopOutsideScope,
 				"the scope layer does not permit this request's destination host and port. "+
@@ -532,9 +554,9 @@ func CheckGate13Revalidate(intent RequestIntent, scope Scope, att Attestation, c
 		}
 		return gateFailed(g, ReasonRevalidationRefused,
 			"the destination this request would reach does not pass the kernel's "+
-				"revalidation chain. Gates 4, 8, 9 and 10 are re-run for every request "+
-				"and every redirect hop; a target that passed them once at admission "+
-				"does not pass them forever.",
+				"revalidation chain. Gates 4, 5, 8, 9 and 10 are re-run for every "+
+				"request and every redirect hop; a target that passed them once at "+
+				"admission does not pass them forever.",
 			"refused at:  "+r.Gate().String(),
 			"reason:      "+string(r.Reason()),
 			"destination: "+redactedOrigin(intent.Next()))

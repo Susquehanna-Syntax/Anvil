@@ -905,7 +905,7 @@ func TestAttestationCeilingMayOnlyBeLowered(t *testing.T) {
 //
 //  1. `authz.NewCap` NO LONGER EXISTS. The constructor is unexported, so the
 //     first line does not compile from any package outside internal/dast/authz.
-//     TestNewCapIsNotExported is the guard on that, because a test cannot
+//     TestNoExportedSurfaceMintsACap is the guard on that, because a test cannot
 //     assert that some other package fails to build.
 //  2. The second line fails anyway. This test mints the forged Cap through the
 //     UNEXPORTED constructor — the strongest form of the attack still
@@ -981,23 +981,53 @@ func TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction(t *testing.T) {
 	}
 }
 
-// TestNewCapIsNotExported is the compile-fence half of CRITICAL 1.
+// TestNoExportedSurfaceMintsACap is the compile-fence half of D.3's CRITICAL 1
+// and D.9's MEDIUM 7.
 //
 // A Go test cannot assert that another package fails to build, so it asserts
-// the property that made the critic's line compile: an EXPORTED function that
-// mints a Cap from a caller-supplied value. The package's own source is parsed
-// and every exported function that returns a Cap is checked against an
-// ALLOWLIST of the argument-free constructors that read compiled-in consts.
+// the property that made the critic's `authz.NewCap(10*365*24*time.Hour)` line
+// compile: SOMETHING ON THIS PACKAGE'S EXPORTED SURFACE that lets a caller
+// outside it hold or hand over a Cap of its own choosing.
 //
-// Re-exporting newCap, or adding any new exported way to mint a Cap from a
-// caller's number, turns this red.
-func TestNewCapIsNotExported(t *testing.T) {
-	// The exported functions that may return a Cap. Each takes NO argument
-	// that becomes a floor: DefaultAttestationCeiling reads a const, and
-	// AttestationCeilingFromConfig can only LOWER that const.
+// # Why the previous shape was a denylist wearing an allowlist's name
+//
+// It walked only `fn.Recv == nil` FuncDecls, so it skipped every method — an
+// exported method minting a Cap passed it. And it matched type expressions
+// against two hard-coded names, so `type LifetimeCeiling = Cap[time.Duration]`
+// re-exported the type entirely and went unseen. Both gaps were demonstrated.
+//
+// This walks the whole exported surface — functions, METHODS ON EXPORTED
+// TYPES, type declarations INCLUDING ALIASES, and exported vars and consts —
+// and requires every declaration that so much as names a Cap to be on an
+// allowlist with a written justification. A new spelling is red by default; the
+// contributor adds a line here, which is where a reviewer will see it.
+//
+// The alias set is computed rather than hard-coded: any exported type whose
+// declaration mentions a Cap is itself treated as a Cap from then on, so a
+// chain of aliases does not launder the type.
+func TestNoExportedSurfaceMintsACap(t *testing.T) {
+	// EVERY exported declaration in this package that may name a Cap, and why
+	// it cannot be used to mint one above its coded floor.
 	allowed := map[string]string{
-		"DefaultAttestationCeiling":    "returns newCap(MaxAttestationLifetime); takes no argument",
-		"AttestationCeilingFromConfig": "lowers DefaultAttestationCeiling; cannot raise it",
+		"type AttestationCeiling": "an alias for Cap[time.Duration]. An alias exposes no " +
+			"constructor: newCap is unexported, so the only values of it are the ones " +
+			"this package mints from a const.",
+		"func DefaultAttestationCeiling": "argument-free; returns newCap(MaxAttestationLifetime), " +
+			"a compiled-in const.",
+		"func AttestationCeilingFromConfig": "takes a plain time.Duration and can only " +
+			"Lower DefaultAttestationCeiling; it never raises and cannot return one " +
+			"above the const.",
+		"method Cap.Lower": "the only operation a caller has on a Cap, and it tightens " +
+			"only: it refuses any value above the current effective cap, so a sequence " +
+			"of config layers cannot walk one back up.",
+		"func NewAttestation": "accepts a ceiling, which is the shape D.3's critic " +
+			"exploited — and re-checks the window against the compiled-in " +
+			"MaxAttestationLifetime regardless of what the ceiling says. " +
+			"TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction is the proof.",
+		"func LoadAttestationFile": "passes its ceiling straight to CheckGate5Attestation " +
+			"and adds no comparison of its own.",
+		"func CheckGate5Attestation": "same; and gate 5's gateFunc re-checks the const a " +
+			"third time, in the chain, with no ceiling argument at all.",
 	}
 
 	fset := token.NewFileSet()
@@ -1005,59 +1035,856 @@ func TestNewCapIsNotExported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	saw := 0
+	var files []p1SourceFile
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		saw++
 		f, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
-		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Results == nil {
-				continue
-			}
-			for _, res := range fn.Type.Results.List {
-				if !p1MentionsCap(res.Type) {
+		files = append(files, p1SourceFile{name: name, ast: f})
+	}
+	if len(files) == 0 {
+		t.Fatal("no non-test source files were parsed, so this guard measured nothing. A " +
+			"gate that cannot measure must fail rather than pass vacuously")
+	}
+
+	found := p1CapNamingDecls(files)
+	if len(found) == 0 {
+		t.Fatal("the walk found no declaration naming a Cap anywhere in the package, " +
+			"which cannot be true while Cap and AttestationCeiling are declared here. " +
+			"The guard is measuring nothing")
+	}
+	for _, d := range found {
+		if _, ok := allowed[d.key]; !ok {
+			t.Errorf("%s:%s names a Cap on this package's EXPORTED surface and is not on "+
+				"the allowlist. D.3's critic minted a ten-year \"coded floor\" through "+
+				"exactly such a declaration; a Cap must not be constructible above its "+
+				"coded floor by any caller, and a type alias re-exports the type "+
+				"entirely. If this declaration genuinely cannot mint or widen one, add "+
+				"it to the allowlist in this test with a justification",
+				d.file, d.key)
+		}
+	}
+	// Every allowlist entry must still exist. A stale justification for a
+	// declaration nobody has any more is a comment claiming a guard that is
+	// not being applied to anything.
+	present := map[string]bool{}
+	for _, d := range found {
+		present[d.key] = true
+	}
+	for key := range allowed {
+		if !present[key] {
+			t.Errorf("the allowlist justifies %q and no such declaration exists any more. "+
+				"Remove the entry rather than leaving a justification for nothing", key)
+		}
+	}
+
+	// POSITIVE CONTROL — the two gaps the critic demonstrated, verbatim in
+	// shape. If the walk does not flag both, the allowlist above is decoration.
+	const gaps = `package p
+
+import "time"
+
+// The alias the critic wrote. It re-exports the type entirely.
+type LifetimeCeiling = Cap[time.Duration]
+
+// An exported METHOD minting a Cap. The old guard skipped every method.
+func (f Forge) MintCeiling(d time.Duration) Cap[time.Duration] { return newCap(d) }
+
+// An exported var of the type.
+var HouseCeiling Cap[time.Duration]
+`
+	bad, err := parser.ParseFile(token.NewFileSet(), "gaps.go", gaps, 0)
+	if err != nil {
+		t.Fatalf("parse the positive control: %v", err)
+	}
+	keys := map[string]bool{}
+	for _, d := range p1CapNamingDecls([]p1SourceFile{{name: "gaps.go", ast: bad}}) {
+		keys[d.key] = true
+	}
+	for _, want := range []string{
+		"type LifetimeCeiling",
+		"method Forge.MintCeiling",
+		"var HouseCeiling",
+	} {
+		if !keys[want] {
+			t.Errorf("the walk did not flag %q. That is one of the gaps D.9's critic "+
+				"demonstrated, so the allowlist above cannot catch its return", want)
+		}
+	}
+	// And the alias must LAUNDER nothing: a signature written in terms of the
+	// alias is a signature in terms of a Cap.
+	const laundered = `package p
+
+import "time"
+
+type LifetimeCeiling = Cap[time.Duration]
+
+func MintThroughTheAlias() LifetimeCeiling { return newCap(time.Hour) }
+`
+	l, err := parser.ParseFile(token.NewFileSet(), "laundered.go", laundered, 0)
+	if err != nil {
+		t.Fatalf("parse the alias control: %v", err)
+	}
+	keys = map[string]bool{}
+	for _, d := range p1CapNamingDecls([]p1SourceFile{{name: "laundered.go", ast: l}}) {
+		keys[d.key] = true
+	}
+	if !keys["func MintThroughTheAlias"] {
+		t.Error("a function returning a Cap through an alias was not flagged, so an " +
+			"alias launders the type and the allowlist can be walked around in one line")
+	}
+}
+
+// p1CapDecl is one exported declaration that names a Cap.
+type p1CapDecl struct {
+	file string
+	key  string
+}
+
+// p1SourceFile is one parsed non-test source file of this package.
+type p1SourceFile struct {
+	name string
+	ast  *ast.File
+}
+
+// p1CapNamingDecls returns every exported declaration in the files that names a
+// Cap, keyed as "func N", "method T.N", "type N", "var N" or "const N".
+//
+// The set of names that COUNT as a Cap is computed to a fixed point: Cap
+// itself, plus any exported type whose own declaration mentions one. An alias
+// chain therefore does not launder the type.
+func p1CapNamingDecls(files []p1SourceFile) []p1CapDecl {
+	aliases := map[string]bool{"Cap": true}
+	for changed := true; changed; {
+		changed = false
+		for _, sf := range files {
+			for _, decl := range sf.ast.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || gd.Tok != token.TYPE {
 					continue
 				}
-				if _, ok := allowed[fn.Name.Name]; !ok {
-					t.Errorf("%s:%s is an EXPORTED function returning a Cap and is not on "+
-						"the allowlist. D.3's critic minted a ten-year \"coded floor\" "+
-						"through exactly such a constructor; a Cap must not be "+
-						"constructible above its coded floor by any caller. If this is a "+
-						"legitimate argument-free constructor over a const, add it to the "+
-						"allowlist in this test with a justification",
-						name, fn.Name.Name)
+				for _, spec := range gd.Specs {
+					ts := spec.(*ast.TypeSpec)
+					if !ts.Name.IsExported() || aliases[ts.Name.Name] {
+						continue
+					}
+					if p1NamesACap(ts.Type, aliases) {
+						aliases[ts.Name.Name] = true
+						changed = true
+					}
 				}
 			}
 		}
 	}
-	if saw == 0 {
-		t.Fatal("no non-test source files were parsed, so this guard measured nothing. A " +
-			"gate that cannot measure must fail rather than pass vacuously")
+
+	var out []p1CapDecl
+	for _, sf := range files {
+		for _, decl := range sf.ast.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				key, exported := p1FuncKey(d)
+				if !exported {
+					continue
+				}
+				if p1SignatureNamesACap(d.Type, aliases) {
+					out = append(out, p1CapDecl{file: sf.name, key: key})
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch s := spec.(type) {
+					case *ast.TypeSpec:
+						if !s.Name.IsExported() {
+							continue
+						}
+						if p1NamesACap(s.Type, aliases) {
+							out = append(out, p1CapDecl{
+								file: sf.name, key: "type " + s.Name.Name})
+						}
+					case *ast.ValueSpec:
+						kind := "var"
+						if d.Tok == token.CONST {
+							kind = "const"
+						}
+						for _, id := range s.Names {
+							if !id.IsExported() {
+								continue
+							}
+							named := p1NamesACap(s.Type, aliases)
+							for _, v := range s.Values {
+								named = named || p1NamesACap(v, aliases)
+							}
+							if named {
+								out = append(out, p1CapDecl{
+									file: sf.name, key: kind + " " + id.Name})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// p1FuncKey renders a function or method's allowlist key, and reports whether
+// it is on the package's exported surface at all. A method on an unexported
+// type is not reachable from outside the package.
+func p1FuncKey(d *ast.FuncDecl) (string, bool) {
+	if !d.Name.IsExported() {
+		return "", false
+	}
+	if d.Recv == nil || len(d.Recv.List) == 0 {
+		return "func " + d.Name.Name, true
+	}
+	recv := p1BaseTypeName(d.Recv.List[0].Type)
+	if recv == "" || !ast.IsExported(recv) {
+		return "", false
+	}
+	return "method " + recv + "." + d.Name.Name, true
+}
+
+// p1BaseTypeName strips pointers and type parameters from a receiver type.
+func p1BaseTypeName(e ast.Expr) string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.StarExpr:
+		return p1BaseTypeName(v.X)
+	case *ast.IndexExpr:
+		return p1BaseTypeName(v.X)
+	case *ast.IndexListExpr:
+		return p1BaseTypeName(v.X)
+	case *ast.SelectorExpr:
+		return v.Sel.Name
+	}
+	return ""
+}
+
+// p1SignatureNamesACap reports whether a function's PARAMETERS or RESULTS name
+// a Cap.
+//
+// Parameters count, not only results. A function that ACCEPTS a caller-supplied
+// ceiling is the exact shape D.3's critic exploited — the ten-year Cap was
+// handed to NewAttestation, not returned by it.
+func p1SignatureNamesACap(ft *ast.FuncType, aliases map[string]bool) bool {
+	for _, list := range []*ast.FieldList{ft.Params, ft.Results} {
+		if list == nil {
+			continue
+		}
+		for _, field := range list.List {
+			if p1NamesACap(field.Type, aliases) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// p1NamesACap reports whether a type or value expression names a Cap.
+//
+// For a STRUCT type, only exported fields count: an unexported field of Cap
+// type is the sealed shape this package uses everywhere (Caps,
+// HealthThresholds) and is the opposite of a hole.
+func p1NamesACap(e ast.Expr, aliases map[string]bool) bool {
+	if e == nil {
+		return false
+	}
+	if st, ok := e.(*ast.StructType); ok {
+		if st.Fields == nil {
+			return false
+		}
+		for _, f := range st.Fields.List {
+			exported := len(f.Names) == 0 // an embedded field is exported if its type is
+			for _, n := range f.Names {
+				if n.IsExported() {
+					exported = true
+				}
+			}
+			if exported && p1NamesACap(f.Type, aliases) {
+				return true
+			}
+		}
+		return false
+	}
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.StructType:
+			// Nested struct: apply the exported-field rule rather than the
+			// blanket one.
+			if p1NamesACap(v, aliases) {
+				found = true
+			}
+			return false
+		case *ast.Ident:
+			if aliases[v.Name] || v.Name == "newCap" {
+				found = true
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// ===========================================================================
+// GATE 4 — THE CALLER'S BYTES ARE READ EXACTLY ONCE
+// ===========================================================================
+
+// TestGate4ReadsTheCallersScopeBytesExactlyOnce is D.9's HIGH 3, pinned.
+//
+// # What was measured
+//
+// CheckGate4ScopeFile read its `raw` parameter TWICE: decodeStrict parsed it,
+// and sealScope then hashed it through ScopeHashOf. A write landing between the
+// two reads produces a sealed Scope whose ENTRIES came from one document and
+// whose HASH came from another. That defeats gate 5's scope binding, which is
+// the thing that makes an attestation specific to a SCOPE rather than merely to
+// a session: "editing the scope file invalidates the attestation" is only true
+// while the hash is a hash of the entries.
+//
+// The attack was run in this package against a build with the copy removed:
+// two same-length documents of 1000 allow entries each, differing only in entry
+// zero, one goroutine calling NewScope in a loop while another rewrote the
+// shared buffer. 4000 Scopes were built and 2012 of them carried one document's
+// entries under the other document's hash.
+//
+// # Why this pin is structural and not that loop
+//
+// THE ATTACK IS ITSELF A DATA RACE. `go test -race` — which this repository's
+// CI runs — reports the unsynchronised buffer whether or not the defect is
+// present, so the loop cannot be a standing regression test: it would be red on
+// a correct build. What the fix actually is, is a property of the source: the
+// caller's slice is copied before anything reads its CONTENTS, and everything
+// downstream sees the copy. That property is what this test asserts, by parsing
+// phase1_run.go.
+//
+// Delete or move the copy and this goes red. The synthetic positive control at
+// the end proves the analysis can fail: it runs the same walk over a source
+// file written in the OLD two-read shape and requires it to be flagged.
+func TestGate4ReadsTheCallersScopeBytesExactlyOnce(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "phase1_run.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse phase1_run.go: %v", err)
+	}
+	fn := p1FindFunc(f, "CheckGate4ScopeFile")
+	if fn == nil {
+		t.Fatal("CheckGate4ScopeFile is not declared in phase1_run.go, so this guard " +
+			"measured nothing. A guard that cannot measure must fail rather than pass " +
+			"vacuously")
+	}
+	if why := p1BytesReadOnce(fn); why != "" {
+		t.Fatalf("CheckGate4ScopeFile: %s\n\n"+
+			"The caller's scope-file bytes must be copied before anything reads their "+
+			"CONTENTS. Reading them twice — once to parse and once to hash — lets a "+
+			"concurrent write put the entries and the hash on opposite sides of it, and "+
+			"a Scope whose entries and hash come from different documents defeats gate "+
+			"5's binding of the attestation to the scope hash. Measured against a build "+
+			"with the copy removed: 2012 of 4000 constructed Scopes were mismatched.",
+			why)
+	}
+
+	// POSITIVE CONTROLS. The same walk over each shape the defect has taken
+	// must be flagged, or the assertion above is a no-op that passes because it
+	// looks at nothing.
+	//
+	// The SECOND one is the reason this analysis is an allowlist. The earlier
+	// version asked "is the parameter passed to a call as a bare identifier
+	// before it is copied", which is a denylist of spellings, and one line
+	// defeated it:
+	//
+	//	rawAlias := raw[:]
+	//
+	// — with decodeStrict and sealScope reading rawAlias. No bare `raw`
+	// appears in any call argument, so nothing was flagged; the copy was gone
+	// and this test, TestScopeEntriesAndHashComeFromOneDocument and the whole
+	// repository suite stayed GREEN. Measured against that mutation: the
+	// concurrent harness in phase1_scopebytes_race_test.go reported 102 of 200
+	// constructed Scopes carrying one document's entries under the other
+	// document's hash.
+	for name, src := range map[string]string{
+		"two reads of the parameter": `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	if len(raw) == 0 {
+		return Scope{}, GateResult{}
+	}
+	var doc scopeDocument
+	if reason, err := decodeStrict(raw, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(raw, decl, nil, nil)
+}
+`,
+		"the copy replaced by an alias": `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	if len(raw) == 0 {
+		return Scope{}, GateResult{}
+	}
+	rawAlias := raw[:]
+	var doc scopeDocument
+	if reason, err := decodeStrict(rawAlias, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(rawAlias, decl, nil, nil)
+}
+`,
+		"the copy made into a second variable": `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	copied := append([]byte(nil), raw...)
+	var doc scopeDocument
+	if reason, err := decodeStrict(raw, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(copied, decl, nil, nil)
+}
+`,
+		"one byte read before the copy": `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	first := raw[0]
+	_ = first
+	raw = append([]byte(nil), raw...)
+	return sealScope(raw, decl, nil, nil)
+}
+`,
+		"ranged before the copy": `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	n := 0
+	for range raw {
+		n++
+	}
+	raw = append([]byte(nil), raw...)
+	return sealScope(raw, decl, nil, nil)
+}
+`,
+		// THE DISARM. This is the two-read defect, unchanged, with one
+		// ordinary leading parameter added. While the guard took
+		// Params.List[0].Names[0] it analysed `ctx` — which no correct body
+		// reads — and returned "" for this source, so the whole analysis went
+		// quiet on a signature change nobody would flag in review. Resolving
+		// the parameter by TYPE is what makes this flagged again.
+		"a leading ctx parameter, with the defect": `package p
+
+func CheckGate4ScopeFile(ctx context.Context, raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	if len(raw) == 0 {
+		return Scope{}, GateResult{}
+	}
+	var doc scopeDocument
+	if reason, err := decodeStrict(raw, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(raw, decl, nil, nil)
+}
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad, err := parser.ParseFile(token.NewFileSet(), "control.go", src, 0)
+			if err != nil {
+				t.Fatalf("parse the positive control: %v", err)
+			}
+			control := p1FindFunc(bad, "CheckGate4ScopeFile")
+			if control == nil {
+				t.Fatal("the positive control does not declare CheckGate4ScopeFile")
+			}
+			if why := p1BytesReadOnce(control); why == "" {
+				t.Fatal("this shape was NOT flagged, so the guard cannot fail on it and " +
+					"proves nothing about the real function")
+			}
+		})
+	}
+
+	// NEGATIVE CONTROL. The shipped shape, written out here, must NOT be
+	// flagged — otherwise the assertion at the top of this test passes for the
+	// wrong reason and would fail on any correct rewrite too.
+	const shipped = `package p
+
+func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	if len(raw) == 0 {
+		return Scope{}, GateResult{}
+	}
+	if len(raw) > maxScopeFileBytes {
+		return Scope{}, GateResult{}
+	}
+	raw = append([]byte(nil), raw...)
+	var doc scopeDocument
+	if reason, err := decodeStrict(raw, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(raw, decl, nil, nil)
+}
+`
+	good, err := parser.ParseFile(token.NewFileSet(), "shipped.go", shipped, 0)
+	if err != nil {
+		t.Fatalf("parse the negative control: %v", err)
+	}
+	if why := p1BytesReadOnce(p1FindFunc(good, "CheckGate4ScopeFile")); why != "" {
+		t.Fatalf("the correct shape was flagged (%s), so this guard refuses the fix as "+
+			"well as the defect", why)
+	}
+
+	// SECOND NEGATIVE CONTROL. The correct body with an ordinary leading
+	// parameter must still pass, or "resolve by identity" would just be a
+	// stricter way of failing on any signature change.
+	const shippedWithCtx = `package p
+
+func CheckGate4ScopeFile(ctx context.Context, raw []byte, decl ModeDeclaration) (Scope, GateResult) {
+	if len(raw) == 0 {
+		return Scope{}, GateResult{}
+	}
+	raw = append([]byte(nil), raw...)
+	var doc scopeDocument
+	if reason, err := decodeStrict(raw, &doc); err != nil {
+		return Scope{}, GateResult{}
+	}
+	return sealScope(raw, decl, nil, nil)
+}
+`
+	withCtx, err := parser.ParseFile(token.NewFileSet(), "ctx.go", shippedWithCtx, 0)
+	if err != nil {
+		t.Fatalf("parse the second negative control: %v", err)
+	}
+	if why := p1BytesReadOnce(p1FindFunc(withCtx, "CheckGate4ScopeFile")); why != "" {
+		t.Fatalf("the correct shape with a leading ctx parameter was flagged (%s). "+
+			"Resolving the parameter by identity must follow the []byte wherever it "+
+			"sits, not merely fail on any signature it does not recognise", why)
+	}
+
+	// THE GUARD MUST FAIL LOUDLY WHEN IT CANNOT IDENTIFY THE PARAMETER.
+	// Neither of these bodies reads anything before copying, so a guard that
+	// answered the shape question alone would return "" for both — which is
+	// the silent disarm in its purest form: a signature this analysis cannot
+	// follow reported as a signature that satisfies it.
+	for name, src := range map[string]string{
+		"no []byte parameter at all": `package p
+
+func CheckGate4ScopeFile(raw *scopeBuffer, decl ModeDeclaration) (Scope, GateResult) {
+	return sealScope(raw.Bytes(), decl, nil, nil)
+}
+`,
+		"two []byte parameters": `package p
+
+func CheckGate4ScopeFile(raw, sidecar []byte, decl ModeDeclaration) (Scope, GateResult) {
+	raw = append([]byte(nil), raw...)
+	return sealScope(raw, decl, nil, nil)
+}
+`,
+		"an unnamed []byte parameter": `package p
+
+func CheckGate4ScopeFile([]byte, ModeDeclaration) (Scope, GateResult) {
+	return Scope{}, GateResult{}
+}
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			parsed, err := parser.ParseFile(token.NewFileSet(), "unidentifiable.go", src, 0)
+			if err != nil {
+				t.Fatalf("parse the control: %v", err)
+			}
+			if why := p1BytesReadOnce(p1FindFunc(parsed, "CheckGate4ScopeFile")); why == "" {
+				t.Fatal("the guard reported the property HOLDS for a signature in which it " +
+					"cannot identify the scope-file []byte. A guard that cannot say what " +
+					"it is analysing must fail, not pass")
+			}
+		})
 	}
 }
 
-// p1MentionsCap reports whether a type expression names Cap or a Cap alias.
-func p1MentionsCap(e ast.Expr) bool {
-	switch v := e.(type) {
+// p1FindFunc returns the top-level function of that name, or nil.
+func p1FindFunc(f *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name.Name == name && fn.Body != nil {
+			return fn
+		}
+	}
+	return nil
+}
+
+// p1BytesReadOnce reports why fn reads its first parameter's CONTENTS before
+// copying it, or "" if it does not.
+//
+// # THIS IS AN ALLOWLIST, AND THE PREVIOUS VERSION WAS A DENYLIST THAT LOST
+//
+// The rule asserted is the shape that IS correct: THE PARAMETER IS REBOUND TO
+// A COPY OF ITSELF BEFORE ANY USE OF IT OTHER THAN len. Two uses are on the
+// allowlist and there is no third:
+//
+//  1. `len(param)`, which reads the slice HEADER — already a copy on the
+//     stack, and unreachable by a writer holding the same backing array.
+//  2. the rebinding itself, `param = append([]byte(nil), param...)` or
+//     `param = <pkg>.Clone(param)`, which p1IsCopyOf recognises.
+//
+// EVERY OTHER APPEARANCE OF THE IDENTIFIER before that rebinding is a finding,
+// whatever its syntax: a call argument, a slice expression, an index, a range
+// clause, an address-of, an assignment to a second variable, a conversion.
+//
+// The version this replaced asked the opposite question — "does the
+// identifier appear as a BARE IDENTIFIER in some call's argument list" — and
+// therefore enumerated one spelling of wrong. `rawAlias := raw[:]` is not a
+// call argument, so the whole analysis went quiet while the defect was back at
+// full strength. Enumerating the shapes that are wrong loses to the next
+// shape; asserting the shape that is right does not, because a new spelling of
+// the copy makes this go RED and the maintainer adds it to p1IsCopyOf, which
+// is a line a reviewer sees.
+//
+// A function that never touches the parameter's contents at all is also
+// correct and returns "": there is nothing to tear.
+//
+// # THE PARAMETER IS RESOLVED BY IDENTITY, NOT BY POSITION
+//
+// It used to be `fn.Type.Params.List[0].Names[0].Name` — whatever is spelled
+// first. That is the same class of defect the allowlist above replaced, one
+// level up: the analysis was correct about the shape and wrong about WHICH
+// VALUE it was analysing. Adding an ordinary leading parameter,
+//
+//	func CheckGate4ScopeFile(ctx context.Context, raw []byte, decl ModeDeclaration)
+//
+// pointed the whole walk at `ctx`, which no correct body reads, so the guard
+// returned "" with or without the copy and disarmed itself SILENTLY on a
+// change nobody would flag in review.
+//
+// So the scope-file parameter is found by TYPE — the `[]byte` one — and if
+// there is not EXACTLY ONE the guard FAILS LOUDLY rather than picking one.
+// Zero means the signature no longer takes the caller's bytes and this
+// analysis is about nothing; two or more means the guard cannot know which
+// slice is the scope file, and guessing is how it would go quiet again. Either
+// way a signature change breaks this test, which is a line a reviewer sees.
+func p1BytesReadOnce(fn *ast.FuncDecl) string {
+	if fn == nil {
+		return "the function is not declared"
+	}
+	param, why := p1ScopeBytesParam(fn)
+	if why != "" {
+		return why
+	}
+
+	for i, stmt := range fn.Body.List {
+		if p1IsCopyOf(stmt, param) {
+			// The rebinding is reached with nothing before it having read the
+			// contents, which is the property.
+			return ""
+		}
+		if how := p1UsesBeyondLen(stmt, param); how != "" {
+			return fmt.Sprintf("%q is %s at statement %d, before it is rebound to a copy",
+				param, how, i)
+		}
+	}
+	// The whole body ran without the contents ever being read.
+	return ""
+}
+
+// p1ScopeBytesParam returns the NAME of fn's one `[]byte` parameter, or a
+// non-empty explanation of why it could not find exactly one.
+//
+// It matches on the declared type, so the name of the parameter is free to
+// change and its POSITION is free to change; what is not free to change is
+// that there is one and only one slice-of-bytes for the analysis to be about.
+// A `[]byte` declared as `a, b []byte` counts as two, which is the honest
+// answer: two byte slices in this signature and this guard cannot say which
+// one the scope file arrives in.
+func p1ScopeBytesParam(fn *ast.FuncDecl) (string, string) {
+	if fn.Type.Params == nil {
+		return "", "the function declares no parameter list, so there is no scope-file " +
+			"[]byte for this guard to be about"
+	}
+	var names []string
+	for _, field := range fn.Type.Params.List {
+		arr, ok := field.Type.(*ast.ArrayType)
+		if !ok || arr.Len != nil {
+			continue
+		}
+		elem, ok := arr.Elt.(*ast.Ident)
+		if !ok || elem.Name != "byte" {
+			continue
+		}
+		if len(field.Names) == 0 {
+			return "", "the function takes an UNNAMED []byte parameter, so nothing in the " +
+				"body can refer to it and this guard cannot follow it"
+		}
+		for _, n := range field.Names {
+			names = append(names, n.Name)
+		}
+	}
+	switch len(names) {
+	case 1:
+		return names[0], ""
+	case 0:
+		return "", "the function takes NO []byte parameter. This guard exists to prove " +
+			"the CALLER'S scope-file bytes are copied before their contents are read; " +
+			"a signature with no caller bytes in it means either the guard is now " +
+			"about nothing or the bytes arrive by a route nothing here follows. It " +
+			"fails rather than reporting the property holds"
+	default:
+		return "", fmt.Sprintf("the function takes %d []byte parameters (%s). This guard "+
+			"cannot tell which one is the scope file, and picking one is how it would "+
+			"go quiet on the other. Narrow the signature or teach this function which "+
+			"parameter to follow", len(names), strings.Join(names, ", "))
+	}
+}
+
+// p1UsesBeyondLen reports HOW stmt uses name for anything other than len(name),
+// or "" if it does not use it at all.
+//
+// The walk descends into every node and stops only at a `len(name)` call, whose
+// subtree is the one permitted reading. Anything else that mentions the
+// identifier is reported, which is what makes this an allowlist rather than an
+// enumeration of bad spellings.
+func p1UsesBeyondLen(stmt ast.Stmt, name string) string {
+	found := ""
+	var walk func(n ast.Node) bool
+	walk = func(n ast.Node) bool {
+		if found != "" || n == nil {
+			return false
+		}
+		if call, ok := n.(*ast.CallExpr); ok {
+			if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "len" &&
+				len(call.Args) == 1 {
+				if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == name {
+					// len(name): the slice header only. Do not descend.
+					return false
+				}
+			}
+			for _, arg := range call.Args {
+				if id, ok := arg.(*ast.Ident); ok && id.Name == name {
+					found = "passed to a call"
+					return false
+				}
+			}
+			return true
+		}
+		switch v := n.(type) {
+		case *ast.SliceExpr:
+			if id, ok := v.X.(*ast.Ident); ok && id.Name == name {
+				found = "re-sliced into an alias"
+				return false
+			}
+		case *ast.IndexExpr:
+			if id, ok := v.X.(*ast.Ident); ok && id.Name == name {
+				found = "indexed"
+				return false
+			}
+		case *ast.RangeStmt:
+			if id, ok := v.X.(*ast.Ident); ok && id.Name == name {
+				found = "ranged over"
+				return false
+			}
+		case *ast.UnaryExpr:
+			if v.Op == token.AND {
+				if id, ok := v.X.(*ast.Ident); ok && id.Name == name {
+					found = "had its address taken"
+					return false
+				}
+			}
+		case *ast.Ident:
+			if v.Name == name {
+				found = "read"
+				return false
+			}
+		}
+		return true
+	}
+	ast.Inspect(stmt, walk)
+	return found
+}
+
+// p1IsCopyOf reports whether stmt rebinds name to a copy of itself.
+//
+// The two spellings it accepts are `name = append([]byte(nil), name...)` and
+// `name = <pkg>.Clone(name)`. A third spelling is not silently accepted: the
+// guard goes red and the maintainer adds it here, which is where a reviewer
+// will see it.
+func p1IsCopyOf(stmt ast.Stmt, name string) bool {
+	as, ok := stmt.(*ast.AssignStmt)
+	if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+		return false
+	}
+	if id, ok := as.Lhs[0].(*ast.Ident); !ok || id.Name != name {
+		return false
+	}
+	call, ok := as.Rhs[0].(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return false
+	}
+	last, ok := call.Args[len(call.Args)-1].(*ast.Ident)
+	if !ok || last.Name != name {
+		return false
+	}
+	switch fun := call.Fun.(type) {
 	case *ast.Ident:
-		return v.Name == "Cap" || v.Name == "AttestationCeiling"
-	case *ast.IndexExpr:
-		return p1MentionsCap(v.X)
-	case *ast.IndexListExpr:
-		return p1MentionsCap(v.X)
-	case *ast.StarExpr:
-		return p1MentionsCap(v.X)
+		// append([]byte(nil), name...) — the ellipsis is what makes it a copy
+		// of the elements rather than of the header.
+		return fun.Name == "append" && call.Ellipsis != token.NoPos && len(call.Args) == 2
 	case *ast.SelectorExpr:
-		return p1MentionsCap(v.Sel)
+		// bytes.Clone(name) / slices.Clone(name)
+		return fun.Sel.Name == "Clone" && len(call.Args) == 1
 	}
 	return false
+}
+
+// TestScopeEntriesAndHashComeFromOneDocument is the behavioural half: two
+// same-length scope documents differing in exactly one host, each loaded on its
+// own, must produce a Scope whose hash is the hash of THAT document and whose
+// entries are THAT document's entries.
+//
+// It is the invariant the concurrent attack broke, asserted where it can be
+// asserted deterministically. The two documents are hand-written here and their
+// hashes are taken from the same bytes that are loaded, which is legitimate:
+// the claim under test is that the two agree with each other, not that either
+// equals some third value. TestScopeHashIsOverTheExactBytes anchors ScopeHashOf
+// itself against a digest computed outside this program.
+func TestScopeEntriesAndHashComeFromOneDocument(t *testing.T) {
+	const benignDoc = `{"schema_version":1,"mode":"external","allow":[` +
+		`{"host":"benign00.example.com","ports":[443]}],"deny":[]}`
+	const evilDoc = `{"schema_version":1,"mode":"external","allow":[` +
+		`{"host":"evilzone.example.com","ports":[443]}],"deny":[]}`
+	if len(benignDoc) != len(evilDoc) {
+		t.Fatalf("the two documents are %d and %d bytes; they must be the same length or "+
+			"the fixture is not the one the attack used", len(benignDoc), len(evilDoc))
+	}
+
+	decl := p1Decl(t, ModeExternal)
+	cases := []struct {
+		name    string
+		doc     string
+		permits string
+		refuses string
+	}{
+		{"benign", benignDoc, "benign00.example.com", "evilzone.example.com"},
+		{"evil", evilDoc, "evilzone.example.com", "benign00.example.com"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			raw := []byte(c.doc)
+			s, err := NewScope(raw, decl)
+			if err != nil {
+				t.Fatalf("NewScope: %v", err)
+			}
+			if got, want := s.Hash(), ScopeHashOf(raw); got != want {
+				t.Fatalf("the scope hashes to %s and its bytes hash to %s. Gate 5 binds "+
+					"the attestation to the scope hash so that editing the scope file "+
+					"invalidates it; a hash that is not a hash of these entries binds "+
+					"nothing", string(got), string(want))
+			}
+			if !s.Permits(c.permits, 443) {
+				t.Fatalf("the scope does not permit %s, which is the only host its "+
+					"document allows", c.permits)
+			}
+			if s.Permits(c.refuses, 443) {
+				t.Fatalf("the scope permits %s under the hash of a document that does not "+
+					"name it — one document's entries under another document's hash",
+					c.refuses)
+			}
+		})
+	}
 }
 
 // ===========================================================================

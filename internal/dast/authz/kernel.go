@@ -140,6 +140,37 @@ func refuse(g GateID, r Reason, detail string) Ruling {
 	return Ruling{gate: g, outcome: OutcomeDeny, reason: r, detail: detail}
 }
 
+// structuralRefusal mints a refusal about the GATE STACK rather than about the
+// inputs — a chain position with no implementation compiled in, or a gate that
+// signed someone else's name — and attributes it to the gate it is about, with
+// a reason token that NAMES THAT GATE.
+//
+// # Why the attribution is the control and not the label
+//
+// GateRecord.Validate refuses a row whose Reason names a different gate from
+// the row's Gate field, and Adjudicate validates EVERY row before it writes
+// ANY. An earlier draft minted these refusals as
+// refuse(Gate11RobotsDeny, ReasonGateNotRegistered, ...) — a gate21.* token on
+// a gate-11 ruling. The measured result was not a mis-filed row: seven gates
+// were consulted, a denial was issued, the whole write loop aborted at
+// validation, "audit rows written: 0", and the decision came back as
+// gate21.audit_key_incomplete. Gate 21 says a decision is not "allowed" if its
+// paired audit write fails; a DENIAL whose rows all vanish is the same control
+// failing in the direction nobody looks at.
+// TestAdjudicateWritesAuditRowsForARealChainDenial is the regression, and it
+// runs the REAL admission chain rather than a permitting fixture.
+//
+// A gate that is not one of the 21 cannot name itself in a token, so it falls
+// back to gate 21 — correctly: when the kernel cannot even say which gate
+// failed, what has failed is the thing that makes decisions recordable.
+// TestStructuralRefusalNamesTheGateItRefusesAt drives both arms.
+func structuralRefusal(g GateID, slug string, detail string) Ruling {
+	if !g.Valid() {
+		return refuse(Gate21ImmutableAudit, Reason("gate21."+slug), detail)
+	}
+	return refuse(g, Reason(g.String()+"."+slug), detail)
+}
+
 // Gate returns the gate that produced the ruling.
 func (r Ruling) Gate() GateID { return r.gate }
 
@@ -353,7 +384,26 @@ var admissionChain = []GateID{
 }
 
 // revalidationChain is what gate 13 re-runs on EVERY request and EVERY redirect
-// hop: SCOPE MEMBERSHIP, canonicalize, resolve-and-pin, reserved ranges.
+// hop: SCOPE MEMBERSHIP, THE LIVE ATTESTATION, canonicalize, resolve-and-pin,
+// reserved ranges.
+//
+// # Gate 5 is in this chain because an attestation can expire DURING a run
+//
+// It was not, and D.9's critic measured what that cost: an attestation valid
+// over [base-1h, base+29d], a Revalidate at base+365d, permits=true, and
+// CheckGate13Revalidate passing an OriginInitial intent at the same instant.
+// Gate 14 permits thirty minutes of wall clock PER TARGET, and a run has many
+// targets, so "the attestation was live when admission ran" is not the same
+// statement as "the attestation is live now". Gate 5 is "refuse to probe
+// without a live attestation" — per REQUEST, not per admission — so the check
+// belongs on the per-request path.
+//
+// It is gate 5's own gateFunc that runs here, not a second expiry comparison
+// written next to gate 13. checkKernelPreconditions deliberately does not check
+// expiry (see its comment); a private copy of the check there, or in
+// phase3_enforcement.go, would be a second implementation that can disagree
+// with the first. TestAnAttestationThatExpiresMidRunStopsTheNextRequest drives
+// it.
 //
 // # Gate 4 is in this chain because gate 13 is a scope re-check
 //
@@ -371,6 +421,7 @@ var admissionChain = []GateID{
 // does not re-implement these four gates.
 var revalidationChain = []GateID{
 	Gate4ScopeFile,
+	Gate5Attestation,
 	Gate8Canonicalize,
 	Gate9ResolveAndPin,
 	Gate10ReservedRanges,
@@ -405,14 +456,14 @@ func (c chain) runTraced(target Target, scope Scope, attestation Attestation, cl
 	for _, g := range c.gates {
 		fn, ok := c.impls[g]
 		if !ok || fn == nil {
-			return append(trace, refuse(g, ReasonGateNotRegistered, fmt.Sprintf(
+			return append(trace, structuralRefusal(g, slugGateNotRegistered, fmt.Sprintf(
 				"%s has no implementation compiled in, so the %s chain cannot complete. "+
 					"A gate with no implementation is a REFUSAL, never a skipped step",
 				g, c.name)))
 		}
 		r := fn(target, scope, attestation, clock)
 		if r.Gate() != g {
-			return append(trace, refuse(g, ReasonGateIdentityMismatch, fmt.Sprintf(
+			return append(trace, structuralRefusal(g, slugGateIdentityMismatch, fmt.Sprintf(
 				"the implementation registered for %s returned a ruling attributed to %s; "+
 					"the kernel does not act on a ruling whose author is unclear",
 				g, r.Gate())))
@@ -424,7 +475,7 @@ func (c chain) runTraced(target Target, scope Scope, attestation Attestation, cl
 		if r.WellFormedDenial() {
 			return append(trace, r)
 		}
-		return append(trace, refuse(g, ReasonGateIdentityMismatch, fmt.Sprintf(
+		return append(trace, structuralRefusal(g, slugGateIdentityMismatch, fmt.Sprintf(
 			"%s returned a ruling that is neither a well-formed permit nor a well-formed "+
 				"denial (outcome=%q reason=%q); a malformed ruling refuses",
 			g, string(r.Outcome()), string(r.Reason()))))
@@ -490,7 +541,7 @@ func admissionRunner() chain {
 	return chain{name: "admission", gates: admissionChain, impls: registry}
 }
 
-// revalidationRunner binds gate 13's three-gate chain to the same registry.
+// revalidationRunner binds gate 13's re-check chain to the same registry.
 func revalidationRunner() chain {
 	return chain{name: "revalidation", gates: revalidationChain, impls: registry}
 }
@@ -518,8 +569,17 @@ func decideTracedWith(ch chain, target Target, scope Scope, attestation Attestat
 	return ch.runTraced(target, scope, attestation, clock)
 }
 
-// Revalidate re-runs gates 8, 9 and 10 for gate 13, which must do so on every
-// request and every redirect hop.
+// Revalidate re-runs gates 4, 5, 8, 9 and 10 for gate 13, which must do so on
+// every request and every redirect hop.
+//
+// GATE 4 IS IN THAT LIST, and saying so here is the point of saying it at all.
+// Gates 8, 9 and 10 canonicalize, pin and screen reserved ranges; not one of
+// them asks whether the host is in the allow list, so a reader of this
+// exported API who took the older "gates 8, 9 and 10" wording at face value
+// would conclude that gate 13 does not re-check scope membership — the exact
+// misreading Ruling 3 was issued to correct, and the reading ZAP issue #2546
+// is a record of. GATE 5 IS ALSO IN IT: an attestation expires at an instant,
+// not at the end of a run.
 //
 // It performs the same preconditions as Decide, so a redirect hop that
 // produced an unconstructed Target — the shape a hand-parsed Location header
@@ -537,6 +597,14 @@ func Revalidate(target Target, scope Scope, attestation Attestation, clock Clock
 // provenance or scope membership — those are gates 4–7, they belong to D.4,
 // and a second implementation of them here would be a second implementation
 // that can disagree.
+//
+// EXPIRY IS NOT UNCHECKED BECAUSE IT IS UNCHECKED HERE. Gate 5's own gateFunc
+// compares the clock against the attestation's window, and gate 5 is in the
+// admission chain AND in revalidationChain, so that comparison is made on every
+// admission, every request and every redirect hop. This function's silence on
+// expiry is a statement about WHERE the check lives, not about whether it
+// happens — D.9's critic read the older wording as the latter and measured a
+// Revalidate at base+365d permitting an attestation that expired at base+29d.
 //
 // The scope/attestation binding is checked here anyway, and the duplication is
 // deliberate: it is the invariant that makes gate 21's audit key coherent (the

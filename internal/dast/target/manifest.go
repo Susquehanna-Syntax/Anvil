@@ -769,6 +769,14 @@ func scopeFrom(doc map[string]any) (Scope, error) {
 // checkServiceName accepts the Compose service-name character set as an
 // ALLOWLIST. A denylist of "characters that break Compose" would have to
 // anticipate every shell, DNS label and YAML quirk downstream; this cannot.
+//
+// The character set alone is not enough. "169.254.169.254" is spelled entirely
+// out of [A-Za-z0-9_.-], so it passes the loop below -- and a service name is
+// the host the health gate is allowed to address. .anvil/target.yaml is a file
+// IN THE SCANNED REPOSITORY, which makes this field attacker-authored input:
+// the repo would be telling Anvil which host to fetch. So the name must also
+// be a NAME. A Compose service name is a DNS label inside a Docker network; it
+// is not an address and never legitimately looks like one.
 func checkServiceName(s string) error {
 	if s == "" {
 		return invalidf("service is empty")
@@ -786,6 +794,12 @@ func checkServiceName(s string) error {
 			return invalidf("service %q: character %q at offset %d is not permitted; the first "+
 				"character must be alphanumeric and the rest [A-Za-z0-9_.-]", s, string(c), i)
 		}
+	}
+	if form := ipLiteralForm(s); form != "" {
+		return invalidf("service %q is %s; a Compose service name is a DNS label inside the "+
+			"Docker network, never an address. Anvil resolves the authorized service through "+
+			"Compose's own DNS, so naming an address here would point the health gate at a host "+
+			"outside the target stack", s, form)
 	}
 	return nil
 }
@@ -831,20 +845,133 @@ func checkHealthURL(raw string, svc AuthorizedService) error {
 			return invalidf("health.url %q has port %q, which is not 1-65535", raw, port)
 		}
 	}
-	if !isLoopbackHost(host) && !svc.Authorizes(host) {
-		return invalidf("health.url %q addresses host %q, which is neither the authorized service "+
-			"%q nor loopback; exactly one service is authorized and the health gate must address it "+
-			"by its Compose service name", raw, host, svc.Name())
+	if !isLoopbackHost(host) {
+		// Checked BEFORE the service comparison, not after. If this ran second
+		// it would be dead code the moment a service name were an address, and
+		// "the address check is unreachable because the other check catches
+		// it" is how a control disappears during a later refactor. Order here
+		// means an address host is refused even if some future caller hands in
+		// an AuthorizedService this package did not build.
+		if form := ipLiteralForm(host); form != "" {
+			return invalidf("health.url %q addresses host %q, which is %s; the health gate must "+
+				"address the authorized service %q by its Compose service name. An address "+
+				"literal names a host outside the Compose network, and no authorization gate "+
+				"sits on the health-check path", raw, host, form, svc.Name())
+		}
+		if !svc.Authorizes(host) {
+			return invalidf("health.url %q addresses host %q, which is neither the authorized "+
+				"service %q nor loopback; exactly one service is authorized and the health gate "+
+				"must address it by its Compose service name", raw, host, svc.Name())
+		}
 	}
 	return nil
 }
 
+// isLoopbackHost is an allowlist of three exact spellings, not a range test.
+// "127.0.0.2", "127.1", "2130706433", "0177.0.0.1" and "[0:0:0:0:0:0:0:1]" are
+// all loopback to a resolver and none of them is on this list; each is refused
+// by the address-literal check instead. TestLoopbackAllowlistIsExact pins that.
 func isLoopbackHost(host string) bool {
 	switch host {
 	case "localhost", "127.0.0.1", "::1":
 		return true
 	}
 	return false
+}
+
+// ipLiteralForm names the encoding under which host would be read as an IP
+// address literal, or returns "" when nothing reads it as one.
+//
+// It is deliberately WIDER than netip.ParseAddr, because netip is strict and
+// the resolvers downstream are not. Measured against Go 1.26's netip:
+// ParseAddr accepts "169.254.169.254" but refuses "2852039166" ("unable to
+// parse IP"), "0251.0376.0251.0376" ("IPv4 field has octet with leading zero")
+// and "169.254.169.254." ("IPv4 field must have at least one digit"). Those
+// three are the same destination: 0xA9FEA9FE == 2852039166, and 0251 == 169,
+// 0376 == 254 in octal. A guard that asked only netip would refuse the dotted
+// quad and admit its synonyms, which is a guard that refuses the example in
+// the finding and nothing else.
+//
+// So the second test is a SHAPE rather than a canonical parse: dot-separated
+// parts that are all integers, decimal, octal or hexadecimal. Anything with
+// that shape is refused whether or not it is a well-formed address --
+// over-refusing a string like "1.2.3" costs a manifest author a rename, while
+// under-refusing costs a credential.
+//
+// This is not a denylist of reserved ranges. A range list would lose to the
+// next encoding, and to a hostname that merely RESOLVES into the range. The
+// whole CATEGORY of address literals is refused; what remains is names.
+func ipLiteralForm(host string) string {
+	if host == "" {
+		return ""
+	}
+	// A DNS label never contains ':'. In a host position a colon can only be
+	// an IPv6 literal.
+	//
+	// Measured: reached from checkHealthURL this branch never fires first,
+	// because net/url validates a bracketed host through netip itself --
+	// url.Parse("http://[1:2]/x") fails with `ParseAddr("1:2"): address string
+	// too short`, and every bracketed host that DOES survive is one netip
+	// accepts on the next line. The branch stays because ipLiteralForm takes a
+	// host from any caller, not only from url.Hostname(), and "1:2" is a
+	// string netip and the inet_aton shape both read as a NAME.
+	// TestIPLiteralFormBranchesAreEachLoadBearing pins it directly.
+	if strings.Contains(host, ":") {
+		return "an IPv6 address literal"
+	}
+	// One trailing dot is the FQDN root form; it does not change where the
+	// string points.
+	bare := strings.TrimSuffix(host, ".")
+	if _, err := netip.ParseAddr(bare); err == nil {
+		return "an IP address literal"
+	}
+	if allNumericParts(bare) {
+		return "an IP address literal in a non-canonical encoding"
+	}
+	return ""
+}
+
+// allNumericParts reports whether every '.'-separated part of s is an integer:
+// decimal, octal ("0...") or hexadecimal ("0x..."). That is the shape
+// inet_aton(3) reads as an IPv4 address.
+//
+// There is deliberately no cap on the number of parts. inet_aton itself takes
+// at most four, so "1.2.3.4.5" is not an address to it -- but a length cap
+// here would be a branch whose only possible effect is to ADMIT an all-numeric
+// string, and a branch that can only widen is the wrong branch to carry. A
+// manifest that wanted to call its service "1.2.3.4.5" pays a rename.
+func allNumericParts(s string) bool {
+	for _, p := range strings.Split(s, ".") {
+		if !numericHostPart(p) {
+			return false
+		}
+	}
+	return true
+}
+
+// numericHostPart reports whether p is a single integer part: "0x" followed by
+// hex digits, or a run of decimal digits (which covers the octal form, since
+// octal differs only by its leading zero). "2fa" is neither, which is why a
+// service may still be called that.
+func numericHostPart(p string) bool {
+	if p == "" {
+		return false
+	}
+	if len(p) > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X') {
+		for i := 2; i < len(p); i++ {
+			c := p[i]
+			if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+		return true
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < '0' || p[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // checkRepoRelPath refuses anything that is not a repo-root-relative,
@@ -887,6 +1014,13 @@ func checkYAMLExt(raw, field string) error {
 // checkEndpointPath keeps a runtime-spec probe on the target. An entry that
 // carried a scheme or was protocol-relative would move the probe to a host
 // nobody authorized, which is the same hole as an unconstrained health URL.
+//
+// The three shape rules below are each a denylist of one construct, so they
+// leave gaps by construction: `/\/other-host/x` is not "//", carries no "://"
+// and has no ".." segment, yet it is the same host-substitution attempt in a
+// character the rules never named. The allowlist closes the category --
+// nothing outside the RFC 3986 path character set reaches whichever URL parser
+// the probe layer ends up using.
 func checkEndpointPath(ep, field string) error {
 	if ep == "" {
 		return invalidf("%s is empty", field)
@@ -904,12 +1038,40 @@ func checkEndpointPath(ep, field string) error {
 		return invalidf("%s %q is a URL; runtime spec endpoints are paths on the authorized service",
 			field, ep)
 	}
+	for i := 0; i < len(ep); i++ {
+		if !pathCharAllowed(ep[i]) {
+			return invalidf("%s %q: character %q at offset %d is not permitted; a runtime spec "+
+				"endpoint is a path on the authorized service, restricted to the RFC 3986 path "+
+				"character set (unreserved, sub-delims, %q, %q, %q and %q)",
+				field, ep, string(ep[i]), i, ":", "@", "%", "/")
+		}
+	}
 	for _, seg := range strings.Split(ep, "/") {
 		if seg == ".." {
 			return invalidf("%s %q contains a %q segment", field, ep, "..")
 		}
 	}
 	return nil
+}
+
+// pathCharAllowed is RFC 3986's <pchar> plus '/': ALPHA / DIGIT / "-" / "." /
+// "_" / "~" (unreserved), "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / ","
+// / ";" / "=" (sub-delims), ":", "@", "%" and "/".
+//
+// Excluded, and therefore refused: '\', '?', '#', space, every control byte,
+// and every byte above 0x7F. A query or a fragment is not part of an endpoint
+// PATH, and this schema has no field that needs one.
+func pathCharAllowed(c byte) bool {
+	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+		return true
+	}
+	switch c {
+	case '-', '.', '_', '~',
+		'!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=',
+		':', '@', '%', '/':
+		return true
+	}
+	return false
 }
 
 // checkEgressEntry validates the SYNTAX of an egress entry: an IP address, a

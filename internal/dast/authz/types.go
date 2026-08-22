@@ -295,10 +295,22 @@ const (
 	ReasonEgressOutsideKernel      Reason = "gate03.socket_constructed_outside_kernel"
 	ReasonEgressInsideDastNotAuthz Reason = "gate03.socket_constructed_inside_dast_outside_kernel"
 
-	// Kernel-structural reasons for a malformed or absent gate stack. They
-	// are numbered against gate 21, which is the gate that makes a decision
-	// durable and is therefore the one that has failed when the kernel
-	// cannot produce a recordable decision at all.
+	// Kernel-structural reasons for a malformed or absent gate stack, in
+	// their CHAIN-LEVEL form: they are numbered against gate 21, which is
+	// the gate that makes a decision durable and is therefore the one that
+	// has failed when the kernel cannot say which gate failed at all — an
+	// empty chain, an empty trace, a chain position that is not one of the
+	// 21.
+	//
+	// When the kernel CAN name the gate, it must, and the reason token must
+	// name that same gate. GateRecord.Validate refuses a row whose reason
+	// names a different gate from the row's own Gate field, and Adjudicate
+	// validates every row before it writes any — so a gate21.* token minted
+	// against gate 11 does not merely mis-file itself, it aborts the whole
+	// write loop and ZERO ROWS LAND for a denial that really happened.
+	// structuralRefusal in kernel.go mints the per-gate form from
+	// slugGateNotRegistered and slugGateIdentityMismatch below;
+	// TestStructuralRefusalNamesTheGateItRefusesAt pins both.
 	ReasonGateNotRegistered    Reason = "gate21.gate_not_registered"
 	ReasonGateIdentityMismatch Reason = "gate21.ruling_names_a_different_gate"
 	ReasonAuditWriteFailed     Reason = "gate21.audit_write_failed"
@@ -313,6 +325,19 @@ const (
 	ReasonClockUnconstructed       Reason = "gate05.clock_not_constructed"
 	ReasonScopeAttestationMismatch Reason = "gate05.attestation_not_bound_to_this_scope"
 	ReasonTargetUnconstructed      Reason = "gate08.target_not_constructed"
+)
+
+// The slugs the kernel's per-gate structural refusals are built from.
+//
+// A structural refusal about gate 11 is reported as
+// "gate11.gate_not_registered", not as ReasonGateNotRegistered — see the
+// comment on that constant. The slugs are declared here, next to the gate-21
+// forms they mirror, so that the two spellings cannot drift apart:
+// TestStructuralRefusalNamesTheGateItRefusesAt asserts that
+// Reason("gate21."+slugGateNotRegistered) IS ReasonGateNotRegistered.
+const (
+	slugGateNotRegistered    = "gate_not_registered"
+	slugGateIdentityMismatch = "ruling_names_a_different_gate"
 )
 
 // Validate reports whether r is a legal "gateNN.slug" token.
@@ -1392,6 +1417,100 @@ func (c Clock) Valid() bool { return !c.at.IsZero() && !c.at.Before(minPlausible
 func (c Clock) Instant() time.Time { return c.at }
 
 // ---------------------------------------------------------------------------
+// RunClock — THE run's clock, and it is not something a caller mints
+// ---------------------------------------------------------------------------
+
+// RunClock is the one instant a run is adjudicated at.
+//
+// # Why this type exists at all when Clock already does
+//
+// Because a function that TAKES a Clock can be lied to and a function that
+// READS THE RUN'S clock cannot, and the difference was worth an entire class
+// of defeat.
+//
+// Every Phase 4 embargo decision is a comparison between two instants. While
+// each of those instants was an independent Clock parameter, a caller who
+// supplied all of them CONSISTENTLY told a lie no comparison between two of
+// them could catch: record first contact on 3 January against a 3 January
+// clock — a back-date of zero, so MaxVendorContactBackdate never engages —
+// open the embargo against the same January clock, and then publish against
+// the real August present. Forty-five days of embargo elapsed and nobody was
+// ever contacted. Bounding one caller-supplied instant against a second
+// caller-supplied instant catches the lie told with ONE clock and misses the
+// lie told with TWO, and a third such comparison fails the same way.
+//
+// So the run's clock is established ONCE, at run initiation, and every gate
+// that needs "now" reads it instead of accepting one. A contact instant is
+// still a parameter — it is a recorded fact about the past, not a "now" — but
+// it is now recorded AGAINST the run's clock, and MaxVendorContactBackdate
+// bounds how far behind that clock it may sit.
+//
+// # Why it is sealed, and what the seal is worth
+//
+// sealRunClock is unexported and there is no exported function anywhere in
+// this package that returns a RunClock. The only route to one from outside is
+// RunInitiation.RunClock, and a RunInitiation exists only after gates 6, 4, 5
+// and 7 and EnableDAST have all passed. TestRunClockHasNoExportedConstructor
+// parses the package and fails if that stops being true.
+//
+// The ZERO VALUE IS NOT A CLOCK: Valid() is false and every Phase 4 gate
+// refuses it rather than reading it as 1970, which is a date that is after no
+// deadline and before every one.
+//
+// # What this does NOT close, stated rather than implied
+//
+// A run's clock is still the instant the operator's harness handed to
+// InitiateRun; this package has no ambient time source, by S7's purity rule.
+// What it buys is that ONE RUN HAS ONE CLOCK. Telling the January/August lie
+// now costs two separate run initiations, which means two scope loads, two
+// gate-7 trigger checks, and two attestations that are live at instants seven
+// months apart — the 30-day ceiling in gate 5 means one attestation cannot
+// cover both — and the audit rows for the two are keyed to different
+// attestation IDs. That is a materially larger and more visible act than
+// passing a different time.Time to the next call, and it is as far as a kernel
+// with no trusted clock can go.
+type RunClock struct {
+	at     time.Time
+	sealed bool
+}
+
+// sealRunClock mints the run's clock from the instant run initiation was
+// handed. It is unexported ON PURPOSE — see the type comment.
+//
+// An invalid Clock yields the zero RunClock rather than a RunClock carrying a
+// zero instant, so there is no shape of this type that is sealed and wrong.
+func sealRunClock(c Clock) RunClock {
+	if !c.Valid() {
+		return RunClock{}
+	}
+	return RunClock{at: c.at, sealed: true}
+}
+
+// Valid reports whether this is a run clock sealed at run initiation. It is
+// false for the zero value.
+func (r RunClock) Valid() bool {
+	return r.sealed && !r.at.IsZero() && !r.at.Before(minPlausibleInstant)
+}
+
+// Instant returns the run's instant, or the zero time for an unsealed one.
+func (r RunClock) Instant() time.Time {
+	if !r.Valid() {
+		return time.Time{}
+	}
+	return r.at
+}
+
+// Now returns the run's instant as a Clock, for the per-target gates that take
+// one. It returns the zero Clock — which every gate refuses — for an unsealed
+// run clock, so an unsealed one cannot be laundered into a valid Clock.
+func (r RunClock) Now() Clock {
+	if !r.Valid() {
+		return Clock{}
+	}
+	return Clock{at: r.at}
+}
+
+// ---------------------------------------------------------------------------
 // Cap — a coded floor that configuration may only LOWER
 // ---------------------------------------------------------------------------
 
@@ -1429,7 +1548,11 @@ func (c Clock) Instant() time.Time { return c.at }
 // caps (CodedCaps), gate 16's thresholds (CodedHealthThresholds) and gate 5's
 // ceiling (DefaultAttestationCeiling) — and the only operation a caller has on
 // one is Lower. The critic's line no longer compiles, and
-// TestNewCapIsNotExported is the guard that keeps it that way.
+// TestNoExportedSurfaceMintsACap is the guard that keeps it that way: it walks
+// this package's whole EXPORTED surface — functions, methods on exported types,
+// type declarations including ALIASES, and exported vars and consts — and
+// requires every declaration naming a Cap to be on an allowlist with a written
+// justification.
 type Cap[T cmp.Ordered] struct {
 	coded     T
 	effective T

@@ -676,6 +676,318 @@ func TestQuotedNumericServiceIsAccepted(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Refusals: a service name is a name, never an address
+// ---------------------------------------------------------------------------
+//
+// .anvil/target.yaml is a file IN THE SCANNED REPOSITORY. It is attacker-
+// authored input: someone asks Anvil to scan their repo and the repo tells
+// Anvil where to point. So "the authorized service" is untrusted text, and a
+// service name that is really an IP address turns the health gate into an
+// arbitrary-destination fetch.
+//
+// The addresses below are typed by hand, not produced by the code under test.
+
+// criticAddresses are the five literals from the finding, verbatim.
+// 169.254.169.254 is the AWS/GCP/Azure instance metadata endpoint; the rest
+// are private and loopback ranges reachable from a build host.
+var criticAddresses = []string{
+	"169.254.169.254",
+	"10.0.0.1",
+	"192.168.1.1",
+	"100.100.100.200",
+	"127.0.0.2",
+}
+
+// altEncodings are 169.254.169.254 written the ways a STRICT parser misses.
+// netip.ParseAddr refuses every one of these (measured: it refuses
+// "2852039166" with "unable to parse IP", "0251.0376.0251.0376" with "octet
+// with leading zero", and "169.254.169.254." with "field must have at least
+// one digit"), while inet_aton(3) -- and so glibc's resolver, curl and
+// everything layered on them -- reads them all as 169.254.169.254. A guard
+// built on netip alone would refuse the dotted quad and admit its synonyms.
+var altEncodings = []string{
+	"2852039166",          // one 32-bit decimal part
+	"0251.0376.0251.0376", // octal parts
+	"0xA9FEA9FE",          // one 32-bit hex part
+	"0xa9.0xfe.0xa9.0xfe", // hex parts
+	"169.254.43518",       // the three-part form: a.b.(c<<8|d)
+	"169.254.169.254.",    // FQDN root form
+	"010.0.0.1",           // octal first part
+	"0x7f.1",              // mixed hex and decimal
+}
+
+// metadataPath is the object of the exercise: it returns IAM credentials.
+const metadataPath = "/latest/meta-data/iam/security-credentials/"
+
+// The finding's exact measurement. For each address declared as the
+// authorized service, checkHealthURL must NOT return nil.
+//
+// This pins the health gate independently of checkServiceName. Both layers
+// have to refuse: if only the service name were checked, any later caller that
+// built an AuthorizedService another way would re-open the hole.
+func TestHealthURLRefusesAddressLiteralHosts(t *testing.T) {
+	for _, addr := range append(append([]string{}, criticAddresses...), altEncodings...) {
+		t.Run(addr, func(t *testing.T) {
+			svc := AuthorizedService{name: addr}
+			raw := "http://" + addr + metadataPath
+			err := checkHealthURL(raw, svc)
+			if err == nil {
+				t.Fatalf("checkHealthURL(%q, service=%q) returned nil; the health gate "+
+					"accepted an address literal as the authorized host", raw, addr)
+			}
+			if !errors.Is(err, ErrInvalidManifest) {
+				t.Fatalf("error does not wrap ErrInvalidManifest: %v", err)
+			}
+			if !strings.Contains(err.Error(), "address literal") {
+				t.Errorf("error %q does not say the host is an address literal", err.Error())
+			}
+		})
+	}
+}
+
+// The same refusal at the field that introduces the name.
+func TestServiceNameRefusesAddressLiterals(t *testing.T) {
+	for _, addr := range append(append([]string{}, criticAddresses...), altEncodings...) {
+		t.Run(addr, func(t *testing.T) {
+			err := checkServiceName(addr)
+			if err == nil {
+				t.Fatalf("checkServiceName(%q) returned nil; an address is not a service name", addr)
+			}
+			if !errors.Is(err, ErrInvalidManifest) {
+				t.Fatalf("error does not wrap ErrInvalidManifest: %v", err)
+			}
+			if !strings.Contains(err.Error(), "address literal") {
+				t.Errorf("error %q does not say the name is an address literal", err.Error())
+			}
+		})
+	}
+}
+
+// A bracketed IPv6 host survives url.Parse with the brackets stripped
+// (measured: url.Parse("http://[::ffff:169.254.169.254]/x").Hostname() is
+// "::ffff:169.254.169.254"), so the health gate has to refuse it on its own.
+// The service-name charset refuses ':' before the address check ever runs,
+// which is why this case asserts refusal rather than a particular message.
+func TestIPv6LiteralHostsAreRefused(t *testing.T) {
+	for _, host := range []string{
+		"[::ffff:169.254.169.254]",
+		"[fd00::1]",
+		"[::ffff:7f00:1]",
+		"[0:0:0:0:0:0:0:1]", // the long form of ::1: NOT on the loopback allowlist
+	} {
+		t.Run(host, func(t *testing.T) {
+			svc := AuthorizedService{name: "web"}
+			raw := "http://" + host + metadataPath
+			if err := checkHealthURL(raw, svc); err == nil {
+				t.Fatalf("checkHealthURL(%q) returned nil", raw)
+			}
+		})
+	}
+	if err := checkServiceName("::ffff:169.254.169.254"); err == nil {
+		t.Fatal(`checkServiceName("::ffff:169.254.169.254") returned nil`)
+	}
+}
+
+// ipLiteralForm's four moving parts, pinned one at a time. Every row below is
+// a string that ONLY the named part refuses: delete that part and this test
+// goes red while the rest stay green. A guard nothing can break is a guard
+// nothing has tested.
+func TestIPLiteralFormBranchesAreEachLoadBearing(t *testing.T) {
+	cases := []struct {
+		host, want, pins string
+	}{
+		// The colon branch. netip refuses "1:2" ("address string too short")
+		// and the inet_aton shape refuses it too, so without the colon branch
+		// this string reads as a NAME.
+		{"1:2", "an IPv6 address literal", "the colon branch"},
+		{"::ffff:169.254.169.254", "an IPv6 address literal", "the colon branch"},
+
+		// The netip branch: a canonical dotted quad.
+		{"169.254.169.254", "an IP address literal", "the netip branch"},
+
+		// The trailing-dot trim. Without it, netip refuses the FQDN root form
+		// AND the inet_aton shape sees five parts (the last one empty), so
+		// "169.254.169.254." would read as a name.
+		{"169.254.169.254.", "an IP address literal", "the trailing-dot trim"},
+
+		// The inet_aton branch: every one of these is refused by netip.
+		{"2852039166", "an IP address literal in a non-canonical encoding", "the all-numeric shape"},
+		{"0251.0376.0251.0376", "an IP address literal in a non-canonical encoding", "the all-numeric shape"},
+		{"0xA9FEA9FE", "an IP address literal in a non-canonical encoding", "the all-numeric shape"},
+		{"169.254.43518", "an IP address literal in a non-canonical encoding", "the all-numeric shape"},
+		{"1.2.3.4.5", "an IP address literal in a non-canonical encoding", "the all-numeric shape"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.host, func(t *testing.T) {
+			if got := ipLiteralForm(tc.host); got != tc.want {
+				t.Fatalf("ipLiteralForm(%q) = %q, want %q (this row pins %s)",
+					tc.host, got, tc.want, tc.pins)
+			}
+		})
+	}
+
+	// The other direction. If these came back non-empty the guard would be
+	// refusing names, and TestNamesThatAreNotAddressesStillLoad would be the
+	// only thing standing between an over-eager guard and every manifest.
+	for _, host := range []string{"", ".", "web", "2fa", "0xz", "v1.2.3", "1a.2.3.4", "db.internal"} {
+		if got := ipLiteralForm(host); got != "" {
+			t.Errorf("ipLiteralForm(%q) = %q; that is a name, not an address", host, got)
+		}
+	}
+}
+
+// End to end, through the parser, with the address quoted so the YAML scalar
+// rules do not refuse it first: a manifest that names an address as its
+// service is schema-invalid.
+func TestManifestNamingAnAddressIsRefused(t *testing.T) {
+	for _, addr := range criticAddresses {
+		t.Run(addr, func(t *testing.T) {
+			src := mutate(t, minimalManifest, "service: web", `service: "`+addr+`"`)
+			src = mutate(t, src, "url: http://web:8080/healthz",
+				`url: "http://`+addr+metadataPath+`"`)
+			m, err := Parse([]byte(src))
+			if err == nil {
+				t.Fatalf("Parse accepted a manifest naming %s as the authorized service: %+v", addr, m)
+			}
+			if !errors.Is(err, ErrInvalidManifest) {
+				t.Fatalf("error does not wrap ErrInvalidManifest: %v", err)
+			}
+			if m != nil {
+				t.Fatalf("a refused manifest must be nil, got %+v", m)
+			}
+		})
+	}
+}
+
+// A control that exists on one code path and not its sibling is how most of
+// this goes wrong, so: Marshal re-validates through the same checkServiceName
+// and checkHealthURL, and must refuse an address the parse path would have
+// refused. Only this package can populate Manifest.service, which is why the
+// fixture is built here rather than parsed.
+func TestMarshalRefusesAnAddressAsTheService(t *testing.T) {
+	for _, addr := range criticAddresses {
+		t.Run(addr, func(t *testing.T) {
+			m := &Manifest{
+				SchemaVersion: SchemaVersion,
+				ComposeFile:   "./docker-compose.anvil.yaml",
+				Health: Health{
+					URL:             "http://" + addr + metadataPath,
+					TimeoutSeconds:  120,
+					IntervalSeconds: 5,
+				},
+				Reset:   Reset{Strategy: ResetStrategyDestroyRecreate},
+				service: AuthorizedService{name: addr},
+			}
+			out, err := m.Marshal()
+			if err == nil {
+				t.Fatalf("Marshal emitted a manifest naming %s as the service: %s", addr, out)
+			}
+			if !errors.Is(err, ErrInvalidManifest) {
+				t.Fatalf("error does not wrap ErrInvalidManifest: %v", err)
+			}
+			if !strings.Contains(err.Error(), "address literal") {
+				t.Errorf("error %q does not say the name is an address literal", err.Error())
+			}
+		})
+	}
+}
+
+// The other half of the guard: it must not swallow names that are names. If
+// this test and the one above cannot both pass, the guard is wrong.
+func TestNamesThatAreNotAddressesStillLoad(t *testing.T) {
+	for _, name := range []string{
+		"web",
+		"2fa", // starts with a digit and is still not an address
+		"web-1",
+		"api_v2",
+		"v1.2.3",
+		"0xz", // an 0x prefix over a non-hex digit is not a hex part
+		"1a.2.3.4",
+		"db.internal",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := checkServiceName(name); err != nil {
+				t.Fatalf("checkServiceName(%q) = %v; want nil", name, err)
+			}
+			if err := checkHealthURL("http://"+name+":8080/healthz",
+				AuthorizedService{name: name}); err != nil {
+				t.Fatalf("checkHealthURL for service %q = %v; want nil", name, err)
+			}
+		})
+	}
+}
+
+// Loopback stays permitted, but only as the three exact spellings on the
+// allowlist. A near-miss is an address literal like any other.
+func TestLoopbackAllowlistIsExact(t *testing.T) {
+	svc := AuthorizedService{name: "web"}
+	for _, host := range []string{"localhost", "127.0.0.1", "[::1]"} {
+		if err := checkHealthURL("http://"+host+":8080/healthz", svc); err != nil {
+			t.Errorf("checkHealthURL for loopback %q = %v; want nil", host, err)
+		}
+	}
+	for _, host := range []string{"127.0.0.2", "127.1", "2130706433", "0177.0.0.1", "0x7f000001"} {
+		if err := checkHealthURL("http://"+host+":8080/healthz", svc); err == nil {
+			t.Errorf("checkHealthURL accepted %q, which is not on the loopback allowlist", host)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Refusals: a runtime-spec endpoint is a path on the authorized service
+// ---------------------------------------------------------------------------
+
+// A runtime-spec endpoint is the other repository-authored string that becomes
+// part of a request URL. It is constrained to the RFC 3986 path character set
+// as an ALLOWLIST, so a character nobody anticipated is refused rather than
+// forwarded to whatever URL parser the probe layer happens to use.
+//
+// The backslash case is the one that motivated the allowlist: `\` is inside
+// the old checks' blind spot -- it is not "//", it carries no "://", and it
+// contains no ".." segment.
+func TestEndpointPathCharacterAllowlist(t *testing.T) {
+	refused := []string{
+		`/\/169.254.169.254/x`,
+		`/\\169.254.169.254/x`,
+		"/openapi.json?host=169.254.169.254",
+		"/openapi.json#frag",
+		"/open api.json",
+		"/openapi.json\x7f",
+		"/öpenapi.json",
+	}
+	for _, ep := range refused {
+		t.Run("refused "+ep, func(t *testing.T) {
+			if err := checkEndpointPath(ep, "inventory.runtime_spec_endpoints[0]"); err == nil {
+				t.Fatalf("checkEndpointPath(%q) returned nil", ep)
+			}
+		})
+	}
+	for _, ep := range []string{"/openapi.json", "/v3/api-docs", "/graphql", "/a-b/c_d~e/%2Ff"} {
+		t.Run("accepted "+ep, func(t *testing.T) {
+			if err := checkEndpointPath(ep, "inventory.runtime_spec_endpoints[0]"); err != nil {
+				t.Fatalf("checkEndpointPath(%q) = %v; want nil", ep, err)
+			}
+		})
+	}
+}
+
+// The backslash reaches checkEndpointPath through the decoder: `\\` is one of
+// the two escapes unquoteScalar accepts, so this is not a hypothetical string.
+func TestBackslashEndpointReachesTheValidatorThroughTheDecoder(t *testing.T) {
+	src := minimalManifest + "inventory:\n  runtime_spec_endpoints: [\"/\\\\/169.254.169.254/x\"]\n"
+	m, err := Parse([]byte(src))
+	if err == nil {
+		t.Fatalf("Parse accepted a backslash endpoint: %+v", m)
+	}
+	if !errors.Is(err, ErrInvalidManifest) {
+		t.Fatalf("error does not wrap ErrInvalidManifest: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not permitted") {
+		t.Errorf("error %q does not name the offending character", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Refusals: filesystem and layout
 // ---------------------------------------------------------------------------
 

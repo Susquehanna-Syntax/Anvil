@@ -222,6 +222,52 @@ tests already fail on an empty table; these now agree.
 
 ## Hazards that need a change outside the test tree
 
+### N3 — CI had only a `-race` lane, so `!race` controls ran nowhere — **CLOSED**
+
+`.github/workflows/ci.yml` ran `go test -race -count=1 ./...` and nothing else.
+G4-1's harness is `//go:build !race`, so CI never compiled it and
+`TestScopeBytesAreReadOnceUnderAConcurrentWriter` — the behavioural control
+with the real numbers — existed in zero CI lanes.
+
+**Change made.** Two steps added to the `go` job:
+
+- `go test -count=1 ./...` with no `-race`, which is the only lane that
+  compiles a `//go:build !race` file. Any future `!race` control gets this lane
+  for free.
+- An assertion that the named harness actually **ran and passed**, because
+  `go test -run <pattern>` matching NOTHING exits 0 and prints
+  `no tests to run` — which is exactly how this lane would rot if the file were
+  renamed or the tag spread. The step greps for the `--- PASS:` line and for a
+  `(cached)` replay, and fails the job on either.
+
+**Both branches of the assertion were exercised before it was committed**, on
+this host, against the real workflow fragment:
+
+```
+$ <the step, with the real pattern>
+--- PASS: TestScopeBytesAreReadOnceUnderAConcurrentWriter (0.31s)
+    entries and hash agreed on all 200 constructed Scopes (benign=88 evil=112 torn=0)
+confirmed ... exit=0
+
+$ <the step, pattern renamed so it matches nothing>
+testing: warning: no tests to run
+ok  ... [no tests to run]
+::error::TestScopeBytesAreReadOnceUnderAConcurrentWriter did not run.
+exit=1
+
+$ <the step, with an assertion inside the harness mutated to fail>
+--- FAIL: TestScopeBytesAreReadOnceUnderAConcurrentWriter (0.33s)
+::error::the !race concurrency harness FAILED
+exit=1
+```
+
+The mutation was reverted and the file re-hashed to confirm a byte-for-byte
+restore (`sha256 8e17068...0dd1` before and after).
+
+That `-race` genuinely does not compile the file was confirmed the same way:
+`go test -race -count=1 -v -run TestScopeBytesAreReadOnceUnderAConcurrentWriter
+./internal/dast/authz/` reports `[no tests to run]`.
+
 ### N1 — no CI job runs the real Trivy scan
 
 After H3, `TestRealTrivyScansAFixtureRepo` skips honestly on any machine that
@@ -265,6 +311,276 @@ own merits: it is the permanent guard that keeps the junction case checked on
 Windows, and it is what turns a regression in `resolveRealPath` back into a red
 run instead of a skip.
 
+---
+
+# CONTROLS WITH NOTHING BEHIND THEM
+
+A `t.Skip` is one way a green run gets read as an answer. Here is the other: a
+gate that is fully written, fully tested on its refusal paths, and has **no
+implementation of the thing it is a rule about**. The package prints `ok`, the
+refusals are all real, and the control is still unproven end to end.
+
+These are listed here rather than in a separate file because the failure mode
+is identical to the one this document exists for, and because a reviewer
+looking for "what does the green tick not cover" should find one document.
+
+## G19-1 — gate 19 has no disclosure store
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase4_disclosure.go`, the `DisclosureStore` interface and `persistDisclosureState` |
+| **Trigger** | Not conditional. There is no production implementation of `DisclosureStore` in this repository |
+| **Skipped here?** | No — nothing skips. Every gate-19 test passes |
+| **Skips in CI?** | No |
+| **Property unverified** | That a finding's disclosure state — the 45-day embargo clock — actually survives a process restart, because it was written to the SQLite store of record rather than the tmpfs handoff packet |
+| **Security control?** | **YES.** Gate 19 is what makes gate 18's embargo a durable fact. `plan/00-SPINE.md` S1 is explicit that the handoff buffer's "8 hours" is a claim timeout, not a deletion policy, and tmpfs does not survive a reboot at all. An embargo that forgets itself is an embargo that publishes |
+| **Verdict** | **UNPROVEN CONTROL** |
+
+**What is proven.** Every refusal: a nil store, a store declaring
+`tmpfs_handoff_buffer`, `process_memory`, the empty medium or any unrecognised
+one, an unconstructed `DisclosureRecord`, a write that errors, a write that
+returns sequence 0, a store that assigns a row id and then fails to commit, and
+a store that answers the medium question twice with two different answers. Also
+proven structurally: `DisclosureRecord` has no exported field, so
+`json.Marshal` of a fully populated one produces `{}` and a handoff-packet
+builder that embeds one serialises no disclosure state.
+
+**What is not.** The **allow**. `PersistedDisclosure` — the proof gate 18
+demands before it will permit publication — has only ever been minted against a
+test fake. `grep -rn PutDisclosureState` over the repository returns the
+interface declaration, its one call site, and three fakes in
+`phase4_disclosure_test.go`. Nothing writes a disclosure row to SQLite, so
+today disclosure state lives **nowhere**, and the sentence gate 19 enforces —
+"it lives in the DB, not the buffer" — has no positive instance.
+
+**The false attribution that used to stand here.** The doc comment on
+`DisclosureStore` read "D.9/D.10 implement it over the SQLite record store".
+That is not what those steps are. `plan/50-dast.md:317-348` makes D.9 the
+build-invariant packet — a dependency-graph test and an egress lint — and
+`:349-378` makes D.10 container provisioning under gVisor `runsc`. Neither
+writes a disclosure row, and no other step in the plan schedules one. The
+attribution has been deleted and replaced with a plain statement of the gap.
+
+**What would settle it.** A plan step that owns a `disclosure_state` table in
+`internal/record` (area 40 owns every shared enum per
+`plan/IMPLEMENTATION-PLAN.md` section 6, so the `DisclosureState` literals
+currently declared in `phase4_disclosure.go` should move there and be aliased),
+an implementation of `DisclosureStore` over `internal/store`, and one
+integration test that: opens an embargo, persists it, **closes and reopens the
+database handle**, reads the row back, and asserts the deadline survived. The
+reopen is the whole test — a store that keeps the row in a map passes every
+assertion that does not close the handle.
+
+**Scope note.** Writing that store was outside this packet's write scope
+(`internal/dast/authz/phase4_disclosure.go` and its test). Inventing one would
+have produced exactly the thing this document is against: an implementation
+nobody scheduled, proving a control nobody asked it to prove.
+
+**Update — the interface grew a READ, and this entry grew with it.**
+`DisclosureStore` now also declares
+`DisclosureStateFor(FindingID) (DisclosureState, error)`. It was added because
+a write-only store cannot back a state machine: gate 18's `withheld` check read
+only the `PersistedDisclosure` its caller handed it, so persisting `withheld`
+and then persisting `embargoed` for the same finding produced a second valid
+proof and the publication proceeded. Gate 18 now asks the store, and gate 19
+refuses a write that leaves `withheld` without an allowlisted release reason
+and evidence.
+
+This does not shrink the gap above and in one respect widens it: there is now a
+second method with **no production implementation**, and the integration test
+this entry asks for must now also cover the read — open an embargo, persist
+`withheld`, **close and reopen the database handle**, and assert
+`DisclosureStateFor` still answers `withheld`. A store that answers from an
+in-memory map passes every assertion that does not close the handle, and a
+store that forgets across a restart turns the new refusal into a silent allow.
+Still no store was written here, for the reason above.
+
+## G4-1 — the concurrent-writer harness cannot run in the `-race` lane
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase1_scopebytes_race_test.go` (whole file, `//go:build !race`) |
+| **Trigger** | The `race` build tag. Under `go test -race` the file is not compiled |
+| **Skipped here?** | Not a `t.Skip`. It is a build-tag exclusion, which is why it is listed: the effect on a `-race`-only CI lane is identical |
+| **Skips in CI?** | **No, as of the N3 fix.** `.github/workflows/ci.yml` now runs a second, non-`-race` step, and a third step that fails the job unless this exact test reports `--- PASS:`. It ran in zero CI lanes before that |
+| **Property unverified in the `-race` lane** | That a `Scope` built while a concurrent writer rewrites the caller's buffer carries one document's entries under **that** document's hash |
+| **Security control?** | **YES.** It is gate 5's scope binding: "editing the scope file invalidates the attestation" is only true while the hash is a hash of the entries |
+| **Verdict** | **LEGITIMATE EXCLUSION, CI GAP NOW CLOSED** — see N3 |
+
+**Why it cannot be a `-race` test, measured rather than asserted.** The harness
+works by racing a writer against the caller's buffer. That is not incidental to
+it: a concurrent write is the only thing that can make one read of the buffer
+differ from another, so there is no race-free Go program that can distinguish a
+build which reads the buffer once from a build which reads it twice. The
+harness is therefore a data race **by construction**, and the race detector
+reports it against the *fix* on a correct tree. Measured by deleting the build
+tag on the shipped tree and running
+`go test -race -count=1 -run TestScopeBytesAreReadOnceUnderAConcurrentWriter`:
+
+```
+WARNING: DATA RACE
+Write at 0x00c00020c000 by goroutine 10:
+  runtime.slicecopy()
+      C:/Program Files/Go/src/runtime/slice.go:392 +0x0
+  ...authz.TestScopeBytesAreReadOnceUnderAConcurrentWriter.func1()
+      .../internal/dast/authz/phase1_scopebytes_race_test.go:120 +0x106
+
+Previous read at 0x00c00020c000 by goroutine 9:
+  runtime.slicecopy()
+      C:/Program Files/Go/src/runtime/slice.go:392 +0x0
+  ...authz.CheckGate4ScopeFile()
+      .../internal/dast/authz/phase1_run.go:559 +0x2db
+  ...authz.NewScope()
+      .../internal/dast/authz/types.go:859 +0xd0
+```
+
+`phase1_run.go:559` is `raw = append([]byte(nil), raw...)` — the one-read copy
+that is the fix. The race the detector reports is a write racing THE FIX. A
+test that goes red on a correct tree measures nothing.
+
+**What the exclusion is NOT.** It is not the previous round's claim that
+"`go test -race` cannot build here". That claim was false and has been deleted
+from the tree: `go test -race -count=1 ./...` is green across all 26 test-
+bearing packages on this host. (It fails only inside one sandboxed shell, with
+`ThreadSanitizer failed to allocate ... (error code: 87)`, which is a shadow-
+memory mapping refusal in that shell, not a toolchain fact.)
+
+**What still holds the property in every lane.**
+`TestGate4ReadsTheCallersScopeBytesExactlyOnce` parses `phase1_run.go` and
+asserts the source-level shape — the parameter is rebound to a copy of itself
+before any use other than `len` — with five positive controls and one negative
+control. It starts no goroutines and runs under `-race`.
+
+**Measured numbers for the excluded harness**, 200 constructed `Scope`s per run:
+
+| tree | mismatched |
+|---|---|
+| shipped | **0** of 200 |
+| copy deleted | 89 of 200 |
+| copy replaced by `rawAlias := raw[:]` | 102 of 200 |
+
+The third row is the mutation that defeated the *earlier*, denylist-shaped
+version of the source-level pin while the whole repository suite stayed green.
+Both guards catch it now.
+
+## G18-2 — two run initiations with divergent clocks
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase4_disclosure.go`, the gate 18 embargo comparisons; `internal/dast/authz/types.go`, `RunClock` |
+| **Trigger** | Not conditional. It is a residual of having no trusted time source |
+| **Skipped here?** | No — nothing skips. Every gate-18 test passes |
+| **Skips in CI?** | No |
+| **Property unverified** | That the instant a run says it is happening at is the instant it is actually happening at |
+| **Security control?** | **YES.** The 45-day CERT/CC embargo |
+| **Verdict** | **UNPROVEN RESIDUAL, NOT BOUNDED BY ANYTHING IN THIS REPOSITORY** |
+
+**What is closed.** A run has exactly one clock. `RunClock` is sealed by an
+unexported constructor and the only exported route to one is
+`RunInitiation.RunClock`, so every Phase 4 decision reads the run's instant
+instead of accepting a "now": `PublicationRequest` and `PushRequest` have no
+clock field, and `GateAudit` carries the run's. The consistently-told lie —
+contact dated 3 January against a 3 January "now" (a back-date of zero, so
+`MaxVendorContactBackdate` never engaged), embargo opened at the same January
+clock, publication at the real August present, every gate green — is no longer
+spellable in one run.
+`TestGate18TheConsistentClockLieIsRefusedInBothDirections` runs both halves.
+
+Note what that sentence does and does not say. The caller still CHOOSES the
+run's instant: `RunRequest.Clock` is an exported, settable field and
+`InitiateRun` copies it verbatim into the seal. What the seal removes is the
+ability to supply a DIFFERENT instant to each decision. A previous version of
+this entry, and of the file header, said "a run has exactly one clock, and it
+is not a parameter". The second half was not true and has been deleted rather
+than qualified.
+
+**What is not closed.** A run's clock is still the instant the operator's
+harness handed `InitiateRun`. `plan/00-SPINE.md` S7 makes the kernel a pure
+function of `(target, scope, attestation, clock)`, so this package reads no
+ambient time and cannot. An operator who initiates **two** runs — one claiming
+January, one claiming August — can still assemble the sequence across them.
+
+### THE COST THIS ENTRY USED TO CLAIM, AND WHY IT WAS DELETED
+
+The previous version said the attack costs "two attestations that are live at
+instants seven months apart", implying the attacker must obtain something. It
+implied a price that is not charged, and it was the justification for ACCEPTING
+this residual rather than closing it, so it had to be either true or gone. It
+is gone. Both halves were checked:
+
+**Half one — "two attestations" is not a cost, because an attestation is
+unsigned text the attacker writes.** An attestation reaches this kernel as
+bytes and is parsed; nothing verifies an issuer. Measured, over every non-test
+`.go` file in the repository:
+
+```
+$ grep -rniE "ed25519|ecdsa|crypto/rsa|crypto/x509|\bjws\b|\bjwt\b|cosign|sigstore|minisign|gpg|openpgp" --include=*.go . | grep -v _test.go
+./internal/collector/host/rpm.go:58:            // gpg-pubkey pseudo-packages carry no architecture...
+./internal/dast/authz/phase2_admission.go:1854:            if !securityTxtURIOK(value, []string{"https:", "dns:", "openpgp4fpr:"}) {
+./internal/mirror/accelerator/trivydb.go:102:// ... No cosign/sigstore verification is performed ...
+./internal/mirror/accelerator/trivydb.go:898:  "whoever answered that request chose the digest. No signature (cosign/sigstore) was checked, "
+./internal/record/mask.go:111:// NO SHAPE-BASED BODY SCANNING. There is no "looks like a JWT" ...
+```
+
+Four of the five hits are a Red Hat pseudo-package name, a URI-scheme
+allowlist, and two comments that say in so many words that no signature is
+checked. **There is no cryptographic verification anywhere in this repository.**
+Writing a second attestation file with different dates costs the operator one
+text editor. Gate 5's 30-day ceiling bounds the DISTANCE between an
+attestation's own two dates; it does not make an attestation hard to produce.
+
+**Half two — "the divergence is visible in the audit log" is not true of the
+log this code writes.** The two runs leave one gate-19 allow and one gate-18
+allow. A `GateRecord` carries `Gate`, `Outcome`, `Reason`, `Detail`,
+`AttestationID`, `ScopeHash`, `Mode`, `Target` and `At`, and for an ALLOW the
+`Detail` is the literal string `"<gate> permitted this decision"` — no first
+contact, no deadline, no adjustment count. Two allows against a finding, at two
+attestation IDs, are byte-for-byte what honest coordinated disclosure across a
+long embargo also looks like. Nothing joins the two rows, and nothing compares
+either `At` against anything outside the run that supplied it. A reviewer
+cannot see the lie in that log because the lie is not in it.
+
+There is a further reason not to lean on the log at all: **no production
+`AuditSink` exists in this tree.** `grep -rn WriteGateDecision --include=*.go`
+outside tests returns the interface declaration and its two call sites and
+nothing else, exactly as G19-1 records for `DisclosureStore`. A bound that
+rests on a log nobody writes is not a bound.
+
+### WHAT ACTUALLY REMAINS TRUE
+
+Only this, and it is a property of the kernel rather than a price the attacker
+pays: **within one run the lie cannot be told inconsistently.** The attacker
+must produce two coherent runs, each internally consistent, rather than one run
+with three different answers to "what time is it". That is a real narrowing of
+the attack surface and it is why the seal was worth adding. It is not a bound
+on the attack, and this entry no longer says it is.
+
+**So: the residual is UNBOUNDED by anything in this repository**, and it is
+accepted for one reason — the kernel is a pure function of its inputs by S7, so
+the fix cannot live in this package. It has to live in what an attestation IS.
+
+**What would bound it,** each of which is a change to gate 5's file and another
+packet's scope:
+
+1. **A signature on the attestation** over its own `not_before`/`expires`, with
+   the verifying key configured out of band. This is the one that turns "the
+   attacker writes a second attestation" back into a cost. Nothing in this
+   repository verifies a signature today, so it is a new dependency and a new
+   key-management story, not a one-line change.
+2. **A monotonic counter in the SQLite store of record** that run initiation
+   must advance, so two runs cannot both claim to be the earlier one. This
+   catches the January/August ordering without any cryptography, and it is the
+   cheapest of the three — but it needs the store G19-1 says does not exist.
+3. **An RFC 3161 timestamp token** on the attestation, which is (1) with the
+   trust anchor outside the operator entirely.
+
+**What would make the log worth citing,** independent of the above: put the
+first-contact instant, the deadline and the adjustment count on the gate-18
+allow row's `Detail`, so that two allows for one finding at inconsistent
+deadlines are distinguishable from one honest disclosure. That is a change to
+`GateAudit.Record`'s allow-row construction and is worth doing regardless of
+which of the three lands, because it costs nothing and today the allow row
+records only that a gate said yes.
 ---
 
 # LEGITIMATE

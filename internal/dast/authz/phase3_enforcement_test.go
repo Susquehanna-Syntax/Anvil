@@ -280,7 +280,7 @@ func TestPhase3ReasonTokensNameTheirOwnGate(t *testing.T) {
 			ReasonRevalidationRefused, ReasonHopOutsideScope, ReasonCrossHostRedirect,
 			ReasonRedirectDowngradesScheme, ReasonRedirectFollowAttempted,
 			ReasonRedirectHopBudget, ReasonHopMethodUnrecognised, ReasonHopPathMalformed,
-			ReasonHopRevalidated,
+			ReasonHopRevalidated, ReasonHopAttestationNotLive,
 		},
 		Gate14HardCaps: {
 			ReasonCapsUnconstructed, ReasonCapRaiseAttempted, ReasonCapNotPositive,
@@ -599,6 +599,132 @@ func TestSameHostRedirectIsRevalidatedAndPermitted(t *testing.T) {
 	})
 	p3AssertPassed(t, CheckGate13Revalidate(hop, scope, att, clock),
 		Gate13RevalidateEveryRequest)
+}
+
+// TestAnAttestationThatExpiresMidRunStopsTheNextRequest is D.9's HIGH 2,
+// written as the measurement the critic made.
+//
+// WHAT WAS MEASURED. revalidationChain was {4, 8, 9, 10} and Gate5Attestation
+// was absent, so nothing re-read the attestation's window once admission was
+// past. The critic minted an attestation valid over [base-1h, base+29d], called
+// Revalidate at base+365d, and got permits=true; CheckGate13Revalidate on an
+// OriginInitial intent at the same instant PASSED.
+//
+// WHY IT MATTERS AT ALL. Gate 14 permits thirty minutes of wall clock PER
+// TARGET, and a run has many targets, so an attestation can expire while a run
+// is in progress. Gate 5's rule is "refuse to probe without a live
+// attestation": per REQUEST, not per admission. Gate 5 is in revalidationChain
+// now, and this test drives every arm of that.
+//
+// The instants are hand-written offsets from the shared fixture instant. The
+// attestation window is 29 days, inside the coded 30-day ceiling, so nothing
+// here is refused for the wrong reason.
+func TestAnAttestationThatExpiresMidRunStopsTheNextRequest(t *testing.T) {
+	scope := p3ExternalScope(t)
+	issued := fixtureNow.Add(-time.Hour)
+	expires := fixtureNow.Add(29 * 24 * time.Hour)
+
+	att, err := NewAttestation(
+		"attest-expires-mid-run",
+		"Susquehanna Syntax, operator of target.example.com",
+		AuthorityOperator,
+		scope.Hash(),
+		issued,
+		expires,
+		DefaultAttestationCeiling(),
+	)
+	if err != nil {
+		t.Fatalf("NewAttestation: %v", err)
+	}
+
+	tgt := p3Target(t, SchemeHTTPS, "target.example.com", 443, p3ExternalAddr)
+	intent := p3Intent(t, RequestFacts{
+		Origin:   OriginInitial,
+		Admitted: tgt,
+		Next:     tgt,
+		Method:   MethodGet,
+		Path:     "/",
+	})
+
+	// Gate 5 is in the chain the per-request path runs. Without this, the
+	// three assertions below could all be about gate 4.
+	inChain := false
+	for _, g := range revalidationChain {
+		if g == Gate5Attestation {
+			inChain = true
+		}
+	}
+	if !inChain {
+		t.Fatalf("revalidationChain is %v and Gate5Attestation is not in it, so nothing "+
+			"re-reads the attestation's window once admission is past. An attestation "+
+			"can expire DURING a run: gate 14 permits thirty minutes of wall clock per "+
+			"target and a run has many targets", revalidationChain)
+	}
+
+	t.Run("inside the window the request proceeds", func(t *testing.T) {
+		// One hour in: well past admission, well inside the attestation.
+		clk := p3At(t, time.Hour)
+		if r := Revalidate(tgt, scope, att, clk); !r.Permits() {
+			t.Fatalf("Revalidate refused a live attestation an hour into the run: %s. "+
+				"If this arm cannot pass, the refusals below prove nothing about "+
+				"expiry", r)
+		}
+		p3AssertPassed(t, CheckGate13Revalidate(intent, scope, att, clk), Gate13RevalidateEveryRequest)
+	})
+
+	t.Run("one second after it expires the next request stops", func(t *testing.T) {
+		clk := p3Clock(t, expires.Add(time.Second))
+		r := Revalidate(tgt, scope, att, clk)
+		if r.Permits() {
+			t.Fatalf("Revalidate permitted one second after the attestation expired: %s. "+
+				"Gate 5 is 'refuse to probe without a live attestation', and an "+
+				"attestation that expired a second ago is not one. There is no grace "+
+				"period", r)
+		}
+		if r.Gate() != Gate5Attestation {
+			t.Fatalf("the expired attestation was refused by %s; gate 5 owns expiry, and "+
+				"if some other gate is refusing then this fixture is not testing "+
+				"expiry: %s", r.Gate(), r)
+		}
+		if r.Reason() != ReasonAttestationExpired {
+			t.Fatalf("reason %q; want %q so the audit says the attestation ran out rather "+
+				"than that revalidation said no", string(r.Reason()),
+				string(ReasonAttestationExpired))
+		}
+		p3AssertRefused(t, CheckGate13Revalidate(intent, scope, att, clk),
+			Gate13RevalidateEveryRequest, ReasonHopAttestationNotLive)
+	})
+
+	t.Run("the critic's own instant", func(t *testing.T) {
+		// base+365d. This is the measurement verbatim: Revalidate returned
+		// permits=true here, and CheckGate13Revalidate passed an
+		// OriginInitial intent at the same instant.
+		clk := p3At(t, 365*24*time.Hour)
+		r := Revalidate(tgt, scope, att, clk)
+		if r.Permits() {
+			t.Fatalf("Revalidate permitted 365 days into a run under an attestation whose "+
+				"window ended at day 29: %s", r)
+		}
+		p3AssertRefused(t, CheckGate13Revalidate(intent, scope, att, clk),
+			Gate13RevalidateEveryRequest, ReasonHopAttestationNotLive)
+	})
+
+	t.Run("a redirect hop is judged at the same instant", func(t *testing.T) {
+		// A same-host redirect, which gate 13 otherwise permits, at an
+		// instant after expiry. The hop is the case research/20 cares most
+		// about: it is the target choosing Anvil's next destination.
+		hop := p3Intent(t, RequestFacts{
+			Origin:   OriginRedirect,
+			Admitted: tgt,
+			Next:     tgt,
+			Method:   MethodGet,
+			Path:     "/moved",
+			Hop:      1,
+		})
+		clk := p3Clock(t, expires.Add(time.Second))
+		p3AssertRefused(t, CheckGate13Revalidate(hop, scope, att, clk),
+			Gate13RevalidateEveryRequest, ReasonHopAttestationNotLive)
+	})
 }
 
 // TestGate13RunsGates8Through10OnEveryOriginAndEveryHop is the assertion D.8
@@ -1991,6 +2117,177 @@ func TestRetryAfterIsAbsoluteNotAdvisory(t *testing.T) {
 	}
 	// And the instant it elapses, it stops refusing.
 	p3AssertPassed(t, CheckGate17RetryAfter(b, p3At(t, 121*time.Second)), Gate17RetryAfter)
+}
+
+// TestGate17ClampsArePinnedToTheirValues is D.9's HIGH 4.
+//
+// # What was measured
+//
+// codedMinRetryAfter and codedDefaultRetryAfter were both set to 0 and THE
+// ENTIRE REPOSITORY SUITE STAYED GREEN. With them at zero, "Retry-After: 0"
+// yields a zero-second backoff and an unparseable Retry-After yields no backoff
+// at all — which is gate 17 ("honoured as ABSOLUTE") not existing. The comment
+// on the lower clamp calls it "a control, not tidiness"; writing that in a
+// comment pins nothing.
+//
+// The numbers here are hand-written literals, not readings of the constants
+// under some other name, so changing either constant turns this red. The
+// behavioural half below is what says why each number matters: a value pin
+// alone would still be green if the clamp were applied to the wrong thing.
+func TestGate17ClampsArePinnedToTheirValues(t *testing.T) {
+	if codedMinRetryAfter != 1*time.Second {
+		t.Errorf("codedMinRetryAfter is %s; it is 1s. It is the floor under a PARSED "+
+			"Retry-After, and a hostile or broken target answering \"Retry-After: 0\" is "+
+			"not permission to retry immediately", codedMinRetryAfter)
+	}
+	if codedDefaultRetryAfter != 60*time.Second {
+		t.Errorf("codedDefaultRetryAfter is %s; it is 60s. It is the backoff applied when "+
+			"a 429 arrives with no Retry-After or with one that will not parse, and it "+
+			"is deliberately longer than a typical server would ask for: an unreadable "+
+			"instruction to slow down is not an absent one", codedDefaultRetryAfter)
+	}
+	if codedMaxRetryAfter != 24*time.Hour {
+		t.Errorf("codedMaxRetryAfter is %s; it is 24h", codedMaxRetryAfter)
+	}
+	if CodedTooManyRequestsAbortCount != 3 {
+		t.Errorf("CodedTooManyRequestsAbortCount is %d; research/20 gate 17 is \"three "+
+			"429s abort the target\"", CodedTooManyRequestsAbortCount)
+	}
+	if codedMinRetryAfter <= 0 || codedDefaultRetryAfter <= 0 {
+		t.Fatal("a clamp of zero is a clamp that does not exist: \"Retry-After: 0\" would " +
+			"mean retry immediately, and an unreadable Retry-After would mean no backoff " +
+			"at all")
+	}
+}
+
+// TestGate17LowerClampTurnsRetryAfterZeroIntoAWait is the behavioural half of
+// the 1s floor: the number is not merely declared, it is applied.
+func TestGate17LowerClampTurnsRetryAfterZeroIntoAWait(t *testing.T) {
+	now := p3At(t, 0)
+	for _, header := range []string{"0", "  0  ", "1"} {
+		got, err := ParseRetryAfter(header, now)
+		if err != nil {
+			t.Fatalf("ParseRetryAfter(%q): %v", header, err)
+		}
+		if got != 1*time.Second {
+			t.Fatalf("ParseRetryAfter(%q) = %s; want 1s. A target under load answering "+
+				"\"Retry-After: 0\" is asking Anvil to slow down, and the one instruction "+
+				"a rate-limit response cannot be giving is \"retry immediately\"",
+				header, got)
+		}
+	}
+	// An HTTP-date already in the past is the same instruction wearing the
+	// other of RFC 9110's two forms.
+	past := fixtureNow.Add(-time.Hour).UTC().Format(http.TimeFormat)
+	got, err := ParseRetryAfter(past, now)
+	if err != nil {
+		t.Fatalf("ParseRetryAfter(%q): %v", past, err)
+	}
+	if got != 1*time.Second {
+		t.Fatalf("ParseRetryAfter(a date one hour in the past) = %s; want 1s", got)
+	}
+
+	// And the clamp reaches the ledger, which is where it stops a request.
+	b := p3Ledger(t)
+	p3AssertRefused(t, b.Observe429(p3RetryAfter("0"), p3At(t, 0)),
+		Gate17RetryAfter, ReasonServerSaid429)
+	p3AssertRefused(t, CheckGate17RetryAfter(b, p3At(t, 999*time.Millisecond)),
+		Gate17RetryAfter, ReasonInsideRetryAfter)
+	p3AssertPassed(t, CheckGate17RetryAfter(b, p3At(t, time.Second)), Gate17RetryAfter)
+}
+
+// TestGate17DefaultAppliesWhenRetryAfterCannotBeRead is the behavioural half of
+// the 60s default: an unreadable instruction to slow down is not an absent one.
+//
+// The window is asserted at both ends. Asserting only that a request is refused
+// one second in would stay green for any positive default, and asserting only
+// that it passes at some late instant would stay green for a default of zero.
+func TestGate17DefaultAppliesWhenRetryAfterCannotBeRead(t *testing.T) {
+	for _, header := range []string{"", "soon", "-1", "3.5", "next tuesday"} {
+		t.Run(fmt.Sprintf("%q", header), func(t *testing.T) {
+			b := p3Ledger(t)
+			var h http.Header
+			if header != "" {
+				h = p3RetryAfter(header)
+			}
+			p3AssertRefused(t, b.Observe429(h, p3At(t, 0)),
+				Gate17RetryAfter, ReasonRetryAfterUnparseable)
+			p3AssertRefused(t, CheckGate17RetryAfter(b, p3At(t, 59*time.Second)),
+				Gate17RetryAfter, ReasonInsideRetryAfter)
+			p3AssertPassed(t, CheckGate17RetryAfter(b, p3At(t, 60*time.Second)),
+				Gate17RetryAfter)
+		})
+	}
+}
+
+// TestMaxRedirectHopsIsPinned is D.9's MEDIUM 5.
+//
+// # What was measured
+//
+// maxRedirectHops was raised from 5 to 50 and the suite stayed green: the only
+// test that referred to it wrote "Hop: maxRedirectHops + 1", which is satisfied
+// by any value at all. A same-host redirect loop was then walked ten times
+// further than the budget allows. The const's own comment says "nothing may
+// raise it and nothing may lower it either" — which was false, because nothing
+// checked.
+//
+// The 5 below is a hand-written literal. The two behavioural assertions pin the
+// boundary in both directions: hop 5 is the last hop inside the budget and hop
+// 6 is refused, so raising the const turns the second red and lowering it turns
+// the first red.
+func TestMaxRedirectHopsIsPinned(t *testing.T) {
+	if maxRedirectHops != 5 {
+		t.Fatalf("maxRedirectHops is %d; it is 5. Gate 13 refuses to follow ANY redirect "+
+			"automatically, so a hop exists only because the egress layer chose to "+
+			"re-admit one through the full gate stack; this bounds how many times it may "+
+			"do that, and a same-host redirect loop past the bound is a refusal rather "+
+			"than a spin", maxRedirectHops)
+	}
+
+	scope := p3ExternalScope(t)
+	att := attestFor(t, scope)
+	clock := mustClock(t)
+	target := p3Target(t, SchemeHTTPS, "target.example.com", 443, p3ExternalAddr)
+	facts := func(n int) RequestFacts {
+		return RequestFacts{
+			Origin: OriginRedirect, Admitted: target, Next: target,
+			Method: MethodGet, Path: "/loop", Hop: n,
+		}
+	}
+
+	// The last hop inside the budget builds and is permitted. This is the
+	// assertion that goes red if the budget is LOWERED.
+	inside, err := NewRequestIntent(facts(5))
+	if err != nil {
+		t.Fatalf("NewRequestIntent at hop 5: %v. Five hops are inside the budget", err)
+	}
+	p3AssertPassed(t, CheckGate13Revalidate(inside, scope, att, clock),
+		Gate13RevalidateEveryRequest)
+
+	// The first hop past it does not build at all. This is the assertion that
+	// goes red if the budget is RAISED.
+	if _, err := NewRequestIntent(facts(6)); err == nil {
+		t.Fatal("NewRequestIntent built a hop-6 intent. Six hops are past the coded " +
+			"budget of five, and a same-host redirect loop past the budget is a refusal " +
+			"rather than a spin")
+	} else if !errors.Is(err, ErrRefused) {
+		t.Fatalf("the hop-6 refusal does not unwrap to ErrRefused: %v", err)
+	}
+
+	// Gate 13 carries the same bound as its own second layer, for an intent
+	// that reached it without passing through NewRequestIntent. It is minted
+	// here through the unexported fields, which is the strongest form still
+	// expressible, and it must still be refused — naming the budget.
+	overBudget := RequestIntent{
+		origin: OriginRedirect, admitted: target, next: target,
+		method: MethodGet, path: "/loop", hop: maxRedirectHops + 1, sealed: true,
+	}
+	if !overBudget.Constructed() {
+		t.Fatal("setup: the hand-built over-budget intent is not constructed, so the " +
+			"assertion below would be about the wrong refusal")
+	}
+	p3AssertRefused(t, CheckGate13Revalidate(overBudget, scope, att, clock),
+		Gate13RevalidateEveryRequest, ReasonRedirectHopBudget)
 }
 
 // TestNothingShortensARetryAfterWindow is "absolute, not advisory" as a

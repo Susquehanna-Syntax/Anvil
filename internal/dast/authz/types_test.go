@@ -3,6 +3,7 @@ package authz
 import (
 	"errors"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -932,4 +933,110 @@ func TestGateFailureUnwrapsToErrRefused(t *testing.T) {
 	if nilFailure.Error() == "" {
 		t.Error("a nil *GateFailure renders as the empty string")
 	}
+}
+
+// TestSealedTypesKeepEveryFieldUnexported is D.9's MEDIUM 6.
+//
+// # What was measured
+//
+// The package already guarded Caps, HealthThresholds, HealthMonitor,
+// BackoffLedger and DisclosureRecord this way, and did NOT guard Scope,
+// Attestation or Cap — the exact three types D.3's two CRITICAL findings lived
+// on, and the three whose unexported fields ARE the defence. Renaming
+// Scope.allow to Scope.Allow in a copy of the package left every real test
+// passing.
+//
+// # Why an exported field on one of these is a hole and not a style question
+//
+// An exported field is a composite literal in another package. Every one of
+// these types has exactly one constructor that validates what goes in, and the
+// type's whole contract is that no other value of it exists:
+//
+//   - Scope.allow / Scope.deny / Scope.hash: `authz.Scope{allow: ...}` from
+//     outside would be a scope nobody parsed, carrying a hash that is not a
+//     hash of its entries. Gate 5's binding of the attestation to the scope
+//     hash is what that would defeat.
+//   - Attestation.expiresAt / .scopeHash: an attestation nobody issued, live
+//     for as long as the literal says.
+//   - Cap.coded / Cap.effective: D.3's critic minted a ten-year "coded floor"
+//     when the CONSTRUCTOR was exported; an exported field is the same hole
+//     without needing a constructor at all.
+//
+// It is a table so that adding a sealed type means adding a line, and the
+// synthetic positive control at the end proves the check can fail.
+func TestSealedTypesKeepEveryFieldUnexported(t *testing.T) {
+	sealed := []struct {
+		name string
+		val  any
+		why  string
+	}{
+		{"Scope", Scope{},
+			"a Scope built as a literal is a scope nobody parsed, with a hash that is " +
+				"not a hash of its entries"},
+		{"Attestation", Attestation{},
+			"an Attestation built as a literal is an attestation nobody issued, live " +
+				"for as long as the literal says"},
+		{"Cap[int]", Cap[int]{},
+			"a Cap built as a literal is a coded floor of the caller's choosing, which " +
+				"is D.3's CRITICAL 1 with the constructor removed from the path"},
+		{"Cap[time.Duration]", Cap[time.Duration]{},
+			"the same, for gate 5's lifetime ceiling"},
+		{"Target", Target{},
+			"a Target built as a literal carries a pinned address nobody resolved, and " +
+				"gate 9's pin is what gate 3 compares against before it opens a socket"},
+		{"Clock", Clock{},
+			"a Clock built as a literal is the instant every expiry check is measured " +
+				"against"},
+		{"ModeDeclaration", ModeDeclaration{},
+			"gate 6's declaration is explicit and irreversible for the run"},
+		{"DastEnablement", DastEnablement{},
+			"gate 1 requires an explicit non-defaulted write, and EnableDAST is the " +
+				"only thing that produces one"},
+		{"Ruling", Ruling{},
+			"only permit and refuse may say what a gate concluded"},
+		{"Decision", Decision{},
+			"a Decision is a Ruling that has been durably audited; a literal is neither"},
+		{"Authorization", Authorization{},
+			"the token gate 3 demands, and the only one that exists came from an " +
+				"audited allow"},
+	}
+	for _, c := range sealed {
+		typ := reflect.TypeOf(c.val)
+		if typ.Kind() != reflect.Struct {
+			t.Errorf("%s is a %s, not a struct; this guard measured nothing about it",
+				c.name, typ.Kind())
+			continue
+		}
+		if typ.NumField() == 0 {
+			t.Errorf("%s has no fields, so this guard measured nothing about it", c.name)
+			continue
+		}
+		for _, f := range typeExportedFields(typ) {
+			t.Errorf("%s.%s is EXPORTED. An exported field is a composite literal in "+
+				"another package: %s", c.name, f, c.why)
+		}
+	}
+
+	// POSITIVE CONTROL. The helper must actually be able to find an exported
+	// field, or every assertion above passes because it looks at nothing.
+	type notSealed struct {
+		Coded int
+		set   bool
+	}
+	got := typeExportedFields(reflect.TypeOf(notSealed{}))
+	if len(got) != 1 || got[0] != "Coded" {
+		t.Fatalf("typeExportedFields on a struct with one exported field returned %v; "+
+			"the guard above cannot fail and proves nothing", got)
+	}
+}
+
+// typeExportedFields returns the names of a struct type's exported fields.
+func typeExportedFields(typ reflect.Type) []string {
+	var out []string
+	for i := 0; i < typ.NumField(); i++ {
+		if f := typ.Field(i); f.IsExported() {
+			out = append(out, f.Name)
+		}
+	}
+	return out
 }

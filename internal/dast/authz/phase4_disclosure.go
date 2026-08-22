@@ -64,8 +64,81 @@
 // operations that move a deadline are Accelerate and Extend, each of which
 // requires a reason drawn from a compiled-in ALLOWLIST of documented cases,
 // requires evidence, and is bounded — acceleration cannot go below
-// MinAcceleratedEmbargo and extension cannot go past MaxEmbargo. There is no
-// config key to find because there is no parameter to set.
+// MinAcceleratedEmbargo and extension cannot go past MaxEmbargo.
+//
+// THAT SENTENCE IS TRUE AND, ON ITS OWN, BESIDE THE POINT — AND IT USED TO BE
+// THE WHOLE DEFENCE. A duration parameter is one way to shorten an embargo.
+// THE ORIGIN OF THE CLOCK IS THE OTHER, and it was open: the deadline is first
+// contact plus 45 days, first contact is whatever Clock the caller handed
+// RecordVendorContact, and nothing compared that instant to the clock the
+// decision is made against.
+//
+// The first repair bounded the contact instant against a SECOND caller-
+// supplied instant. That caught the lie told with ONE clock and missed the lie
+// told with TWO, and the miss was measured end to end:
+//
+//	RecordVendorContact(channel, at=2026-01-03, now=2026-01-03)  PASSES
+//	  — the back-date is zero, so MaxVendorContactBackdate never engages
+//	OpenEmbargo(..., now=2026-01-03)                             PASSES
+//	  — the deadline, 2026-02-17, is comfortably in that clock's future
+//	AuditedPublication(..., Now=2026-08-22)                      PASSES
+//	  — 45 days elapsed, zero days of vendor notice, one audit row
+//
+// A third comparison between two values the same caller controls fails the
+// same way. So the repair is structural instead:
+//
+//	A RUN HAS EXACTLY ONE CLOCK. THE CALLER STILL CHOOSES IT — ONCE, AT
+//	INITIATION — AND CANNOT RE-SUPPLY IT, OR A DIFFERENT ONE, PER DECISION.
+//
+// The earlier wording here was "AND IT IS NOT A PARAMETER", which is not true
+// and is corrected rather than qualified: RunRequest.Clock is an exported,
+// settable field and InitiateRun copies it verbatim into the seal, so the
+// run's instant is exactly as caller-chosen as it ever was. What the seal
+// buys is the OTHER half, and it is the half the January lie needed: a
+// RunClock cannot be minted outside this package, and no Phase 4 decision
+// accepts a "now", so the one instant the caller chose is the one every
+// comparison in the run is made against. A lie is still spellable; it is no
+// longer spellable INCONSISTENTLY, and the cost of telling it consistently is
+// in this file's closing section and in SKIPPED-CONTROLS G18-2.
+//
+// types.go's RunClock is sealed at run initiation by an unexported
+// constructor, exactly as Scope and Attestation are, and
+// RunInitiation.RunClock is the only exported route to one. Every Phase 4
+// decision READS it rather than accepting a "now":
+//
+//   - RecordVendorContact takes the contact instant — a recorded fact about
+//     the past — and bounds it against the RUN'S clock. A contact in the
+//     future is refused; a contact back-dated further than
+//     MaxVendorContactBackdate is refused, because back-dating shortens the
+//     embargo by exactly the amount it back-dates and so is Accelerate with
+//     the allowlist and the evidence deleted.
+//   - OpenEmbargo refuses an embargo whose deadline has already passed at the
+//     run's clock. An embargo that was over before anybody opened it is not
+//     an embargo.
+//   - Accelerate accelerates TO the run's clock. Extend still chooses a new
+//     deadline, which is a future instant an operator picks, but the instant
+//     the adjustment is RECORDED at is the run's.
+//   - PublicationRequest and PushRequest have NO CLOCK FIELD. GateAudit is
+//     bound to the run's clock and gates 18 and 20 read it from there.
+//
+// So within one run the three instants above are one instant, and the sequence
+// cannot be spelled: at a January run clock the publication is refused with
+// the embargo still running, and at an August run clock the January contact is
+// refused as back-dated past the bound.
+// TestGate18TheConsistentClockLieIsRefusedInBothDirections is the guard and it
+// runs both halves.
+//
+// WHAT THIS DOES NOT CLOSE, STATED RATHER THAN PAPERED OVER. This package has
+// no ambient time source — plan/00-SPINE.md S7 makes the kernel a pure
+// function of (target, scope, attestation, clock) — so a run's clock is still
+// the instant the harness handed InitiateRun. Telling the January/August lie
+// now costs TWO run initiations: two scope loads, two gate-7 trigger checks,
+// and two attestations live at instants seven months apart, which gate 5's
+// 30-day ceiling means cannot be one attestation. The audit rows for the two
+// runs are keyed to different attestation IDs. That is a materially larger and
+// more visible act than passing a different time.Time to the next call, and it
+// is as far as a kernel with no trusted clock can go. Recorded in
+// internal/SKIPPED-CONTROLS.md as G18-2.
 package authz
 
 import (
@@ -90,6 +163,9 @@ const (
 	ReasonEmbargoNoReportingChannel      Reason = "gate18.gate12_resolved_no_reporting_channel"
 	ReasonEmbargoClockUnconstructed      Reason = "gate18.clock_not_constructed"
 	ReasonEmbargoClockWentBack           Reason = "gate18.clock_went_backwards"
+	ReasonEmbargoContactInTheFuture      Reason = "gate18.vendor_contact_is_in_the_future"
+	ReasonEmbargoContactBackdated        Reason = "gate18.vendor_contact_is_back_dated_past_the_bound"
+	ReasonEmbargoElapsedBeforeItOpened   Reason = "gate18.embargo_deadline_had_already_passed_at_open"
 	ReasonEmbargoFindingMismatch         Reason = "gate18.embargo_is_for_another_finding"
 	ReasonEmbargoRunning                 Reason = "gate18.embargo_clock_is_still_running"
 	ReasonEmbargoAccelerationUnsupported Reason = "gate18.acceleration_reason_not_on_the_allowlist"
@@ -101,18 +177,26 @@ const (
 	ReasonEmbargoExtensionExceedsBound   Reason = "gate18.extension_exceeds_the_coded_bound"
 	ReasonPublicationStateNotPersisted   Reason = "gate18.disclosure_state_was_never_persisted"
 	ReasonPublicationFindingWithheld     Reason = "gate18.finding_is_withheld"
+	ReasonPublicationStoreMissing        Reason = "gate18.no_disclosure_store_to_read_the_state_from"
+	ReasonPublicationStoreWrongMedium    Reason = "gate18.disclosure_store_is_not_the_sqlite_record_store"
+	ReasonPublicationStoreUnreadable     Reason = "gate18.disclosure_store_could_not_be_read"
 	ReasonPublicationPermitted           Reason = "gate18.publication_permitted"
 )
 
 // Gate 19 reasons.
 const (
-	ReasonDisclosureRecordUnconstructed Reason = "gate19.disclosure_record_not_constructed"
-	ReasonDisclosureStateUnknown        Reason = "gate19.disclosure_state_is_not_on_the_allowlist"
-	ReasonDisclosureStoreMissing        Reason = "gate19.no_disclosure_store_was_supplied"
-	ReasonDisclosureStoreWrongMedium    Reason = "gate19.store_is_not_the_sqlite_record_store"
-	ReasonDisclosureWriteFailed         Reason = "gate19.disclosure_state_write_failed"
-	ReasonDisclosureKeyIncomplete       Reason = "gate19.disclosure_row_cannot_be_keyed"
-	ReasonDisclosurePersisted           Reason = "gate19.disclosure_state_persisted_in_the_record_store"
+	ReasonDisclosureRecordUnconstructed  Reason = "gate19.disclosure_record_not_constructed"
+	ReasonDisclosureStateUnknown         Reason = "gate19.disclosure_state_is_not_on_the_allowlist"
+	ReasonDisclosureStoreMissing         Reason = "gate19.no_disclosure_store_was_supplied"
+	ReasonDisclosureStoreWrongMedium     Reason = "gate19.store_is_not_the_sqlite_record_store"
+	ReasonDisclosureWriteFailed          Reason = "gate19.disclosure_state_write_failed"
+	ReasonDisclosureReadFailed           Reason = "gate19.disclosure_state_read_failed"
+	ReasonDisclosureKeyIncomplete        Reason = "gate19.disclosure_row_cannot_be_keyed"
+	ReasonDisclosureWithholdingHeld      Reason = "gate19.transition_out_of_withheld_carries_no_release"
+	ReasonDisclosureReleaseUnsupported   Reason = "gate19.release_reason_not_on_the_allowlist"
+	ReasonDisclosureReleaseUnevidenced   Reason = "gate19.release_reason_carries_no_evidence"
+	ReasonDisclosureReleaseNotApplicable Reason = "gate19.release_offered_where_nothing_is_being_released"
+	ReasonDisclosurePersisted            Reason = "gate19.disclosure_state_persisted_in_the_record_store"
 )
 
 // Gate 20 reasons.
@@ -127,7 +211,6 @@ const (
 	ReasonPushAttestationLifetime     Reason = "gate20.attestation_lifetime_exceeds_the_coded_ceiling"
 	ReasonPushNoEmbargoOpened         Reason = "gate20.no_embargo_and_therefore_no_vendor_contact"
 	ReasonPushFindingMismatch         Reason = "gate20.embargo_is_for_another_finding"
-	ReasonPushNoReportingChannel      Reason = "gate20.gate12_resolved_no_reporting_channel"
 	ReasonPushPermitted               Reason = "gate20.patch_delivery_permitted"
 )
 
@@ -351,13 +434,66 @@ type VendorContact struct {
 
 // RecordVendorContact records first contact through gate 12's resolved
 // channel.
-func RecordVendorContact(channel SecurityTxtResult, at Clock) (VendorContact, GateResult) {
+//
+// # Why it takes a contact instant and THE RUN'S clock
+//
+// `at` is when the vendor was contacted and is what the 45-day deadline is
+// measured from. It is a recorded fact about the past, so it is a parameter.
+//
+// `run` is not. It is the clock established once at run initiation, sealed by
+// sealRunClock, and there is no exported constructor for one — see types.go's
+// RunClock. An earlier shape took a second Clock here and called it `now`, and
+// that shape bounded one caller-supplied instant against another: a caller who
+// dated the contact 3 January and ALSO passed a 3 January "now" produced a
+// back-date of zero, so MaxVendorContactBackdate never engaged, and the same
+// caller then published against the real August present. Every gate green,
+// forty-five days elapsed, nobody contacted.
+//
+// Two refusals, both measured against THE RUN'S clock:
+//
+//   - A contact in the FUTURE. The embargo would not start until then, and a
+//     deadline measured from an instant that has not happened records a
+//     conversation nobody has had.
+//   - A contact back-dated further than MaxVendorContactBackdate. Back-dating
+//     shortens the embargo by exactly the amount back-dated, with no
+//     allowlisted reason, no evidence and no EmbargoAdjustment in the audit
+//     trail — which is every property Accelerate has, removed.
+func RecordVendorContact(channel SecurityTxtResult, at Clock, run RunClock) (VendorContact, GateResult) {
 	const g = Gate18Embargo
 	if !at.Valid() {
 		return VendorContact{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
 			"vendor contact was recorded against a Clock that NewClock never built. The "+
 				"embargo deadline is measured from this instant, so an unset one would "+
 				"put the deadline in 1970 and the embargo would read as already elapsed.")
+	}
+	if !run.Valid() {
+		return VendorContact{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
+			"there is no RUN CLOCK to bound this contact against. A RunClock is sealed at "+
+				"run initiation and cannot be minted by a caller; the zero value means "+
+				"this contact is being recorded outside any initiated run, and the "+
+				"instant the 45-day deadline is measured from would be a free "+
+				"parameter again.")
+	}
+	if at.Instant().After(run.Instant()) {
+		return VendorContact{}, gateFailed(g, ReasonEmbargoContactInTheFuture,
+			"the vendor contact is dated after the run recording it. A contact that has "+
+				"not happened yet starts no clock, and a deadline measured from it is "+
+				"measured from nothing.",
+			"contact:   "+at.Instant().UTC().Format(time.RFC3339),
+			"run clock: "+run.Instant().UTC().Format(time.RFC3339))
+	}
+	if back := run.Instant().Sub(at.Instant()); back > MaxVendorContactBackdate {
+		return VendorContact{}, gateFailed(g, ReasonEmbargoContactBackdated,
+			"the vendor contact is back-dated further than the coded bound. Back-dating "+
+				"first contact shortens the embargo by exactly that much and leaves no "+
+				"EmbargoAdjustment behind, so an unbounded back-date is acceleration "+
+				"with the allowlist and the evidence requirement deleted. Acceleration "+
+				"is the documented way to shorten an embargo; it takes a reason and "+
+				"evidence, and it is recorded.",
+			"contact:     "+at.Instant().UTC().Format(time.RFC3339),
+			"run clock:   "+run.Instant().UTC().Format(time.RFC3339),
+			"coded bound: "+MaxVendorContactBackdate.String(),
+			"back-dated:  "+back.String())
 	}
 	if channel.Status() != SecurityTxtStatusResolved || len(channel.Contacts()) == 0 {
 		return VendorContact{}, gateFailed(g, ReasonEmbargoNoReportingChannel,
@@ -390,7 +526,8 @@ func (v VendorContact) Channel() SecurityTxtResult { return v.channel }
 // configurable" (plan/50-dast.md gate 18) is enforced rather than promised.
 const DefaultEmbargo = 45 * 24 * time.Hour
 
-// MinAcceleratedEmbargo is the floor an ACCELERATED embargo cannot go below.
+// MinAcceleratedEmbargo is the floor an ACCELERATED embargo cannot go below,
+// measured from first contact.
 //
 // THIS NUMBER IS ANVIL'S, NOT CERT/CC'S. CERT/CC documents acceleration for
 // observed active exploitation; it does not publish a floor, and this file
@@ -399,6 +536,22 @@ const DefaultEmbargo = 45 * 24 * time.Hour
 // called an embargo, and the gate table says disabling is not configurable.
 // One day is the shortest window in which a vendor who has just been told
 // about active exploitation can act at all.
+//
+// # THE FLOOR IS MEASURED FROM FIRST CONTACT, AND FIRST CONTACT CAN BE MOVED
+//
+// So this constant on its own guarantees nothing. Back-dating the contact by B
+// moves the floor B earlier, and the window a vendor actually gets, measured
+// forward from the run that accelerates, is
+//
+//	MinAcceleratedEmbargo - MaxVendorContactBackdate
+//
+// not MinAcceleratedEmbargo. While both constants were 24h that difference was
+// ZERO, and the floor was cancelled exactly: contact back-dated to the
+// permitted bound, accelerated, and published IN THE SAME RUN, with 0s of
+// embargo served. Neither constant was wrong on its own; the RELATION between
+// them was never asserted. It is asserted now, both in
+// TestPhase4EmbargoConstantsPinTheRelationsNotOnlyTheValues and behaviourally
+// in TestGate18BackdatingToTheBoundCannotCancelTheAccelerationFloor.
 const MinAcceleratedEmbargo = 24 * time.Hour
 
 // MaxEmbargo is the ceiling an EXTENDED embargo cannot go past, measured from
@@ -409,6 +562,48 @@ const MinAcceleratedEmbargo = 24 * time.Hour
 // permits extension for "standards/core-OS-level fixes", which are slow; a
 // year is long enough for one and short enough to be a bound.
 const MaxEmbargo = 365 * 24 * time.Hour
+
+// MaxVendorContactBackdate is how far in the past a vendor contact may be
+// dated relative to the run that records it.
+//
+// ALSO ANVIL'S NUMBER. No source publishes a back-dating bound, because no
+// source anticipated a kernel with no trusted time source, whose every instant
+// therefore arrives from the caller. The structural
+// reason is the one MinAcceleratedEmbargo has: without a bound, dating first
+// contact 45 days ago produces a zero-length embargo, and it does so with no
+// allowlisted reason, no evidence and no EmbargoAdjustment — strictly weaker
+// preconditions than Accelerate, for a strictly larger effect. With the bound,
+// the shortest embargo reachable without an Accelerate call is DefaultEmbargo
+// minus this, and the only way below that is the allowlist.
+//
+// # WHY THIS IS AN HOUR AND NOT THE DAY IT WAS
+//
+// It was 24h, and MinAcceleratedEmbargo is 24h, and the two cancelled: a
+// contact back-dated to exactly the permitted bound put the acceleration floor
+// at the run's own instant, so one allowlisted acceleration published a
+// third-party finding in the run that recorded first contact. 0s of embargo
+// served. Measured, not reasoned about.
+//
+// THE CONSTANT THAT MOVED IS THIS ONE, AND NOT THE FLOOR, because of what each
+// number is for. MinAcceleratedEmbargo is a substantive claim about the world
+// — the shortest window in which a vendor told about active exploitation can
+// act at all — and lowering the risk by raising it would silently make every
+// honest acceleration two days instead of one, changing a control nobody asked
+// to change. This number is not a claim about the world; it is OPERATIONAL
+// SLACK, and its own text already said what for: "clock skew and ... a contact
+// made earlier in the same operational window, not a window in which to
+// relocate the deadline". A day was never needed for either. An NTP-
+// synchronised host agrees to within milliseconds; an unsynchronised one is
+// wrong by minutes; the largest plausible SYSTEMATIC error is a whole-hour
+// timezone or DST mistake. An hour covers all three. The day bought nothing
+// except the entire acceleration floor.
+//
+// What this leaves, stated as a number rather than as "a day": the shortest
+// embargo any sequence in this file can produce, measured forward from the run
+// that accelerates, is MinAcceleratedEmbargo - MaxVendorContactBackdate = 23h.
+// It is strictly positive because the two constants are asserted to be
+// ordered, not because they happen to differ today.
+const MaxVendorContactBackdate = 1 * time.Hour
 
 // maxEmbargoEvidenceLen bounds the evidence string an adjustment carries.
 const maxEmbargoEvidenceLen = 512
@@ -524,7 +719,15 @@ type EmbargoState struct {
 // finding would put a meaningless clock in the record store and, worse, would
 // make the presence of an EmbargoState stop being evidence that the finding is
 // somebody else's.
-func OpenEmbargo(own Ownership, finding FindingID, contact VendorContact) (EmbargoState, GateResult) {
+//
+// `run` is THE RUN'S clock, not a per-call one, and it is here for one check:
+// an embargo whose deadline has already passed at open time is not an embargo,
+// it is a publication with a countdown drawn on it afterwards. Within one run
+// this is the same instant RecordVendorContact bounded the contact against and
+// the same instant checkGate18Publication measures the deadline against — that
+// is the point, and it is what makes the consistently-told January lie a
+// refusal instead of a green chain.
+func OpenEmbargo(own Ownership, finding FindingID, contact VendorContact, run RunClock) (EmbargoState, GateResult) {
 	const g = Gate18Embargo
 	if err := finding.Validate(); err != nil {
 		return EmbargoState{}, gateFailed(g, ReasonFindingUnidentified,
@@ -551,12 +754,31 @@ func OpenEmbargo(own Ownership, finding FindingID, contact VendorContact) (Embar
 				"Starting it without one would count down 45 days of the vendor not "+
 				"knowing, and then publish.")
 	}
+	if !run.Valid() {
+		return EmbargoState{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
+			"the embargo was opened outside any initiated run: the RunClock is the zero "+
+				"value, which sealRunClock never produces from a valid Clock. There is "+
+				"nothing to check the new deadline against and an already-elapsed "+
+				"embargo would open silently.")
+	}
+	deadline := contact.At().Add(DefaultEmbargo)
+	if !deadline.After(run.Instant()) {
+		return EmbargoState{}, gateFailed(g, ReasonEmbargoElapsedBeforeItOpened,
+			"the 45-day deadline computed from this contact has ALREADY PASSED at the "+
+				"instant the embargo is being opened. That is not an embargo; it is a "+
+				"publication with a countdown drawn on it afterwards. The clock runs "+
+				"from first contact, so an embargo is opened when contact is made, not "+
+				"reconstructed later from a date that makes it elapsed.",
+			"first contact: "+contact.At().UTC().Format(time.RFC3339),
+			"deadline:      "+deadline.UTC().Format(time.RFC3339),
+			"run clock:     "+run.Instant().UTC().Format(time.RFC3339))
+	}
 	return EmbargoState{
 		finding:      finding,
 		ownership:    own,
 		contact:      contact,
 		firstContact: contact.At(),
-		deadline:     contact.At().Add(DefaultEmbargo),
+		deadline:     deadline,
 		sealed:       true,
 	}, gatePassed(g)
 }
@@ -613,10 +835,20 @@ func (e EmbargoState) Elapsed(now Clock) bool {
 //  2. Evidence is required and bounded. "Active exploitation observed" with
 //     nothing attached is an assertion, and an assertion that shortens an
 //     embargo is the config key the gate table says does not exist.
-//  3. The new deadline is FLOORED at MinAcceleratedEmbargo from first
-//     contact. Accelerating to "now" on the day of first contact does not
-//     produce a zero-length embargo; it produces a one-day one.
-func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence string, at Clock) (EmbargoState, GateResult) {
+//  3. The new deadline is FLOORED at MinAcceleratedEmbargo from FIRST
+//     CONTACT. Accelerating to "now" does not produce a zero-length embargo:
+//     with an honest contact instant it produces a one-day one, and with a
+//     contact back-dated to the permitted bound it produces
+//     MinAcceleratedEmbargo - MaxVendorContactBackdate = 23h. The second
+//     number is the guarantee, because the second case is the one an attacker
+//     picks; see MaxVendorContactBackdate for what it cost while the two
+//     constants were equal.
+//
+// The instant it accelerates TO is the run's, not a parameter. Acceleration is
+// "publish now because it is already being exploited", and "now" is the run's
+// clock; a caller-supplied instant here would be a fourth place to relocate
+// the deadline, reachable with one allowlisted reason instead of the bound.
+func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence string, run RunClock) (EmbargoState, GateResult) {
 	const g = Gate18Embargo
 	if !e.Constructed() {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoUnconstructed,
@@ -641,17 +873,20 @@ func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence stri
 				"exception with no document is a config key.",
 			"evidence: "+err.Error())
 	}
-	if !at.Valid() {
+	if !run.Valid() {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
-			"Accelerate was called with a Clock that NewClock never built, so the new "+
-				"deadline would be computed against an instant nobody set.")
+			"Accelerate was called outside any initiated run, so the new deadline would be "+
+				"computed against an instant nobody set.")
 	}
-	if at.Instant().Before(e.firstContact) {
+	if run.Instant().Before(e.firstContact) {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoClockWentBack,
-			"the acceleration instant is before first contact. A clock that went backwards "+
-				"is a clock, not a shorter embargo.")
+			"the run accelerating this embargo is clocked BEFORE the first contact the "+
+				"embargo runs from. A clock that went backwards is a clock, not a "+
+				"shorter embargo.",
+			"first contact: "+e.firstContact.UTC().Format(time.RFC3339),
+			"run clock:     "+run.Instant().UTC().Format(time.RFC3339))
 	}
-	candidate := at.Instant()
+	candidate := run.Instant()
 	if floor := e.firstContact.Add(MinAcceleratedEmbargo); candidate.Before(floor) {
 		candidate = floor
 	}
@@ -669,7 +904,7 @@ func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence stri
 		kind:     EmbargoAdjustmentAccelerate,
 		reason:   string(reason),
 		evidence: ev,
-		at:       at.Instant(),
+		at:       run.Instant(),
 		from:     e.deadline,
 		to:       candidate,
 	})
@@ -682,7 +917,14 @@ func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence stri
 // It is bounded at MaxEmbargo from first contact for the same reason
 // Accelerate is floored: an adjustment with no bound in one direction is an
 // adjustment that can be used to defeat the gate in that direction.
-func (e EmbargoState) Extend(reason EmbargoExtensionReason, evidence string, until Clock) (EmbargoState, GateResult) {
+//
+// `until` is the NEW DEADLINE — a future instant the operator is choosing, so
+// it is legitimately a parameter, and it is bounded in both directions. `run`
+// is the run's clock and supplies the one thing the caller must not choose:
+// WHEN THE ADJUSTMENT WAS MADE. An earlier shape recorded the adjustment's
+// instant as `until`, so the audit row for a six-month extension claimed the
+// extension was made six months from now.
+func (e EmbargoState) Extend(reason EmbargoExtensionReason, evidence string, until Clock, run RunClock) (EmbargoState, GateResult) {
 	const g = Gate18Embargo
 	if !e.Constructed() {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoUnconstructed,
@@ -706,6 +948,12 @@ func (e EmbargoState) Extend(reason EmbargoExtensionReason, evidence string, unt
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
 			"Extend was called with a Clock that NewClock never built.")
 	}
+	if !run.Valid() {
+		return EmbargoState{}, gateFailed(g, ReasonEmbargoClockUnconstructed,
+			"Extend was called outside any initiated run, so the audit trail could not say "+
+				"when the deadline was moved. An adjustment nobody can date is an "+
+				"adjustment nobody can review.")
+	}
 	if !until.Instant().After(e.deadline) {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoExtensionNotLonger,
 			"an extension must move the deadline LATER. This one does not, and a "+
@@ -727,7 +975,7 @@ func (e EmbargoState) Extend(reason EmbargoExtensionReason, evidence string, unt
 		kind:     EmbargoAdjustmentExtend,
 		reason:   string(reason),
 		evidence: ev,
-		at:       until.Instant(),
+		at:       run.Instant(),
 		from:     e.deadline,
 		to:       until.Instant(),
 	})
@@ -736,12 +984,20 @@ func (e EmbargoState) Extend(reason EmbargoExtensionReason, evidence string, unt
 }
 
 // PublicationRequest is everything gate 18 needs to decide whether a finding
-// may be published.
+// may be published EXCEPT the record store, which is a parameter of
+// AuditedPublication rather than a field here — an interface field on a Phase
+// 4 decision input is an extension point, and
+// TestPhase4DecisionInputsCarryNoResponseBytes refuses one.
 //
 // Every field that could be forged is a SEALED type: Ownership comes only from
 // ClassifyOwnership, EmbargoState only from OpenEmbargo, PersistedDisclosure
-// only from a successful gate 19 write. The two plain fields — a FindingID and
-// a Clock — are both validated, and the zero value of each refuses.
+// only from a successful gate 19 write. The one plain field, a FindingID, is
+// validated, and its zero value refuses.
+//
+// THERE IS NO CLOCK FIELD, and that is the fix for the consistently-told
+// January lie. "Now" is the run's, read from the GateAudit the request is
+// submitted through, so a caller cannot date the publication differently from
+// the run that recorded the vendor contact. See types.go's RunClock.
 type PublicationRequest struct {
 	// Finding is the finding proposed for publication.
 	Finding FindingID
@@ -752,14 +1008,30 @@ type PublicationRequest struct {
 	// operator-owned finding, which has none.
 	Embargo EmbargoState
 	// Persisted is gate 19's proof that this finding's disclosure state was
-	// durably written to the record store.
+	// durably written to the record store. It is required of EVERY
+	// publication, including the operator's own — see checkGate18Publication.
 	Persisted PersistedDisclosure
-	// Now is the instant the decision is made at.
-	Now Clock
 }
 
-// CheckGate18Publication is gate 18: "No auto-publication of third-party
+// checkGate18Publication is gate 18: "No auto-publication of third-party
 // findings, ever."
+//
+// # Why this is unexported and AuditedPublication is not
+//
+// Gate 21 says a decision is not "allowed" if its paired audit write fails.
+// While this function was exported it returned an allow having written
+// nothing, and the coupling was a wrapper a caller could choose — the probe
+// output was literally "bare CheckGate18Publication passed=true". A rule that
+// holds only when the caller opts in is not a rule.
+//
+// So the admission path's idiom is used here: kernel.go mints a grant only
+// after the audit write lands, and no other package can construct one. Phase
+// 4's equivalent is that gates 18, 19 and 20 have NO EXPORTED ENTRY POINT AT
+// ALL. The only way to reach them from outside this package is
+// GateAudit.AuditedPublication, AuditedPersistDisclosure and AuditedPush, each
+// of which runs the gate and then requires the row to land before returning
+// the allow. TestPhase4HasNoUnauditedExportedDecisionPath is the guard that
+// fails if any of them is exported again.
 //
 // # The order, and why gate 19's proof is required before the deadline check
 //
@@ -769,7 +1041,48 @@ type PublicationRequest struct {
 // written to the SQLite record store, where the next run — and the run after
 // the reboot — will find it. So gate 18 refuses to publish anything whose
 // disclosure state gate 19 did not persist, BEFORE it looks at the clock.
-func CheckGate18Publication(req PublicationRequest) GateResult {
+//
+// # WHAT THE OWNERSHIP CLAIM MAY DELETE, AND WHAT IT MAY NOT
+//
+// This is gate 20's rule, applied here, and it was applied here LATE. Gate 20
+// was fixed by hoisting its scope, attestation and liveness checks above its
+// OperatorOwned() branch; gate 18 kept the bypass in its original position for
+// a further round, and it was reachable through the only exported route:
+//
+//	NewOwnedRepositories("victim/product") -> ClassifyOwnership
+//	  -> GateAudit.AuditedPublication{zero Embargo, zero Persisted}
+//	  -> passed=true, rows=1
+//
+// Ownership is a SELF-ASSERTION. ClassifyOwnership compares the repository
+// against a list of "owner/name" strings the caller supplied, and nothing in
+// this package can check that list against a forge. AN UNVERIFIED CALLER
+// ASSERTION MAY DELETE ONLY THE PART OF A CONTROL THAT THE ASSERTION IS ABOUT.
+// "This repository is mine" bears on whether the finding needs an EMBARGO —
+// research/20 gate 18 is about "findings against code Anvil's operator does
+// not own", and an embargo on your own finding means nothing. It does not bear
+// on whether the disclosure state was persisted, on whether somebody recorded
+// a decision to WITHHOLD, or on what time it is.
+//
+// So the branch sits below every check it is not about. Everything above it
+// holds for the operator's own findings too, and gate 19 has
+// NewOwnFindingDisclosureRecord precisely so that an operator-owned
+// publication can satisfy the persistence requirement rather than being
+// exempted from it.
+//
+// # WHY IT TAKES THE STORE AND WHY THE STORE IS NOT A FIELD OF THE REQUEST
+//
+// It takes the store because a decision to WITHHOLD is a fact about a finding,
+// not about a request, and while this function read only req.Persisted a
+// second write overturned the first — see DisclosureStore's header for the
+// measured sequence. Reading the caller's proof and calling that "the
+// disclosure state" is reading the answer the caller chose to hand over.
+//
+// It is a parameter and not a field of PublicationRequest because
+// TestPhase4DecisionInputsCarryNoResponseBytes refuses any INTERFACE field on
+// the Phase 4 input structs: an interface reachable from a decision input is
+// an extension point a scanned response body could arrive through. That guard
+// is right and it decided this signature.
+func checkGate18Publication(req PublicationRequest, run RunClock, store DisclosureStore) GateResult {
 	const g = Gate18Embargo
 
 	if err := req.Finding.Validate(); err != nil {
@@ -778,12 +1091,12 @@ func CheckGate18Publication(req PublicationRequest) GateResult {
 				"row that cannot name what was published records nothing.",
 			"finding: "+redactUntrusted(string(req.Finding)))
 	}
-	if !req.Now.Valid() {
+	if !run.Valid() {
 		return gateFailed(g, ReasonEmbargoClockUnconstructed,
-			"publication was requested against a Clock that NewClock never built. Every "+
-				"embargo comparison is measured against it, and an unset clock reads as "+
-				"1970, which is after no deadline and before every one depending on the "+
-				"comparison's direction.")
+			"publication was requested outside any initiated run: the RunClock is the zero "+
+				"value. Every embargo comparison is measured against the run's clock, "+
+				"and an unset one reads as 1970, which is after no deadline and before "+
+				"every one depending on the comparison's direction.")
 	}
 	if !req.Ownership.Classified() {
 		return gateFailed(g, ReasonOwnershipUnclassified,
@@ -791,10 +1104,86 @@ func CheckGate18Publication(req PublicationRequest) GateResult {
 				"this is the operator's own code or somebody else's. Unclassified is "+
 				"refused rather than assumed either way.")
 	}
+
+	// ---- Everything the ownership claim is NOT about, above the branch ----
+	if !req.Persisted.Valid() {
+		return gateFailed(g, ReasonPublicationStateNotPersisted,
+			"this finding's disclosure state was never durably persisted, so gate 19's "+
+				"proof is missing. An embargo held only in memory or in the tmpfs "+
+				"handoff packet does not survive a reboot, and an embargo that forgets "+
+				"itself is an embargo that publishes. Claiming to own the repository "+
+				"does not remove this: whether the state reached the record store is "+
+				"not a question about who owns the code.",
+			"repository: "+redactUntrusted(req.Ownership.Repository()))
+	}
+	if req.Persisted.Finding() != req.Finding {
+		return gateFailed(g, ReasonPublicationStateNotPersisted,
+			"the persisted disclosure state is for a different finding, so nothing durable "+
+				"records the state of THIS one.",
+			"requested finding: "+redactUntrusted(string(req.Finding)),
+			"persisted finding: "+redactUntrusted(string(req.Persisted.Finding())))
+	}
+	if req.Persisted.State() == DisclosureStateWithheld {
+		return gateFailed(g, ReasonPublicationFindingWithheld,
+			"the persisted disclosure state for this finding is `withheld`, which is a "+
+				"decision somebody made and recorded. An elapsed clock does not "+
+				"overturn it, and neither does a claim to own the repository.")
+	}
+
+	// ---- What the STORE says, which is not what the caller handed us ----
+	//
+	// Everything above this point is a property of the proof the caller chose
+	// to present. A caller who holds two proofs presents the convenient one,
+	// which is exactly how a recorded `withheld` was overturned by writing a
+	// second row. So the authority is asked directly.
+	if store == nil {
+		return gateFailed(g, ReasonPublicationStoreMissing,
+			"no disclosure store was supplied, so gate 18 cannot ask what this finding's "+
+				"recorded state actually is and would be deciding from the proof the "+
+				"caller chose to hand over. A caller holding two proofs presents the "+
+				"convenient one.")
+	}
+	if medium := store.Medium(); medium != MediumRecordStoreSQLite {
+		return gateFailed(g, ReasonPublicationStoreWrongMedium,
+			"the store gate 18 was asked to read the disclosure state from is not the "+
+				"SQLite store of record. Reading \"nothing is withheld\" out of the "+
+				"tmpfs handoff buffer proves nothing: the buffer does not survive a "+
+				"reboot, so it cannot be the place a withholding decision is kept.",
+			"declared medium: "+redactUntrusted(string(medium)),
+			"the allowlist:   "+string(MediumRecordStoreSQLite))
+	}
+	stored, rerr := store.DisclosureStateFor(req.Finding)
+	switch {
+	case rerr != nil:
+		return gateFailed(g, ReasonPublicationStoreUnreadable,
+			"the disclosure state for this finding could not be read from the record "+
+				"store. An unreadable state is not an absent one: it is refused rather "+
+				"than assumed to be publishable, because the row that could not be read "+
+				"is the row that says `withheld`.",
+			"store error: "+rerr.Error())
+	case stored == DisclosureStateWithheld:
+		return gateFailed(g, ReasonPublicationFindingWithheld,
+			"the RECORD STORE says this finding's disclosure state is `withheld`, whatever "+
+				"the proof presented with this request says. A decision to withhold is "+
+				"reversed by a row that carries an allowlisted release reason and "+
+				"evidence, which gate 19 requires and which is what makes `withheld` "+
+				"mean withheld rather than withheld-until-somebody-writes-another-row.")
+	case !stored.Valid():
+		return gateFailed(g, ReasonPublicationStateNotPersisted,
+			"the record store holds no disclosure state for this finding, so nothing "+
+				"durable records what was decided about it — whatever proof was "+
+				"presented with this request, the store is the authority and the store "+
+				"has forgotten. An embargo that forgets itself is an embargo that "+
+				"publishes.",
+			"state in the store: "+redactUntrusted(string(stored)))
+	}
+
 	if req.Ownership.OperatorOwned() {
 		// The operator publishing a finding against their own code is not
-		// what gate 18 restricts. research/20 gate 18 is about "findings
-		// against code Anvil's operator does not own".
+		// what gate 18 restricts: research/20 gate 18 is about "findings
+		// against code Anvil's operator does not own". The claim removes the
+		// EMBARGO and nothing else — see this function's header for the
+		// bypass that existed while it removed everything below it.
 		return gatePassed(g)
 	}
 
@@ -813,27 +1202,7 @@ func CheckGate18Publication(req PublicationRequest) GateResult {
 			"requested finding: "+redactUntrusted(string(req.Finding)),
 			"embargo finding:   "+redactUntrusted(string(req.Embargo.Finding())))
 	}
-	if !req.Persisted.Valid() {
-		return gateFailed(g, ReasonPublicationStateNotPersisted,
-			"this finding's disclosure state was never durably persisted, so gate 19's "+
-				"proof is missing. An embargo held only in memory or in the tmpfs "+
-				"handoff packet does not survive a reboot, and an embargo that forgets "+
-				"itself is an embargo that publishes.")
-	}
-	if req.Persisted.Finding() != req.Finding {
-		return gateFailed(g, ReasonPublicationStateNotPersisted,
-			"the persisted disclosure state is for a different finding, so nothing durable "+
-				"records the state of THIS one.",
-			"requested finding: "+redactUntrusted(string(req.Finding)),
-			"persisted finding: "+redactUntrusted(string(req.Persisted.Finding())))
-	}
-	if req.Persisted.State() == DisclosureStateWithheld {
-		return gateFailed(g, ReasonPublicationFindingWithheld,
-			"the persisted disclosure state for this finding is `withheld`, which is a "+
-				"decision somebody made and recorded. An elapsed clock does not "+
-				"overturn it.")
-	}
-	if !req.Embargo.Elapsed(req.Now) {
+	if !req.Embargo.Elapsed(run.Now()) {
 		return gateFailed(g, ReasonEmbargoRunning,
 			"the embargo clock is still running. A third-party finding is not published "+
 				"before its deadline, and the only two ways the deadline moves are "+
@@ -842,7 +1211,7 @@ func CheckGate18Publication(req PublicationRequest) GateResult {
 				"evidence.",
 			"first contact: "+req.Embargo.FirstContact().UTC().Format(time.RFC3339),
 			"deadline:      "+req.Embargo.Deadline().UTC().Format(time.RFC3339),
-			"now:           "+req.Now.Instant().UTC().Format(time.RFC3339),
+			"run clock:     "+run.Instant().UTC().Format(time.RFC3339),
 			fmt.Sprintf("adjustments so far: %d", len(req.Embargo.adjustments)))
 	}
 	return gatePassed(g)
@@ -907,6 +1276,49 @@ const (
 	DisclosureStateWithheld DisclosureState = "withheld"
 )
 
+// WithholdingReleaseReason is the compiled-in allowlist of reasons a recorded
+// `withheld` decision may be REVERSED.
+//
+// # Why leaving `withheld` needs an allowlist at all
+//
+// Because until this existed it needed nothing. `withheld` is a decision a
+// person made and recorded, and DisclosureStateWithheld's own doc says "an
+// elapsed clock does not overturn this" — but a SECOND ROW did, silently.
+// Gate 18 read only the PersistedDisclosure the caller handed it, so persisting
+// `withheld` and then persisting `embargoed` for the same finding produced a
+// second, perfectly valid proof, and publication proceeded. The word "withheld"
+// meant "withheld until somebody writes another row", which is advisory.
+//
+// So the transition out of `withheld` now costs what shortening an embargo
+// costs: a reason from a compiled-in list, and evidence. Accelerate and Extend
+// established that shape; this is the same shape applied to the other decision
+// in this file that a later write could quietly undo.
+//
+// THESE TWO REASONS ARE ANVIL'S. No external source enumerates them, and this
+// file does not pretend otherwise — research/20 gate 18 covers acceleration
+// and extension and says nothing about withholding. They are the two cases in
+// which continuing to withhold protects nobody: the decision-maker rescinded
+// it, or the vendor published first and there is no longer anything to
+// withhold. A case nobody enumerated is not a weaker case; it is no case.
+type WithholdingReleaseReason string
+
+// The withholding-release reasons. The zero value is not one.
+const (
+	// WithholdingReleaseUnset is the zero value and releases nothing.
+	WithholdingReleaseUnset WithholdingReleaseReason = ""
+	// WithholdingReleaseRescinded: whoever recorded the withholding recorded
+	// its reversal.
+	WithholdingReleaseRescinded WithholdingReleaseReason = "withholding_decision_rescinded"
+	// WithholdingReleaseVendorPublished: the vendor published the advisory
+	// themselves, so withholding protects nobody.
+	WithholdingReleaseVendorPublished WithholdingReleaseReason = "vendor_published_advisory"
+)
+
+// Valid reports whether r is one of the two documented release reasons.
+func (r WithholdingReleaseReason) Valid() bool {
+	return r == WithholdingReleaseRescinded || r == WithholdingReleaseVendorPublished
+}
+
 // Valid reports whether s is one of the four recorded states.
 func (s DisclosureState) Valid() bool {
 	switch s {
@@ -935,7 +1347,15 @@ type DisclosureRecord struct {
 	deadline     time.Time
 	adjustments  int
 	key          AuditKey
-	sealed       bool
+	// releaseReason and releaseEvidence are set only by ReleaseWithholding,
+	// and gate 19 requires them of a row that moves a finding OUT of
+	// `withheld`. They live on the ROW rather than being a parameter of the
+	// write so that the record store keeps the reason and the evidence next to
+	// the transition they permitted — an audit trail that says a withholding
+	// was reversed but not why is the trail that made this defect invisible.
+	releaseReason   WithholdingReleaseReason
+	releaseEvidence string
+	sealed          bool
 }
 
 // NewDisclosureRecord builds the row for one finding's disclosure state.
@@ -978,6 +1398,73 @@ func NewDisclosureRecord(emb EmbargoState, state DisclosureState, key AuditKey) 
 	}, gatePassed(g)
 }
 
+// NewOwnFindingDisclosureRecord builds the disclosure row for a finding
+// against the OPERATOR'S OWN code, which has no embargo and therefore no
+// deadline.
+//
+// # Why this exists, and why it is not "the same thing without the checks"
+//
+// Gate 18 requires gate 19's proof before it will publish ANYTHING. That
+// requirement used to be reachable only for third-party findings, because the
+// only way to a DisclosureRecord was NewDisclosureRecord and the only way to
+// an EmbargoState is OpenEmbargo, which refuses an operator-owned finding. The
+// consequence was not that operator-owned publications were blocked — it was
+// that gate 18 returned a bare allow on the ownership claim before it ever
+// looked at persistence, which is the bypass this file's gate-18 header
+// records.
+//
+// So the persistence requirement is universal and this is how the operator's
+// own findings meet it. What it does NOT do is take the caller's word for the
+// ownership: it requires a classified Ownership that reports OperatorOwned,
+// which only ClassifyOwnership against the operator's own declaration
+// produces. A third-party finding routed through here is refused, so this is
+// not a second door into the record for a finding that owes an embargo.
+//
+// The row carries a ZERO first contact and a ZERO deadline, which is the
+// truth: nobody was contacted because there is nobody to contact.
+func NewOwnFindingDisclosureRecord(own Ownership, finding FindingID, state DisclosureState, key AuditKey) (DisclosureRecord, GateResult) {
+	const g = Gate19DisclosureStateInDB
+	if err := finding.Validate(); err != nil {
+		return DisclosureRecord{}, gateFailed(g, ReasonFindingUnidentified,
+			"a disclosure row is keyed to a finding, and this one has no valid identifier.",
+			"finding: "+redactUntrusted(string(finding)))
+	}
+	if !own.Classified() {
+		return DisclosureRecord{}, gateFailed(g, ReasonOwnershipUnclassified,
+			"the finding's repository was never classified against the operator's declared "+
+				"list, so nothing here says this is the operator's own code.")
+	}
+	if !own.OperatorOwned() {
+		return DisclosureRecord{}, gateFailed(g, ReasonEmbargoUnconstructed,
+			"this row is for a finding against the OPERATOR'S OWN code, and the ownership "+
+				"supplied classifies the repository as third-party. A third-party "+
+				"finding's disclosure row is built from its EmbargoState by "+
+				"NewDisclosureRecord, so that the row cannot record a deadline the "+
+				"embargo does not have. Routing one through here would mint a durable "+
+				"row with no first contact and no deadline, and gate 18 would then "+
+				"have gate 19's proof for a finding nobody told the vendor about.",
+			"repository: "+redactUntrusted(own.Repository()))
+	}
+	if !state.Valid() {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureStateUnknown,
+			"the disclosure state is not one of the four recorded states.",
+			"state: "+redactUntrusted(string(state)))
+	}
+	if !key.Valid() {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureKeyIncomplete,
+			"the disclosure row has no audit key. Gate 21 keys every decision on the "+
+				"attestation ID and the scope hash.")
+	}
+	return DisclosureRecord{
+		finding:    finding,
+		state:      state,
+		ownership:  own.Owner(),
+		repository: own.Repository(),
+		key:        key,
+		sealed:     true,
+	}, gatePassed(g)
+}
+
 // Constructed reports whether this came from NewDisclosureRecord.
 func (r DisclosureRecord) Constructed() bool {
 	return r.sealed && r.finding.Validate() == nil && r.state.Valid() && r.key.Valid()
@@ -1004,6 +1491,68 @@ func (r DisclosureRecord) Deadline() time.Time { return r.deadline }
 // Adjustments returns how many times the deadline was moved.
 func (r DisclosureRecord) Adjustments() int { return r.adjustments }
 
+// ReleaseReason returns the allowlisted reason this row carries for moving a
+// finding out of `withheld`, or WithholdingReleaseUnset if it carries none.
+func (r DisclosureRecord) ReleaseReason() WithholdingReleaseReason { return r.releaseReason }
+
+// ReleaseEvidence returns the bounded evidence attached to that release.
+func (r DisclosureRecord) ReleaseEvidence() string { return r.releaseEvidence }
+
+// ReleaseWithholding attaches the allowlisted reason and the evidence that
+// permit this row to move a finding OUT of a recorded `withheld` state.
+//
+// It returns a NEW DisclosureRecord rather than mutating the receiver, the
+// same shape Accelerate and Extend use, so a caller holding the old row holds
+// a row that still cannot overturn a withholding.
+//
+// It refuses a release attached to a row that is not leaving `withheld` — a
+// row whose own state IS `withheld` is entering the state, not leaving it, and
+// a reason token recorded next to a transition that did not happen is a lie
+// the record store will be believed about.
+//
+// gate 19's persist path is what enforces the requirement; this only mints the
+// permission. Nothing here writes anything.
+func (r DisclosureRecord) ReleaseWithholding(reason WithholdingReleaseReason, evidence string) (DisclosureRecord, GateResult) {
+	const g = Gate19DisclosureStateInDB
+	if !r.Constructed() {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureRecordUnconstructed,
+			"ReleaseWithholding was called on a DisclosureRecord that neither "+
+				"NewDisclosureRecord nor NewOwnFindingDisclosureRecord built. There is no "+
+				"row to attach a release to, and returning a constructed one here would "+
+				"mint a disclosure row out of a zero value.")
+	}
+	if r.state == DisclosureStateWithheld {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureReleaseNotApplicable,
+			"this row records the state `withheld`, so it ENTERS the withholding rather "+
+				"than leaving it, and there is nothing for a release to permit. A "+
+				"release recorded against a transition that did not happen is a reason "+
+				"token the record store will be believed about.",
+			"row state: "+string(r.state))
+	}
+	if !reason.Valid() {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureReleaseUnsupported,
+			"the reason supplied is not one of the two documented cases in which "+
+				"continuing to withhold protects nobody. An undocumented reason does not "+
+				"reverse a recorded decision — including the empty reason a caller that "+
+				"forgot the argument supplies.",
+			"reason: "+redactUntrusted(string(reason)),
+			"the allowlist: "+string(WithholdingReleaseRescinded)+", "+
+				string(WithholdingReleaseVendorPublished))
+	}
+	ev, err := boundedEvidence(evidence)
+	if err != nil {
+		return DisclosureRecord{}, gateFailed(g, ReasonDisclosureReleaseUnevidenced,
+			"releasing a withholding requires evidence, and this one carries none the "+
+				"record store can hold. Reversing a decision somebody made and recorded, "+
+				"with nothing attached, is the config key gate 18 does not have.",
+			"evidence: "+err.Error())
+	}
+	next := r
+	next.releaseReason = reason
+	next.releaseEvidence = ev
+	return next, gatePassed(g)
+}
+
 // Key returns the audit key this row is joined on.
 func (r DisclosureRecord) Key() AuditKey { return r.key }
 
@@ -1013,8 +1562,26 @@ func (r DisclosureRecord) AttestationID() AttestationID { return r.key.Attestati
 // ScopeHash returns the second half.
 func (r DisclosureRecord) ScopeHash() ScopeHash { return r.key.ScopeHash() }
 
-// DisclosureStore is the durable writer gate 19 requires. D.9/D.10 implement
-// it over the SQLite record store.
+// DisclosureStore is the durable writer gate 19 requires.
+//
+// # NOTHING IMPLEMENTS THIS INTERFACE
+//
+// This comment used to say "D.9/D.10 implement it over the SQLite record
+// store". That was false. plan/50-dast.md:317-348 makes D.9 the
+// build-invariant packet (a dependency-graph test and an egress lint) and
+// :349-378 makes D.10 container provisioning under gVisor. Neither writes a
+// disclosure row, and no other plan step schedules one. A repository-wide grep
+// for PutDisclosureState finds this interface, its one call site below, and a
+// test fake — no production implementation.
+//
+// So gate 19 is a rule with nothing standing behind it today: it says
+// disclosure state lives in the SQLite store of record rather than the tmpfs
+// handoff buffer, and in this tree disclosure state lives NOWHERE. Every
+// refusal in this section is real and tested; the ALLOW has never been taken
+// by a caller that actually persisted anything. Recorded in
+// internal/SKIPPED-CONTROLS.md as G19-1, with what would settle it.
+//
+// # The residual the declaration leaves even once one exists
 //
 // Medium is a declaration, and this package cannot verify it: a kernel that
 // imports no store cannot inspect a store's files. The residual risk is
@@ -1024,6 +1591,29 @@ func (r DisclosureRecord) ScopeHash() ScopeHash { return r.key.ScopeHash() }
 // that the dishonest one is a visible lie in a diff, and that the ACCIDENT —
 // somebody passing the handoff buffer because it was the store in scope — is
 // refused.
+// # WHY THERE IS A READ METHOD HERE AND WHAT IT COST TO NOT HAVE ONE
+//
+// This interface used to be write-only, and a write-only store cannot back a
+// state machine. Gate 18's `withheld` check read only the PersistedDisclosure
+// its CALLER handed it, and persistDisclosureState imposed no ordering on the
+// rows it wrote, so the following sequence published a finding somebody had
+// recorded a decision not to publish — measured against the shipped tree with
+// one store shared by both writes:
+//
+//	AuditedPersistDisclosure(store, rec{state: withheld})   passed=true
+//	AuditedPersistDisclosure(store, rec{state: embargoed})  passed=true
+//	AuditedPublication(store, req{Persisted: the second proof})  passed=true
+//
+// Nothing lied. Every value was sealed, every gate was audited, and the second
+// row simply out-voted the first because no gate could see the first. A GATE
+// THAT CAN ONLY SEE WHAT THE CALLER HANDS IT CANNOT ENFORCE A STATE MACHINE.
+//
+// So the store answers one question about what it already holds, gate 18 asks
+// it before publishing, and gate 19 asks it before writing. This is still an
+// INTERFACE and this package still cannot verify the answer — the residual is
+// the same one Medium() has and is stated in the same place — but the accident
+// is now refused and the deliberate act is a store that lies about its own
+// rows, which is a visible thing in a diff rather than an absent check.
 type DisclosureStore interface {
 	// Medium says where this store keeps bytes.
 	Medium() StorageMedium
@@ -1031,11 +1621,21 @@ type DisclosureStore interface {
 	// number. Returning (0, nil) is treated as a failed write, for the
 	// reason AuditSeq gives.
 	PutDisclosureState(DisclosureRecord) (AuditSeq, error)
+	// DisclosureStateFor returns the state the store ALREADY HOLDS for this
+	// finding — the most recent row written for it — or
+	// DisclosureStateUnset if it holds no row at all.
+	//
+	// DisclosureStateUnset is not an error and an error is not
+	// DisclosureStateUnset: "this finding has no disclosure row" and "I could
+	// not tell you whether it has one" are different facts and both gates
+	// refuse on both, but for different stated reasons. A store that cannot
+	// distinguish them should return the error.
+	DisclosureStateFor(FindingID) (DisclosureState, error)
 }
 
-// CheckGate19DisclosureStore is gate 19's location check: is this store the
+// checkGate19DisclosureStore is gate 19's location check: is this store the
 // record store.
-func CheckGate19DisclosureStore(store DisclosureStore) GateResult {
+func checkGate19DisclosureStore(store DisclosureStore) GateResult {
 	const g = Gate19DisclosureStateInDB
 	if store == nil {
 		return gateFailed(g, ReasonDisclosureStoreMissing,
@@ -1044,7 +1644,22 @@ func CheckGate19DisclosureStore(store DisclosureStore) GateResult {
 				"the reboot, and a finding whose embargo cannot be found is a finding "+
 				"nothing is stopping.")
 	}
-	medium := store.Medium()
+	return checkDisclosureMedium(store.Medium())
+}
+
+// checkDisclosureMedium is gate 19's allowlist-of-one, taking the medium as a
+// VALUE rather than the store it came from.
+//
+// The split exists so that persistDisclosureState can read Medium() EXACTLY
+// ONCE. It used to read it twice — once through the location check and once to
+// stamp the proof — and a store that answered `record_store_sqlite` and then
+// `tmpfs_handoff_buffer` returned a PASSING gate result paired with a
+// PersistedDisclosure whose Valid() is false. A gate that says yes while
+// handing back a proof that says no is worse than either answer on its own,
+// because the caller checks one of them.
+// TestGate19ReadsTheStoresMediumExactlyOnce is the guard.
+func checkDisclosureMedium(medium StorageMedium) GateResult {
+	const g = Gate19DisclosureStateInDB
 	if medium == MediumRecordStoreSQLite {
 		return gatePassed(g)
 	}
@@ -1114,7 +1729,7 @@ func (p PersistedDisclosure) Key() AuditKey { return p.key }
 // The write and the proof are minted together, in that order, for the reason
 // Adjudicate mints a grant only after the audit write lands: a proof issued
 // before the write would be a proof of an intention.
-func PersistDisclosureState(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
+func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
 	const g = Gate19DisclosureStateInDB
 	if !rec.Constructed() {
 		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureRecordUnconstructed,
@@ -1123,9 +1738,51 @@ func PersistDisclosureState(store DisclosureStore, rec DisclosureRecord) (Persis
 				"record store that says nothing and reads as \"looked at, nothing "+
 				"embargoed\".")
 	}
-	if res := CheckGate19DisclosureStore(store); !res.Passed() {
+	if store == nil {
+		return PersistedDisclosure{}, checkGate19DisclosureStore(nil)
+	}
+	// READ THE MEDIUM ONCE. The value checked here and the value stamped into
+	// the proof below must be the same value, not two answers to one question.
+	medium := store.Medium()
+	if res := checkDisclosureMedium(medium); !res.Passed() {
 		return PersistedDisclosure{}, res
 	}
+
+	// ---- THE STATE MACHINE, which this function used not to have ----
+	//
+	// Without it, "persist withheld, then persist embargoed" was two
+	// successful writes and the second one won. Every value was sealed and
+	// every write was audited; the rule "an elapsed clock does not overturn a
+	// withholding" simply had no enforcement point, because nothing read the
+	// row that was already there.
+	prior, rerr := store.DisclosureStateFor(rec.Finding())
+	switch {
+	case rerr != nil:
+		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureReadFailed,
+			"the state this finding is already in could not be read, so this write cannot "+
+				"be checked against it. A write that cannot see the row it is replacing "+
+				"is how a recorded `withheld` becomes advisory.",
+			"store error: "+rerr.Error())
+	case prior == DisclosureStateWithheld && rec.State() != DisclosureStateWithheld &&
+		rec.releaseReason == WithholdingReleaseUnset:
+		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureWithholdingHeld,
+			"this finding's recorded state is `withheld` and this row moves it out of "+
+				"that state, carrying no allowlisted release reason and no evidence. "+
+				"Shortening an embargo takes both; reversing a decision not to publish "+
+				"at all takes no less. Attach one with "+
+				"DisclosureRecord.ReleaseWithholding.",
+			"recorded state: "+string(prior),
+			"row would write: "+string(rec.State()))
+	case prior != DisclosureStateWithheld && rec.releaseReason != WithholdingReleaseUnset:
+		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureReleaseNotApplicable,
+			"this row carries a withholding release, and the state it would replace is not "+
+				"`withheld`, so there is nothing to release. The release is refused "+
+				"rather than ignored: an unused reason token written next to a "+
+				"transition that did not happen is a row a reviewer will believe.",
+			"recorded state: "+redactUntrusted(string(prior)),
+			"release reason: "+string(rec.releaseReason))
+	}
+
 	seq, err := store.PutDisclosureState(rec)
 	switch {
 	case err != nil:
@@ -1144,7 +1801,7 @@ func PersistDisclosureState(store DisclosureStore, rec DisclosureRecord) (Persis
 	return PersistedDisclosure{
 		finding: rec.Finding(),
 		state:   rec.State(),
-		medium:  store.Medium(),
+		medium:  medium,
 		seq:     seq,
 		key:     rec.Key(),
 		sealed:  true,
@@ -1229,23 +1886,27 @@ type PushRequest struct {
 	Embargo EmbargoState
 	// Patch identifies the patch. Its content is never read.
 	Patch PatchProposal
-	// Now is the instant the decision is made at.
-	Now Clock
 }
 
-// PushGate is gate 20: no unsolicited fixes pushed to third parties.
+// pushGate is gate 20: no unsolicited fixes pushed to third parties.
 //
-// It is named PushGate because D.7's expected output schema names it that; the
-// other Phase 4 entry points follow the CheckGateNN convention D.4–D.6 use.
+// It is unexported for the reason checkGate18Publication is: gate 21 makes the
+// audit write part of the decision, and an exported function that returns an
+// allow having written no row makes that optional. AuditedPush is the entry
+// point.
 //
-// # What it requires, and the one thing it deliberately does not
+// # What it requires of EVERY delivery, and what only a third-party one adds
 //
-// For a THIRD-PARTY destination it requires, in order: an identified patch, a
-// classified destination, a valid clock, a constructed scope, an attestation
-// that is constructed, bound to that scope and LIVE at this instant, and an
-// embargo for THIS finding — which is how the gate-12 reporting channel and
-// the recorded vendor contact become preconditions, since OpenEmbargo refuses
-// without both.
+// Of every delivery, in order: an identified patch, a classified destination,
+// a valid clock, a constructed scope, and an attestation that is constructed,
+// bound to that scope and LIVE at this instant.
+//
+// A THIRD-PARTY destination adds an embargo for THIS finding — which is how
+// the gate-12 reporting channel and the recorded vendor contact become
+// preconditions, since OpenEmbargo refuses without both.
+//
+// The split is deliberate and it is the answer to a real bypass. See the
+// operator-owned branch below.
 //
 // It does NOT require the embargo to have ELAPSED. Delivering a patch to the
 // vendor is the coordinated part of coordinated disclosure; requiring the
@@ -1258,7 +1919,7 @@ type PushRequest struct {
 // The requirement is parity with probing — "the same affirmative attestation"
 // — and a stricter rule here would be this file inventing disclosure policy
 // that no source in the plan states.
-func PushGate(req PushRequest) GateResult {
+func pushGate(req PushRequest, run RunClock) GateResult {
 	const g = Gate20NoUnsolicitedFixes
 
 	if !req.Patch.Constructed() {
@@ -1273,16 +1934,11 @@ func PushGate(req PushRequest) GateResult {
 				"declared list, so gate 20 cannot say whether this is our own repo or "+
 				"somebody else's. Unclassified is refused, not assumed to be ours.")
 	}
-	if !req.Now.Valid() {
+	if !run.Valid() {
 		return gateFailed(g, ReasonPushClockUnconstructed,
-			"the push was proposed against a Clock that NewClock never built, so the "+
-				"attestation's liveness could not be measured against anything.")
-	}
-	if req.Destination.OperatorOwned() {
-		// Pushing to a repository the operator declared they own is not an
-		// unsolicited fix to a third party. research/20 gate 20 is about
-		// "a repository Anvil's operator does not control".
-		return gatePassed(g)
+			"the push was proposed outside any initiated run: the RunClock is the zero "+
+				"value, so the attestation's liveness could not be measured against "+
+				"anything.")
 	}
 
 	if !req.Scope.Constructed() {
@@ -1294,11 +1950,14 @@ func PushGate(req PushRequest) GateResult {
 	}
 	if !req.Attestation.Constructed() {
 		return gateFailed(g, ReasonPushWithoutAttestation,
-			"delivering a patch to a repository the operator does not own requires THE SAME "+
-				"affirmative attestation as probing it (research/20 gate 20), and no "+
-				"attestation was supplied. The patch's content is not a factor: a "+
-				"benign unsolicited fix to a stranger's repository is still an "+
-				"unsolicited fix.",
+			"delivering a patch requires THE SAME affirmative attestation as probing "+
+				"(research/20 gate 20), and no attestation was supplied. The patch's "+
+				"content is not a factor: a benign unsolicited fix to a stranger's "+
+				"repository is still an unsolicited fix. An operator-owned destination "+
+				"does not remove this requirement — \"we own it\" is a claim made by "+
+				"putting an \"owner/name\" string in OwnedRepositories, and a claim "+
+				"nothing can verify may not also be the thing that deletes the "+
+				"authorisation check.",
 			"destination: "+redactUntrusted(req.Destination.Repository()),
 			"patch:       "+req.Patch.Digest())
 	}
@@ -1311,14 +1970,40 @@ func PushGate(req PushRequest) GateResult {
 			"attestation scope: "+string(req.Attestation.ScopeHash()),
 			"run scope:         "+string(req.Scope.Hash()))
 	}
-	if !req.Attestation.Live(req.Now) {
+	if !req.Attestation.Live(run.Now()) {
 		return gateFailed(g, ReasonPushAttestationNotLive,
 			"the attestation is expired or not yet valid at this instant. An expired "+
 				"authorisation authorises nothing, and a patch delivered under one is "+
 				"as unsolicited as a patch delivered under none.",
 			"attestation: "+redactUntrusted(string(req.Attestation.ID())),
-			"now:         "+req.Now.Instant().UTC().Format(time.RFC3339))
+			"run clock:   "+run.Instant().UTC().Format(time.RFC3339))
 	}
+
+	if req.Destination.OperatorOwned() {
+		// Pushing to a repository the operator declared they own is not an
+		// unsolicited fix to a third party. research/20 gate 20 is about "a
+		// repository Anvil's operator does not control".
+		//
+		// WHAT THIS BRANCH MAY SKIP, AND WHAT IT MAY NOT. Ownership is a
+		// SELF-ASSERTION. ClassifyOwnership compares the repository against
+		// OwnedRepositories, which is a list of "owner/name" strings the
+		// caller supplied, and nothing in this package can check that list
+		// against a forge. While this branch sat ABOVE the scope and
+		// attestation checks, NewOwnedRepositories("vendor/product") was
+		// enough to push a patch to vendor/product with a ZERO Attestation, a
+		// ZERO Scope and a ZERO EmbargoState — the gate that exists to stop
+		// unsolicited patches reaching third parties, bypassed by asserting
+		// that the third party is you.
+		//
+		// So the claim now removes only what it is actually about: the
+		// EMBARGO and the vendor contact, which are meaningless for your own
+		// repository. It does not remove the run's authorisation. A false
+		// ownership claim costs a live attestation bound to this run's scope,
+		// and either way the destination is named in the audit row gate 21
+		// writes.
+		return gatePassed(g)
+	}
+
 	if !req.Embargo.Constructed() {
 		return gateFailed(g, ReasonPushNoEmbargoOpened,
 			"no embargo was opened for this finding, and an embargo is what records that "+
@@ -1334,14 +2019,6 @@ func PushGate(req PushRequest) GateResult {
 				"finding's vendor was ever contacted.",
 			"requested finding: "+redactUntrusted(string(req.Finding)),
 			"embargo finding:   "+redactUntrusted(string(req.Embargo.Finding())))
-	}
-	if !req.Embargo.Contact().Recorded() {
-		return gateFailed(g, ReasonPushNoReportingChannel,
-			"the embargo carries no recorded vendor contact through gate 12's channel. "+
-				"This is unreachable through OpenEmbargo, which refuses without one, "+
-				"and is checked anyway: gate 20's requirement is the channel, and a "+
-				"requirement enforced only by another function's invariant is a "+
-				"requirement that survives until somebody adds a second constructor.")
 	}
 	return gatePassed(g)
 }
@@ -1555,14 +2232,33 @@ type GateAudit struct {
 	mu      sync.Mutex
 	sink    AuditSink
 	key     AuditKey
+	run     RunClock
 	lastSeq AuditSeq
 	rows    int
 	sealed  bool
 }
 
-// NewGateAudit binds a sink to a run's audit key.
-func NewGateAudit(sink AuditSink, key AuditKey) (*GateAudit, GateResult) {
+// NewGateAudit binds a sink to a run's audit key AND to THE RUN'S CLOCK.
+//
+// The clock is here rather than on each request for the reason types.go's
+// RunClock gives: the Phase 4 disclosure decisions are comparisons between
+// instants, and while each instant was its own parameter a caller could supply
+// a consistent set of lies that no comparison between two of them caught.
+// AuditedPublication and AuditedPush read this field; neither takes a clock,
+// and PublicationRequest and PushRequest have no clock field to set.
+//
+// A RunClock cannot be minted outside this package — RunInitiation.RunClock is
+// the only exported route — so binding one here binds the writer to a run that
+// actually passed Phase 1.
+func NewGateAudit(sink AuditSink, key AuditKey, run RunClock) (*GateAudit, GateResult) {
 	const g = Gate21ImmutableAudit
+	if !run.Valid() {
+		return nil, gateFailed(g, ReasonAuditClockUnconstructed,
+			"no RUN CLOCK was supplied, so every row this writer wrote would carry an "+
+				"instant nobody set and every embargo comparison would be measured "+
+				"against 1970. A RunClock is sealed at run initiation; the zero value "+
+				"means there is no run behind this writer.")
+	}
 	if sink == nil {
 		return nil, gateFailed(g, ReasonAuditSinkMissing,
 			"no audit sink was supplied. Gate 21 makes the audit write part of the "+
@@ -1574,7 +2270,16 @@ func NewGateAudit(sink AuditSink, key AuditKey) (*GateAudit, GateResult) {
 				"writer could not be keyed to an attestation and a scope hash. Gate 21 "+
 				"requires both.")
 	}
-	return &GateAudit{sink: sink, key: key, sealed: true}, gatePassed(g)
+	return &GateAudit{sink: sink, key: key, run: run, sealed: true}, gatePassed(g)
+}
+
+// RunClock returns the run this writer is bound to. It is the zero RunClock —
+// which every gate refuses — for an unconstructed writer.
+func (a *GateAudit) RunClock() RunClock {
+	if !a.Constructed() {
+		return RunClock{}
+	}
+	return a.run
 }
 
 // Constructed reports whether this came from NewGateAudit.
@@ -1615,6 +2320,24 @@ func (a *GateAudit) LastSeq() AuditSeq {
 // 'allowed' if its paired audit write fails". If the input result refused, the
 // refusal is returned unchanged once the row is down. There is no path on
 // which a passing result survives a failed write.
+//
+// # Why this one still takes a Clock when gates 18 and 20 do not
+//
+// Because the two questions are different, and collapsing them would be a
+// regression rather than a tightening.
+//
+// Gates 18 and 20 ask "WHAT DAY IS IT" — has a 45-day deadline elapsed, is a
+// 28-day attestation still live. That question has one answer per run, and
+// letting the caller answer it separately per call is what made the
+// consistently-told January lie work. So they read a.run.
+//
+// The per-request paths that come through here — AuditedAdmit's rate limits
+// and concurrency leases, AuditedObservation's circuit breaker and Retry-After
+// — ask "HOW LONG SINCE THE LAST ONE". That question needs time to ADVANCE
+// within a run: 10 requests per second per host is not a limit if every
+// request in the run is stamped with the instant the run started. Those
+// callers therefore supply the instant their request is actually happening at,
+// and this function records it.
 func (a *GateAudit) Record(res GateResult, subject AuditSubject, at Clock) (AuditSeq, GateResult) {
 	const g = Gate21ImmutableAudit
 
@@ -1623,10 +2346,15 @@ func (a *GateAudit) Record(res GateResult, subject AuditSubject, at Clock) (Audi
 			"Record was called on a GateAudit that NewGateAudit never built. A writer with "+
 				"no sink records nothing, and recording nothing does not allow.")
 	}
-	if !subject.Constructed() {
-		return 0, gateFailed(g, ReasonAuditKeyIncomplete,
-			"the row has no subject, so it could not say what the decision was about.")
-	}
+	// There is deliberately no `if !subject.Constructed()` branch. An
+	// AuditSubject's text is unexported and is set only alongside sealed, so
+	// an unconstructed subject renders as the empty string, and
+	// GateRecord.Validate below refuses a record whose Target is empty — with
+	// the same ReasonAuditKeyIncomplete, before the sink is touched. A
+	// mutation run showed the branch could never be the only thing refusing
+	// anything, so it is gone rather than kept as a layer that cannot fail;
+	// the same reasoning D.6 recorded for AuditReason's missing gate check.
+	// TestGateAuditRefusesAnUnsetClockAndAnEmptySubject still covers the case.
 	if !at.Valid() {
 		return 0, gateFailed(g, ReasonAuditClockUnconstructed,
 			"the row has no instant. GateRecord.At is the instant the decision was made "+
@@ -1710,6 +2438,13 @@ func (a *GateAudit) Record(res GateResult, subject AuditSubject, at Clock) (Audi
 // An EMPTY trace is a refusal, for the reason kernel.go's chain runner refuses
 // an empty chain: "no gate objected" is the vacuous truth a for-range over an
 // empty slice produces for free.
+//
+// It STOPS AT THE FIRST REFUSAL and returns it, rather than writing the rest
+// of the trace and returning the last result. Both halves matter and both are
+// guarded by TestRecordTraceStopsAtTheFirstRefusal, which puts the refusal in
+// the SECOND of four positions: without the early return the sink receives
+// four rows for a trace that was decided at the second, and the value returned
+// is the fourth gate's ALLOW.
 func (a *GateAudit) RecordTrace(trace []GateResult, subject AuditSubject, at Clock) GateResult {
 	const g = Gate21ImmutableAudit
 	if !a.Constructed() {
@@ -1760,6 +2495,12 @@ func (a *GateAudit) AuditedAdmit(gov *Governor, intent RequestIntent, tech Techn
 // AuditedAdmit trace; a breaker trip arrives here, because ObserveResponse and
 // ObserveConnectionError are where the breaker actually trips and they are not
 // part of the admission trace.
+//
+// It is a one-line wrapper and it is still gate 21's coupling: the value it
+// returns is Record's, so a healthy observation whose row did not land comes
+// back as a REFUSAL. TestAuditedObservationRefusesWhenTheAuditWriteFails is
+// the guard — this was the only audited path in the file without one, which
+// mattered because the trip gate 21 names explicitly arrives through here.
 func (a *GateAudit) AuditedObservation(res GateResult, target Target, at Clock) GateResult {
 	_, out := a.Record(res, SubjectTarget(target), at)
 	return out
@@ -1767,25 +2508,28 @@ func (a *GateAudit) AuditedObservation(res GateResult, target Target, at Clock) 
 
 // AuditedPublication runs gate 18 and records the decision, refusing if the
 // row did not land.
-func (a *GateAudit) AuditedPublication(req PublicationRequest) GateResult {
-	res := CheckGate18Publication(req)
+//
+// The store is a parameter because gate 18 READS the recorded disclosure state
+// rather than trusting the proof in the request; see checkGate18Publication.
+func (a *GateAudit) AuditedPublication(store DisclosureStore, req PublicationRequest) GateResult {
+	res := checkGate18Publication(req, a.RunClock(), store)
 	subject, err := SubjectFinding(req.Finding)
 	if err != nil {
 		subject = subjectUnidentified("finding")
 	}
-	_, out := a.Record(res, subject, req.Now)
+	_, out := a.Record(res, subject, a.RunClock().Now())
 	return out
 }
 
 // AuditedPush runs gate 20 and records the decision, refusing if the row did
 // not land.
 func (a *GateAudit) AuditedPush(req PushRequest) GateResult {
-	res := PushGate(req)
+	res := pushGate(req, a.RunClock())
 	subject, err := SubjectRepository(req.Destination.Repository())
 	if err != nil {
 		subject = subjectUnidentified("repository")
 	}
-	_, out := a.Record(res, subject, req.Now)
+	_, out := a.Record(res, subject, a.RunClock().Now())
 	return out
 }
 
@@ -1795,13 +2539,13 @@ func (a *GateAudit) AuditedPush(req PushRequest) GateResult {
 // what makes gate 18's requirement for one meaningful: a disclosure state that
 // was written to the store but whose write was never audited does not produce
 // the proof gate 18 asks for, so it cannot be used to publish.
-func (a *GateAudit) AuditedPersistDisclosure(store DisclosureStore, rec DisclosureRecord, at Clock) (PersistedDisclosure, GateResult) {
-	p, res := PersistDisclosureState(store, rec)
+func (a *GateAudit) AuditedPersistDisclosure(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
+	p, res := persistDisclosureState(store, rec)
 	subject, err := SubjectFinding(rec.Finding())
 	if err != nil {
 		subject = subjectUnidentified("finding")
 	}
-	_, out := a.Record(res, subject, at)
+	_, out := a.Record(res, subject, a.RunClock().Now())
 	if !out.Passed() {
 		return PersistedDisclosure{}, out
 	}

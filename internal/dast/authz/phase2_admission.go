@@ -31,9 +31,10 @@
 // Gates 8, 9 and 10 are registered. Each is genuinely a function of
 // (target, scope, attestation, clock) — plan/00-SPINE.md S7's four inputs —
 // because the canonical form, the pinned address and the run's mode all live
-// inside those four values. They are also the three gates gate 13 re-runs on
-// every request and every redirect hop (kernel.go's revalidationChain), so
-// after this packet Revalidate is fully implemented.
+// inside those four values. They are also three of the five gates gate 13
+// re-runs on every request and every redirect hop (kernel.go's
+// revalidationChain — gates 4, 5, 8, 9 and 10), so after this packet
+// Revalidate is fully implemented.
 //
 // GATE 11 IS NOT REGISTERED, for the same structural reason D.4 could not
 // register gate 7, and the accounting is repeated here rather than referred to:
@@ -2068,8 +2069,10 @@ func (r SecurityTxtResult) AuditEvidence() []string {
 // that makes the second one a compile-and-run-time fact rather than a
 // convention.
 //
-// These three are also kernel.go's revalidationChain, which gate 13 re-runs on
-// every request and every redirect hop. After this packet that chain is fully
+// These three are also three of the five gates in kernel.go's
+// revalidationChain, which gate 13 re-runs on every request and every redirect
+// hop; the other two are gate 4 (scope membership) and gate 5 (a LIVE
+// attestation), both registered by D.4. After this packet that chain is fully
 // implemented, so a redirect to a host outside scope, or to a reserved
 // address, is refused on the hop rather than only on the first request —
 // research/20 names that omission (ZAP issue #2546) "the single most likely way

@@ -2407,10 +2407,17 @@ func TestGate11StopsTheAdmissionChain(t *testing.T) {
 	if r.Permits() {
 		t.Fatal("Decide permitted with gate 11 unimplemented")
 	}
-	if r.Gate() != Gate11RobotsDeny || r.Reason() != ReasonGateNotRegistered {
+	// The reason token names GATE 11, not gate 21. A gate21.* token on a
+	// gate-11 ruling is what GateRecord.Validate rejects, and Adjudicate
+	// validates every row before writing any — so the mis-attribution used to
+	// throw away the audit trail of the very denial it was describing. See
+	// structuralRefusal and TestAdjudicateWritesAuditRowsForARealChainDenial.
+	wantReason := Reason(Gate11RobotsDeny.String() + "." + slugGateNotRegistered)
+	if r.Gate() != Gate11RobotsDeny || r.Reason() != wantReason {
 		t.Fatalf("the admission chain stopped at %s (%s); gates 4, 5, 6, 8, 9 and 10 are "+
-			"implemented and gate 11 is not, so gate 11 is where it must stop",
-			r.Gate(), string(r.Reason()))
+			"implemented and gate 11 is not, so gate 11 is where it must stop, with "+
+			"reason %q",
+			r.Gate(), string(r.Reason()), string(wantReason))
 	}
 	// Gate 7 must NOT be the answer any more, and must not be in the chain.
 	for _, g := range admissionChain {
