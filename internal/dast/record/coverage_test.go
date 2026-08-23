@@ -1733,3 +1733,106 @@ func rowTable(s Summary) string {
 	sort.Strings(out[1:])
 	return strings.Join(out, "\n")
 }
+
+// ===========================================================================
+// D.29 LOW 7 — the decomposition's arithmetic
+// ===========================================================================
+
+// TestDenominatorDecompositionRefusesANegativeUnrepresentedCount.
+//
+// AssertDenominatorDecomposes checked the IDENTITY Unrepresented ==
+// Floor-Routes and never checked the SIGN. The identity holds perfectly well
+// for (floor 2, routes 5, unrepresented -3): it constrains the three numbers
+// to each other and says nothing about what any of them means. A negative
+// unrepresented count then SHRINKS the denominator that every fraction in the
+// summary is divided by — coverage inflation arriving through the arithmetic
+// that exists to make coverage honest.
+//
+// It is not reachable from Summarize today, and that is exactly why it is
+// asserted here rather than left implied. The tiers are the only producers of
+// these numbers and the day one of them subtracts in the wrong order, the
+// assertion whose entire job is "the denominator decomposes" would go on
+// returning nil.
+func TestDenominatorDecompositionRefusesANegativeUnrepresentedCount(t *testing.T) {
+	// The generator: a hand-built Summary, because the production path
+	// cannot produce this input and A GENERATOR THAT CANNOT PRODUCE THE
+	// BREAKING INPUT IS THE DEFECT. Building it here is possible because
+	// this test is in the package that owns the type.
+	base := func(contribs []TierContribution, unrepresented, confirmed, merged int) Summary {
+		return Summary{
+			tiers:         contribs,
+			unrepresented: unrepresented,
+			confirmed:     confirmed,
+			merged:        merged,
+			sealed:        true,
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		summary Summary
+		wantErr bool
+	}{
+		{
+			name: "an honest decomposition",
+			summary: base([]TierContribution{
+				{Tier: TierRepoSpec, Ran: true, Routes: 2, Floor: 3, Unrepresented: 1},
+			}, 1, 0, 2),
+			wantErr: false,
+		},
+		{
+			name: "more routes than the floor they came from",
+			summary: base([]TierContribution{
+				{Tier: TierRepoSpec, Ran: true, Routes: 5, Floor: 2, Unrepresented: -3},
+			}, -3, 0, 5),
+			wantErr: true,
+		},
+		{
+			name: "a negative floor",
+			summary: base([]TierContribution{
+				{Tier: TierRepoSpec, Ran: true, Routes: -4, Floor: -2, Unrepresented: 2},
+			}, 2, 0, 0),
+			wantErr: true,
+		},
+		{
+			name: "one honest tier and one negative one, summing to something plausible",
+			summary: base([]TierContribution{
+				{Tier: TierRuntimeSpec, Ran: true, Routes: 1, Floor: 5, Unrepresented: 4},
+				{Tier: TierRepoSpec, Ran: true, Routes: 5, Floor: 2, Unrepresented: -3},
+			}, 1, 0, 6),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.summary.AssertDenominatorDecomposes()
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("AssertDenominatorDecomposes = %v, want error=%v", err, tc.wantErr)
+			}
+			if tc.wantErr && !errors.Is(err, ErrRefused) {
+				t.Errorf("error = %v, want ErrRefused", err)
+			}
+		})
+	}
+
+	// The last case is the one that matters most and it deserves its own
+	// statement: 4 + -3 == 1, so the SUM check downstream is satisfied and
+	// the tier-level sign check is the only thing standing between a
+	// negative contribution and a shrunk denominator.
+	sneaky := base([]TierContribution{
+		{Tier: TierRuntimeSpec, Ran: true, Routes: 1, Floor: 5, Unrepresented: 4},
+		{Tier: TierRepoSpec, Ran: true, Routes: 5, Floor: 2, Unrepresented: -3},
+	}, 1, 0, 6)
+	sum := 0
+	for _, c := range sneaky.TierContributions() {
+		sum += c.Unrepresented
+	}
+	if sum != sneaky.UnrepresentedCount() {
+		t.Fatalf("the fixture's contributions sum to %d and it reports %d; it is not "+
+			"exercising the case where only the SIGN check can fire",
+			sum, sneaky.UnrepresentedCount())
+	}
+	if err := sneaky.AssertDenominatorDecomposes(); !errors.Is(err, ErrRefused) {
+		t.Errorf("a tier reporting -3 unrepresented endpoints passed the decomposition "+
+			"because another tier's +4 covered for it: %v", err)
+	}
+}

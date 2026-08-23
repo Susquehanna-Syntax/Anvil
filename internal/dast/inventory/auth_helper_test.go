@@ -40,6 +40,7 @@ package inventory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -56,10 +57,19 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	// d24Password contains a SPACE and an "&" on purpose. redact() rewrites
-	// "&" to "?", so a sweep run AFTER redaction would not find this string —
-	// which is exactly the defect TestRedactionDoesNotDefeatTheSweep pins.
-	d24Password = "s3cr3t Pa55w0rd&9xQz"
+	// d24Password is CHOSEN TO BREAK THE SWEEP, not to suit it.
+	//
+	// A SPACE and an "&": redact() rewrites "&" to "?", so a sweep run AFTER
+	// redaction would not find this string — the defect
+	// TestRedactionDoesNotDefeatTheSweep pins.
+	//
+	// A '"', a '&', a '<' and a '>': every one of them is rewritten by an HTML
+	// escaper and the '"' by a JSON one, so a byte-exact sweep over the raw,
+	// query-escaped and path-escaped spellings MISSES this credential in the
+	// two encodings an artifact most often carries. A generator that cannot
+	// produce the breaking input is the defect, and the previous fixture
+	// password could not: it was picked to suit redact().
+	d24Password = `s3cr3t "Pa55w0rd" &<9xQz>`
 	// d24TOTP is a second, differently-spelled credential so that a sweep
 	// that only ever looks at the first secret is visible.
 	d24TOTP = "totp-7f3a91-code"
@@ -73,6 +83,37 @@ const (
 // PLAINTEXT. It is the needle the leak test searches for, and it exists only
 // in _test.go.
 func d24Credentials() []string { return []string{d24Password, d24TOTP} }
+
+// d24HTMLEscape is what a template engine writes into a page, and what the
+// browser hands back in a DOM dump. It is here rather than from the `html`
+// package because "html" is NOT on gate 3's inertImports, and reaching outside
+// this packet's write scope to add it is not this packet's edit to make.
+//
+// The order matters: "&" first, or the ampersands of the later replacements
+// get escaped a second time.
+func d24HTMLEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	return strings.ReplaceAll(s, "'", "&apos;")
+}
+
+// d24JSONEscape is what encoding/json writes, WITHOUT the surrounding quotes.
+// AuthArtifactStorageState is JSON by definition, so this is the ordinary
+// spelling for the artifact kind most likely to carry a credential — not an
+// exotic one.
+func d24JSONEscape(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if len(b) < 2 {
+		t.Fatalf("json.Marshal produced %q", b)
+	}
+	return string(b[1 : len(b)-1])
+}
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -176,16 +217,28 @@ func d24GoodOutcome() AuthOutcome {
 }
 
 // d24LeakyOutcome is the fixture that PUTS THE CREDENTIAL EVERYWHERE it can.
-// It exists so the sweep is tested against an input that actually contains the
-// thing it is looking for, in five separate places and three spellings.
-func d24LeakyOutcome() AuthOutcome {
+//
+// It exercises BOTH controls, and it is arranged so that neither can carry the
+// other:
+//
+//	THE PROVENANCE RULE gets the three artifacts produced while a credential
+//	was in flight — steps 2 and 4 type one, and the step-0 storage dump spans
+//	the whole flow. Their bytes are never read.
+//
+//	THE BACKSTOP SWEEP gets the two artifacts the driver attached to step 3,
+//	which types nothing at all. They carry the credential in the two spellings
+//	the byte-exact sweep MISSED: HTML-entity-encoded, exactly the shape the
+//	finding demonstrated (`value="s3cr3t Pa55w0rd&amp;9xQz"`), and
+//	JSON-escaped, which is what AuthArtifactStorageState is made of.
+func d24LeakyOutcome(t *testing.T) AuthOutcome {
+	t.Helper()
 	o := d24GoodOutcome()
 	o.Detail = "typed " + d24Password + " into the password field"
 	// The landed path carries the PASSWORD, not the TOTP, on purpose: the
 	// password contains "&", which redact() rewrites, so a sweep that ran
-	// after redaction rather than before would miss it and ship nineteen of
-	// its twenty characters. The needle list below covers the redacted form
-	// precisely so that this case fails rather than passes.
+	// after redaction rather than before would miss it and ship most of its
+	// characters. The needle list below covers the redacted form precisely so
+	// that this case fails rather than passes.
 	o.LandedPath = "/account?next=" + d24Password
 	o.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactHTTPExchange, Step: 2, Name: "post-login-" + d24Password,
@@ -194,6 +247,13 @@ func d24LeakyOutcome() AuthOutcome {
 			Bytes: []byte(`{"localStorage":{"totp":"` + d24TOTP + `"}}`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 4, Name: "totp-exchange",
 			Bytes: []byte("GET /v?c=" + url.PathEscape(d24TOTP))},
+		// Step 3 is WAIT. It types nothing, so provenance permits these two
+		// and the sweep is the only thing between them and the sink.
+		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "reflected-form",
+			Bytes: []byte(`<input name="password" value="` +
+				d24HTMLEscape(d24Password) + `">`)},
+		{Kind: AuthArtifactStorageState, Step: 3, Name: "session-json",
+			Bytes: []byte(`{"localStorage":{"pw":"` + d24JSONEscape(t, d24Password) + `"}}`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "pre-login",
 			Bytes: []byte("GET /login HTTP/1.1\r\n\r\n")},
 	}
@@ -426,7 +486,7 @@ func d24Emitted(s *Session, audit *d24AuditSink, sink *d24Sink, errs ...error) s
 	if err := s.AssertReportRetained(); err != nil {
 		fmt.Fprintf(&b, "retained: %v\n", err)
 	}
-	if err := s.AssertAllAuthenticated([]time.Time{s.StartedAt()}); err != nil {
+	if err := s.AssertAllAuthenticated([]CoverageInstant{{At: s.StartedAt()}}); err != nil {
 		fmt.Fprintf(&b, "coverage: %v\n", err)
 	}
 	return b.String()
@@ -448,7 +508,18 @@ func d24AssertNoCredential(t *testing.T, where, emitted string) {
 			{"query-escaped", url.QueryEscape(cred)},
 			{"path-escaped", url.PathEscape(cred)},
 			{"redacted", redact(cred)},
+			// The two forms the byte-exact sweep shipped verbatim. They are
+			// needles here so that a regression to a three-spelling sweep
+			// fails this assertion rather than passing it.
+			{"HTML-entity-encoded", d24HTMLEscape(cred)},
+			{"JSON-escaped", d24JSONEscape(t, cred)},
 		} {
+			if form.needle == cred && form.label != "raw" {
+				// A form that is byte-identical to the raw credential proves
+				// nothing about that encoding, and would make this loop look
+				// like it covered a case it did not.
+				continue
+			}
 			if strings.Contains(emitted, form.needle) {
 				i := strings.Index(emitted, form.needle)
 				lo := i - 120
@@ -470,7 +541,7 @@ func d24AssertNoCredential(t *testing.T, where, emitted string) {
 
 func TestNoCredentialReachesTheAuditTrailOrTheReport(t *testing.T) {
 	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24LeakyOutcome()},
+		outcomes: []AuthOutcome{d24LeakyOutcome(t)},
 		probes:   []AuthProbe{d24Alive()},
 	}
 	sink := &d24Sink{}
@@ -483,23 +554,35 @@ func TestNoCredentialReachesTheAuditTrailOrTheReport(t *testing.T) {
 		t.Fatalf("the fixture login should have succeeded; state is %q", s.State())
 	}
 
-	// The fixture leaked in five places. Assert the COUNT of refusals rather
-	// than that some refusal happened: three artifacts carried a credential,
-	// one did not.
-	if got, want := s.Report().CredentialRefusals(), 3; got != want {
-		t.Fatalf("the sweep refused %d artifact(s), want %d. Disposition mix: %v",
-			got, want, s.Report().DispositionMix())
+	// ASSERT THE COUNT PER CONTROL, not that some refusal happened, and not a
+	// single total that either control could have produced on its own.
+	//
+	// Three artifacts were produced while a credential was in flight (steps 2
+	// and 4 type one; the step-0 dump spans the whole flow) and are refused
+	// without their bytes being read. Two more were attached to step 3, which
+	// types nothing, and carry the credential HTML-entity-encoded and
+	// JSON-escaped: those are the backstop's, and a byte-exact sweep would
+	// have stored both.
+	mix := s.Report().DispositionMix()
+	if got, want := mix[ArtifactSuppressedCredentialStep], 3; got != want {
+		t.Fatalf("the provenance rule suppressed %d artifact(s), want %d. Mix: %v",
+			got, want, mix)
+	}
+	if got, want := s.Report().CredentialRefusals(), 2; got != want {
+		t.Fatalf("the backstop sweep refused %d artifact(s), want %d — the HTML-entity "+
+			"and JSON-escaped ones on step 3, which the provenance rule permits and a "+
+			"byte-exact sweep would have stored. Mix: %v", got, want, mix)
 	}
 	if got, want := s.Report().StoredCount(), 1; got != want {
 		t.Fatalf("%d artifact(s) reached the sink, want %d (only the one with no "+
-			"credential in it). Mix: %v", got, want, s.Report().DispositionMix())
+			"credential in it). Mix: %v", got, want, mix)
 	}
 	if got, want := len(sink.stored), 1; got != want {
 		t.Fatalf("the sink actually received %d artifact(s), want %d", got, want)
 	}
 	if err := s.Report().AssertNoCredentialWasFound(); err == nil {
 		t.Fatal("AssertNoCredentialWasFound passed on a run in which the sweep refused " +
-			"three artifacts, so it cannot see the damage it exists to report")
+			"two artifacts, so it cannot see the damage it exists to report")
 	}
 
 	d24AssertNoCredential(t, "a leaky driver's run",
@@ -529,9 +612,11 @@ func TestRedactionDoesNotDefeatTheSweep(t *testing.T) {
 		t.Fatal("this fixture no longer demonstrates the hazard: redact() left the " +
 			"credential intact, so pick a credential redact() rewrites")
 	}
-	if !strings.Contains(redacted, "s3cr3t Pa55w0rd") {
-		t.Fatalf("the redacted form should still carry most of the credential, which is "+
-			"the whole point; got %q", redacted)
+	for _, keep := range []string{"s3cr3t ", "Pa55w0rd", "9xQz"} {
+		if !strings.Contains(redacted, keep) {
+			t.Fatalf("the redacted form should still carry most of the credential, which "+
+				"is the whole point; %q is missing from %q", keep, redacted)
+		}
 	}
 	// The right order.
 	if got := sanitizeForLedger(raw, secrets); got != refusedForCredential {
@@ -550,6 +635,8 @@ func TestRedactionDoesNotDefeatTheSweep(t *testing.T) {
 
 func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 	secrets := d24Steps(t).secrets()
+	jsonPW := d24JSONEscape(t, d24Password)
+	htmlPW := d24HTMLEscape(d24Password)
 	cases := []struct {
 		name string
 		in   string
@@ -558,11 +645,31 @@ func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 		{"raw password", "x=" + d24Password, true},
 		{"query-escaped password", "x=" + url.QueryEscape(d24Password), true},
 		{"path-escaped password", "/x/" + url.PathEscape(d24Password), true},
+		// The two the byte-exact sweep shipped verbatim. The HTML one is the
+		// finding's own fixture, spelled the way an artifact spells it.
+		{"HTML-entity-encoded password",
+			`<input name="password" value="` + htmlPW + `">`, true},
+		{"JSON-escaped password", `{"localStorage":{"pw":"` + jsonPW + `"}}`, true},
+		// Numeric character references, which is what an escaper that does not
+		// use the six names emits. A denylist of names would lose to these.
+		{"decimal character references", "v=" + d24DecimalEntities(d24Password), true},
+		{"hex character references", "v=" + d24HexEntities(d24Password), true},
+		// \uXXXX is what encoding/json writes when asked to escape HTML.
+		{"unicode-escaped password", `{"pw":"` + d24UnicodeEscape(d24Password) + `"}`, true},
+		// LAYERED: the JSON form of the HTML form. One decoder alone finds
+		// nothing here; the fixpoint is what closes it.
+		{"JSON-escaped HTML-entity-encoded password",
+			`{"html":"` + d24JSONEscape(t, htmlPW) + `"}`, true},
+		// Percent-encoded twice, the classic double-encoding walk-past.
+		{"double percent-encoded password",
+			"x=" + url.QueryEscape(url.QueryEscape(d24Password)), true},
 		{"raw totp", "{\"t\":\"" + d24TOTP + "\"}", true},
 		{"query-escaped totp", "t=" + url.QueryEscape(d24TOTP), true},
 		{"the username, which is not a credential", "user=" + d24Username, false},
 		{"a prefix of the password", "x=s3cr3t Pa55", false},
+		{"the redacted password, which is not the password", "x=" + redact(d24Password), false},
 		{"nothing", "GET /login HTTP/1.1", false},
+		{"a malformed percent escape and no credential", "x=%zz%2", false},
 		{"empty", "", false},
 	}
 	for _, tc := range cases {
@@ -571,6 +678,95 @@ func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 				t.Fatalf("credentialIn(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// d24DecimalEntities and d24HexEntities encode EVERY byte as a numeric
+// character reference. They exist to prove the entity decoder is generic
+// rather than a list of six names.
+func d24DecimalEntities(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		fmt.Fprintf(&b, "&#%d;", r)
+	}
+	return b.String()
+}
+
+func d24HexEntities(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		fmt.Fprintf(&b, "&#x%X;", r)
+	}
+	return b.String()
+}
+
+// d24UnicodeEscape is the \uXXXX spelling encoding/json writes with HTML
+// escaping on, which is the default for encoding/json.Encoder.
+func d24UnicodeEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		fmt.Fprintf(&b, `\u%04x`, r)
+	}
+	return b.String()
+}
+
+// TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl states the division
+// of labour as an executable claim rather than as a comment.
+//
+// THE POSITIVE CONTROL IS THE POINT: the same bytes that the provenance rule
+// refuses without reading are ALSO invisible to the sweep once they are spelled
+// with an encoder the sweep does not know. If the sweep could see them, this
+// test would not be measuring the thing it claims to measure.
+func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	// &commat; is a real HTML5 named entity and is NOT one of the six. This is
+	// the "enumeration of encodings is a denylist" limit, demonstrated rather
+	// than asserted: pick any name outside the six and the sweep is blind.
+	beyond := strings.ReplaceAll(d24Password, "&", "&AMP;")
+	if _, hit := credentialIn([]byte(beyond), secrets); hit {
+		t.Fatal("the sweep decoded a named entity outside the six, so this test no " +
+			"longer demonstrates the limit credentialIn documents; widen the fixture")
+	}
+
+	out := d24GoodOutcome()
+	out.Artifacts = []AuthArtifact{
+		// Step 2 types the password. The bytes are spelled with the entity the
+		// sweep cannot decode, so ONLY provenance can refuse this.
+		{Kind: AuthArtifactHTTPExchange, Step: 2, Name: "beyond-the-sweep",
+			Bytes: []byte(`value="` + beyond + `"`)},
+		// The same bytes on a step that types nothing. Nothing catches this,
+		// and the ledger says so rather than reporting a clean run.
+		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "beyond-everything",
+			Bytes: []byte(`value="` + beyond + `"`)},
+	}
+	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
+	sink := &d24Sink{}
+	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
+	if err != nil {
+		t.Fatalf("AuthenticateAndMonitor: %v", err)
+	}
+
+	mix := s.Report().DispositionMix()
+	if got, want := mix[ArtifactSuppressedCredentialStep], 1; got != want {
+		t.Fatalf("provenance suppressed %d artifact(s), want %d: %v", got, want, mix)
+	}
+	if got, want := s.Report().CredentialRefusals(), 0; got != want {
+		t.Fatalf("the sweep refused %d artifact(s), want %d — if it can see this "+
+			"spelling the positive control above is wrong", got, want)
+	}
+	if got, want := len(sink.stored), 1; got != want {
+		t.Fatalf("the sink received %d artifact(s), want %d", got, want)
+	}
+	// AND THE ONE THAT GOT THROUGH IS THE ONE THE DOC SAYS CAN: attached to a
+	// step that types nothing, in a spelling the backstop does not decode.
+	if got := sink.stored[0].Step(); got != 3 {
+		t.Fatalf("the artifact that reached the sink belongs to step %d, want 3", got)
+	}
+	// AssertNoCredentialWasFound returns nil here, which is exactly why its
+	// doc refuses to call that a clean run.
+	if err := s.Report().AssertNoCredentialWasFound(); err != nil {
+		t.Fatalf("AssertNoCredentialWasFound: %v", err)
 	}
 }
 
@@ -797,9 +993,9 @@ func TestAFailedLoginIsNeverReportedAsAnAuthenticatedCrawl(t *testing.T) {
 	// The crawl that follows succeeds. Its instants must still not be
 	// authenticated coverage.
 	base := s.StartedAt()
-	crawl := []time.Time{
-		base.Add(1 * time.Minute), base.Add(2 * time.Minute),
-		base.Add(3 * time.Minute), base.Add(4 * time.Minute),
+	crawl := []CoverageInstant{
+		{At: base.Add(1 * time.Minute)}, {At: base.Add(2 * time.Minute)},
+		{At: base.Add(3 * time.Minute)}, {At: base.Add(4 * time.Minute)},
 	}
 	mix := s.PartitionByState(crawl)
 	if got, want := mix[AuthStateAuthenticationFailed], len(crawl); got != want {
@@ -888,6 +1084,23 @@ func TestANilSessionIsNotAuthenticated(t *testing.T) {
 	if !AuthStateAuthenticated.AuthenticatedCoverage() {
 		t.Fatal("AuthStateAuthenticated is not authenticated coverage, so the allowlist " +
 			"of one is empty and every assertion above is vacuous")
+	}
+	// A nil session labels an observation the same way it labels an instant.
+	if s.CoverageAt(CoverageInstant{At: time.Now(), CarriedSession: true}) != AuthStateUnset {
+		t.Fatal("a nil *Session labelled an observation, and did it for a caller that " +
+			"claimed the request carried a session")
+	}
+	// EVERY state has a sentence, including the ones no window carries. A
+	// state whose meaning falls through to the default is reported to an
+	// operator as "unknown" when it is nothing of the kind.
+	for _, st := range append([]AuthState{AuthStateUnset}, AuthStateValues()...) {
+		got := st.CoverageMeaning()
+		if got == "" {
+			t.Fatalf("%q has no coverage sentence", st)
+		}
+		if st != AuthStateUnset && strings.HasPrefix(got, "unknown:") {
+			t.Fatalf("%q fell through to the unknown-state sentence: %q", st, got)
+		}
 	}
 }
 
@@ -990,8 +1203,30 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 			"%q: nothing observed the session in that stretch. Windows: %v",
 			got, AuthStateUnverified, s.Windows())
 	}
-	if err := s.AssertAllAuthenticated([]time.Time{unverified}); err == nil {
+	// A caller that CLAIMS the request carried the session still cannot make
+	// an unverified window authenticated: the window is a ceiling.
+	if err := s.AssertAllAuthenticated([]CoverageInstant{
+		{At: unverified, CarriedSession: true},
+	}); err == nil {
 		t.Fatal("AssertAllAuthenticated passed on an instant in an unverified window")
+	}
+	// AND THE OTHER DIRECTION, which is the one D.26 actually hits: an instant
+	// inside a fully authenticated window is NOT authenticated coverage when
+	// the request did not carry the session. Wall-clock overlap is not access.
+	if got := s.CoverageAt(CoverageInstant{At: between}); got != AuthStateSessionNotCarried {
+		t.Fatalf("an observation inside an authenticated window whose request carried no "+
+			"session is labelled %q, want %q", got, AuthStateSessionNotCarried)
+	}
+	if got := s.CoverageAt(CoverageInstant{At: between, CarriedSession: true}); got !=
+		AuthStateAuthenticated {
+		t.Fatalf("an observation that DID carry the session inside an authenticated "+
+			"window is labelled %q, want %q — if this is not reachable the assertion "+
+			"above measures nothing", got, AuthStateAuthenticated)
+	}
+	if err := s.AssertAllAuthenticated([]CoverageInstant{{At: between}}); err == nil {
+		t.Fatal("AssertAllAuthenticated passed on a request that did not carry the " +
+			"session, which is the number D.26 would have reported as coverage behind " +
+			"the login")
 	}
 
 	d24AssertNoCredential(t, "a run with a mid-scan logout",
@@ -1165,11 +1400,14 @@ func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
 
 	mix := s.Report().DispositionMix()
 	want := map[ArtifactDisposition]int{
-		// Steps 1 and 3 (CLICK, WAIT) plus the HTTP and storage artifacts.
-		ArtifactStored: 4,
-		// Steps 2 and 4 are credential steps; step 0 and step 99 cannot be
-		// resolved, and an unresolvable screenshot is suppressed.
-		ArtifactSuppressedCredentialStep: 4,
+		// Steps 1 and 3 only (CLICK, WAIT). The HTTP exchange of step 2 and
+		// the step-0 storage dump are suppressed too: THE RULE IS ABOUT WHEN
+		// THE ARTIFACT WAS PRODUCED, NOT ABOUT WHICH KIND IT IS, because an
+		// encoding defeats a byte sweep and does not defeat provenance.
+		ArtifactStored: 2,
+		// Steps 2 and 4 type a credential; step 0 and step 99 cannot be
+		// resolved to a step that does not. Six artifacts, three kinds.
+		ArtifactSuppressedCredentialStep: 6,
 		ArtifactRefusedUnrecognisedKind:  1,
 	}
 	if len(mix) != len(want) {
@@ -1180,12 +1418,20 @@ func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
 			t.Fatalf("disposition %s: got %d, want %d. Mix: %v", d, mix[d], n, mix)
 		}
 	}
-	if got, want := len(sink.stored), 4; got != want {
+	if got, want := len(sink.stored), 2; got != want {
 		t.Fatalf("the sink actually received %d artifact(s), want %d", got, want)
 	}
+	// POINT THE ASSERTION AT EVERY KIND THAT CAN CARRY THE DAMAGE. The old
+	// shape of this loop asked only about screenshots, so an HTTP transcript
+	// of the password POST reaching the sink passed it.
 	for _, a := range sink.stored {
-		if a.Kind() == AuthArtifactScreenshot && d24Steps(t).stepBears(a.Step()) {
-			t.Fatalf("a screenshot of credential step %d reached the sink", a.Step())
+		if d24Steps(t).stepBears(a.Step()) {
+			t.Fatalf("a %s artifact of credential step %d reached the sink",
+				a.Kind(), a.Step())
+		}
+		if a.Step() == 0 {
+			t.Fatalf("a %s artifact that names no step reached the sink; it spans the "+
+				"whole flow, including the step that types the credential", a.Kind())
 		}
 		if !a.Constructed() {
 			t.Fatal("the sink was handed a StoredArtifact nothing constructed")
@@ -1688,4 +1934,89 @@ func lastEventOf(t *testing.T, s *Session, k SessionEventKind) SessionEvent {
 		t.Fatalf("the ledger has no %q row: %v", k, s.Events())
 	}
 	return out
+}
+
+// TestTheIndependentLookReadsTheBytesTheSinkReceives.
+//
+// AssertNoCredentialInLedger used to be documented as "a second, INDEPENDENT
+// look" that "reads back what those decisions actually produced", and it never
+// read the bytes handed to the ArtifactSink — it re-walked the same rendered
+// strings the decision path had already sanitized. Two dependent looks are one
+// look.
+//
+// The independent half now reads StoredArtifact.Bytes(), the exact value the
+// sink itself reads, through the exact accessor the sink reads it through, at
+// the delivery boundary. This test drives that boundary DIRECTLY, bypassing
+// the decision path, because that is the shape of the bug it exists for: a
+// refactor that sweeps one field and stores another.
+func TestTheIndependentLookReadsTheBytesTheSinkReceives(t *testing.T) {
+	sink := &d24Sink{}
+	cfg, _ := d24Config(t, d24Opts{driver: d24Working(), sink: sink})
+	s := &Session{
+		cfg:       cfg,
+		state:     AuthStateUnauthenticated,
+		startedAt: mustClock(t).Instant(),
+		sealed:    true,
+	}
+	secrets := cfg.Steps.secrets()
+	if len(secrets) == 0 {
+		t.Fatal("the fixture has no credentials, so nothing below measures anything")
+	}
+
+	// THE DEPENDENT HALF SEES NOTHING HERE, and that is the point: this
+	// session has no events and no artifact rows, so a check that only
+	// re-walks rendered strings has nothing to walk.
+	if err := s.AssertNoCredentialInLedger(); err != nil {
+		t.Fatalf("AssertNoCredentialInLedger on an empty ledger: %v", err)
+	}
+
+	// The negative control first: a clean artifact is delivered, recorded, and
+	// the assertion stays nil.
+	clean := StoredArtifact{
+		kind: AuthArtifactHTTPExchange, step: 3, name: "clean",
+		bytes: []byte("GET /login HTTP/1.1\r\n\r\n"), sealed: true,
+	}
+	if err := s.deliver(context.Background(), clean, secrets); err != nil {
+		t.Fatalf("deliver refused a clean artifact: %v", err)
+	}
+	if len(sink.stored) != 1 {
+		t.Fatalf("the sink received %d artifact(s) for one clean delivery", len(sink.stored))
+	}
+	if len(s.emitted) != 1 {
+		t.Fatalf("%d delivery verdict(s) were recorded for one delivery", len(s.emitted))
+	}
+	if err := s.AssertNoCredentialInLedger(); err != nil {
+		t.Fatalf("AssertNoCredentialInLedger after a clean delivery: %v", err)
+	}
+
+	// THE DAMAGE. Nothing in the decision path chose these bytes; they arrive
+	// at the boundary the way a mis-wired store path would deliver them.
+	bad := StoredArtifact{
+		kind: AuthArtifactStorageState, step: 3, name: "leaked",
+		bytes: []byte(`{"pw":"` + d24Password + `"}`), sealed: true,
+	}
+	err := s.deliver(context.Background(), bad, secrets)
+	if !errors.Is(err, ErrCredentialInArtifact) {
+		t.Fatalf("deliver returned %v, want ErrCredentialInArtifact", err)
+	}
+	if len(sink.stored) != 1 {
+		t.Fatalf("the sink received %d artifact(s); the leaking one must never have "+
+			"been handed over at all", len(sink.stored))
+	}
+	lerr := s.AssertNoCredentialInLedger()
+	if !errors.Is(lerr, ErrCredentialInArtifact) {
+		t.Fatalf("AssertNoCredentialInLedger returned %v after a delivery whose bytes "+
+			"carried a credential; the look that can see the damage is the one that "+
+			"reads what the sink was handed", lerr)
+	}
+	if !strings.Contains(lerr.Error(), "handed to the ArtifactSink") {
+		t.Fatalf("the failure does not say WHERE it was seen, so an operator cannot "+
+			"tell the independent half from the rendered one: %v", lerr)
+	}
+	// The verdict names the artifact and never the bytes.
+	if !strings.Contains(lerr.Error(), string(AuthArtifactStorageState)) {
+		t.Fatalf("the failure does not name the artifact kind: %v", lerr)
+	}
+	d24AssertNoCredential(t, "the independent look's own error",
+		lerr.Error()+"\n"+err.Error())
 }

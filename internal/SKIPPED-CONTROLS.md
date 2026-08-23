@@ -1578,6 +1578,209 @@ packet's entry, and named who did.
 
 ---
 
+## U7 — a rendering Tier 3 spider is REFUSED, because its sub-requests cannot reach the kernel
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier3_crawl.go` (`FetchDiscipline`, `checkFetchDiscipline`, `ClientSpider`), `internal/dast/inventory/tier3_crawl_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. What is absent is a seam through which a headless browser's sub-requests could be admitted |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a rendering crawl's fetch/XHR and subresource requests pass gates 4, 5, 8, 9, 10, 13, 14 and 15, and appear in the gate-21 audit. THEY DO NOT, AND CANNOT, so Anvil refuses to drive a spider that makes them |
+| **Security control?** | **Yes.** research/20:188 names headless-browser fetch/XHR explicitly inside gate 13's scope. An unadmitted sub-request is a request Anvil made that no gate judged, no rate limiter counted and no audit row records |
+| **Verdict** | **OPEN, and refused rather than driven.** The obligation this replaces was one no rendering implementation could keep |
+
+### What was wrong
+
+`ClientSpider` obligation 1 read: *issue exactly one request, to exactly
+`CrawlRequest.Path()`. Not the page's subresources, not its links, not its
+redirect.*
+
+That is not a contract a rendering browser can keep. Issuing the page's
+subresources IS what rendering means. And the crawl loop had no way to learn
+that it had happened: `CrawlRequest` expresses one method and one path, and
+`CrawlPage` has no field in which a seam could report a sub-request. So a
+rendering spider's fetches:
+
+* reach **no gate** — no scope re-check, no attestation liveness check, no
+  cross-host judgment;
+* spend **no gate-14 token** — the rate limiter's count of what Anvil issued
+  is wrong by however many subresources the page pulled;
+* write **no gate-21 row** — the audit log claims Anvil issued fewer requests
+  than it issued.
+
+D.27's chosen implementation is ZAP's **Client Spider**, which is a rendering
+browser. The obligation and the implementation were incompatible, and the
+obligation existed only in prose.
+
+### What was done instead
+
+`ClientSpider` gained a `Discipline() FetchDiscipline` method, and
+`validateCrawlConfig` refuses anything that is not
+`FetchDisciplineSingleRequest` — **before the first request**, so nothing
+leaves the process. The enum has no permissive zero value:
+`FetchDisciplineUnset` is refused with its own sentence, because "the
+implementer did not say" must never read as "one request per call".
+
+`TestARenderingSpiderIsRefusedRatherThanDriven` asserts, for the rendering
+declaration, the unset one and an unenumerated literal: `ErrRefused`,
+`CrawlConfig.Constructed() == false`, **zero** spider calls, and a result that
+does not claim to have executed. `TestTheDisciplineAllowlistIsAnAllowlist`
+asserts the COUNT of permitted disciplines is exactly one.
+
+### What this does not settle, and what would settle it
+
+**A declaration is still a declaration.** Nothing here observes what the seam
+does on the wire; an implementation that renders and declares
+`FetchDisciplineSingleRequest` has lied, and this file cannot catch it. That is
+the same class of obligation `engines.ZapRunner` states for the ZAP process,
+and it is the integration lane's to prove.
+
+**Tier 3 therefore cannot use a rendering spider at all today**, which is a
+coverage loss: a single-fetch spider sees the links in the served HTML and not
+the ones a SPA builds at runtime. That loss is stated rather than traded away
+silently.
+
+Two things would close it, and both are outside this packet's write scope:
+
+1. **A sub-request reporting seam.** `CrawlPage` gains a field in which the
+   browser reports every request it made — method, path, origin, status — and
+   the loop admits each one through `NewRequestIntent`,
+   `RequireAuthorization` and `AuditedAdmit` before accepting the page. Note
+   that this admits AFTER the fact: it makes the requests visible, countable
+   and auditable, and it does not make them *pre*-authorized. Whether that is
+   acceptable is a kernel ruling, not this file's decision.
+2. **A proxy-side chokepoint.** ZAP already proxies the browser it drives. If
+   the browser is pointed at a proxy Anvil controls, every sub-request passes
+   through Anvil before the socket exists, and gate 3's egress rule decides
+   where that proxy may live. This is the shape that admits rather than
+   records, and it is the one worth building.
+
+Until one of them exists, `SystemClientSpider` returns an error on every host
+anyway (no ZAP is drivable here — see U5), so the refusal costs no coverage
+that is otherwise available.
+
+---
+
+## U8 — gate 13's cross-host branch cannot fire for a Tier 3 walk-off
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier3_crawl.go` (`crawlOne`, `resolveLinkPath`), `internal/dast/inventory/tier3_crawl_test.go` |
+| **`t.Skip` sites** | **Zero** |
+| **Skipped here?** | N/A — nothing skips |
+| **Skips in CI?** | N/A |
+| **Property unverified** | That `authz.CheckGate13Revalidate` refuses an off-host destination proposed by a Tier 3 link. It never sees one |
+| **Security control?** | **Yes — and it is enforced, by a different component.** The off-host defence for this loop is `resolveLinkPath`, not gate 13 |
+| **Verdict** | **OPEN as a gate-13 exercise; CLOSED as a control.** Recorded so the tautology is not mistaken for coverage |
+
+`crawlOne` builds every `authz.RequestIntent` with `Next` equal to the ADMITTED
+target. Gate 13's `CrossHost()` branch therefore compares that target with
+itself and **can never fire from this file**. Read quickly, the call site looks
+like the walk-off defence. It is not.
+
+The actual defence is `resolveLinkPath`, which refuses any href proposing a
+different scheme, host or port with `errLinkOffHost` **before an address
+exists**, so nothing reaches the kernel to be judged.
+`TestGate13CannotBeTheOffHostDefenceForThisLoop` pins all of it: the ledger
+count of `CrawlOutcomeOffHost` rows, that the spider was asked for the seed and
+nothing else, that each fixture href fails in `resolveLinkPath` by sentinel,
+and a positive control proving a SAME-origin absolute URL is still resolved.
+
+Gate 13 is not vestigial here. It still decides the origin allowlist, the
+method allowlist, path validity, the redirect hop budget, and `Revalidate` —
+gates 4, 5, 8, 9 and 10, re-run per request, which is what stops a crawl whose
+attestation expires halfway through.
+
+**Why the off-host case is not handed to gate 13 instead.** An `authz.Target`
+carries a PINNED address. Minting one for a host the *target* named would mean
+resolving an attacker-chosen name — the DNS lookup gate 9 exists to bound,
+performed on behalf of the party the crawl is pointed at. Refusing the link
+without resolving it is the cheaper and safer order.
+
+**What would change it:** a kernel-side way to express "this destination was
+proposed and refused without resolution" as a first-class `RequestIntent` — an
+unresolved `Next` that gate 13 can judge on scheme/host/port alone, with no
+pinned address and no lookup. That is an `internal/dast/authz` change and is
+reported to the orchestrator rather than made here.
+
+---
+
+## U9 — every guard in D.26 and D.27 runs in zero production lanes
+
+| | |
+|---|---|
+| **File** | `internal/dast/record/coverage.go`, `internal/dast/record/confirm_gate.go` and their tests |
+| **`t.Skip` sites** | **Zero** |
+| **Skipped here?** | N/A — nothing skips |
+| **Skips in CI?** | N/A |
+| **Property unverified** | That any of it ever runs. `Summarize`, `Summary.DeriveDastStatus`, `Summary.AssertDenominatorDecomposes`, `Summary.AssertMixDecomposes`, `NewGate`, `Gate.ConfirmAll`, `Ledger.FindingCountForStatus` and `Ledger.AssertNotSilentlyClean` are called by **tests only** |
+| **Security control?** | **Yes, and it is the last one before the record.** This is the packet that decides what Anvil CLAIMS TO HAVE FOUND and what fraction of the attack surface it claims to have looked at |
+| **Verdict** | **OPEN.** Per house standard these are not yet controls. D.31 is the settling condition, named below |
+
+Measured on 2026-08-23, from the repository root:
+
+```
+$ grep -rn "dast/record" --include=*.go . | grep -v "internal/dast/record/"
+(no output)
+```
+
+Nothing outside `internal/dast/record` imports the package. `cmd/anvil-dast`
+does not. `internal/scanctl` does not. `internal/record` — which owns
+`DeriveDastStatus`, the function this package's whole output feeds — does not,
+and could not, since the dependency runs the other way.
+
+**What that costs, stated concretely rather than as a category.** Every one of
+the following was written, broken, watched go red, and restored, and every one
+of them holds over inputs a test constructed:
+
+- a re-probe the target answered with 429, 502, 503, 504, no status at all, or
+  a WAF block page at 200 is `unconfirmed`, never `rejected` (D.29 CRITICAL 2);
+- `Ledger.AssertNotSilentlyClean` refuses to let a zero confirmed count read as
+  `completed_clean` while anything undecided or any indecisive rejection is in
+  the ledger;
+- no response body reaches a `Finding`, an `EvidenceRef`, a `Refusal` or a
+  `RefusalError`, by type closure and by value;
+- `FindingCountForStatus()` counts confirmed findings only, so
+  `record.DeriveDastStatus` cannot be handed a provisional one.
+
+None of that has ever been asked a question by a live scan, because no live
+scan reaches it. **The failure mode is not that a guard is wrong; it is that a
+scan path could be built next to it and simply not call it** — and the record
+would then carry a `dast_coverage` nobody decomposed and a finding count
+nobody confirmed, with the whole of this file's evidence sitting green and
+unconsulted beside it. That is the same shape as U1c one layer up: two halves
+of a story that do not compose yet.
+
+**What would settle it: D.31.** D.31 is the packet that wires the DAST half
+into a scan, and it is the first caller that would:
+
+1. construct a `Gate` with a real `Reprober` — one that routes through
+   `internal/dast/authz` — and hand it the candidates D.14/D.15 produced;
+2. call `Ledger.AssertNotSilentlyClean()` and **handle the error**, rather than
+   reading `FindingCountForStatus() == 0` and moving on;
+3. call `Summarize` with real tier results and call
+   `Summary.AssertDenominatorDecomposes()` and `AssertMixDecomposes()` before
+   the numbers reach `internal/record`;
+4. decide `GateConfig.DefenceSignature` for the target it is scanning, or
+   record that it did not — with none wired, a WAF block page returning 200 is
+   indistinguishable from an application response and the 200 branch of the
+   defence check is dead (see `GateConfig.DefenceSignature`, which says so).
+
+Until then the honest statement is: **the arithmetic is verified and the wiring
+does not exist.** A reviewer who reads `go test ./internal/dast/record/` as
+evidence that Anvil will not report a defended target clean is reading a claim
+about a function nobody calls.
+
+**One thing D.31 will need and does not get for free.** `GateConfig.Attempts`
+now has a floor of `MinAttempts` = 2 as well as a ceiling, because D.31 under a
+time budget is precisely the caller that would have set it to 1 — which
+removes the flake detection while `reason="reproduced_on_every_attempt"` goes
+on claiming it ran. A caller that must spend less has to re-probe **fewer
+candidates**, not ask each candidate a question it cannot answer.
+
+---
+
 ## L1 — `TestCollectAgainstTheRealHost`
 
 | | |
@@ -1748,7 +1951,27 @@ Skips still firing on this host, all classified LEGITIMATE above:
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
 
 Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
-G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**.
+G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**, U6, U7,
+U8, U9.
+
+U9 is the newest and it is the widest. Every guard in D.26 (coverage) and D.27
+(the finding confirmation gate) runs in **zero production lanes** — measured,
+not assumed: `grep -rn "dast/record" --include=*.go . | grep -v
+"internal/dast/record/"` returns nothing. Those two packets decide what Anvil
+claims to have found and what fraction of the surface it claims to have looked
+at, and per house standard a check that runs in no production path is not yet a
+control. D.31 is the wiring that would settle it, and U9 names the four calls
+D.31 has to make.
+
+U7 and U8 are the two Tier 3 entries added on 2026-08-23. U7 is the one to read
+if you are wiring a browser: a RENDERING spider is now REFUSED by
+`validateCrawlConfig` rather than driven, because its sub-requests reach no
+gate, spend no gate-14 token and write no gate-21 row, and `CrawlPage` has no
+field in which the seam could even report them. That refusal is a coverage
+loss (a single-fetch spider does not see links a SPA builds at runtime) and it
+is stated rather than traded away silently. U8 records a tautology so it is not
+mistaken for coverage: gate 13's cross-host branch cannot fire for a Tier 3
+walk-off, and `resolveLinkPath` is the control that actually holds.
 
 U4(b) and U5(c) — the admit-and-issue paths of both DAST drivers — were closed
 on 2026-08-23 and are no longer on that list.

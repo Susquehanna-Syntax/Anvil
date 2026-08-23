@@ -587,6 +587,41 @@ func (v CrawlVisit) String() string {
 		redact(v.from))
 }
 
+// CoverageOfVisit is THE ONE JOIN between a crawl visit and D.24's session
+// timeline, and it hard-codes CarriedSession false.
+//
+// That is not a placeholder. NOTHING IN THIS FILE CAN ATTACH A SESSION TO A
+// REQUEST: CrawlConfig has no cookie jar, no header set and no credential;
+// CrawlRequest carries an Authorization, a Target, a method, a path, a
+// technique, an origin, a hop and an audit sequence, and not one of those is a
+// session; and ClientSpider is handed nothing else. A crawl request therefore
+// reaches the target as an anonymous request, whatever D.24's session was
+// doing at the same moment.
+//
+// So a visit's instant falling inside an authenticated window means the
+// session was alive WHILE the visit happened, and nothing more. Labelling it
+// authenticated coverage would be a claim about timing dressed as a claim
+// about access, and D.26 would report the number as coverage behind the login.
+//
+// TestNoCrawlRequestCanCarryASession is what keeps this honest: it walks
+// CrawlConfig and CrawlRequest by reflection and fails if a field appears that
+// could carry a session. Whoever adds one has to come back here and decide
+// what CarriedSession should say, rather than leaving a false that has
+// silently become a lie.
+func CoverageOfVisit(v CrawlVisit) CoverageInstant {
+	return CoverageInstant{At: v.At(), CarriedSession: false}
+}
+
+// CoverageOfVisits maps a whole crawl's visits for D.26. It is the plural of
+// CoverageOfVisit and carries the same claim.
+func CoverageOfVisits(vs []CrawlVisit) []CoverageInstant {
+	out := make([]CoverageInstant, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, CoverageOfVisit(v))
+	}
+	return out
+}
+
 func cloneVisits(in []CrawlVisit) []CrawlVisit {
 	if in == nil {
 		return nil
@@ -687,6 +722,68 @@ type CrawlPage struct {
 	Links []string
 }
 
+// FetchDiscipline is what a ClientSpider implementation DOES on the wire, as
+// the implementation itself declares it.
+//
+// It exists because obligation 1 below — one request per call, no subresources
+// — IS NOT AN OBLIGATION A RENDERING BROWSER CAN KEEP. A browser that renders
+// a page issues the fetches, XHRs and subresource loads the page asks for; it
+// is what rendering means. Those sub-requests reach no gate, spend no gate-14
+// token and write no gate-21 row, and CrawlPage has no field in which the seam
+// could even confess to them — so Anvil could neither admit them nor count
+// them. research/20:188 names headless-browser fetch/XHR explicitly inside
+// gate 13's scope, which makes an unadmitted one a gap in the kernel and not
+// merely a broken promise.
+//
+// So the contract is made CHECKABLE instead of merely stated: an
+// implementation declares which of these it is, and validateCrawlConfig
+// refuses anything that is not FetchDisciplineSingleRequest. A refusal Anvil
+// makes before the first request beats an obligation no implementation can
+// keep, and the gap is recorded in internal/SKIPPED-CONTROLS.md rather than
+// left as a control that exists only in prose.
+type FetchDiscipline string
+
+const (
+	// FetchDisciplineUnset is the zero value and names nothing. It is REFUSED:
+	// "the implementer did not say" must never read as "single request".
+	FetchDisciplineUnset FetchDiscipline = ""
+	// FetchDisciplineSingleRequest: this implementation issues exactly one
+	// request per FetchPage call — the one address Anvil admitted — and parses
+	// the response body for links WITHOUT executing it. The only discipline
+	// this loop admits.
+	FetchDisciplineSingleRequest FetchDiscipline = "one_request_per_call_no_subresources"
+	// FetchDisciplineRendering: this implementation renders the page, so it
+	// issues sub-requests Anvil never admitted. REFUSED, and named rather than
+	// left undeclarable, because "I cannot express what I do" and "I do
+	// something the kernel cannot see" are different answers and only the
+	// second one is a finding about the kernel.
+	FetchDisciplineRendering FetchDiscipline = "renders_the_page_and_issues_subresources"
+)
+
+// FetchDisciplineValues returns every legal literal.
+func FetchDisciplineValues() []FetchDiscipline {
+	return []FetchDiscipline{FetchDisciplineSingleRequest, FetchDisciplineRendering}
+}
+
+// Recognised reports whether d is one of the enumerated disciplines.
+func (d FetchDiscipline) Recognised() bool {
+	for _, v := range FetchDisciplineValues() {
+		if v == d {
+			return true
+		}
+	}
+	return false
+}
+
+// admittedDisciplines is an ALLOWLIST OF EXACTLY ONE, matched by identity. A
+// discipline nobody enumerated is not on it, and neither is the zero value.
+func admittedDisciplines() map[FetchDiscipline]bool {
+	return map[FetchDiscipline]bool{FetchDisciplineSingleRequest: true}
+}
+
+// PermitsCrawl reports whether this loop will drive a spider that declares d.
+func (d FetchDiscipline) PermitsCrawl() bool { return admittedDisciplines()[d] }
+
 // ClientSpider is the browser seam: ZAP's CLIENT Spider, never the AJAX
 // Spider.
 //
@@ -698,12 +795,21 @@ type CrawlPage struct {
 // tightest budget in the pipeline, so a component that degrades super-linearly
 // spends the budget on itself.
 //
+// THE CLIENT SPIDER IS A RENDERING BROWSER, so as of this packet it does NOT
+// pass Discipline() and Anvil refuses to drive it. That is not a decision
+// against ZAP; it is the honest consequence of obligation 1 below. What would
+// settle it is a seam that hands each sub-request back for admission, and it
+// is written up in internal/SKIPPED-CONTROLS.md rather than implied by a
+// promise nobody can keep.
+//
 // # The obligations an implementation takes on
 //
 //  1. ISSUE EXACTLY ONE REQUEST, to exactly CrawlRequest.Path() on
 //     CrawlRequest.Target(). Not the page's subresources, not its links, not
 //     its redirect. This loop admits one address per call and the audit row
-//     covers one address.
+//     covers one address. THIS ONE IS CHECKED: declare it through
+//     Discipline(), and a declaration that is not
+//     FetchDisciplineSingleRequest is refused before the crawl starts.
 //  2. NEVER FOLLOW A REDIRECT. Return the 3xx and its Location. Anvil holds
 //     the 3xx, labels the follow-up OriginRedirect at Hop+1, and re-admits it
 //     through the whole gate chain — which is the ONLY way authz's
@@ -714,11 +820,17 @@ type CrawlPage struct {
 //     CrawlRequest.Authorization() and CrawlRequest.Target() immediately
 //     before the socket exists.
 //
-// Obligations 1 and 2 are STATED HERE AND ENFORCED NOWHERE IN THIS FILE. They
-// are contracts on the implementer, of the same kind engines.ZapRunner states
-// for the ZAP process, and they are what an integration lane must prove.
+// Obligation 2 is STATED HERE AND ENFORCED NOWHERE IN THIS FILE, and so is the
+// truthfulness of the Discipline() answer — an implementation that renders and
+// declares otherwise has lied, and a lie is what an integration lane must
+// prove did not happen. Obligation 1 is at least no longer a promise the
+// chosen implementation is incapable of making.
 type ClientSpider interface {
 	FetchPage(ctx context.Context, req CrawlRequest) (CrawlPage, error)
+	// Discipline declares what this implementation does on the wire. It is a
+	// method rather than a CrawlConfig field because the implementer is the
+	// one who knows, and an operator wiring a browser cannot be asked to.
+	Discipline() FetchDiscipline
 }
 
 // SystemClientSpider returns the browser this host can drive.
@@ -840,7 +952,8 @@ func (c CrawlConfig) Constructed() bool {
 		c.Technique.Classified() && !c.Technique.Destructive() &&
 		len(c.Seeds) > 0 && len(c.Seeds) <= codedMaxSeeds &&
 		c.MaxPages > 0 && c.MaxPages <= codedMaxCrawlPages &&
-		c.MaxDepth > 0 && c.MaxDepth <= codedMaxCrawlDepth
+		c.MaxDepth > 0 && c.MaxDepth <= codedMaxCrawlDepth &&
+		(c.Spider == nil || c.Spider.Discipline().PermitsCrawl())
 }
 
 // ---------------------------------------------------------------------------
@@ -1221,7 +1334,40 @@ func validateCrawlConfig(cfg CrawlConfig) error {
 			"path per page, so a zero cannot mean \"unlimited\"",
 			ErrRefused, cfg.MaxDepth, codedMaxCrawlDepth)
 	}
+	// THE DISCIPLINE GATE. A nil Spider is a different finding and is handled
+	// on the ledger, one row per address; a spider that IS wired must say what
+	// it does before it is driven.
+	if cfg.Spider != nil {
+		if err := checkFetchDiscipline(cfg.Spider.Discipline()); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// checkFetchDiscipline is the refusal that makes ClientSpider obligation 1 an
+// enforced contract rather than a sentence.
+func checkFetchDiscipline(d FetchDiscipline) error {
+	if d.PermitsCrawl() {
+		return nil
+	}
+	if d == FetchDisciplineRendering {
+		return fmt.Errorf("inventory: %w: the wired ClientSpider declares %q. A RENDERING "+
+			"BROWSER ISSUES SUB-REQUESTS ANVIL NEVER ADMITTED — fetch, XHR and every "+
+			"subresource the page asks for — and those reach no gate, spend no gate-14 "+
+			"token and write no gate-21 row. research/20:188 puts headless-browser "+
+			"fetch/XHR inside gate 13's scope, so an unadmitted one is a hole in the "+
+			"kernel and not a style question. CrawlPage has no field in which the seam "+
+			"could report them, so Anvil cannot admit them after the fact either. This "+
+			"is refused rather than driven, and the gap is recorded in "+
+			"internal/SKIPPED-CONTROLS.md with what would close it",
+			ErrRefused, string(d))
+	}
+	return fmt.Errorf("inventory: %w: the wired ClientSpider declares fetch discipline %q, "+
+		"which is on none of %v. There is NO DEFAULT: a spider whose implementer did not "+
+		"say what it does on the wire is not a spider that issues one request per call, "+
+		"and a Go zero value must never mean permitted",
+		ErrRefused, redact(string(d)), FetchDisciplineValues())
 }
 
 // clockFor returns the instant for the next request.
@@ -1322,6 +1468,30 @@ func (s *crawlState) crawlOne(ctx context.Context, item frontierItem, now authz.
 
 	at := s.clockFor(now)
 
+	// NEXT IS THE ADMITTED TARGET, AND THAT IS NOT A CLAIM THAT GATE 13 JUDGES
+	// WALK-OFFS FROM HERE.
+	//
+	// Everything in the frontier is on the admitted origin already: offer()
+	// only enqueues what resolveLinkPath returned, and resolveLinkPath refuses
+	// any href proposing another scheme, host or port with errLinkOffHost
+	// before an address exists. So CheckGate13Revalidate's CrossHost() branch
+	// compares this target with itself and CANNOT FIRE from this file. THE
+	// OFF-HOST DEFENCE HERE IS ENTIRELY resolveLinkPath'S, and
+	// TestGate13CannotBeTheOffHostDefenceForThisLoop says so in the suite
+	// rather than leaving a tautology standing where a control is documented.
+	//
+	// Gate 13 is still called for what it can decide, which is not nothing:
+	// the origin allowlist, the method allowlist, path validity, the redirect
+	// hop budget, and Revalidate — gates 4, 5, 8, 9 and 10 re-run per request,
+	// so an attestation that expires mid-crawl or a scope that narrows stops
+	// the next address rather than the next run.
+	//
+	// WHY THE OFF-HOST CASE IS NOT HANDED TO GATE 13 INSTEAD: an authz.Target
+	// carries a PINNED address, and minting one for a host the target named
+	// would mean resolving an attacker-chosen name — which is the DNS lookup
+	// gate 9 exists to bound, performed on behalf of the party the crawl is
+	// pointed at. Refusing the link without resolving it is the cheaper and
+	// safer order. internal/SKIPPED-CONTROLS.md records what would change it.
 	intent, err := authz.NewRequestIntent(authz.RequestFacts{
 		Origin:   item.origin,
 		Admitted: s.cfg.Target,

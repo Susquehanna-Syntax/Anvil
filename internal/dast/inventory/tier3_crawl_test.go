@@ -66,8 +66,17 @@ type c23Spider struct {
 	// loop a status that is NOT an HTTP status. Without it the harness would
 	// quietly repair the input the guard exists to reject.
 	exact bool
-	seen  []CrawlRequest
-	calls int
+	// discipline overrides what this double declares it does on the wire.
+	// Unset means FetchDisciplineSingleRequest, which is what a map lookup
+	// actually is.
+	discipline FetchDiscipline
+	// exactDiscipline suppresses that defaulting, exactly as `exact` above
+	// suppresses the status defaulting and for the same reason: a harness that
+	// repairs the zero value cannot produce the input the zero-value guard
+	// exists to reject.
+	exactDiscipline bool
+	seen            []CrawlRequest
+	calls           int
 }
 
 func (s *c23Spider) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
@@ -92,6 +101,16 @@ func (s *c23Spider) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, e
 		}
 	}
 	return p, nil
+}
+
+// Discipline is the declaration validateCrawlConfig checks. The double is a
+// map lookup: it issues nothing at all, let alone a subresource. A test that
+// needs the OTHER answer sets `discipline` explicitly.
+func (s *c23Spider) Discipline() FetchDiscipline {
+	if s.exactDiscipline || s.discipline != FetchDisciplineUnset {
+		return s.discipline
+	}
+	return FetchDisciplineSingleRequest
 }
 
 // paths returns every path the spider was actually asked for, in order.
@@ -660,6 +679,9 @@ type c23Generator struct {
 	prefix string
 	seen   []string
 }
+
+// Discipline: one request per call, like every double in this file.
+func (g *c23Generator) Discipline() FetchDiscipline { return FetchDisciplineSingleRequest }
 
 func (g *c23Generator) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
 	g.seen = append(g.seen, req.Path())
@@ -1993,5 +2015,300 @@ func TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("/public has %d ledger row(s), want 1: %v", n, c23Ledger(res))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The coverage label follows the evidence
+// ---------------------------------------------------------------------------
+
+// sessionBearingFieldNames are the names a field would plausibly have if it
+// could carry a session to the target. THIS IS A DENYLIST AND IT KNOWS IT: a
+// field named `bag` holding a cookie jar walks past it. It is paired below
+// with a TYPE-SHAPED check that does not depend on the name, and with an
+// assertion on the exact field set, so a field of ANY name has to be looked at
+// by a person before this test goes green again.
+var sessionBearingFieldNames = []string{
+	"session", "cookie", "cookies", "jar", "header", "headers", "credential",
+	"credentials", "secret", "token", "auth", "authentication", "bearer",
+	"apikey", "login",
+}
+
+// c23BaseTypeName is a type's own name with the package qualifier, pointers,
+// slices and maps peeled off: *authz.Governor is "Governor", []http.Cookie is
+// "Cookie", and an unnamed type is "".
+func c23BaseTypeName(t reflect.Type) string {
+	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		t = t.Elem()
+	}
+	if t.Kind() == reflect.Map {
+		return t.Key().Name() + " " + t.Elem().Name()
+	}
+	return t.Name()
+}
+
+// TestNoCrawlRequestCanCarryASession is the guard under CoverageOfVisit's
+// hard-coded CarriedSession false.
+//
+// D.24 partitions a run's timeline into windows in which the session was
+// alive. Joining a crawl visit's instant against that partition and calling
+// the result "authenticated coverage" is a claim about WALL CLOCK, not about
+// the request — and it is only a defensible one if a crawl request cannot
+// carry a session, because then there is nothing to be wrong about. This
+// asserts exactly that, three ways.
+//
+// If it ever goes red, the fix is NOT to widen the lists. It is to go to
+// CoverageOfVisit and decide what CarriedSession should now say.
+func TestNoCrawlRequestCanCarryASession(t *testing.T) {
+	// 1. THE EXACT FIELD SET. A new field of any name fails this, which is
+	//    what makes the name denylist below a second line rather than the
+	//    only one.
+	wantFields := map[string][]string{
+		"CrawlRequest": {
+			"auth", "target", "method", "path", "technique", "origin", "hop", "seq",
+			"sealed",
+		},
+		"CrawlConfig": {
+			"Trigger", "Governor", "Audit", "Authorization", "Target", "Scope",
+			"Technique", "Seeds", "MaxPages", "MaxDepth", "Spider", "Clock",
+		},
+	}
+	types := map[string]reflect.Type{
+		"CrawlRequest": reflect.TypeOf(CrawlRequest{}),
+		"CrawlConfig":  reflect.TypeOf(CrawlConfig{}),
+	}
+	for name, typ := range types {
+		var got []string
+		for i := 0; i < typ.NumField(); i++ {
+			got = append(got, typ.Field(i).Name)
+		}
+		if !reflect.DeepEqual(got, wantFields[name]) {
+			t.Fatalf("%s's fields are %v, want %v. A field was added, removed or "+
+				"reordered: go to CoverageOfVisit and decide whether a crawl request "+
+				"can now carry a session before updating this list", name, got,
+				wantFields[name])
+		}
+		// 2. THE NAME DENYLIST, case-folded, on the field name AND on the
+		//    UNQUALIFIED name of its type — a field `s Session` is caught by
+		//    the second even though `s` is caught by neither. The package
+		//    qualifier is dropped deliberately: every kernel type is spelled
+		//    `authz.X`, and matching that would make every field look like a
+		//    credential and the guard would be turned off within a week.
+		for i := 0; i < typ.NumField(); i++ {
+			f := typ.Field(i)
+			hay := strings.ToLower(f.Name + " " + c23BaseTypeName(f.Type))
+			for _, bad := range sessionBearingFieldNames {
+				if !strings.Contains(hay, bad) {
+					continue
+				}
+				// Authorization is the KERNEL'S token, not the target's: it
+				// authorizes Anvil to make the request and is never sent.
+				if f.Name == "Authorization" || f.Name == "auth" {
+					continue
+				}
+				t.Fatalf("%s.%s (%s) looks like it can carry a session. "+
+					"CoverageOfVisit hard-codes CarriedSession false and its doc "+
+					"says nothing here can attach a session to a request",
+					name, f.Name, f.Type)
+			}
+		}
+	}
+
+	// 3. THE JOIN ITSELF. Whatever a visit says, the instant it produces
+	//    claims no session.
+	v := CrawlVisit{
+		method: authz.MethodGet, path: "/", canon: "/",
+		outcome: CrawlOutcomeFetched, status: 200, at: time.Now(), sealed: true,
+	}
+	if c := CoverageOfVisit(v); c.CarriedSession {
+		t.Fatal("CoverageOfVisit claimed a crawl request carried a session")
+	}
+	if got := CoverageOfVisit(v).At; !got.Equal(v.At()) {
+		t.Fatalf("CoverageOfVisit lost the instant: %v vs %v", got, v.At())
+	}
+	if got := len(CoverageOfVisits([]CrawlVisit{v, v})); got != 2 {
+		t.Fatalf("CoverageOfVisits returned %d instant(s) for 2 visits", got)
+	}
+	for _, c := range CoverageOfVisits([]CrawlVisit{v, v}) {
+		if c.CarriedSession {
+			t.Fatal("CoverageOfVisits claimed a crawl request carried a session")
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ClientSpider obligation 1 is checked, not merely stated
+// ---------------------------------------------------------------------------
+
+// TestARenderingSpiderIsRefusedRatherThanDriven.
+//
+// A rendering browser issues the page's fetches, XHRs and subresources. Those
+// requests reach no gate, spend no gate-14 token and write no gate-21 row, and
+// CrawlPage has no field in which the seam could report them — so Anvil cannot
+// admit them before the fact or count them after it. research/20:188 puts
+// headless-browser fetch/XHR inside gate 13's scope, which makes an unadmitted
+// one a hole in the kernel.
+//
+// Obligation 1 was therefore a contract THE CHOSEN IMPLEMENTATION CANNOT KEEP.
+// This is the refusal that replaces it. The gap is recorded in
+// internal/SKIPPED-CONTROLS.md with what would close it.
+func TestARenderingSpiderIsRefusedRatherThanDriven(t *testing.T) {
+	cases := []struct {
+		name string
+		d    FetchDiscipline
+		want bool
+	}{
+		{"a rendering browser", FetchDisciplineRendering, false},
+		// THE ZERO VALUE. "The implementer did not say" must never read as
+		// "one request per call".
+		{"a spider that declares nothing", FetchDisciplineUnset, false},
+		{"a literal nobody enumerated", FetchDiscipline("mostly_one_request"), false},
+		{"one request per call", FetchDisciplineSingleRequest, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spider := c23Linking(map[string][]string{"/": {"/a"}})
+			spider.exactDiscipline = true
+			spider.discipline = tc.d
+			if got := spider.Discipline(); got != tc.d {
+				t.Fatalf("the double repaired the discipline to %q; a generator that "+
+					"cannot produce the breaking input is the defect", got)
+			}
+			cfg := c23Config(t, c23Opts{spider: spider})
+
+			if got := cfg.Constructed(); got != tc.want {
+				t.Fatalf("CrawlConfig.Constructed() = %v, want %v — Constructed and "+
+					"validateCrawlConfig must not disagree about whether a "+
+					"configuration is usable", got, tc.want)
+			}
+
+			res, err := CrawlWithClientSpider(context.Background(), cfg, mustClock(t), nil)
+			if tc.want {
+				if err != nil {
+					t.Fatalf("CrawlWithClientSpider: %v", err)
+				}
+				if spider.calls == 0 {
+					t.Fatal("the permitted discipline drove no request, so the refusals " +
+						"below are not being compared against a working crawl")
+				}
+				return
+			}
+			if !errors.Is(err, ErrRefused) {
+				t.Fatalf("CrawlWithClientSpider returned %v, want ErrRefused", err)
+			}
+			// NOTHING LEFT THE PROCESS. A refusal that still drove the first
+			// request would have already issued the sub-requests it exists to
+			// prevent.
+			if spider.calls != 0 {
+				t.Fatalf("the spider was called %d time(s) for a refused discipline",
+					spider.calls)
+			}
+			if res.Executed() {
+				t.Fatal("the result claims the crawl executed")
+			}
+			if len(res.Visits()) != 0 || len(res.Routes()) != 0 {
+				t.Fatalf("a refused crawl produced %d visit(s) and %d route(s)",
+					len(res.Visits()), len(res.Routes()))
+			}
+		})
+	}
+}
+
+// TestTheDisciplineAllowlistIsAnAllowlist pins the shape rather than the
+// values: a state nobody enumerated, and the zero value, answer false.
+func TestTheDisciplineAllowlistIsAnAllowlist(t *testing.T) {
+	if FetchDisciplineUnset.PermitsCrawl() {
+		t.Fatal("the zero FetchDiscipline permits a crawl; a Go zero value must never " +
+			"mean permitted")
+	}
+	if FetchDisciplineUnset.Recognised() {
+		t.Fatal("the zero FetchDiscipline is recognised")
+	}
+	if FetchDiscipline("anything").PermitsCrawl() {
+		t.Fatal("an unenumerated FetchDiscipline permits a crawl")
+	}
+	permitted := 0
+	for _, d := range FetchDisciplineValues() {
+		if !d.Recognised() {
+			t.Fatalf("%q is on FetchDisciplineValues and is not Recognised", d)
+		}
+		if d.PermitsCrawl() {
+			permitted++
+		}
+	}
+	// ASSERT THE COUNT. "Some value permits a crawl" would still pass if
+	// rendering were quietly added to the allowlist.
+	if permitted != 1 {
+		t.Fatalf("%d of %d disciplines permit a crawl, want exactly 1",
+			permitted, len(FetchDisciplineValues()))
+	}
+	if !FetchDisciplineSingleRequest.PermitsCrawl() {
+		t.Fatal("the one permitted discipline is not permitted, so the allowlist is " +
+			"empty and every assertion above is vacuous")
+	}
+	if FetchDisciplineRendering.PermitsCrawl() {
+		t.Fatal("a rendering spider is permitted")
+	}
+	// The refusal must NAME the sub-request problem rather than saying "bad
+	// value": an operator who wired a browser needs to know why.
+	err := checkFetchDiscipline(FetchDisciplineRendering)
+	for _, want := range []string{"SUB-REQUESTS", "gate-14", "gate-21", "SKIPPED-CONTROLS"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the rendering refusal does not mention %q: %v", want, err)
+		}
+	}
+}
+
+// TestGate13CannotBeTheOffHostDefenceForThisLoop.
+//
+// crawlOne builds every RequestIntent with Next equal to the ADMITTED target,
+// so CheckGate13Revalidate's cross-host branch compares that target with
+// itself and can never fire from this file. That is a tautology standing where
+// a control is documented, and the honest reading is the one this test pins:
+// the off-host defence here is resolveLinkPath's, and gate 13's contribution
+// is the per-request revalidation beside it.
+//
+// The assertion is on the LEDGER AND THE SPIDER, not on the gate: an off-host
+// link is refused before an intent exists, so nothing reaches the kernel to be
+// judged, and no audit row is written for it.
+func TestGate13CannotBeTheOffHostDefenceForThisLoop(t *testing.T) {
+	offHost := []string{
+		"https://evil.example.test/x",
+		"//evil.example.test/x",
+		"http://" + fixtureHost + "/x",
+		"https://" + fixtureHost + ":8443/x",
+	}
+	spider := c23Linking(map[string][]string{"/": offHost})
+	cfg := c23Config(t, c23Opts{spider: spider})
+	res := c23Run(t, cfg)
+
+	// 1. resolveLinkPath refused every one of them, BY NAME. Assert the count.
+	if got, want := c23OutcomeCount(res, CrawlOutcomeOffHost), len(offHost); got != want {
+		t.Fatalf("%d of %d off-host links were recorded as %s: %v",
+			got, want, CrawlOutcomeOffHost, c23Ledger(res))
+	}
+	// 2. NOTHING LEFT. The seed and nothing else.
+	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/"}) {
+		t.Fatalf("the spider was asked for %v, want only the seed", got)
+	}
+	// 3. AND THE DIRECT PROOF that the guard is resolveLinkPath's: every one
+	//    of these fails there, before an intent exists for a gate to judge.
+	for _, href := range offHost {
+		if _, err := resolveLinkPath(cfg.Target, "/", href); !errors.Is(err, errLinkOffHost) {
+			t.Fatalf("resolveLinkPath(%q) returned %v, want errLinkOffHost — if this "+
+				"link is resolvable then gate 13 IS load-bearing here and crawlOne's "+
+				"comment about Next is wrong", href, err)
+		}
+	}
+	// 4. THE POSITIVE CONTROL: a same-origin absolute URL is NOT off-host, so
+	//    the assertions above are about the origin and not about "absolute
+	//    URLs are refused".
+	same := "https://" + fixtureHost + "/kept"
+	got, err := resolveLinkPath(cfg.Target, "/", same)
+	if err != nil {
+		t.Fatalf("resolveLinkPath(%q) refused a same-origin absolute URL: %v", same, err)
+	}
+	if got != "/kept" {
+		t.Fatalf("resolveLinkPath(%q) = %q, want %q", same, got, "/kept")
 	}
 }

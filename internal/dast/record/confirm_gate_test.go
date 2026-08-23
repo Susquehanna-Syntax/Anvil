@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -60,6 +61,15 @@ type scriptedReprober struct {
 	err       error
 	notIssued bool
 
+	// statusFn overrides status per attempt. It is what lets a fixture
+	// produce a target whose rate limiter trips PART WAY THROUGH the
+	// confirmation pass, which is the input the mixed-run assertion needs
+	// and which a single `status` field cannot express.
+	statusFn func(c RawFinding, attempt int) int
+	// errFn overrides err per attempt, for the connection-reset case where
+	// one attempt fails and the others do not.
+	errFn func(c RawFinding, attempt int) error
+
 	calls    int
 	perPath  map[string]int
 	lastAtt  int
@@ -74,14 +84,25 @@ func (r *scriptedReprober) Reprobe(ctx context.Context, c RawFinding, attempt in
 	}
 	r.perPath[c.Path]++
 	r.observed = append(r.observed, fmt.Sprintf("%s %s #%d", c.Method, c.Path, attempt))
+	if r.errFn != nil {
+		if err := r.errFn(c, attempt); err != nil {
+			return Observation{}, err
+		}
+	}
 	if r.err != nil {
 		return Observation{}, r.err
 	}
 	if r.notIssued {
 		return Observation{Issued: false}, nil
 	}
+	// statusFn's value is used VERBATIM, 0 included: "the re-probe reported
+	// no HTTP status" is one of the inputs the gate must handle differently
+	// and a fixture that silently rewrote 0 to 200 could not produce it.
 	status := r.status
-	if status == 0 {
+	switch {
+	case r.statusFn != nil:
+		status = r.statusFn(c, attempt)
+	case status == 0:
 		status = 200
 	}
 	var b []byte
@@ -583,9 +604,22 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 		t.Fatalf("outcome = %q; the fixture is supposed to reproduce so that a CONFIRMED "+
 			"finding is the thing being walked", f.Outcome())
 	}
-	if f.Evidence().SpanTruncatedFrom() < bodyBytes {
-		t.Fatalf("SpanTruncatedFrom = %d; the match was supposed to be ~%d bytes, so this "+
-			"fixture is not exercising the bound", f.Evidence().SpanTruncatedFrom(), bodyBytes)
+	if f.Evidence().SpanOverBroadBytes() < bodyBytes {
+		t.Fatalf("SpanOverBroadBytes = %d; the match was supposed to be ~%d bytes, so this "+
+			"fixture is not exercising the bound", f.Evidence().SpanOverBroadBytes(), bodyBytes)
+	}
+	// AND THE SPAN IS EMPTY, not 512 bytes of the body.
+	//
+	// This assertion is the fix for what the previous shape of this field
+	// hid. `spanTruncatedFrom` recorded that a 512 KiB match had been cut
+	// down to MaxSpanBytes — and the 512 bytes that survived were a
+	// VERBATIM PREFIX OF THE RESPONSE, arriving through the one channel
+	// spine S7 sanctions. Every assertion in this test passed while that
+	// was happening, because every assertion was about LENGTH.
+	if got := f.Evidence().ExtractedSpan(); got != "" {
+		t.Errorf("an over-broad match produced a %d-byte span %q. A prefix of an arbitrary "+
+			"response body is not evidence at any length; there is no span here",
+			len(got), printable(got, 64))
 	}
 
 	// The claim, over every string reachable from the value a consumer
@@ -619,20 +653,55 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing.T) {
 	all := mustSignature(t, `(?s)<v>.*</v>`)
 
-	t.Run("bounded", func(t *testing.T) {
-		body := []byte("<v>" + strings.Repeat("q", 10*MaxSpanBytes) + "</v>")
-		span, dropped, truncatedFrom, matched := extractSpan(body, all.re)
-		if !matched {
-			t.Fatal("the fixture did not match; nothing is being bounded")
-		}
-		if len(span) != MaxSpanBytes {
-			t.Errorf("span is %d bytes, want exactly the budget %d", len(span), MaxSpanBytes)
-		}
-		if truncatedFrom != len(body) {
-			t.Errorf("TruncatedFrom = %d, want %d (the whole match)", truncatedFrom, len(body))
-		}
-		if dropped != 0 {
-			t.Errorf("dropped = %d over printable input, want 0", dropped)
+	// An over-broad match produces NO SPAN, and the boundary is exact.
+	//
+	// The three sizes are chosen so that an off-by-one in either direction
+	// is visible: at the budget the span survives whole, one byte over it
+	// disappears entirely, and far over it disappears the same way. A test
+	// that only fed it 10x the budget would pass against `>= MaxSpanBytes`,
+	// against `> MaxSpanBytes`, and against a truncating implementation.
+	t.Run("over_broad_match_yields_no_span", func(t *testing.T) {
+		const wrap = len("<v></v>")
+		for _, tc := range []struct {
+			name     string
+			fill     int
+			wantSpan bool
+		}{
+			{"exactly the budget", MaxSpanBytes - wrap, true},
+			{"one byte over", MaxSpanBytes - wrap + 1, false},
+			{"ten times over", 10 * MaxSpanBytes, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				body := []byte("<v>" + strings.Repeat("q", tc.fill) + "</v>")
+				span, dropped, overBroad, matched := extractSpan(body, all.re)
+				if !matched {
+					t.Fatal("the fixture did not match; nothing is being bounded. " +
+						"THE ORACLE STILL FIRED: an over-broad match is a match whose " +
+						"text cannot be shown, not a non-match")
+				}
+				if dropped != 0 {
+					t.Errorf("dropped = %d over printable input, want 0", dropped)
+				}
+				if tc.wantSpan {
+					if len(span) != len(body) {
+						t.Errorf("span is %d bytes, want the whole %d-byte match",
+							len(span), len(body))
+					}
+					if overBroad != 0 {
+						t.Errorf("overBroad = %d for a match inside the budget", overBroad)
+					}
+					return
+				}
+				if span != "" {
+					t.Errorf("a %d-byte match produced a %d-byte span. Truncating an "+
+						"over-broad match to the budget inlines a verbatim prefix of "+
+						"the response, which is the thing plan/00-SPINE.md S7 forbids",
+						len(body), len(span))
+				}
+				if overBroad != len(body) {
+					t.Errorf("overBroad = %d, want %d (the whole match)", overBroad, len(body))
+				}
+			})
 		}
 	})
 
@@ -693,10 +762,10 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 	})
 
 	t.Run("no_match_no_span", func(t *testing.T) {
-		span, dropped, truncatedFrom, matched := extractSpan([]byte("nothing here"), all.re)
-		if matched || span != "" || dropped != 0 || truncatedFrom != 0 {
+		span, dropped, overBroad, matched := extractSpan([]byte("nothing here"), all.re)
+		if matched || span != "" || dropped != 0 || overBroad != 0 {
 			t.Errorf("extractSpan on a non-matching body returned (%q,%d,%d,%v)",
-				span, dropped, truncatedFrom, matched)
+				span, dropped, overBroad, matched)
 		}
 	})
 }
@@ -706,7 +775,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 func TestBodyHashIsOfTheWholeBodyNotOfTheSpan(t *testing.T) {
 	body := []byte(strings.Repeat("z", 4096) + sqliMarker)
 	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return body }}
-	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 1})
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: MinAttempts})
 
 	f, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
 	if err != nil {
@@ -859,7 +928,7 @@ func TestDecideTablePrecedenceIsAsDocumented(t *testing.T) {
 		for _, dm := range DetectionMethodValues() {
 			for matches := 0; matches <= attempts; matches++ {
 				c := RawFinding{Class: class, DetectionMethod: dm}
-				got := decide(c, matches, attempts)
+				got := decide(c, matches, 0 /* defended */, attempts)
 
 				var want Reason
 				switch {
@@ -915,11 +984,35 @@ func TestModelInferenceIsNeverConfirmed(t *testing.T) {
 	if f.Reason() != ReasonModelInferenceIsNotObservation {
 		t.Errorf("reason = %q", f.Reason())
 	}
-	// The ratio is still a real measurement and is still reported.
-	if conf, ok := f.Confidence(); !ok || conf != 1.0 {
-		t.Errorf("confidence = (%v,%v), want (1,true): the class has an oracle and it "+
-			"reproduced; what is missing is a reason to trust the model's inference, "+
-			"not the measurement", conf, ok)
+	// AND IT CARRIES NO CONFIDENCE.
+	//
+	// This assertion is inverted from what it used to say, and the old
+	// version was the defect. It read (1.0, true) and defended it in a
+	// comment: "the ratio is still a real measurement and is still
+	// reported". The result was a single record stating, at once, that the
+	// candidate is unconfirmed BECAUSE a model inference is not an
+	// observation, and that Anvil's confidence in it is 1.000. A consumer
+	// that sorts by confidence puts it at the top of the list the reason
+	// field exists to keep it off.
+	//
+	// The measurement is not lost and that is what makes the split honest:
+	// SignatureMatches()/Attempts() still report 3 of 3 below. What is
+	// withheld is the CLAIM. Confidence is defined in this file as the
+	// oracle's reproduction ratio standing behind the finding, and a
+	// reproduced signature does not stand behind an inference about what
+	// the signature means.
+	if conf, ok := f.Confidence(); ok {
+		t.Errorf("confidence = (%v,%v), want (_,false): a finding whose reason is %q "+
+			"cannot simultaneously report a confidence, and %v is the number that "+
+			"contradicts it hardest", conf, ok, ReasonModelInferenceIsNotObservation, conf)
+	}
+	if got, want := f.SignatureMatches(), 3; got != want {
+		t.Errorf("SignatureMatches = %d, want %d. Withholding the CLAIM must not delete "+
+			"the MEASUREMENT, or an operator loses the only evidence that the model was "+
+			"looking at something stable", got, want)
+	}
+	if got, want := f.Attempts(), 3; got != want {
+		t.Errorf("Attempts = %d, want %d", got, want)
 	}
 
 	// The positive control on the same fixture: the identical candidate
@@ -991,7 +1084,7 @@ func TestIntermittentReproductionIsUnconfirmed(t *testing.T) {
 
 func TestDetectionMethodIsNeverDefaulted(t *testing.T) {
 	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return []byte("{}") }}
-	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 1})
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: MinAttempts})
 
 	for _, bad := range []DetectionMethod{DetectionMethodUnset, "manual", "TEMPLATE", "regex"} {
 		c := sqliCandidate(t, "/search")
@@ -1207,7 +1300,7 @@ func TestAttemptCountIsBounded(t *testing.T) {
 
 func TestCancellationStopsTheBatchLoudly(t *testing.T) {
 	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return []byte("{}") }}
-	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 1})
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: MinAttempts})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	l, err := g.ConfirmAll(ctx, []RawFinding{sqliCandidate(t, "/a")})
@@ -1460,8 +1553,9 @@ func TestFindingsIsARealCopyAcrossEveryField(t *testing.T) {
 		class: ClassIDOR, detection: DetectionMethodModelInference,
 		outcome: OutcomeRejected, reason: ReasonDidNotReproduce,
 		evidence: EvidenceRef{bodyHash: "0", span: "s", spanDroppedBytes: 9,
-			spanTruncatedFrom: 9, sealed: true},
-		status: 500, attempts: 99, matches: 0, confidence: 0, confidenceKnown: false,
+			spanOverBroadBytes: 9, sealed: true},
+		status: 500, attempts: 99, matches: 0, defended: 7,
+		confidence: 0, confidenceKnown: false,
 		sealed: false,
 	}
 	got = append(got, Finding{})
@@ -1482,7 +1576,7 @@ func TestFindingsIsARealCopyAcrossEveryField(t *testing.T) {
 		t.Fatalf("ConfirmAll: %v", err)
 	}
 	r := l2.Refusals()
-	r[0] = Refusal{Index: 42, Reason: RefuseMalformedField, Detail: "x", Err: nil}
+	r[0] = Refusal{Index: 42, Reason: RefuseMalformedField, Detail: "x", Err: RefusalError{}}
 	if l2.Refusals()[0].Index != 0 || l2.Refusals()[0].Reason != RefuseNotReprobed {
 		t.Errorf("mutating the returned refusals changed the ledger: %+v", l2.Refusals()[0])
 	}
@@ -1593,7 +1687,7 @@ func TestEvidenceRefZeroValueAssertsNothing(t *testing.T) {
 		t.Error("the zero EvidenceRef reports itself constructed")
 	}
 	if e.BodyHash() != "" || e.ExtractedSpan() != "" ||
-		e.SpanDroppedBytes() != 0 || e.SpanTruncatedFrom() != 0 {
+		e.SpanDroppedBytes() != 0 || e.SpanOverBroadBytes() != 0 {
 		t.Errorf("the zero EvidenceRef is not zero: %+v", e)
 	}
 	if got := hashBody(nil); got != hex.EncodeToString(func() []byte {
@@ -1624,4 +1718,846 @@ func TestConfirmationTakesTheTimeItTakes(t *testing.T) {
 		t.Errorf("per-path count = %d, want 6", rp.perPath["/search"])
 	}
 
+}
+
+// ===========================================================================
+// D.29 CRITICAL 1 — the raw body escaped through the error return
+// ===========================================================================
+
+// hostileReprober is a Reprober that does THE ORDINARY THING an
+// implementation does with a response it cannot parse: it quotes it.
+//
+// It is not adversarial. Every Go HTTP client wrapper ever written has an
+// error path that reads "unexpected response: <the response>", and the
+// Reprober is implemented on the far side of the gate-3 boundary, in code
+// this packet does not own and cannot review. That is the point: the leak
+// this fixture reproduces cannot be closed by asking implementers to behave.
+type hostileReprober struct {
+	body []byte
+}
+
+func (h *hostileReprober) Reprobe(context.Context, RawFinding, int) (Observation, error) {
+	return Observation{}, fmt.Errorf("unexpected response from target: %q", string(h.body))
+}
+
+// TestNoErrorCrossingTheBoundaryCarriesTheResponseBody is CRITICAL 1.
+//
+// FOUND BY POINTING AN EXISTING GUARD AT THE RIGHT TYPES.
+// TestFindingTypeClosureHasNoRawBodyPath walked Finding, EvidenceRef and
+// Observation and never walked Refusal — and Refusal.Err was a bare `error`
+// that ConfirmFinding filled with `%w` of the Reprober's error, UNBOUNDED.
+// The type-closure guarantee on Finding was real and complete and the body
+// went round it through the field next door.
+func TestNoErrorCrossingTheBoundaryCarriesTheResponseBody(t *testing.T) {
+	// The generator first. A 4301-byte body with a distinctive marker and a
+	// representative of every non-printable class, so that a guard which
+	// only checked LENGTH, or only checked the marker, is visibly
+	// insufficient.
+	const marker = "MARKER-9d4c-RAW-RESPONSE-BODY"
+	nonPrintable := "\x00\x01\x1b\x7f\u202e\u200b\ufeff"
+	body := []byte(marker + nonPrintable + strings.Repeat("Z", 4301-len(marker)-len(nonPrintable)))
+	if len(body) != 4301 {
+		t.Fatalf("fixture body is %d bytes, want 4301", len(body))
+	}
+
+	rp := &hostileReprober{body: body}
+
+	// The control on the fixture: the Reprober's own error DOES carry the
+	// body. Without this, everything below could pass because the fixture
+	// never produced the damage.
+	_, rawErr := rp.Reprobe(context.Background(), RawFinding{}, 1)
+	if !strings.Contains(rawErr.Error(), marker) {
+		t.Fatal("the hostile Reprober's error does not quote the body, so this test " +
+			"proves nothing about what the gate does with one")
+	}
+	if len(rawErr.Error()) < 4301 {
+		t.Fatalf("the hostile Reprober's error is %d bytes; the fixture is not producing "+
+			"an unbounded one", len(rawErr.Error()))
+	}
+
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 3})
+
+	// Route 1: the error ConfirmFinding returns directly.
+	_, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+	if err == nil {
+		t.Fatal("ConfirmFinding succeeded against a Reprober that always errors")
+	}
+	assertErrorIsClean(t, "ConfirmFinding's returned error", err, marker)
+	if !errors.Is(err, ErrNotReprobed) {
+		t.Errorf("ConfirmFinding = %v, want ErrNotReprobed: a Reprober that errored did "+
+			"not observe an absence", err)
+	}
+
+	// Route 2: Ledger.Refusals()[i].Err, which is the one an operator reads.
+	l, cerr := g.ConfirmAll(context.Background(), []RawFinding{sqliCandidate(t, "/search")})
+	if cerr != nil {
+		t.Fatalf("ConfirmAll: %v", cerr)
+	}
+	rs := l.Refusals()
+	if len(rs) != 1 {
+		t.Fatalf("got %d refusals, want 1", len(rs))
+	}
+	assertErrorIsClean(t, "Ledger.Refusals()[0].Err", rs[0].Err, marker)
+
+	// Identity survives even though the text does not.
+	if !errors.Is(rs[0].Err, ErrNotReprobed) {
+		t.Errorf("errors.Is(refusal.Err, ErrNotReprobed) = false; quarantining the text "+
+			"must not cost the caller the ability to classify the failure: %v", rs[0].Err)
+	}
+	if errors.Is(rs[0].Err, ErrRefused) {
+		t.Error("a not-reprobed refusal also matches ErrRefused; the sentinels stop " +
+			"distinguishing 'Anvil did not look' from 'the candidate was malformed'")
+	}
+
+	// AND THE CHAIN STOPS. An Unwrap that handed back the foreign error
+	// would put the body one errors.Unwrap call away from a %v.
+	if u := errors.Unwrap(rs[0].Err); u != nil {
+		t.Errorf("errors.Unwrap(refusal.Err) = %v (type %T); the chain must stop at "+
+			"RefusalError, or the quarantined text is reachable by unwrapping",
+			printable(u.Error(), 96), u)
+	}
+
+	// The type-level half: Refusal's closure is as closed as Finding's.
+	if v := closureViolations(reflect.TypeOf(Refusal{})); len(v) != 0 {
+		t.Errorf("Refusal's field-type closure has %d route(s) a raw response body could "+
+			"travel through:\n%s", len(v), strings.Join(v, "\n"))
+	}
+	if v := closureViolations(reflect.TypeOf(RefusalError{})); len(v) != 0 {
+		t.Errorf("RefusalError's closure has %d body route(s):\n%s", len(v), strings.Join(v, "\n"))
+	}
+
+	// The zero value asserts nothing, the same way every other zero value in
+	// this file does.
+	var zero RefusalError
+	if zero.Constructed() || errors.Is(zero, ErrRefused) || errors.Is(zero, ErrNotReprobed) {
+		t.Errorf("the zero RefusalError matches a sentinel: %v", zero)
+	}
+}
+
+// assertErrorIsClean is the claim, applied to one error value.
+//
+// Three separate properties, because a guard that checked only one of them
+// would have passed on the defect: the marker (a body that is short and
+// printable still must not appear), the bound (a body that avoids the marker
+// still must not be unbounded), and the charset (this string is prompt-bound
+// and a bidi override inside it is a rendering attack whatever its length).
+func assertErrorIsClean(t *testing.T, what string, err error, marker string) {
+	t.Helper()
+	msg := err.Error()
+	if strings.Contains(msg, marker) {
+		t.Errorf("%s quotes the response body. plan/00-SPINE.md S7: the DAST response "+
+			"body is the highest-risk injection channel, and an error message is read "+
+			"by a human and increasingly by an agent", what)
+	}
+	if strings.Contains(msg, strings.Repeat("Z", 64)) {
+		t.Errorf("%s carries a run of the response body's filler", what)
+	}
+	if len(msg) > MaxRefusalMessageBytes {
+		t.Errorf("%s is %d bytes and the bound is %d", what, len(msg), MaxRefusalMessageBytes)
+	}
+	if !isPrintableASCII(msg) {
+		t.Errorf("%s carries bytes outside printable ASCII", what)
+	}
+}
+
+// TestEveryExportedTypeThatCrossesTheBoundaryIsWalked is the meta-guard: it
+// is what stops the next field like Refusal.Err from being added to a type
+// nobody points the walker at.
+//
+// The list is written out by name rather than discovered by reflection
+// because Go cannot enumerate a package's types at runtime, so the honest
+// version is a list plus a stated rule for what belongs on it and what does
+// not — and the exclusions carry their reasons here, where a reader deciding
+// whether to add a type will actually see them.
+func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
+	// RECORD TYPES: values a consumer holds after the gate has run. Every
+	// one of these must be closed.
+	for _, tc := range []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"Finding", reflect.TypeOf(Finding{})},
+		{"EvidenceRef", reflect.TypeOf(EvidenceRef{})},
+		{"Refusal", reflect.TypeOf(Refusal{})},
+		{"RefusalError", reflect.TypeOf(RefusalError{})},
+	} {
+		if v := closureViolations(tc.typ); len(v) != 0 {
+			t.Errorf("%s's field-type closure has %d body route(s):\n%s",
+				tc.name, len(v), strings.Join(v, "\n"))
+		}
+	}
+
+	// Ledger is a CONTAINER of record types, so it holds slices by design
+	// and closureViolations would flag it for exactly the property it is
+	// supposed to have. The claim for it is narrower and asserted directly:
+	// its fields are slices of closed types and a bool, and nothing else.
+	lt := reflect.TypeOf(Ledger{})
+	if got, want := lt.NumField(), 3; got != want {
+		t.Fatalf("Ledger has %d fields, want %d. A new field on the ledger is a new "+
+			"channel out of this package and belongs in this test", got, want)
+	}
+	for i := 0; i < lt.NumField(); i++ {
+		f := lt.Field(i)
+		switch f.Type.Kind() {
+		case reflect.Bool:
+			continue
+		case reflect.Slice:
+			if v := closureViolations(f.Type.Elem()); len(v) != 0 {
+				t.Errorf("Ledger.%s is a slice of %s, whose closure has %d body route(s):"+
+					"\n%s", f.Name, f.Type.Elem(), len(v), strings.Join(v, "\n"))
+			}
+		default:
+			t.Errorf("Ledger.%s is a %s; the ledger holds slices of closed record types "+
+				"and a seal, and anything else needs its own argument", f.Name, f.Type)
+		}
+	}
+
+	// Observation and RawFinding are INPUTS and are deliberately not closed.
+	// Observation carries the body — that is its job, and the negative
+	// control in TestFindingTypeClosureHasNoRawBodyPath fires if it stops.
+	// RawFinding carries a Signature, which holds a *regexp.Regexp; it is
+	// the caller's own compiled pattern travelling INTO the gate, not
+	// anything the gate hands back, and the caller already has it.
+	if v := closureViolations(reflect.TypeOf(RawFinding{})); len(v) == 0 {
+		t.Error("RawFinding's closure is clean, which means Signature stopped carrying a " +
+			"compiled regexp and the gate has no oracle to run")
+	}
+}
+
+// ===========================================================================
+// D.29 CRITICAL 2 — a target that defends itself is not a target with nothing
+// ===========================================================================
+
+// TestARateLimitedReprobeIsNotADisproof is the failure this project exists to
+// avoid, driven end to end.
+//
+// MEASURED BEFORE THE FIX: Observation.Status was captured at the re-probe,
+// stamped onto the Finding, and read by nothing. decide() never saw it. A
+// genuinely vulnerable target whose rate limiter trips during the
+// confirmation pass answered 429 on all three attempts; the signature matched
+// none of them because the application never ran; and the candidate came out
+// outcome=rejected, reason=did_not_reproduce_on_any_attempt, confidence
+// 0.000 — byte-for-byte indistinguishable from one of the 88 phantoms. The
+// ledger then reported FindingCountForStatus()==0 and derived
+// completed_clean over a live vulnerability.
+//
+// The neighbours are here for the reason the encodings lesson is in this
+// file's header: 429 is one spelling of "the target defended itself" and a
+// guard that recognised only 429 would be a denylist of one.
+func TestARateLimitedReprobeIsNotADisproof(t *testing.T) {
+	// The body the target WOULD have returned. It reproduces the oracle
+	// every time, so every rejection below would be a rejection of
+	// something real — which is what makes the assertions mean anything.
+	vulnerable := []byte(`{"error":"` + sqliMarker + `"}`)
+	// The WAF's block page. Status 200, no marker: the case a status-code
+	// check alone cannot see.
+	blockPage := []byte(`<html><head><title>Request Blocked</title></head>` +
+		`<body>Your request was blocked by policy reference 8812-AA.</body></html>`)
+	blockSig := mustSignature(t, `blocked by policy reference [0-9]{4}-[A-Z]{2}`)
+
+	for _, tc := range []struct {
+		name string
+		cfg  func(Reprober) GateConfig
+		rp   *scriptedReprober
+		// wantErr means the candidate never became a Finding at all.
+		wantErr      bool
+		wantReason   Reason
+		wantOutcome  Outcome
+		wantDefended int
+		wantMatches  int
+	}{
+		{
+			name: "429 on every attempt",
+			rp: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return []byte(`{"error":"too many requests"}`) },
+				statusFn: func(RawFinding, int) int { return 429 },
+			},
+			wantReason: ReasonReprobeDefended, wantOutcome: OutcomeUnconfirmed,
+			wantDefended: 3, wantMatches: 0,
+		},
+		{
+			name: "503 on every attempt",
+			rp: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return []byte(`upstream unavailable`) },
+				statusFn: func(RawFinding, int) int { return 503 },
+			},
+			wantReason: ReasonReprobeDefended, wantOutcome: OutcomeUnconfirmed,
+			wantDefended: 3, wantMatches: 0,
+		},
+		{
+			name: "no status reported at all",
+			rp: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return []byte(`{}`) },
+				statusFn: func(RawFinding, int) int { return 0 },
+			},
+			wantReason: ReasonReprobeDefended, wantOutcome: OutcomeUnconfirmed,
+			wantDefended: 3, wantMatches: 0,
+		},
+		{
+			name: "a WAF block page returning 200",
+			cfg: func(rp Reprober) GateConfig {
+				return GateConfig{Reprober: rp, Attempts: 3, DefenceSignature: blockSig}
+			},
+			rp: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return blockPage },
+				statusFn: func(RawFinding, int) int { return 200 },
+			},
+			wantReason: ReasonReprobeDefended, wantOutcome: OutcomeUnconfirmed,
+			wantDefended: 3, wantMatches: 0,
+		},
+		{
+			name: "a connection reset on one attempt",
+			rp: &scriptedReprober{
+				body: func(RawFinding, int) []byte { return vulnerable },
+				errFn: func(_ RawFinding, attempt int) error {
+					if attempt == 2 {
+						return errors.New("read tcp 127.0.0.1:54321->127.0.0.1:8080: " +
+							"connection reset by peer")
+					}
+					return nil
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "a mixed run: the limiter trips part way through",
+			rp: &scriptedReprober{
+				body: func(_ RawFinding, attempt int) []byte {
+					if attempt == 1 {
+						return vulnerable
+					}
+					return []byte(`{"error":"too many requests"}`)
+				},
+				statusFn: func(_ RawFinding, attempt int) int {
+					if attempt == 1 {
+						return 200
+					}
+					return 429
+				},
+			},
+			wantReason: ReasonReproducedIntermittently, wantOutcome: OutcomeUnconfirmed,
+			wantDefended: 2, wantMatches: 1,
+		},
+		{
+			// THE POSITIVE CONTROL. The identical candidate against a
+			// target that answers is CONFIRMED. Without it every assertion
+			// above would pass against a gate that confirms nothing.
+			name: "the target answers and the oracle reproduces",
+			rp: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return vulnerable },
+				statusFn: func(RawFinding, int) int { return 200 },
+			},
+			wantReason: ReasonReproduced, wantOutcome: OutcomeConfirmed,
+			wantDefended: 0, wantMatches: 3,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := GateConfig{Reprober: tc.rp, Attempts: 3}
+			if tc.cfg != nil {
+				cfg = tc.cfg(tc.rp)
+			}
+			g := mustGate(t, cfg)
+			f, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+
+			if tc.wantErr {
+				// A transport failure is a REFUSAL, not a rejection: the
+				// re-probe did not complete, so nothing was disproved.
+				if !errors.Is(err, ErrNotReprobed) {
+					t.Fatalf("ConfirmFinding = (%v, %v), want ErrNotReprobed. A candidate "+
+						"whose re-probe died mid-pass must not come back rejected", f, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ConfirmFinding: %v", err)
+			}
+
+			if f.Outcome() == OutcomeRejected {
+				t.Errorf("outcome = rejected. THIS IS THE FAILURE: a re-probe the target "+
+					"never answered has disproved nothing, and a rejection here is a "+
+					"real vulnerability reported as a phantom. %s", f)
+			}
+			if got := f.Outcome(); got != tc.wantOutcome {
+				t.Errorf("outcome = %q, want %q. %s", got, tc.wantOutcome, f)
+			}
+			if got := f.Reason(); got != tc.wantReason {
+				t.Errorf("reason = %q, want %q. %s", got, tc.wantReason, f)
+			}
+			if got := f.DefendedAttempts(); got != tc.wantDefended {
+				t.Errorf("DefendedAttempts = %d, want %d. %s", got, tc.wantDefended, f)
+			}
+			if got := f.SignatureMatches(); got != tc.wantMatches {
+				t.Errorf("SignatureMatches = %d, want %d. %s", got, tc.wantMatches, f)
+			}
+
+			// A defended run reports NO CONFIDENCE. matches/attempts over a
+			// run the target refused to answer counts questions that were
+			// never asked, and 0.000 reads as "certainly not a
+			// vulnerability".
+			conf, ok := f.Confidence()
+			if tc.wantDefended > 0 && ok {
+				t.Errorf("confidence = (%v,true) over a run with %d defended attempt(s); "+
+					"that ratio's denominator counts questions nobody asked",
+					conf, tc.wantDefended)
+			}
+			if tc.wantDefended == 0 && !ok {
+				t.Error("confidence unknown for an undefended run of an oracle-bearing " +
+					"class detected by template")
+			}
+
+			// A defended attempt's body is NEVER extracted from. A block
+			// page that happened to contain the marker would otherwise be
+			// quoted as evidence attributed to the application.
+			if tc.wantDefended == 3 && f.Evidence().ExtractedSpan() != "" {
+				t.Errorf("a wholly defended run carries evidence span %q",
+					printable(f.Evidence().ExtractedSpan(), 64))
+			}
+			if f.Evidence().BodyHash() == "" {
+				t.Error("a defended run carries no body hash; the hash is the proof Anvil " +
+					"looked, and without it a defence is indistinguishable from a probe " +
+					"that never ran")
+			}
+		})
+	}
+}
+
+// TestADefendedLedgerIsNeverReadAsCompletedClean is the other half of
+// CRITICAL 2: the arithmetic, all the way to dast_status.
+func TestADefendedLedgerIsNeverReadAsCompletedClean(t *testing.T) {
+	const n = 12
+	rp := &scriptedReprober{
+		body:     func(RawFinding, int) []byte { return []byte(`{"error":"too many requests"}`) },
+		statusFn: func(RawFinding, int) int { return 429 },
+	}
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 3})
+
+	var candidates []RawFinding
+	for i := 0; i < n; i++ {
+		candidates = append(candidates, sqliCandidate(t, fmt.Sprintf("/api/v1/item/%d", i)))
+	}
+	l, err := g.ConfirmAll(context.Background(), candidates)
+	if err != nil {
+		t.Fatalf("ConfirmAll: %v", err)
+	}
+
+	// ASSERT THE COUNT, NOT MERELY THAT ROWS EXIST.
+	if got := l.RejectedCount(); got != 0 {
+		t.Errorf("rejected = %d, want 0. Every one of these %d candidates was answered "+
+			"with a rate limit and none of them was disproved. %s", got, n, l)
+	}
+	if got, want := l.UnconfirmedCount(), n; got != want {
+		t.Fatalf("unconfirmed = %d, want %d. %s", got, want, l)
+	}
+	if got := l.FindingCountForStatus(); got != 0 {
+		t.Fatalf("FindingCountForStatus = %d; an unconfirmed finding did not pass the "+
+			"re-probe step and must not reach dast_status: findings", got)
+	}
+
+	// AND THE LEDGER SAYS SO. This is the call that used to return nil.
+	if aerr := l.AssertNotSilentlyClean(); !errors.Is(aerr, ErrSilentlyClean) {
+		t.Errorf("AssertNotSilentlyClean = %v, want ErrSilentlyClean. %d candidates the "+
+			"target refused to answer produce a zero confirmed count, and reporting "+
+			"completed_clean from that ledger tells a coding agent Anvil looked and "+
+			"found nothing", aerr, n)
+	}
+}
+
+// TestAssertNotSilentlyCleanSeesRejectionsAndNotOnlyUnconfirmedOnes closes the
+// half of CRITICAL 2 that is about the assertion itself.
+//
+// AssertNotSilentlyClean consulted UnconfirmedCount and RefusedCount and
+// IGNORED RejectedCount, so any ledger of nothing but rejections read as an
+// earned clean regardless of whether those rejections were decisive.
+// decide()'s precedence now stops a defended run from ever reaching
+// `rejected`, so this is belt and braces on that precedence — and the only
+// way to test belt and braces is to hand-build the value the precedence is
+// supposed to make impossible, which is possible here because the test is in
+// the package that owns the type.
+func TestAssertNotSilentlyCleanSeesRejectionsAndNotOnlyUnconfirmedOnes(t *testing.T) {
+	rejected := func(defended, status int) Finding {
+		return Finding{
+			engine: "zap", target: "t", method: "GET", path: "/x",
+			class: ClassInjection, detection: DetectionMethodTemplate,
+			outcome: OutcomeRejected, reason: ReasonDidNotReproduce,
+			evidence: EvidenceRef{bodyHash: strings.Repeat("0", 64), sealed: true},
+			status:   status, attempts: 3, matches: 0, defended: defended,
+			sealed: true,
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		findings  []Finding
+		wantClean bool
+	}{
+		{"an honest disproof", []Finding{rejected(0, 200)}, true},
+		{"a rejection over a defended run", []Finding{rejected(1, 200)}, false},
+		{"a rejection with no status observed", []Finding{rejected(0, 0)}, false},
+		{"one honest and one not", []Finding{rejected(0, 200), rejected(2, 429)}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := Ledger{findings: tc.findings, sealed: true}
+			gotClean := l.AssertNotSilentlyClean() == nil
+			if gotClean != tc.wantClean {
+				t.Errorf("AssertNotSilentlyClean clean=%v, want %v. %s (%v)",
+					gotClean, tc.wantClean, l, l.AssertNotSilentlyClean())
+			}
+			wantIndecisive := 0
+			for _, f := range tc.findings {
+				if f.defended > 0 || f.status == 0 {
+					wantIndecisive++
+				}
+			}
+			if got := l.IndecisiveRejectionCount(); got != wantIndecisive {
+				t.Errorf("IndecisiveRejectionCount = %d, want %d", got, wantIndecisive)
+			}
+		})
+	}
+}
+
+// TestDefensiveStatusesAreRecognisedAndOrdinaryOnesAreNot draws the line
+// explicitly, in both directions.
+//
+// The negative half is the load-bearing one. Calling 403 a defence would make
+// every authorization and IDOR candidate undecidable for a second, wrong
+// reason and would hide the very behaviour those classes are about; calling
+// 500 a defence would hide the response an injection probe is usually trying
+// to cause.
+func TestDefensiveStatusesAreRecognisedAndOrdinaryOnesAreNot(t *testing.T) {
+	for _, s := range []int{429, 502, 503, 504} {
+		if !IsDefensiveStatus(s) {
+			t.Errorf("status %d is not recognised as a defence", s)
+		}
+	}
+	for _, s := range []int{200, 201, 204, 301, 302, 400, 401, 403, 404, 405, 418, 500} {
+		if IsDefensiveStatus(s) {
+			t.Errorf("status %d is treated as a defence. An application answer routed to "+
+				"ReasonReprobeDefended is a finding nobody can decide for a reason that "+
+				"is not true", s)
+		}
+	}
+	// Status 0 is not on the map and is still defended, because the rule for
+	// it is "the observation cannot say what it saw" rather than "this code
+	// means a defence".
+	if IsDefensiveStatus(0) {
+		t.Error("IsDefensiveStatus(0) is true; 0 is the absence of a status, not a status")
+	}
+	g := mustGate(t, GateConfig{Reprober: &scriptedReprober{}, Attempts: 3})
+	if d, why := g.attemptWasDefended(Observation{Issued: true, Status: 0}); !d || why == "" {
+		t.Errorf("an Issued observation with no status was not treated as defended "+
+			"(%v, %q). FAIL CLOSED: a Go zero value must never mean 'the oracle ran'", d, why)
+	}
+}
+
+// ===========================================================================
+// D.29 HIGH 3 — an oracle that fires on a benign page
+// ===========================================================================
+
+// TestSignatureRefusesAnOracleThatFiresOnABenignPage carries the five
+// patterns that were MEASURED getting through when the only check was
+// re.MatchString("").
+func TestSignatureRefusesAnOracleThatFiresOnABenignPage(t *testing.T) {
+	// The five that got through, plus the empty-string family that did not.
+	// They are one list on purpose: they are all the same defect and the
+	// sentinel does not distinguish them.
+	for _, p := range []string{
+		".", `(?s).{1,512}`, `[\s\S]`, `.*.`, `(?s)^`, // measured getting through
+		`.*`, `(?s).*`, `a?`, `^`, `(foo)?`, `x{0,3}`, // caught by the old check too
+		`(?s).+`, `[\s\S]{1,10}`, `(?s)(.|\n)*`, `[^\x00]`,
+	} {
+		if _, err := NewSignature(p); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v, want ErrSignatureMatchesEverything. Measured "+
+				"against a benign homepage, a pattern like this confirms it at "+
+				"confidence 1.000 AND inlines a verbatim body prefix as its evidence "+
+				"span — two failures from one accepted regex", p, err)
+		}
+	}
+
+	// THE POSITIVE CONTROL, and it is the half that decides whether this
+	// check is usable at all. A corpus-based refusal that also refused real
+	// oracles would be a gate nobody could configure, so every signature
+	// this suite and the plan actually use must still compile.
+	for _, p := range []string{
+		sqliPattern,
+		`"role":"admin"`,
+		`(?s)<v>.*</v>`,
+		`(?s)A.*B`,
+		`You have an error in your SQL syntax`,
+		`root:[x*]:0:0:`,
+		`AKIA[0-9A-Z]{16}`,
+		`Server: nginx/1\.[0-9]+\.[0-9]+`,
+		`<script>alert\(1\)</script>`,
+		`java\.lang\.NullPointerException`,
+		`blocked by policy reference [0-9]{4}-[A-Z]{2}`,
+	} {
+		if _, err := NewSignature(p); err != nil {
+			t.Errorf("NewSignature(%q) = %v; the benign corpus is refusing a real oracle "+
+				"and the check is unusable", p, err)
+		}
+	}
+
+	// The corpus itself must be able to produce the breaking input: every
+	// non-empty probe has to be a body the broadest possible pattern
+	// matches. `(?s).` and not `.` — "." does not match a newline, which is
+	// the whole reason the "\n" probe is in the corpus and the reason the
+	// assertion below can be made about it.
+	anyByte := regexp.MustCompile(`(?s).`)
+	nonEmpty := 0
+	for _, probe := range benignProbes() {
+		if probe == "" {
+			continue
+		}
+		nonEmpty++
+		if !anyByte.MatchString(probe) {
+			t.Errorf("benign probe %q is not matched by `(?s).`; it cannot catch the "+
+				"broadest pattern there is and is carrying no weight", probe)
+		}
+	}
+	if nonEmpty < 8 {
+		t.Errorf("the benign corpus has %d non-empty probes; one or two is a coincidence "+
+			"filter, not a corpus", nonEmpty)
+	}
+
+	// EACH PROBE IS LOAD-BEARING, demonstrated on the two that are easiest
+	// to think are padding. A corpus of "reasonable-looking documents" would
+	// have neither, and both are patterns a template author could plausibly
+	// write by accident.
+	for _, p := range []string{`\n`, `\s`, `[[:space:]]`} {
+		if _, err := NewSignature(p); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v; whitespace is in every response ever served, "+
+				"and only the whitespace probes in the corpus catch this", p, err)
+		}
+	}
+	for _, p := range []string{`\{`, `[{}]`} {
+		if _, err := NewSignature(p); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v; only the brace probes in the corpus catch "+
+				"an oracle that fires on any JSON document", p, err)
+		}
+	}
+}
+
+// TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarrow
+// is the second line HIGH 3 needs.
+//
+// NewSignature refuses patterns that are broad against benignProbes. A
+// pattern can pass that and still swallow a hostile body whole: `(?s)A.*B` is
+// specific enough that no benign probe matches it, and against a body that
+// starts with 'A' and ends with 'B' it matches the lot. The span bound is
+// what catches that, and it catches it by producing NOTHING rather than by
+// producing a shorter prefix.
+func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarrow(t *testing.T) {
+	const secret = "SENSITIVE-PREFIX-OF-THE-RESPONSE"
+	hostile := []byte("A" + secret + strings.Repeat("q", 4096) + "B")
+
+	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return hostile }}
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 3})
+	c := sqliCandidate(t, "/search")
+	c.Signature = mustSignature(t, `(?s)A.*B`)
+
+	f, err := g.ConfirmFinding(context.Background(), c)
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	// The oracle fired. That is a separate fact from whether its match can
+	// be shown, and conflating the two would silently turn every over-broad
+	// match into a non-reproduction.
+	if f.Outcome() != OutcomeConfirmed {
+		t.Fatalf("outcome = %q; the signature matched every attempt and withholding the "+
+			"SPAN must not change the VERDICT", f.Outcome())
+	}
+	if got := f.Evidence().ExtractedSpan(); got != "" {
+		t.Errorf("span = %q (%d bytes)", printable(got, 64), len(got))
+	}
+	if strings.Contains(f.Evidence().ExtractedSpan(), secret) {
+		t.Error("the evidence span carries a verbatim prefix of the response body")
+	}
+	if got, want := f.Evidence().SpanOverBroadBytes(), len(hostile); got != want {
+		t.Errorf("SpanOverBroadBytes = %d, want %d", got, want)
+	}
+	if strings.Contains(f.String(), secret) {
+		t.Error("Finding.String() quotes the response body")
+	}
+}
+
+// ===========================================================================
+// D.29 MEDIUM 5 — the attempt count had a ceiling and no floor
+// ===========================================================================
+
+// TestAttemptCountHasAFloorAndNotOnlyACeiling.
+//
+// Attempts=1 was legal and produced reason="reproduced_on_every_attempt"
+// from a single observation — the flake detection DefaultAttempts=3 exists
+// for, removed, with the reason string still claiming it ran. D.31 wiring
+// under a time budget is exactly the caller that would set it.
+func TestAttemptCountHasAFloorAndNotOnlyACeiling(t *testing.T) {
+	for _, n := range []int{1, -1, -1000, MaxAttempts + 1, 1 << 20} {
+		if _, err := NewGate(GateConfig{Attempts: n}); !errors.Is(err, ErrRefused) {
+			t.Errorf("NewGate with Attempts=%d = %v, want a refusal", n, err)
+		}
+	}
+	for _, n := range []int{MinAttempts, DefaultAttempts, MaxAttempts} {
+		g, err := NewGate(GateConfig{Attempts: n})
+		if err != nil {
+			t.Fatalf("NewGate with Attempts=%d: %v", n, err)
+		}
+		if g.Attempts() != n {
+			t.Errorf("Attempts() = %d, want %d", g.Attempts(), n)
+		}
+	}
+	if MinAttempts < 2 {
+		t.Fatalf("MinAttempts = %d; below two there is no ratio and "+
+			"ReasonReproducedIntermittently is unreachable", MinAttempts)
+	}
+	if DefaultAttempts < MinAttempts || DefaultAttempts > MaxAttempts {
+		t.Fatalf("DefaultAttempts=%d is outside [%d,%d]",
+			DefaultAttempts, MinAttempts, MaxAttempts)
+	}
+
+	// THE CLAIM, driven: at the floor a flake is still visible as a flake.
+	rp := &scriptedReprober{body: func(_ RawFinding, attempt int) []byte {
+		if attempt == 1 {
+			return []byte(`{"error":"` + sqliMarker + `"}`)
+		}
+		return []byte(`{"ok":true}`)
+	}}
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: MinAttempts})
+	f, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	if f.Reason() != ReasonReproducedIntermittently {
+		t.Errorf("reason = %q at Attempts=%d over a 1-of-%d reproduction, want %q. If the "+
+			"floor cannot tell a flake from a finding it is not a floor",
+			f.Reason(), MinAttempts, MinAttempts, ReasonReproducedIntermittently)
+	}
+	if f.Outcome() == OutcomeConfirmed {
+		t.Error("a one-in-two reproduction was confirmed")
+	}
+}
+
+// ===========================================================================
+// D.29 MEDIUM 6 — an unconfirmed finding carrying full confidence
+// ===========================================================================
+
+// TestNoUnconfirmedFindingCarriesFullConfidence is the record-consistency
+// claim, driven over every route to unconfirmed there is.
+//
+// The defect was narrow and the guard is not: the confidence gate keyed on
+// Class.OracleLess() alone and ignored DetectionMethod.CanConfirm(), so a
+// model_inference candidate matching 3 of 3 landed unconfirmed with reason
+// "model_inference_is_not_an_observation" AND confidence 1.000. Two
+// statements contradicting each other inside one record.
+func TestNoUnconfirmedFindingCarriesFullConfidence(t *testing.T) {
+	vulnerable := []byte(`{"error":"` + sqliMarker + `"}`)
+
+	cases := []struct {
+		name     string
+		mutate   func(*RawFinding)
+		reprober *scriptedReprober
+	}{
+		{
+			name:     "oracle-less class, reproducing every time",
+			mutate:   func(c *RawFinding) { c.Class = ClassAuthorization },
+			reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return vulnerable }},
+		},
+		{
+			name:     "IDOR, reproducing every time",
+			mutate:   func(c *RawFinding) { c.Class = ClassIDOR },
+			reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return vulnerable }},
+		},
+		{
+			name:     "business logic, reproducing every time",
+			mutate:   func(c *RawFinding) { c.Class = ClassBusinessLogic },
+			reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return vulnerable }},
+		},
+		{
+			name:     "model inference, reproducing every time",
+			mutate:   func(c *RawFinding) { c.DetectionMethod = DetectionMethodModelInference },
+			reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return vulnerable }},
+		},
+		{
+			name:   "intermittent",
+			mutate: func(*RawFinding) {},
+			reprober: &scriptedReprober{body: func(_ RawFinding, attempt int) []byte {
+				if attempt == 1 {
+					return vulnerable
+				}
+				return []byte(`{"ok":true}`)
+			}},
+		},
+		{
+			name:   "defended on every attempt",
+			mutate: func(*RawFinding) {},
+			reprober: &scriptedReprober{
+				body:     func(RawFinding, int) []byte { return vulnerable },
+				statusFn: func(RawFinding, int) int { return 429 },
+			},
+		},
+	}
+
+	sawUnconfirmed := 0
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := mustGate(t, GateConfig{Reprober: tc.reprober, Attempts: 3})
+			c := sqliCandidate(t, "/admin/users")
+			tc.mutate(&c)
+			f, err := g.ConfirmFinding(context.Background(), c)
+			if err != nil {
+				t.Fatalf("ConfirmFinding: %v", err)
+			}
+			if f.Outcome() != OutcomeUnconfirmed {
+				t.Fatalf("outcome = %q, want unconfirmed; this case is not exercising "+
+					"the invariant. %s", f.Outcome(), f)
+			}
+			sawUnconfirmed++
+
+			conf, ok := f.Confidence()
+			if ok && conf >= 1.0 {
+				t.Errorf("an UNCONFIRMED finding reports confidence %.3f with "+
+					"confidenceKnown=true. reason=%q and confidence=1.000 are two "+
+					"statements contradicting each other in one record, and a consumer "+
+					"sorting by confidence puts this at the top of the list the reason "+
+					"exists to keep it off", conf, f.Reason())
+			}
+			// The stronger half for the three routes where the CLAIM is
+			// withheld entirely rather than merely reduced.
+			switch f.Reason() {
+			case ReasonNoOracleForClass, ReasonModelInferenceIsNotObservation,
+				ReasonReprobeDefended:
+				if ok {
+					t.Errorf("reason=%q reports a confidence of %.3f; there is no "+
+						"reproduction ratio standing behind this finding at all, and 0.0 "+
+						"or 1.0 both read as claims Anvil cannot make", f.Reason(), conf)
+				}
+			case ReasonReproducedIntermittently:
+				if !ok {
+					t.Error("an intermittent reproduction of an oracle-bearing class " +
+						"detected by template has a real ratio and must report it")
+				}
+			}
+			// The MEASUREMENT survives in every case.
+			if f.Attempts() != 3 {
+				t.Errorf("Attempts = %d, want 3", f.Attempts())
+			}
+		})
+	}
+	if sawUnconfirmed != len(cases) {
+		t.Fatalf("%d of %d cases reached unconfirmed", sawUnconfirmed, len(cases))
+	}
+
+	// THE POSITIVE CONTROL on the whole invariant: confidence 1.000 with
+	// confidenceKnown=true is reachable, and only from a CONFIRMED finding.
+	// Without this, a gate that returned (0,false) unconditionally would
+	// pass every assertion above.
+	g := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return vulnerable }},
+		Attempts: 3,
+	})
+	f, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	if conf, ok := f.Confidence(); !ok || conf != 1.0 || f.Outcome() != OutcomeConfirmed {
+		t.Fatalf("the control case gave outcome=%q confidence=(%v,%v); full confidence is "+
+			"unreachable and every assertion above is vacuous", f.Outcome(), conf, ok)
+	}
 }

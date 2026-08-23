@@ -994,6 +994,29 @@ func (s Summary) AssertDenominatorDecomposes() error {
 	}
 	sum := 0
 	for _, c := range s.tiers {
+		// The SIGN is checked before the identity, and separately from it.
+		//
+		// c.Unrepresented == c.Floor-c.Routes holds just as well for
+		// (floor 2, routes 5, unrepresented -3) as for any honest triple:
+		// the identity constrains the three numbers to each other and says
+		// nothing about what any of them MEANS. A negative unrepresented
+		// count is a tier reporting that it found more routes than the
+		// surface it was measuring contains, and it would then SHRINK the
+		// denominator that every fraction in this summary is divided by —
+		// which is coverage inflation arriving through the arithmetic that
+		// exists to make coverage honest.
+		//
+		// Not reachable today: Floor and Routes are both non-negative and
+		// D.22's own assertions keep Routes <= Floor. Stated as an
+		// assertion anyway, because "the arithmetic makes the decomposition
+		// mean something" is the claim this method exists to make, and an
+		// unstated invariant is one refactor from being untrue.
+		if c.Unrepresented < 0 || c.Floor < 0 || c.Routes < 0 {
+			return fmt.Errorf("%w: %s reports floor %d, routes %d and unrepresented %d. "+
+				"None of the three can be negative: a negative unrepresented count "+
+				"shrinks the denominator every coverage fraction is divided by",
+				ErrRefused, c.Tier, c.Floor, c.Routes, c.Unrepresented)
+		}
 		if c.Unrepresented != c.Floor-c.Routes {
 			return fmt.Errorf("%w: %s reports floor %d, routes %d and unrepresented %d",
 				ErrRefused, c.Tier, c.Floor, c.Routes, c.Unrepresented)

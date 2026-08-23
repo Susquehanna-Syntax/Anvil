@@ -24,13 +24,32 @@
 //	                  call a method on a value it cannot Interface(), so a
 //	                  String() method on its own would have leaked there.
 //
-//	the sweep         every byte that leaves for the artifact sink, and every
-//	                  driver-authored string that reaches the ledger, is
-//	                  searched for the credential's ACTUAL VALUE — raw and in
-//	                  both percent-encoded forms — and the whole artifact or
-//	                  string is REFUSED if it is found. Not redacted in
-//	                  place: a partial rewrite has to anticipate every
-//	                  encoding, and refusing the artifact does not.
+//	PROVENANCE        an artifact produced while a credential was in flight is
+//	                  never stored, WHATEVER ITS KIND AND WHATEVER SPELLING
+//	                  ITS BYTES USE, because the rule does not read the bytes:
+//	                  Session.credentialWasInFlight refuses every artifact
+//	                  belonging to a step that types a secret, and every
+//	                  artifact that names no step and therefore spans one. A
+//	                  driver that wants an HTTP transcript or a storage dump
+//	                  retained attaches it to a step that types nothing.
+//
+//	the sweep         the BACKSTOP under that rule, for the artifact a driver
+//	                  attached to an innocent step whose bytes carry the
+//	                  credential anyway. Every byte that leaves for the sink,
+//	                  and every driver-authored string that reaches the
+//	                  ledger, is CANONICALIZED — percent, backslash and HTML
+//	                  character references decoded to a fixpoint — and then
+//	                  searched for the credential's actual value, and the
+//	                  whole artifact or string is REFUSED if it is found. Not
+//	                  redacted in place: a partial rewrite has to anticipate
+//	                  every encoding, and refusing the artifact does not.
+//
+// THE SWEEP IS NOT A COMPLETENESS CLAIM AND SAYS SO IN ITS OWN DOC. An earlier
+// shape of it searched three ENCODINGS OF THE SECRET (raw, QueryEscape,
+// PathEscape); an HTML-entity-encoded credential — `value="s3cr3t
+// Pa55w0rd&amp;9xQz"` — was stored verbatim and every assertion reported
+// clean. An enumeration of encodings is a denylist and loses; the answer was
+// not a fourth spelling but the rule above it, which never looks at bytes.
 //
 // The masking is anti-disclosure, NOT cryptography. The pad sits beside the
 // ciphertext and anyone holding the struct can undo it in two lines. It
@@ -38,7 +57,12 @@
 // a credential has historically ended up in a scan report — and it defeats
 // nothing else. That limit is stated here rather than implied by silence.
 //
-// What the sweep does NOT catch, stated rather than qualified away:
+// What the sweep does NOT catch, stated rather than qualified away — each of
+// these reaches the sink ONLY on an artifact whose step types no credential,
+// because the provenance rule refuses the rest without reading them:
+//
+//	a NAMED HTML entity outside the six predefined ones. The numeric forms are
+//	decoded generically; the names are a denylist and credentialIn says so.
 //
 //	base64 or any other re-encoding of the credential inside an artifact.
 //	Catching it needs encoding/base64, which is NOT on gate 3's inertImports;
@@ -133,7 +157,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
-	"net/url"
 	"strings"
 	"time"
 
@@ -811,6 +834,11 @@ type AuthProbe struct {
 //     temporary file, not an exception message. AuthOutcome.Detail is swept
 //     by this package, and a driver that puts a credential in it will have
 //     the whole string refused, which is a bug report and not a fix.
+//  5. NAME THE STEP EVERY ARTIFACT BELONGS TO. AuthArtifact.Step is what the
+//     provenance rule reads, and an artifact that names no step is refused —
+//     it covers the whole flow, so it covers the credential step. This is the
+//     one obligation whose breach costs the driver nothing but coverage: the
+//     report is smaller, not less safe.
 //  4. RUN THE EXPLICIT STEP LIST, in order, and nothing else. No
 //     autodetection of the login form.
 //
@@ -895,8 +923,14 @@ type AuthArtifact struct {
 	// Kind is required and must be recognised.
 	Kind AuthArtifactKind
 	// Step is the 1-based step this artifact belongs to, or 0 for an
-	// artifact covering the whole flow. A screenshot with Step 0 cannot be
-	// checked against the step list, so it is suppressed.
+	// artifact covering the whole flow.
+	//
+	// IT IS THE FIELD THE PROVENANCE RULE READS, so it decides whether this
+	// artifact can be stored at all. Step 0 cannot be checked against the step
+	// list and covers the credential step by definition, so it is suppressed —
+	// for every kind, not only for screenshots. A driver that wants an
+	// artifact retained names the step it belongs to, and names one that types
+	// nothing.
 	Step int
 	// Name is a driver-authored label.
 	Name string
@@ -914,9 +948,12 @@ const (
 	ArtifactDispositionUnset ArtifactDisposition = ""
 	// ArtifactStored: it went to the sink.
 	ArtifactStored ArtifactDisposition = "stored"
-	// ArtifactSuppressedCredentialStep: a screenshot of a step that types a
-	// credential. Pixels, so the sweep cannot clear it; it is never stored.
-	ArtifactSuppressedCredentialStep ArtifactDisposition = "suppressed_screenshot_of_a_credential_step"
+	// ArtifactSuppressedCredentialStep: THE PROVENANCE REFUSAL, and it applies
+	// to every kind rather than only to screenshots. The artifact belongs to a
+	// step that types a credential, or names no step at all and therefore
+	// spans one. No byte of it is read, so no encoding of the credential gets
+	// past it — which is what the byte sweep beside it cannot promise.
+	ArtifactSuppressedCredentialStep ArtifactDisposition = "suppressed_artifact_of_a_credential_step"
 	// ArtifactSuppressedByPolicy: ScreenshotPolicySuppressAll.
 	ArtifactSuppressedByPolicy ArtifactDisposition = "suppressed_all_screenshots_by_policy"
 	// ArtifactRefusedCredentialFound: THE CREDENTIAL WAS IN THE BYTES. The
@@ -949,10 +986,15 @@ const (
 	ScreenshotPolicyUnset ScreenshotPolicy = ""
 	// ScreenshotPolicyExceptCredentialSteps stores screenshots of every step
 	// EXCEPT the ones that type a credential, and except any screenshot whose
-	// step cannot be resolved.
+	// step cannot be resolved. That is the same rule the provenance check
+	// applies to every other kind; this policy exists because a screenshot has
+	// a second reason to be suppressed — a credential in an image is pixels
+	// and no byte sweep can see it — and an operator may want none at all.
 	ScreenshotPolicyExceptCredentialSteps ScreenshotPolicy = "store_except_credential_steps"
 	// ScreenshotPolicySuppressAll stores no screenshot at all. HTTP and
-	// storage artifacts are unaffected — they are bytes, and bytes are swept.
+	// storage artifacts are unaffected BY THIS POLICY — they are still
+	// refused by the provenance rule when they belong to a credential step or
+	// name no step, and swept when they do not.
 	ScreenshotPolicySuppressAll ScreenshotPolicy = "suppress_all_screenshots"
 )
 
@@ -1091,7 +1133,19 @@ func (rep AuthReport) CredentialRefusals() int {
 	return rep.DispositionMix()[ArtifactRefusedCredentialFound]
 }
 
-// AssertNoCredentialWasFound returns an error when the sweep refused anything.
+// AssertNoCredentialWasFound returns an error when the BACKSTOP SWEEP refused
+// anything.
+//
+// ITS NIL IS NOT A CLEAN BILL OF HEALTH, and the name is the closest honest
+// one available: nothing was FOUND. The sweep searches decoded forms of the
+// bytes for the credential and the set of decoders is finite (credentialIn
+// names every form it does not see), so a nil here means "no artifact the
+// driver attached to an innocent step carried a spelling this recognises".
+//
+// What keeps a credential out of the report is not this. It is
+// Session.credentialWasInFlight, which refuses every artifact produced while a
+// credential was in flight WITHOUT READING ITS BYTES, and whose refusals are
+// counted separately as ArtifactSuppressedCredentialStep.
 func (rep AuthReport) AssertNoCredentialWasFound() error {
 	if n := rep.CredentialRefusals(); n > 0 {
 		return fmt.Errorf("%w: %d artifact(s) were refused. The sweep caught them before "+
@@ -1146,13 +1200,26 @@ const (
 	// AuthStateSessionLost: liveness failed and no re-login has restored the
 	// session.
 	AuthStateSessionLost AuthState = "session_lost"
+	// AuthStateSessionNotCarried: THE SESSION WAS ALIVE AND THE REQUEST DID
+	// NOT USE IT.
+	//
+	// It is the only state here that is a fact about a REQUEST rather than
+	// about a stretch of the run, and it exists because the two were being
+	// conflated. A window's state says the session was alive between two
+	// observations; it says nothing about whether the request measured inside
+	// that window carried a cookie, a header or anything else belonging to it.
+	// Wall-clock overlap with a live session is not authentication.
+	//
+	// Coverage here is the PUBLIC SURFACE, honestly labelled, and it is not
+	// authenticated coverage.
+	AuthStateSessionNotCarried AuthState = "the_session_was_alive_and_the_request_did_not_carry_it"
 )
 
 // AuthStateValues returns every legal literal.
 func AuthStateValues() []AuthState {
 	return []AuthState{
 		AuthStateUnauthenticated, AuthStateAuthenticationFailed, AuthStateAuthenticated,
-		AuthStateUnverified, AuthStateSessionLost,
+		AuthStateUnverified, AuthStateSessionLost, AuthStateSessionNotCarried,
 	}
 }
 
@@ -1519,11 +1586,27 @@ type Session struct {
 	startedAt time.Time
 	events    []SessionEvent
 	report    AuthReport
+	emitted   []emittedCheck
 	attempts  int
 	verified  int
 	failures  int
 	relogins  int
 	sealed    bool
+}
+
+// emittedCheck is one verdict about THE BYTES THAT ACTUALLY LEFT for the
+// ArtifactSink, taken at the delivery boundary by Session.deliver.
+//
+// IT HOLDS NO BYTES. Only the kind, the step, the size, whether a credential
+// was found and which one — which is Anvil's own configuration and not the
+// secret. This is what makes AssertNoCredentialInLedger's "second look" a look
+// at something the first look did not read.
+type emittedCheck struct {
+	kind   AuthArtifactKind
+	step   int
+	size   int
+	secret int
+	hit    bool
 }
 
 // Format renders a session for a log line, for every verb, WITHOUT reaching
@@ -1624,8 +1707,19 @@ func (s *Session) SourceRef() string {
 // CoverageLabel is one sentence naming what coverage collected under this
 // session means. It is the sentence a report writes instead of the word
 // "authenticated".
-func (s *Session) CoverageLabel() string {
-	switch s.State() {
+//
+// It is the label of the session's CURRENT state. A per-observation label —
+// which is what a request that did not carry the session needs — comes from
+// AuthState.CoverageMeaning applied to CoverageAt's answer.
+func (s *Session) CoverageLabel() string { return s.State().CoverageMeaning() }
+
+// CoverageMeaning is one sentence naming what coverage labelled with this
+// state means. Every enumerated state has one, INCLUDING the states no window
+// ever carries: AuthStateSessionNotCarried is produced by CoverageAt and by
+// nothing else, and a state with no sentence would be reported as a bare
+// enum literal by whoever consumed it.
+func (st AuthState) CoverageMeaning() string {
+	switch st {
 	case AuthStateAuthenticated:
 		return "authenticated: Anvil observed the session alive through the kernel, so " +
 			"coverage collected inside a bracketed window includes surface behind the login"
@@ -1642,6 +1736,10 @@ func (s *Session) CoverageLabel() string {
 	case AuthStateSessionLost:
 		return "SESSION LOST: the session was lost mid-scan and no re-login restored it, so " +
 			"coverage after that point is the public surface"
+	case AuthStateSessionNotCarried:
+		return "public surface: the session was alive and the requests did not carry it, so " +
+			"this coverage is of the unauthenticated application. A request issued while a " +
+			"session happened to be alive is not an authenticated request"
 	default:
 		return "unknown: no session state was recorded, which is never read as authenticated"
 	}
@@ -1732,24 +1830,70 @@ func (s *Session) StateAt(t time.Time) AuthState {
 	return AuthStateUnset
 }
 
-// PartitionByState counts instants by the state of the window each falls in.
-// It is the shape D.26 needs: a crawl's visit instants in, a labelled
-// breakdown out.
-func (s *Session) PartitionByState(instants []time.Time) map[AuthState]int {
+// CoverageInstant is ONE MEASURED OBSERVATION, as the thing that labels it
+// needs to see it: when it happened, AND whether the request that made it
+// carried this session.
+//
+// # Why the second field exists
+//
+// StateAt answers a question about the SESSION — was it alive at this instant.
+// D.26 was reading that answer as a question about the REQUEST — was this
+// visit authenticated — and those are different claims joined by nothing but
+// wall-clock overlap. A crawl request issued while a session happened to be
+// alive is not an authenticated request; it is a request that happened at the
+// same time as one.
+//
+// # It is false today for every crawl visit, and that is the finding
+//
+// Nothing in this module can attach a session to a crawl request: CrawlConfig
+// carries no cookie jar, CrawlRequest has no header, cookie or credential
+// field, and ClientSpider is handed neither. CoverageOfVisit therefore returns
+// CarriedSession false for every CrawlVisit, and says so at its declaration.
+// TestNoCrawlRequestCanCarryASession holds that shut: a field that could carry
+// one turns this claim red rather than quietly making it obsolete.
+//
+// The zero value is false, which is the fail-closed direction.
+type CoverageInstant struct {
+	// At is when the observation was made.
+	At time.Time
+	// CarriedSession is EVIDENCE that this particular request went out under
+	// the session — a session cookie or header actually attached to it, not a
+	// session that was alive somewhere else at the time. A caller that cannot
+	// show that leaves this false.
+	CarriedSession bool
+}
+
+// CoverageAt maps one observation to exactly one AuthState.
+//
+// The session's state at that instant is a CEILING, not the answer: a request
+// that did not carry the session is never authenticated coverage no matter how
+// healthy the session was, and a request that did carry it is still only as
+// good as the window it landed in.
+func (s *Session) CoverageAt(c CoverageInstant) AuthState {
+	st := s.StateAt(c.At)
+	if st == AuthStateAuthenticated && !c.CarriedSession {
+		return AuthStateSessionNotCarried
+	}
+	return st
+}
+
+// PartitionByState counts observations by the state each maps to. It is the
+// shape D.26 needs: a crawl's visits in, a labelled breakdown out.
+func (s *Session) PartitionByState(instants []CoverageInstant) map[AuthState]int {
 	out := map[AuthState]int{}
-	for _, t := range instants {
-		out[s.StateAt(t)]++
+	for _, c := range instants {
+		out[s.CoverageAt(c)]++
 	}
 	return out
 }
 
-// AssertAllAuthenticated returns an error naming HOW MANY instants fell
-// outside an authenticated window, and in which states.
+// AssertAllAuthenticated returns an error naming HOW MANY observations are not
+// authenticated coverage, and in which states.
 //
 // It asserts the COUNT rather than the existence of an authenticated window: a
 // run whose first request landed in an authenticated window and whose other
 // four hundred did not is exactly the shape this is written against.
-func (s *Session) AssertAllAuthenticated(instants []time.Time) error {
+func (s *Session) AssertAllAuthenticated(instants []CoverageInstant) error {
 	mix := s.PartitionByState(instants)
 	bad := 0
 	var parts []string
@@ -1770,12 +1914,25 @@ func (s *Session) AssertAllAuthenticated(instants []time.Time) error {
 		s.CoverageLabel())
 }
 
-// AssertNoCredentialInLedger re-derives the sweep over the RECORDED ledger.
+// AssertNoCredentialInLedger reports on BOTH of the places a credential could
+// have escaped, and it is explicit about which half of it is independent.
 //
-// It is deliberately a second, independent look: note() and the artifact path
-// decide, and this reads back what those decisions actually produced. A check
-// that can only see the decision cannot see the damage — if the sweep is ever
-// wrong, this is what says so, from evidence, in the value an operator holds.
+//	THE EMITTED BYTES — INDEPENDENT. Session.deliver read StoredArtifact
+//	.Bytes(), the exact value the sink itself reads, through the exact
+//	accessor the sink reads it through, AFTER the decision path had chosen it
+//	and copied it. That is a different source from the one the decision read,
+//	which is the whole point: a refactor that swept one field and stored
+//	another passes the decision and fails here. The verdicts are recorded at
+//	delivery and reported here.
+//
+//	THE RENDERED LEDGER — NOT INDEPENDENT, AND SAID SO. The walk below
+//	re-derives the sweep over the strings note() and the artifact path already
+//	sanitized. It reads the same values through the same matcher, so it cannot
+//	catch a matcher that is wrong; what it catches is a RENDERING that
+//	reassembles a credential out of fields each of which was clean alone —
+//	SessionEvent.String() and ArtifactRecord.String() are both searched as
+//	rendered, which is where that would show. Two dependent looks are one
+//	look, and this half is the second look at the same thing.
 //
 // It never names the credential and never returns it.
 func (s *Session) AssertNoCredentialInLedger() error {
@@ -1785,6 +1942,16 @@ func (s *Session) AssertNoCredentialInLedger() error {
 	secrets := s.cfg.Steps.secrets()
 	if len(secrets) == 0 {
 		return nil
+	}
+	// The independent half, first: it is the one that can see damage the
+	// decision path could not.
+	for i, e := range s.emitted {
+		if e.hit {
+			return fmt.Errorf("%w: the credential from step-secret %d was in the bytes "+
+				"handed to the ArtifactSink for delivery %d (%s, step %d, %d bytes). The "+
+				"offending bytes are NOT reproduced here", ErrCredentialInArtifact,
+				e.secret+1, i+1, e.kind, e.step, e.size)
+		}
 	}
 	check := func(where, text string) error {
 		if i, hit := credentialIn([]byte(text), secrets); hit {
@@ -2336,13 +2503,18 @@ func (s *Session) storeArtifacts(ctx context.Context, arts []AuthArtifact, at au
 				len(a.Bytes), codedMaxArtifactBytes)
 		case a.Kind == AuthArtifactScreenshot && !s.screenshotAllowed(a):
 			rec.disposition, rec.detail = s.screenshotRefusal(a)
+		case s.credentialWasInFlight(a):
+			// THE CONTROL. It reads no bytes, so no spelling defeats it.
+			rec.disposition = ArtifactSuppressedCredentialStep
+			rec.detail = s.inFlightRefusal(a)
 		default:
 			if i, hit := credentialIn(a.Bytes, secrets); hit {
 				rec.disposition = ArtifactRefusedCredentialFound
 				rec.detail = fmt.Sprintf("the credential from step-secret %d appears in "+
-					"these bytes. The whole artifact is refused rather than rewritten: a "+
-					"partial rewrite has to anticipate every encoding and refusing does "+
-					"not. THIS IS A DEFECT IN THE DRIVER", i+1)
+					"these bytes, which belong to a step that types no credential. The "+
+					"whole artifact is refused rather than rewritten: a partial rewrite "+
+					"has to anticipate every encoding and refusing does not. THIS IS A "+
+					"DEFECT IN THE DRIVER", i+1)
 			} else if s.cfg.Sink == nil {
 				rec.disposition = ArtifactRefusedNoSink
 				rec.detail = "no ArtifactSink is wired, so the authentication report was " +
@@ -2356,11 +2528,17 @@ func (s *Session) storeArtifacts(ctx context.Context, arts []AuthArtifact, at au
 					bytes:  append([]byte(nil), a.Bytes...),
 					sealed: true,
 				}
-				if err := s.cfg.Sink.StoreAuthArtifact(ctx, stored); err != nil {
+				switch err := s.deliver(ctx, stored, secrets); {
+				case errors.Is(err, ErrCredentialInArtifact):
+					rec.disposition = ArtifactRefusedCredentialFound
+					rec.detail = "the bytes the sink was about to receive contained a " +
+						"credential, which the decision path above did not see. The sink " +
+						"was never called. THIS IS A DEFECT IN THIS FILE, not in the driver"
+				case err != nil:
 					rec.disposition = ArtifactRefusedSinkFailed
 					rec.detail = "the sink returned an error: " +
 						sanitizeForLedger(errText(err), secrets)
-				} else {
+				default:
 					rec.disposition = ArtifactStored
 					rec.detail = "swept and stored"
 				}
@@ -2408,6 +2586,87 @@ func (s *Session) screenshotRefusal(a AuthArtifact) (ArtifactDisposition, string
 		a.Step, s.stepKind(a.Step))
 }
 
+// credentialWasInFlight reports whether this artifact was produced at a point
+// in the flow where a credential existed outside the Secret.
+//
+// THIS IS THE CONTROL THE SWEEP IS ONLY A BACKSTOP FOR. It reads the
+// artifact's PROVENANCE and never its bytes, so no encoding defeats it: an
+// HTML-entity-encoded, JSON-escaped, base64'd or gzipped credential is refused
+// by the same rule as a plaintext one, because the rule never looks.
+//
+// Two cases, and both are the fail-closed reading:
+//
+//	THE ARTIFACT BELONGS TO A STEP THAT TYPES A SECRET. Its bytes are the
+//	request that carried the credential, the DOM that held it, or the storage
+//	the browser wrote immediately after. There is no spelling of that artifact
+//	that is safe to keep.
+//
+//	THE ARTIFACT NAMES NO STEP. Step 0 means "covering the whole flow", and a
+//	whole-flow artifact NECESSARILY SPANS the step that types the credential.
+//	It is also the shape AuthArtifactStorageState arrives in, which is JSON by
+//	definition and is the kind most likely to carry a session. "I cannot tell
+//	which step this is" is not "it is safe".
+//
+// A driver that wants storage state or an HTTP transcript retained must attach
+// it to a step that types nothing. That is a contract a driver can keep, and
+// it is checkable here, which is the difference between it and an obligation
+// stated in prose.
+func (s *Session) credentialWasInFlight(a AuthArtifact) bool {
+	if len(s.cfg.Steps.secrets()) == 0 {
+		return false
+	}
+	return a.Step == 0 || s.cfg.Steps.stepBears(a.Step)
+}
+
+// inFlightRefusal is the ledger sentence for credentialWasInFlight.
+func (s *Session) inFlightRefusal(a AuthArtifact) string {
+	if a.Step == 0 {
+		return "this artifact names no step, so it covers the whole flow — including the " +
+			"step that types the credential. It is suppressed by PROVENANCE rather than " +
+			"swept, because a sweep can only refuse the spellings it knows"
+	}
+	return fmt.Sprintf("step %d is a %s, which types a credential, so every byte this "+
+		"artifact holds was produced with the credential in flight. It is suppressed by "+
+		"PROVENANCE rather than swept: an encoding defeats a sweep and does not defeat this",
+		a.Step, s.stepKind(a.Step))
+}
+
+// deliver is THE ONE CALL THAT REACHES THE SINK, and the second, genuinely
+// independent look at the credential question.
+//
+// The look above it reads a.Bytes — the value the decision path chose. This
+// one reads StoredArtifact.Bytes(), THE EXACT VALUE THE SINK ITSELF WILL READ,
+// through the exact accessor the sink reads it through. That is the difference
+// between two looks and one look twice: a refactor that swept one field and
+// stored another would pass the first and fail here.
+//
+// It records a verdict per delivery — kind, step, whether a credential was
+// found, and how many bytes, NEVER the bytes — so AssertNoCredentialInLedger
+// reports from what was emitted rather than from what was rendered.
+//
+// A hit here means the sink is NEVER CALLED. It is a defect in this file, and
+// it is loud.
+func (s *Session) deliver(ctx context.Context, a StoredArtifact, secrets []Secret) error {
+	out := a.Bytes()
+	i, hit := credentialIn(out, secrets)
+	s.emitted = append(s.emitted, emittedCheck{
+		kind:   a.Kind(),
+		step:   a.Step(),
+		size:   len(out),
+		secret: i,
+		hit:    hit,
+	})
+	if hit {
+		return fmt.Errorf("%w: the bytes handed to the ArtifactSink for the %s artifact of "+
+			"step %d contain the credential from step-secret %d. The sink was not called",
+			ErrCredentialInArtifact, a.Kind(), a.Step(), i+1)
+	}
+	if err := s.cfg.Sink.StoreAuthArtifact(ctx, a); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Session) stepKind(oneBased int) AuthStepKind {
 	kinds := s.cfg.Steps.Kinds()
 	if oneBased < 1 || oneBased > len(kinds) {
@@ -2417,45 +2676,332 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 }
 
 // ---------------------------------------------------------------------------
-// The sweep
+// The sweep — THE BACKSTOP, NOT THE CONTROL
 // ---------------------------------------------------------------------------
 
 // credentialIn reports whether any credential appears in b, and which one.
 //
-// It searches THREE spellings of each secret: the raw bytes, the query-escaped
-// form and the path-escaped form. Those are the forms a credential takes on
-// its way through an HTTP exchange or a storage dump, and net/url's escapers
-// are used rather than a hand-rolled one so the spellings match what a client
-// would actually have written.
+// # THIS IS A BACKSTOP AND IT DOES NOT CLAIM COMPLETENESS
 //
-// The forms it does NOT search — base64, gzip, and pixels — are named in this
-// file's header, with what each would cost to close.
+// The control that keeps a credential out of a stored artifact is PROVENANCE,
+// not content: credentialWasInFlight refuses every artifact belonging to a
+// step that types a secret, and every artifact that names no step at all,
+// WHATEVER ITS KIND AND WHATEVER SPELLING THE BYTES USE. That rule cannot be
+// defeated by an encoding because it never looks at the bytes.
+//
+// This function exists for the case that rule cannot reach: an artifact the
+// driver attached to an innocent step whose bytes carry the credential anyway.
+// A hit here is a DEFECT IN THE DRIVER, and a miss here is not a clean run —
+// it is a question this function did not answer.
+//
+// # It canonicalizes the haystack rather than enumerating spellings of the
+// needle
+//
+// The previous shape searched three ENCODINGS OF THE SECRET — raw,
+// url.QueryEscape, url.PathEscape — which is a denylist of spellings and lost
+// to the fourth: an HTML-entity-encoded or JSON-escaped credential was stored
+// verbatim and every assertion reported clean. AuthArtifactStorageState is
+// JSON by definition, so the JSON-escaped case was the ORDINARY one for the
+// artifact kind most likely to carry a credential.
+//
+// So the haystack is DECODED toward a canonical form and the raw secret is
+// searched for in each form, which is the same rule gate 8 and the crawler's
+// dot-segment handling reached: canonicalize before matching.
+//
+// # What it still does not see, stated rather than qualified away
+//
+//	NAMED HTML ENTITIES beyond &amp; &lt; &gt; &quot; &apos; &nbsp;. The
+//	numeric forms (&#38; &#x26;) are decoded generically, so an encoder has to
+//	reach for a NAMED entity outside those six to get past this — which is an
+//	enumeration, and enumerations lose. It is a backstop; the provenance rule
+//	above is what does not lose.
+//
+//	base64 or any other re-encoding. Catching it needs encoding/base64, which
+//	is NOT on gate 3's inertImports; adding it is a one-line edit in
+//	internal/dast/authz/egress_chokepoint_test.go and is reported to the
+//	orchestrator rather than made here.
+//
+//	a compressed artifact, and A CREDENTIAL RENDERED AS PIXELS. Both are in
+//	this file's header with what each would cost.
 //
 // It returns the INDEX of the offending secret, never the secret.
 func credentialIn(b []byte, secrets []Secret) (int, bool) {
 	if len(b) == 0 || len(secrets) == 0 {
 		return 0, false
 	}
-	hay := string(b)
-	for i, sec := range secrets {
-		if !sec.Present() {
-			continue
-		}
-		raw := sec.Reveal()
-		if raw == "" {
-			continue
-		}
-		if strings.Contains(hay, raw) {
-			return i, true
-		}
-		if q := url.QueryEscape(raw); q != raw && strings.Contains(hay, q) {
-			return i, true
-		}
-		if p := url.PathEscape(raw); p != raw && strings.Contains(hay, p) {
-			return i, true
+	for _, hay := range sweepForms(string(b)) {
+		for i, sec := range secrets {
+			if !sec.Present() {
+				continue
+			}
+			raw := sec.Reveal()
+			if raw == "" {
+				continue
+			}
+			if strings.Contains(hay, raw) {
+				return i, true
+			}
 		}
 	}
 	return 0, false
+}
+
+// codedSweepRounds bounds how many times the canonicalizer re-runs over its
+// own output.
+//
+// A layered encoding — a JSON escape inside an HTML entity inside a percent
+// escape — collapses one layer per round, and the pipeline peels one of each
+// per round. Three is more layers than any encoder on this path produces, and
+// a BOUND is what stops an artifact crafted to be its own decompression bomb
+// from spending the run's CPU on itself.
+const codedSweepRounds = 3
+
+// sweepForms returns the canonical forms of s the sweep searches.
+//
+// It is TWO PIPELINES re-run to a fixpoint, not a combinatorial expansion of
+// every decoder ordering: at most 2*codedSweepRounds+1 strings exist, and a
+// form identical to one already produced is dropped.
+//
+// There are two pipelines because '+' means SPACE in a query string and a
+// literal plus everywhere else, and no artifact says which it is. The
+// distinction has to be made INSIDE the loop rather than once on the seed:
+// url.QueryEscape applied twice writes the space as "%2B", which is a literal
+// '+' after one round and a space after two, and a seed-only reading finds
+// nothing. Both readings are searched, and the over-matching direction is the
+// one that REFUSES an artifact rather than the one that ships it.
+func sweepForms(s string) []string {
+	out := []string{s}
+	seen := map[string]bool{s: true}
+	add := func(v string) {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	for _, plusIsSpace := range []bool{false, true} {
+		cur := s
+		for r := 0; r < codedSweepRounds; r++ {
+			next := cur
+			if plusIsSpace {
+				next = plusToSpace(next)
+			}
+			next = decodeEntities(decodeBackslash(decodePercent(next)))
+			if next == cur {
+				break
+			}
+			cur = next
+			add(cur)
+		}
+	}
+	return out
+}
+
+// plusToSpace reads every '+' as the space a query-string encoder writes.
+func plusToSpace(s string) string {
+	if strings.IndexByte(s, '+') < 0 {
+		return s
+	}
+	return strings.ReplaceAll(s, "+", " ")
+}
+
+// hexVal returns the value of one hex digit, or -1.
+func hexVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
+}
+
+// decodePercent undoes %XX byte-wise.
+//
+// It is hand-rolled rather than net/url's because url.QueryUnescape REFUSES a
+// string containing a malformed escape and returns nothing usable — and a
+// credential hidden behind one valid escape in an artifact that also contains
+// a stray '%' is exactly the input an attacker-shaped artifact has. A decoder
+// that gives up on the whole string is a decoder that can be switched off.
+func decodePercent(s string) string {
+	if strings.IndexByte(s, '%') < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			hi, lo := hexVal(s[i+1]), hexVal(s[i+2])
+			if hi >= 0 && lo >= 0 {
+				b.WriteByte(byte(hi<<4 | lo))
+				i += 2
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// decodeBackslash undoes the escapes a JSON or Go string literal uses.
+//
+// AuthArtifactStorageState IS JSON — cookies, localStorage and sessionStorage
+// as the browser dumps them — so this is not an exotic encoding to handle. It
+// is the ordinary one for the artifact kind most likely to hold a session.
+func decodeBackslash(s string) string {
+	if strings.IndexByte(s, '\\') < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		switch c := s[i+1]; c {
+		case '"', '\'', '\\', '/':
+			b.WriteByte(c)
+			i++
+		case 'n':
+			b.WriteByte('\n')
+			i++
+		case 'r':
+			b.WriteByte('\r')
+			i++
+		case 't':
+			b.WriteByte('\t')
+			i++
+		case 'b':
+			b.WriteByte('\b')
+			i++
+		case 'f':
+			b.WriteByte('\f')
+			i++
+		case '0':
+			b.WriteByte(0)
+			i++
+		case 'x':
+			if i+3 < len(s) {
+				hi, lo := hexVal(s[i+2]), hexVal(s[i+3])
+				if hi >= 0 && lo >= 0 {
+					b.WriteByte(byte(hi<<4 | lo))
+					i += 3
+					continue
+				}
+			}
+			b.WriteByte(s[i])
+		case 'u':
+			if v, ok := hex4(s, i+2); ok {
+				b.WriteRune(rune(v))
+				i += 5
+				continue
+			}
+			b.WriteByte(s[i])
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// hex4 reads exactly four hex digits at off.
+func hex4(s string, off int) (int, bool) {
+	if off+4 > len(s) {
+		return 0, false
+	}
+	v := 0
+	for i := off; i < off+4; i++ {
+		d := hexVal(s[i])
+		if d < 0 {
+			return 0, false
+		}
+		v = v<<4 | d
+	}
+	return v, true
+}
+
+// namedEntities is the SIX predefined character entities, and it is a
+// DENYLIST — an encoder that reaches for &commat; gets past it.
+//
+// It is written down anyway because the numeric forms beside it are generic
+// and the six below are what an HTML escaper actually emits. The control this
+// backs up is credentialWasInFlight, which does not read bytes at all.
+var namedEntities = map[string]rune{
+	"amp": '&', "lt": '<', "gt": '>', "quot": '"', "apos": '\'', "nbsp": ' ',
+}
+
+// maxEntityNameBytes bounds how far past an '&' this scans for a ';'.
+const maxEntityNameBytes = 8
+
+// decodeEntities undoes HTML character references: &#38; &#x26; and the six
+// names above. The fixture in the packet that produced this function was
+// `<input name="password" value="s3cr3t Pa55w0rd&amp;9xQz">` — an artifact
+// stored verbatim by the byte-exact sweep that preceded it.
+func decodeEntities(s string) string {
+	if strings.IndexByte(s, '&') < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '&' {
+			b.WriteByte(s[i])
+			continue
+		}
+		end := -1
+		for j := i + 1; j < len(s) && j <= i+maxEntityNameBytes+1; j++ {
+			if s[j] == ';' {
+				end = j
+				break
+			}
+		}
+		if end < 0 {
+			b.WriteByte(s[i])
+			continue
+		}
+		body := s[i+1 : end]
+		if r, ok := entityRune(body); ok {
+			b.WriteRune(r)
+			i = end
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// entityRune resolves one entity body — "amp", "#38" or "#x26".
+func entityRune(body string) (rune, bool) {
+	if body == "" {
+		return 0, false
+	}
+	if r, ok := namedEntities[body]; ok {
+		return r, true
+	}
+	if body[0] != '#' {
+		return 0, false
+	}
+	digits, base := body[1:], 10
+	if len(digits) > 1 && (digits[0] == 'x' || digits[0] == 'X') {
+		digits, base = digits[1:], 16
+	}
+	if digits == "" || len(digits) > 8 {
+		return 0, false
+	}
+	v := 0
+	for i := 0; i < len(digits); i++ {
+		d := hexVal(digits[i])
+		if d < 0 || d >= base {
+			return 0, false
+		}
+		v = v*base + d
+	}
+	if v < 0 || v > 0x10FFFF {
+		return 0, false
+	}
+	return rune(v), true
 }
 
 // sweepOnly replaces a whole string in which a credential was found, and
