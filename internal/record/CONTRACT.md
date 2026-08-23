@@ -223,6 +223,7 @@ repo-credentialed agent."
 | `finding.state` | `open, resolved, suppressed, regressed` | Area 40 (store). |
 | `scan_run.status` | `running, ok, failed, partial` | Area 40 (store); **written by area O**. |
 | `anvil/dastCoverage.inventoryProvenanceMix` keys | `runtime_spec, repo_spec, static_extraction, crawl` | **Produced by area D (D.18–D.25)**, mirrored here so a naming drift is caught at this file rather than at integration. Flagged to the orchestrator as a candidate seventh frozen enum. |
+| `anvil/specHarvest.outcome` | `harvest_ran, harvest_skipped` | Area 40 owns the vocabulary; the **SAST spec-harvest pass produces it** and **D.19 consumes it**. `AreaMappingOwners` records that **no mapping step is permitted**: `inventory.HarvestOutcome` already uses these two literals, so the handoff is identity today and a translating step would re-open the §6 shape at the one seam where the two vocabularies cannot disagree. There is no third literal — see §5. |
 | `anvil/locus.proximityClass` | *unenumerated* | Owned by the coding-agent consumption area (`research/24`'s Hunk4J citation). **Register it here before a second area consumes it**, or it becomes the eleventh defect of this exact shape. |
 
 `record.AreaMappingOwners` carries the same ownership statements in code, so they survive independently
@@ -281,9 +282,54 @@ write" checkable rather than aspirational.
 | `run.properties["anvil/routeTableDigest"]` | ext | required on the DAST run | DAST worker | audit trail, correlation replay |
 | `run.properties["anvil/advisorySnapshot"]` | ext | required on the SAST run | ingestion subsystem (area A) | coding agent (staleness), report |
 | `run.properties["anvil/runtimeTarget"]` | ext | required on the DAST run | DAST worker | correlation, repro replay |
+| `run.properties["anvil/specHarvest"]` **NEW** | ext | optional; **legal only on the SAST run** — `(*Run).validate` rejects it on the DAST run | the SAST spec-harvest pass | attack-surface discovery Tier 1 (D.19), coverage reporting (D.26) |
 
 `anvil/runtimeTarget.authProfileRef` is a **config file path and revision**. The record never carries
 credentials.
+
+### `anvil/specHarvest` — an outcome, a file list and an omission count, never a bare file list
+
+`plan/50-dast.md:628-630` forbids the DAST tier from harvesting spec files itself — "that is explicitly
+the SAST tier's job" — so Tier 1 can only ever see a slice somebody handed it. An **empty** slice has
+three meanings:
+
+| What happened | Whose fact is it? |
+|---|---|
+| the repository ships no spec files | the **repository's** — reportable, and the only one that may size a coverage denominator |
+| the harvest pass never ran | **Anvil's** |
+| files arrived and none of them could be read | **Anvil's** |
+
+All three produce a byte-identical empty route list, and that list flows into the **denominator** of
+`anvil/dastCoverage.endpointCoverage`, where a vanished denominator is the shape every "100 % covered"
+report is made of. `research/23-dast-signal-sources.md` Risk #1 — "Anvil must never report '0 DAST
+findings' as 'no dynamic vulnerabilities'" — is the same mistake one level down.
+
+**The third meaning is deliberately not a third literal.** It is not a fact about the harvest at all: the
+harvest ran and delivered files, and what happened next is the DAST tier's own per-file accounting. A
+literal for it here would let two areas disagree about which of them observed the failure.
+
+| Sub-field | Meaning |
+|---|---|
+| `outcome` | §3's `anvil/specHarvest.outcome`. Required; **the zero value is refused**, because the permissive reading of an unset outcome is "the repository ships no specs". |
+| `files[]` | Every harvested file carried. Required as an **array** under `harvest_ran` — an empty array, never `null`, the same rule `anvil/repro.env.sanitizers` already states. Must be empty under `harvest_skipped`: a pass that did not run cannot have delivered files. |
+| `omittedFileCount` | How many files the harvest **saw and did not carry**. Required under `harvest_ran` and **a pointer / explicit `null`, never a plain int**: `0` asserts that `files` is complete, and that is the answer a forgetful producer would get for free. `null` under `harvest_skipped`. `files` + `omittedFileCount` is the total the pass saw. |
+
+`SpecHarvest` **absent entirely** (`nil`) means *the record makes no statement* — a record assembled
+before this slot was wired. It is **not** the same as `harvest_skipped`, and a consumer must read it as
+"unknown", never as "the repository ships no specs".
+
+| `files[]` sub-field | Meaning |
+|---|---|
+| `location` | SARIF §3.4 `artifactLocation`. `uri` required — a harvested file nobody can name is one no operator can go look at when its routes turn out to be wrong. |
+| `sizeBytes` | The file's exact harvested length. **Zero is legal**: a repository may commit a zero-byte `openapi.yaml`, and refusing to record that would delete the file from the list, which is the silent loss this struct exists to prevent. |
+| `contentSha256` | Lowercase-hex SHA-256 of the exact harvested bytes, before any normalisation or YAML→JSON conversion. Validated by `ValidateDigest`, the package's one digest-shape check. It states **which bytes the DAST tier parsed**. |
+| `content` | Optional inline bytes (SARIF §3.3). When present it is the **whole** file: `len(text)` must equal `sizeBytes`. There is no truncation flag on purpose — a truncated spec yields a short route list, a short route list is a smaller denominator, and a smaller denominator makes coverage look better than it is. Truncate out of band and elide `content`. |
+| `declaredFormat` | What the **harvester claimed**. Recorded, never believed: D.19 classifies from the bytes, because the harvester classifies on a path and the path is in the repository. **Deliberately not an enum frozen here** — the parser vocabulary is area D's growing allowlist, and freezing a snapshot of it would make every new parser a produce/consume break in the opposite direction. |
+| `trust` | §2's label, over the URI, the declared format and the content. `anvil_generated` is **refused**: a committed spec file is external text whatever Anvil did to assemble the struct around it. This is the area-B mislabelling of §2, in the field where the bytes are most obviously attacker-authored. |
+
+**Why the SAST run only.** Harvesting is the SAST tier's job by plan, so a copy on the DAST run would be
+a second durable statement of one fact that can disagree with the first — the shape `plan/00-SPINE.md`
+S1 and ruling G10 both refuse, and the shape that produced the `anvil_ledger` defect.
 
 ### `anvil/dastCoverage` — a numerator, a denominator and a provenance mix, never a bare ratio
 
@@ -333,7 +379,7 @@ defect, not a convenience.
 | `result.properties["anvil/detector"]` (`.kind`, `.model`, `.revision`, `.promptDigest`) | ext | required | detector model | audit trail, prompt-digest replay, fingerprint tier selection |
 | `result.properties["anvil/evidenceClass"]` | ext | required | record assembler, derived from detector + correlation state | ranking (R.11 re-cut), coding agent (R.13 read order) |
 | `result.properties["anvil/trust"]` **NEW** | ext | required — see §2 | whichever component ingests the external string | prompt builder (S7 containment), report |
-| `result.properties["anvil/advisory"]` (`.ids`, `.cveIds`, `.sourceFeed`, `.snapshotDigest`, `.licenseSpdx`, `.asOf` **NEW**, `.stalenessSeconds` **NEW**, `.parseDegraded` **NEW**, `.excerpt`) | ext | required when an advisory is linked | ingestion subsystem at record-assembly time | coding agent (down-weight stale/degraded context), report; `.licenseSpdx` → `plan/80-compliance.md` |
+| `result.properties["anvil/advisory"]` (`.ids`, `.cveIds`, `.sourceFeed`, `.snapshotDigest`, `.licenseSpdx`, `.asOf` **NEW**, `.stalenessSeconds` **NEW**, `.parseDegraded` **NEW**, `.excerpt`, `.licenseManualNote` **NEW**) | ext | required when an advisory is linked | ingestion subsystem at record-assembly time | coding agent (down-weight stale/degraded context), report; `.licenseSpdx` and `.licenseManualNote` → `plan/80-compliance.md` |
 | `result.properties["anvil/risk"]` | ext | optional — see deviation 1 | Lane A ingestion | ranking (R.11, R.13), report |
 | `result.properties["anvil/patchContext"]` | ext | required for remediable findings | record assembler | coding agent |
 | `result.properties["anvil/correlation"]` | ext | required for clustered findings only | correlation engine (R.12) | coding agent (peer lookup), report |
@@ -363,6 +409,24 @@ defect, not a convenience.
   "verified fixed" — a verification re-run under a different sanitizer or ASLR setting is not the same
   experiment, and without these fields nothing can detect that. `sanitizers` is an empty array for a
   stock build, **never null**: null cannot be distinguished from "nobody recorded it."
+* **`anvil/advisory.licenseManualNote` sits beside the excerpt because it licenses the excerpt.** It is
+  S8's manual override — the **quoted operative sentence** from the publisher's own licence text, which
+  Lane A's licence gate requires whenever `licenseSpdx` is `NONE`, `NOASSERTION` or a `LicenseRef-` id:
+  exactly the population where the SPDX identifier establishes nothing, and exactly how the KEV metadata
+  override was admitted. The feed licence attaches to the **text**, not to Anvil, which is why
+  `licenseSpdx` is already per finding rather than per run; a note that stayed behind in the ingestion
+  database while the text it licenses travelled into the record would put the redistribution terms and
+  the redistributed bytes in two different places. It is a `TrustedString`, not a bare string and not a
+  second use of `licenseSpdx`: the note is a **quotation from a publisher's LICENSE file**, so the bytes
+  originated outside Anvil, `anvil_generated` is refused exactly as it is for `.excerpt`, and
+  `licenseSpdx` is an identifier field that prose corrupts. A present note whose text is **blank is
+  refused** — it would satisfy "a note exists" while establishing nothing, which is the absent value
+  wearing the legitimate one's clothes; the ingestion cache enforces the same shape in SQL
+  (`length(trim(license_manual_note)) > 0`). **Scope:** this slot does *not* make the record the
+  enforcement point for S8. The standing ruling that S8's grammatical subject is the **CI gate**, not the
+  record, is unchanged, and `(*Result).validate` deliberately does **not** require a note when
+  `licenseSpdx` is absent — that gate is the cache's `advisory_license_declared` CHECK. This field only
+  makes the note **survive** into the record.
 * **`anvil/correlation` links, never merges.** Both findings always survive independently: the SAST
   finding owns the file and line, the DAST finding owns the proof, and merging destroys exactly what the
   other contributes. `merged` is unconditionally `false`. At least two independent signals are required,
@@ -419,7 +483,7 @@ trust classification of external strings).
 
 ## 9. Logged deviations from `plan/40-record-and-storage.md`'s Record Field Contract table
 
-R.1's contract is required to match that table row for row, or log the deviation. Three deviations, all
+R.1's contract is required to match that table row for row, or log the deviation. Five deviations, all
 additive, none renaming or re-typing an existing row.
 
 1. **`result.properties["anvil/risk"]` added.** No row exists in the plan's table, but
@@ -435,6 +499,20 @@ additive, none renaming or re-typing an existing row.
    carries several strings of different provenance simultaneously, and a single enum per result collapses
    to the most permissive value — which is precisely the failure mode §2 describes. **The three literals
    are unchanged**; only the container is richer. See §2 for the shape.
+4. **`run.properties["anvil/specHarvest"]` added.** No row exists in the plan's table, and none existed
+   anywhere: D.19's Ruling-7 reconciliation grepped `contract.go` and this file for a `SpecFile`, an
+   `Artifacts` list, or any run-level slot for SAST-harvested spec files and **found nothing to consume**,
+   which is why that packet shipped `PARTIAL`. Without the slot a repository that ships no API specs and
+   a harvest handoff that was never wired produce byte-identical records, and both size the denominator
+   of `endpointCoverage`. Optional on the wire, SAST-run only. See §5.
+5. **`result.properties["anvil/advisory"].licenseManualNote` added.** No row exists in the plan's table.
+   `plan/00-SPINE.md` S8 requires "a manual-override field carrying the quoted operative sentence", and
+   the Lane A chain ledger records the licence gate admitting the KEV metadata override **on the strength
+   of exactly that note** — but the note stopped at `internal/ingest` and did not survive into the record,
+   so `internal/record/lanea/emit.go` was carrying it out of band on `Emission.LicenseManualNote` and
+   reporting the gap (its deviation 1). Optional on the wire. **This does not move S8's enforcement point:**
+   the standing ruling that S8's grammatical subject is the CI gate stands, and this contract does not
+   require a note when `licenseSpdx` resolves. See §6.
 
 Two further reconciliations, recorded because a reader of `research/18`'s annotated example will notice
 them:
@@ -508,3 +586,77 @@ not be persisted **at all**, because the derivation produced a literal the store
 
 Recorded because the lesson generalises: **one vocabulary with five definitions is the same defect §6
 was written to close**, and an amendment is exactly when it recurs.
+
+---
+
+## Amendment 2026-08-23 — two additive slots: `anvil/specHarvest` and `anvil/advisory.licenseManualNote`
+
+Both were **gaps other packets found and reported rather than patched locally**, which is the behaviour
+§0 asks for. Both are additive: no existing field changed, no field reordered, and none of the six frozen
+enums touched. `contract_test.go` pins the six literal-for-literal and is what would have caught it.
+
+### The two gaps
+
+| Gap | Found by | What was missing |
+|---|---|---|
+| No spec-harvest slot | **D.19** (Tier 1, the repo-spec route), performing Ruling 7's reconciliation against `internal/record` instead of the placeholder at `plan/50-dast.md:1246-1248` | No `SpecFile`, no `Artifacts` list, no run-level slot. D.19 built `HarvestOutcome` locally because "it is the only thing that can separate a genuinely specless repository from an unwired handoff", and shipped `PARTIAL`. |
+| No `license_manual_note` slot | **A.19** (`internal/record/lanea/emit.go`, deviation 1) | `AdvisoryContext` carried `LicenseSpdx` and nothing else; `AdvisorySnapshot` carried no licence field either. The note travelled out of band on `Emission.LicenseManualNote`. |
+
+### Where each vocabulary lives now
+
+The 2026-08-07 amendment recorded that `anvil/dastStatus` lives in five places and all five must move
+together. `anvil/specHarvest.outcome` lives in **four**, and the fifth is deliberately absent:
+
+| # | Location | What it is |
+|---|---|---|
+| 1 | `internal/record/contract.go` | `SpecHarvestOutcome` and `SpecHarvestOutcomeValues()` |
+| 2 | `internal/record/contract_test.go` | the literal pin, and the pin against D.19's own vocabulary |
+| 3 | `schemas/anvil-record-v1.schema.json` | `$defs.specHarvestOutcome`, `$defs.specHarvest`, `$defs.specHarvestFile` |
+| 4 | this file (§3, §5) | the contract other areas are pointed at |
+| — | `internal/store/schema.sql` | **no column, by design.** Nothing keys off this value in SQL; it travels inside `audit_record.payload`. `internal/store`'s `enumChecks` table is an explicit list, not a sweep of every enum, so adding a vocabulary with no column does not break `TestEnumCheckConstraintsMatchContractLiteralForLiteral`. **If a column is ever added, this row becomes a fifth place that must move with the rest.** |
+
+`inventory.HarvestOutcome` (area D) is a **fifth site by necessity** — `internal/record` cannot import
+`internal/dast/inventory` to assert agreement, because `inventory` imports `internal/record`. The literals
+are therefore pinned by hand on both sides, `TestSpecHarvestOutcomeLiteralsMatchTheTierOneVocabulary`
+asserts this side, and `AreaMappingOwners["anvil/specHarvest.outcome"]` records that **no translating step
+is permitted** — the handoff is identity today and must stay identity.
+
+### The guards, and the mutations that proved they fire
+
+Every guard below was broken, watched go red, and restored byte-for-byte (SHA-256 verified). A guard that
+has never failed has not been tested.
+
+| Guard | Mutation | Result |
+|---|---|---|
+| `outcome` has no legal zero value | skip `ValidateSpecHarvestOutcome` | RED |
+| `files` is an array, never `null`, under `harvest_ran` | drop the nil check | RED |
+| `omittedFileCount` is required under `harvest_ran` | default the nil case to `0` — the realistic defect | RED, at **both** `ValidateSpecHarvest` and `(*SARIFLog).Validate` |
+| `harvest_skipped` cannot carry files | drop the check | RED |
+| `anvil/specHarvest` is refused on the DAST run | drop the check | RED |
+| `contentSha256` is a real digest | skip `ValidateDigest` | RED on all three of empty / truncated / uppercase |
+| inline `content` is the whole file | drop the length equality | RED on both short and long |
+| a repo spec file is never `anvil_generated` | drop `LegalForExternalString` | RED |
+| the licence note is never blank | drop the `TrimSpace` check | RED on both empty and whitespace |
+| the licence note is never `anvil_generated` | drop `LegalForExternalString` | RED on both `anvil_generated` and unset |
+| the licence note reaches the wire | retag the field `json:"-"` | RED |
+| the spec harvest reaches the wire | retag the field `json:"-"` | RED — the two records became byte-identical, which is the defect in its original form |
+
+Every refusal has a **positive control** beside it, because a refusal that fires for every input is not a
+gate, it is an outage: a legal harvest under each outcome, a file with its bytes elided, a **zero-byte**
+committed spec file, both legal external trust labels on the note, and a finding with no note at all.
+
+### Wire-schema evidence
+
+The Go structs and `schemas/anvil-record-v1.schema.json` were checked against each other rather than
+asserted to agree: `internal/record`'s own fixtures were marshalled to JSON and validated with
+`jsonschema` 4.26.0 as draft 2020-12. **Four `runProperties` fixtures and one `advisoryContext` fixture
+validate; twelve negative controls are all refused** — zero outcome, null `files` under `harvest_ran`,
+null `omittedFileCount` under `harvest_ran`, files under `harvest_skipped`, `omittedFileCount` under
+`harvest_skipped`, `anvil_generated` file trust, uppercase digest, empty URI, negative `sizeBytes`, a DAST
+run carrying a spec harvest, a blank licence note, and an `anvil_generated` licence note.
+
+One disagreement was found and fixed while doing this, and it is the reason the check was run rather than
+skipped: `SpecHarvest{Outcome: SpecHarvestSkipped}` marshals `files` as `null`, which the first draft of
+the schema refused while the Go validator accepted. The `harvest_skipped` branch now admits `null` and
+`[]` alike (they mean the same thing when there is no list to have been written down), and the
+`harvest_ran` branch narrows back to an array, which is where the distinction is load-bearing.

@@ -1040,6 +1040,80 @@ func ValidateInventoryProvenance(v string) error {
 	return validateEnum("anvil/dastCoverage.inventoryProvenanceMix", InventoryProvenance(v), InventoryProvenanceValues())
 }
 
+// SpecHarvestOutcome says WHAT THE SAST SPEC-HARVEST PASS DID, and it is the
+// only thing that can tell a repository which ships no API spec files apart
+// from a harvest handoff that never ran.
+//
+// NOT one of the six frozen enums. Area 40 owns the vocabulary; the SAST half
+// produces it and area D consumes it (D.19, Tier 1 of attack-surface
+// discovery). The literals are IDENTICAL to the ones D.19 built locally while
+// this slot did not exist, so the handoff needs no mapping and cannot drift
+// into one: see AreaMappingOwners.
+//
+// WHY THIS EXISTS AT ALL — the failing case, in full:
+//
+// plan/50-dast.md:628-630 forbids the DAST tier from harvesting spec files
+// itself ("that is explicitly the SAST tier's job"), so Tier 1 can only ever
+// see a slice somebody handed it. An EMPTY slice has three meanings:
+//
+//	the repository ships no spec files            -- a fact about the repo
+//	the harvest pass never ran                    -- a fact about Anvil
+//	files arrived and none of them could be read  -- a fact about Anvil
+//
+// All three produce a byte-identical empty route list, and that list flows
+// into the DENOMINATOR of DastCoverage.EndpointCoverage, where a vanished
+// denominator is the shape every "100% covered" report is made of. Only the
+// first is a reportable fact about the target;
+// research/23-dast-signal-sources.md Risk #1 — "Anvil must never report
+// '0 DAST findings' as 'no dynamic vulnerabilities'" — is the same mistake one
+// level down.
+//
+// The third meaning is NOT a fourth literal. It is not a fact about the
+// harvest at all: the harvest ran and delivered files, and what happened next
+// is the DAST tier's own per-file accounting. A literal for it here would let
+// two areas disagree about which of them observed the failure.
+//
+// The zero value is not a member. A Go zero value must never mean "permitted",
+// and here the permissive reading — an empty list read as a fact about the
+// repository — is exactly the one that shrinks the denominator.
+type SpecHarvestOutcome string
+
+// The two legal anvil/specHarvest.outcome literals.
+const (
+	// SpecHarvestRan: the SAST pass walked the repository and SpecHarvest.Files
+	// is its complete output, modulo SpecHarvest.OmittedFileCount. An empty
+	// Files under this outcome is a reportable fact about the repository.
+	SpecHarvestRan SpecHarvestOutcome = "harvest_ran"
+	// SpecHarvestSkipped: the SAST pass did not run, or its output never
+	// reached the record. An empty Files under this outcome is a fact about
+	// Anvil and must never become a coverage denominator.
+	SpecHarvestSkipped SpecHarvestOutcome = "harvest_skipped"
+)
+
+// SpecHarvestOutcomeValues returns every legal anvil/specHarvest.outcome
+// literal.
+func SpecHarvestOutcomeValues() []SpecHarvestOutcome {
+	return []SpecHarvestOutcome{SpecHarvestRan, SpecHarvestSkipped}
+}
+
+// Valid reports whether o is a legal anvil/specHarvest.outcome literal. The
+// zero value is not.
+func (o SpecHarvestOutcome) Valid() bool { return inEnum(o, SpecHarvestOutcomeValues()) }
+
+// ValidateSpecHarvestOutcome reports whether v is a legal
+// anvil/specHarvest.outcome literal.
+func ValidateSpecHarvestOutcome(v string) error {
+	return validateEnum("anvil/specHarvest.outcome", SpecHarvestOutcome(v), SpecHarvestOutcomeValues())
+}
+
+// DescribesTheRepository reports whether an EMPTY SpecHarvest.Files under this
+// outcome may be read as a statement about the target repository rather than
+// about Anvil's own reach.
+//
+// Provided so no consumer writes `if len(files) == 0`, which is the check that
+// cannot tell the three meanings apart.
+func (o SpecHarvestOutcome) DescribesTheRepository() bool { return o == SpecHarvestRan }
+
 // SARIF-native enums. Listed for completeness and constant-safety; these are
 // OASIS's vocabulary, not Anvil's, and must not be extended.
 type (
@@ -1108,6 +1182,7 @@ const (
 	PropRunRouteTableDigest = "anvil/routeTableDigest"
 	PropRunAdvisorySnapshot = "anvil/advisorySnapshot"
 	PropRunRuntimeTarget    = "anvil/runtimeTarget"
+	PropRunSpecHarvest      = "anvil/specHarvest"
 )
 
 // Keys in `result.properties`.
@@ -1371,6 +1446,28 @@ type RunProperties struct {
 	// RuntimeTarget is required on the DAST run. Producer: DAST worker.
 	// Consumer: correlation, reproduction replay.
 	RuntimeTarget *RuntimeTarget `json:"anvil/runtimeTarget,omitempty"`
+
+	// SpecHarvest is the SAST half's statement of which API spec files it
+	// harvested from the target repository, and — the load-bearing half —
+	// WHETHER IT RAN AT ALL. Producer: the SAST spec-harvest pass. Consumer:
+	// attack-surface discovery Tier 1 (D.19), coverage reporting (D.26).
+	//
+	// LEGAL ONLY ON THE SAST RUN. plan/50-dast.md:628-630 assigns harvesting
+	// to the SAST tier and forbids the DAST tier from re-deriving it, so a
+	// copy on the DAST run would be a second durable statement of one fact
+	// that can disagree with the first — the shape plan/00-SPINE.md S1 and
+	// ruling G10 both refuse. (*Run).validate rejects it there.
+	//
+	// NIL MEANS THE RECORD MAKES NO STATEMENT, which is not the same as
+	// SpecHarvestSkipped and not the same as an empty Files: nil is a record
+	// assembled before this slot was wired, and a consumer must treat it as
+	// "unknown", never as "the repository ships no specs". A non-nil
+	// SpecHarvest with a zero Outcome is REFUSED by ValidateSpecHarvest, so
+	// `&SpecHarvest{}` cannot become the permissive reading by default.
+	//
+	// Optional on every run so that records assembled before the slot existed
+	// still validate; the SAST half is expected to populate it.
+	SpecHarvest *SpecHarvest `json:"anvil/specHarvest,omitempty"`
 }
 
 // DastCoverage reports what fraction of the discovered attack surface was
@@ -1434,6 +1531,115 @@ type RuntimeTarget struct {
 	AuthProfileRef string   `json:"authProfileRef"`
 	Scope          []string `json:"scope"`
 	Excluded       []string `json:"excluded"`
+}
+
+// SpecHarvest is what the SAST spec-harvest pass did and what it found.
+// `anvil/specHarvest`.
+//
+// It carries an OUTCOME AND A FILE LIST AND AN OMISSION COUNT, never a bare
+// file list, for the reason DastCoverage carries a numerator and a denominator
+// rather than a percentage: the interesting cases are all the ones where the
+// list is short, and a short list with no accompanying statement is
+// indistinguishable from a complete one. See SpecHarvestOutcome for the three
+// meanings of an empty list and why only one of them describes the repository.
+type SpecHarvest struct {
+	// Outcome says whether the harvest pass ran. Required; the zero value is
+	// refused, because the zero value would read as the permissive answer.
+	Outcome SpecHarvestOutcome `json:"outcome"`
+
+	// Files is every harvested spec file this record carries, in the order the
+	// harvest produced them.
+	//
+	// Required as an ARRAY under SpecHarvestRan — an empty array, never null.
+	// A null list and an empty list must not be the same observation, which is
+	// the same rule Repro.Env.Sanitizers already states ("use an empty array
+	// for a stock build, not null"). Under SpecHarvestSkipped it must be
+	// empty: a pass that did not run cannot have delivered files, and a record
+	// that says both is a record no consumer can act on.
+	Files []SpecHarvestFile `json:"files"`
+
+	// OmittedFileCount is how many spec files the harvest SAW and did NOT
+	// carry into Files — dropped by a size bound, a count bound, or a filter.
+	//
+	// Required under SpecHarvestRan and A POINTER ON PURPOSE. An int here
+	// would default to 0, and 0 means "Files is complete" — the permissive
+	// reading, handed out free to any producer that forgot to set it. Null is
+	// refused instead, so forgetting fails closed. Null under
+	// SpecHarvestSkipped, where there is nothing to have omitted.
+	//
+	// Files plus OmittedFileCount is the total the pass saw, which is the
+	// number a coverage denominator may be reasoned about from.
+	OmittedFileCount *int `json:"omittedFileCount"`
+}
+
+// SpecHarvestFile is one spec file the SAST pass harvested.
+// `anvil/specHarvest.files[]`.
+//
+// THE BYTES ARE ATTACKER-AUTHORED. A committed openapi.yaml, WSDL or Postman
+// collection is written by whoever can commit to the scanned repository, and
+// every network destination inside one (`servers[].url`, a WSDL
+// `soap:address location`, a Postman host) is a repository-supplied address.
+// Nothing here grants scope or authorization; this struct records WHICH FILE
+// and WHICH BYTES, and the authorization kernel remains a pure function of
+// (target, scope, attestation, clock) per plan/00-SPINE.md S7.
+type SpecHarvestFile struct {
+	// Location names the file in the target repository, in SARIF's own
+	// vocabulary for naming a file (§3.4). URI is required: a file nobody can
+	// name is a file no operator can go look at when its routes turn out to be
+	// wrong.
+	Location ArtifactLocation `json:"location"`
+
+	// SizeBytes is the file's exact length in bytes as harvested. Zero is
+	// legal — a repository may commit a zero-byte openapi.yaml, and refusing
+	// to record that would delete the file from the harvest list, which is the
+	// silent loss this whole struct exists to prevent.
+	SizeBytes int `json:"sizeBytes"`
+
+	// ContentSHA256 is the lowercase-hex SHA-256 of the file's exact bytes AS
+	// HARVESTED, before any normalisation, re-encoding or YAML-to-JSON
+	// conversion. Required, and validated by ValidateDigest — the package's
+	// one digest-shape check, not a second one.
+	//
+	// It is what makes the harvest auditable when Content is not carried: it
+	// states WHICH bytes the DAST tier parsed, so a later re-run that produces
+	// a different route list can be told apart from a repository that changed.
+	ContentSHA256 string `json:"contentSha256"`
+
+	// Content is the file's bytes, inline and COMPLETE, when the record
+	// carries them (SARIF §3.3). Optional: a record that elides them still
+	// names the file and pins its digest.
+	//
+	// When present it must be the WHOLE file — len(Content.Text) must equal
+	// SizeBytes — because a silently truncated spec yields a short route list,
+	// a short route list is a smaller coverage denominator, and a smaller
+	// denominator makes endpoint_coverage look better than it is. There is no
+	// truncation flag here on purpose: truncate out of band and elide Content.
+	Content *ArtifactContent `json:"content,omitempty"`
+
+	// DeclaredFormat is what the HARVESTER CLAIMED this file is. It is
+	// recorded and it is never believed — D.19 classifies from the bytes and
+	// nothing else, because the harvester classifies on a path and the path is
+	// in the repository.
+	//
+	// DELIBERATELY NOT AN ENUM THIS FILE FREEZES. The parser vocabulary is
+	// area D's SpecFormat (inventory.RepoSpecFormatValues), an ALLOWLIST that
+	// grows as area D ships parsers; freezing a snapshot of it here would make
+	// every new parser a produce/consume break of exactly the kind §6 rules
+	// on, in the opposite direction. It is a free string, and a divergence
+	// between it and the bytes is a finding about the harvest side, not about
+	// this record.
+	DeclaredFormat string `json:"declaredFormat,omitempty"`
+
+	// Trust labels the strings this file contributes — its URI, its declared
+	// format and its content. plan/00-SPINE.md S6 requires it on every string
+	// originating outside Anvil, and a repository wrote all of these.
+	//
+	// TrustAnvilGenerated is REFUSED, not merely discouraged: assembling the
+	// struct is not authoring the bytes, and mislabelling here would disable
+	// the prompt-injection containment check on repository-authored text
+	// heading for a repo-credentialed agent. See Trust.TrustUntrusted's own
+	// note about the same mistake found in area B.
+	Trust Trust `json:"trust"`
 }
 
 // RunAutomationDetails is SARIF §3.17. CorrelationGuid must be identical in
@@ -1640,6 +1846,43 @@ type AdvisoryContext struct {
 	// never a whole advisory (research/24). It is EXTERNAL TEXT and
 	// therefore carries its own trust inline.
 	Excerpt *TrustedString `json:"excerpt,omitempty"`
+
+	// LicenseManualNote is the QUOTED OPERATIVE SENTENCE from the publisher's
+	// own licence text — the manual override Lane A's licence gate requires
+	// whenever LicenseSpdx is NONE, NOASSERTION or a LicenseRef- id, which is
+	// exactly the population where the SPDX identifier establishes nothing.
+	// `advisory.license_manual_note` in the ingestion cache.
+	//
+	// IT SITS BESIDE THE EXCERPT BECAUSE IT LICENSES THE EXCERPT. The feed
+	// licence attaches to the TEXT, not to Anvil (plan/00-SPINE.md S8,
+	// plan/80-compliance.md), which is why LicenseSpdx is already carried per
+	// finding rather than per run. A note that stayed behind in the ingestion
+	// database while the text it licenses travelled into the record would put
+	// the redistribution terms and the redistributed bytes in two different
+	// places — and the Lane A chain ledger records the licence gate admitting
+	// the KEV metadata override ON THE STRENGTH OF THIS NOTE. It travels with
+	// what it licenses or it does not travel.
+	//
+	// IT IS A TrustedString, NOT A BARE STRING, AND NOT LicenseSpdx. The note
+	// is a QUOTATION from a publisher's LICENSE file: the bytes originated
+	// outside Anvil, so S6 requires a trust label, and TrustAnvilGenerated is
+	// refused for it exactly as it is for Excerpt. It cannot be folded into
+	// LicenseSpdx, which is an identifier field that prose corrupts, and it
+	// cannot be folded into Reasoning, which is anvil_generated.
+	//
+	// A NON-NIL NOTE WHOSE TEXT IS BLANK IS REFUSED. Nil means no note was
+	// recorded; a present note carrying whitespace would satisfy "a note
+	// exists" while carrying no operative sentence, which is the absent value
+	// wearing the legitimate one's clothes. The ingestion cache enforces the
+	// same shape in SQL (`length(trim(license_manual_note)) > 0`).
+	//
+	// SCOPE, STATED: this slot does NOT make the record the enforcement point
+	// for S8. The standing ruling that S8's grammatical subject is the CI
+	// GATE, not the record, is unchanged, and (*Result).validate deliberately
+	// does not require a note when LicenseSpdx is absent — that gate is the
+	// ingestion cache's advisory_license_declared CHECK. This field only
+	// ensures the note SURVIVES into the record.
+	LicenseManualNote *TrustedString `json:"licenseManualNote,omitempty"`
 }
 
 // TrustedString is a string that originated outside Anvil, carrying its own
@@ -2270,6 +2513,15 @@ func (r *Run) validate(auditID string) error {
 		if err := ValidateDastCoverage(r.Properties.DastCoverage); err != nil {
 			return err
 		}
+		if r.Properties.SpecHarvest != nil {
+			return fmt.Errorf("%s is on the DAST run, and it belongs to the SAST half: "+
+				"plan/50-dast.md:628-630 assigns spec harvesting to the SAST tier and forbids "+
+				"the DAST tier from re-deriving it, so a copy here is a second durable "+
+				"statement of one fact that can disagree with the first", PropRunSpecHarvest)
+		}
+	}
+	if err := ValidateSpecHarvest(r.Properties.SpecHarvest); err != nil {
+		return err
 	}
 	for i := range r.Results {
 		if err := r.Results[i].validate(r.Properties.Half); err != nil {
@@ -2307,6 +2559,92 @@ func ValidateDastCoverage(c *DastCoverage) error {
 		if err := ValidateInventoryProvenance(string(prov)); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// ValidateSpecHarvest checks that a spec-harvest statement says which of the
+// three empty-list meanings applies, and that its file list cannot be read as
+// complete when it is not.
+//
+// A nil h is legal and means the record makes no statement — a record
+// assembled before this slot was wired. Every other absence is refused: a
+// non-nil SpecHarvest whose Outcome is the zero value, or whose
+// OmittedFileCount is null under SpecHarvestRan, fails here rather than
+// defaulting to the permissive reading.
+func ValidateSpecHarvest(h *SpecHarvest) error {
+	if h == nil {
+		return nil
+	}
+	if err := ValidateSpecHarvestOutcome(string(h.Outcome)); err != nil {
+		return fmt.Errorf("%s: %w (there is no default: an empty file list means one thing "+
+			"under %q and the opposite thing under %q, and the difference is the denominator "+
+			"of %s)", PropRunSpecHarvest, err, SpecHarvestRan, SpecHarvestSkipped,
+			PropRunDastCoverage)
+	}
+	switch h.Outcome {
+	case SpecHarvestRan:
+		if h.Files == nil {
+			return fmt.Errorf("%s.files is null under %q; use an empty array. A null list and "+
+				"an empty list must not be the same observation — one says the harvest found "+
+				"nothing, the other says nobody wrote the list down",
+				PropRunSpecHarvest, SpecHarvestRan)
+		}
+		if h.OmittedFileCount == nil {
+			return fmt.Errorf("%s.omittedFileCount is null under %q and is required there. "+
+				"It is a pointer precisely so that forgetting it fails closed: an int would "+
+				"default to 0, and 0 asserts that files is COMPLETE",
+				PropRunSpecHarvest, SpecHarvestRan)
+		}
+		if *h.OmittedFileCount < 0 {
+			return fmt.Errorf("%s.omittedFileCount is %d; a count of files not carried cannot "+
+				"be negative", PropRunSpecHarvest, *h.OmittedFileCount)
+		}
+	case SpecHarvestSkipped:
+		if len(h.Files) > 0 {
+			return fmt.Errorf("%s reports %q and carries %d files. A pass that did not run "+
+				"cannot have delivered files, and a record asserting both is one no consumer "+
+				"can act on", PropRunSpecHarvest, SpecHarvestSkipped, len(h.Files))
+		}
+		if h.OmittedFileCount != nil {
+			return fmt.Errorf("%s.omittedFileCount must be null under %q: a pass that did not "+
+				"run saw nothing and therefore omitted nothing",
+				PropRunSpecHarvest, SpecHarvestSkipped)
+		}
+	}
+	for i := range h.Files {
+		if err := validateSpecHarvestFile(&h.Files[i]); err != nil {
+			return fmt.Errorf("%s.files[%d]: %w", PropRunSpecHarvest, i, err)
+		}
+	}
+	return nil
+}
+
+func validateSpecHarvestFile(f *SpecHarvestFile) error {
+	if f.Location.URI == "" {
+		return fmt.Errorf("location.uri is required; a harvested file nobody can name is a " +
+			"file no operator can go look at when its routes turn out to be wrong")
+	}
+	if f.SizeBytes < 0 {
+		return fmt.Errorf("sizeBytes is %d; a file's length cannot be negative", f.SizeBytes)
+	}
+	if err := ValidateDigest(f.ContentSHA256); err != nil {
+		return fmt.Errorf("contentSha256 must be the lowercase-hex SHA-256 of the file's exact "+
+			"harvested bytes: %w", err)
+	}
+	if f.Content != nil && len(f.Content.Text) != f.SizeBytes {
+		return fmt.Errorf("content is carried inline and is %d bytes while sizeBytes is %d. "+
+			"Inline content is the WHOLE file: a silently truncated spec yields a short route "+
+			"list, and a short route list is a smaller coverage denominator, which makes "+
+			"endpoint_coverage look better than it is", len(f.Content.Text), f.SizeBytes)
+	}
+	if err := ValidateTrust(string(f.Trust)); err != nil {
+		return err
+	}
+	if !f.Trust.LegalForExternalString() {
+		return fmt.Errorf("trust is %q, and a spec file committed to the target repository is "+
+			"external text whatever Anvil did to assemble the struct around it",
+			TrustAnvilGenerated)
 	}
 	return nil
 }
@@ -2367,6 +2705,21 @@ func (r *Result) validate(runHalf Half) error {
 		if p.Advisory.Excerpt != nil && !p.Advisory.Excerpt.Trust.LegalForExternalString() {
 			return fmt.Errorf("%s.excerpt is external text and cannot be %q",
 				PropResultAdvisory, TrustAnvilGenerated)
+		}
+		if n := p.Advisory.LicenseManualNote; n != nil {
+			if strings.TrimSpace(n.Text) == "" {
+				return fmt.Errorf("%s.licenseManualNote is present and carries no text. It is "+
+					"the QUOTED OPERATIVE SENTENCE from the publisher's licence; a blank one "+
+					"satisfies \"a note exists\" while establishing nothing, which is the "+
+					"absent value wearing the legitimate one's clothes (plan/00-SPINE.md S8)",
+					PropResultAdvisory)
+			}
+			if !n.Trust.LegalForExternalString() {
+				return fmt.Errorf("%s.licenseManualNote is %q; it is a QUOTATION from a "+
+					"publisher's LICENSE file, so the bytes originated outside Anvil and "+
+					"transcribing them is not authoring them",
+					PropResultAdvisory, TrustAnvilGenerated)
+			}
 		}
 	}
 	if p.Repro != nil {
@@ -2455,4 +2808,9 @@ var AreaMappingOwners = map[string]string{
 		"with the record's column and could not be stored (rulings G3+G6).",
 	"anvil/target.provisioning": "D.26 — writes the provisioning path here, NOT into target.provenance (rulings G4+G7).",
 	"handoff.state":             "R.4 owns the DDL; X.8/X.9 read and write it. Area X's anvil_ledger is deleted (rulings G9+G10).",
+	"anvil/specHarvest.outcome": "NO MAPPING, and none may be added. The SAST spec-harvest pass emits " +
+		"SpecHarvestOutcome directly, and D.19's inventory.HarvestOutcome already uses the same two " +
+		"literals (harvest_ran|harvest_skipped), so the handoff is identity. A translating step here " +
+		"would be the produce/consume shape §6 exists to close, re-introduced at the one seam where " +
+		"the two vocabularies currently cannot disagree.",
 }

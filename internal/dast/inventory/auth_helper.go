@@ -1,0 +1,2488 @@
+// D.24 — the authenticated-crawl helper.
+//
+// THIS IS THE ONE FILE IN THE DYNAMIC TIER THAT HOLDS A CREDENTIAL, so it is
+// the one file where getting logging wrong is itself the vulnerability. Two
+// properties are load-bearing, and everything below is arranged around them.
+//
+// # 1. A credential must never reach a log, an error, an audit row or a report
+//
+// The package's redact() is a DISPLAY helper: it folds a string down to an
+// allowlisted charset. That is exactly the wrong control here, because a
+// credential is usually already inside that charset — redact("hunter2") is
+// "hunter2". A redactor cannot protect a secret whose spelling is innocent.
+//
+// So this file uses two controls that do not depend on the secret's spelling:
+//
+//	Secret            the credential never exists as a plain string field on
+//	                  any struct in this package. It is held XOR-masked, and
+//	                  every fmt verb, every Marshal and every reflective walk
+//	                  therefore renders "[credential redacted]" or two byte
+//	                  slices — never the value. TestFmtCannotPrintACredential
+//	                  measures this over %v %s %q %d %x %#v and over a struct
+//	                  that CONTAINS a Secret in an unexported field, which is
+//	                  the case fmt.Stringer alone does not cover: fmt cannot
+//	                  call a method on a value it cannot Interface(), so a
+//	                  String() method on its own would have leaked there.
+//
+//	the sweep         every byte that leaves for the artifact sink, and every
+//	                  driver-authored string that reaches the ledger, is
+//	                  searched for the credential's ACTUAL VALUE — raw and in
+//	                  both percent-encoded forms — and the whole artifact or
+//	                  string is REFUSED if it is found. Not redacted in
+//	                  place: a partial rewrite has to anticipate every
+//	                  encoding, and refusing the artifact does not.
+//
+// The masking is anti-disclosure, NOT cryptography. The pad sits beside the
+// ciphertext and anyone holding the struct can undo it in two lines. It
+// defeats fmt, log, reflection and encoding — which is the entire set of ways
+// a credential has historically ended up in a scan report — and it defeats
+// nothing else. That limit is stated here rather than implied by silence.
+//
+// What the sweep does NOT catch, stated rather than qualified away:
+//
+//	base64 or any other re-encoding of the credential inside an artifact.
+//	Catching it needs encoding/base64, which is NOT on gate 3's inertImports;
+//	adding it is a one-line edit in internal/dast/authz/egress_chokepoint_test.go
+//	and is reported to the orchestrator rather than made here.
+//
+//	a compressed artifact. compress/gzip IS allowlisted, so this one is
+//	reachable; it is not done because an artifact sink that stores compressed
+//	bytes does not exist yet, and a decompressor with no producer is untested
+//	code in the credential path.
+//
+//	A CREDENTIAL RENDERED AS PIXELS. No byte sweep can see it, so screenshots
+//	are handled by SUPPRESSION rather than by sweeping: under
+//	ScreenshotPolicyExceptCredentialSteps a screenshot belonging to a step
+//	that types a secret is never stored, and a screenshot that names no step
+//	cannot be checked against the step list, so it is suppressed too.
+//	ScreenshotPolicySuppressAll is the other choice. There is no third value
+//	and no default.
+//
+// # 2. A FAILED LOGIN FOLLOWED BY A SUCCESSFUL CRAWL IS NOT AN AUTHENTICATED
+// CRAWL
+//
+// An authenticated crawl reaches more of the application — that is the point —
+// so "authenticated" is a claim about COVERAGE, and a run that logged in and
+// a run that failed to log in produce route lists that look identical and mean
+// different things. research/22's Risk #7 is that auth "silently zeroes out a
+// scan"; the silence is the defect, not the zero.
+//
+// Two mechanisms make it impossible to report the wrong one:
+//
+//	THE DRIVER'S WORD IS NOT ACCEPTED. AuthOutcome.SessionEstablished is the
+//	driver's claim, and a claim is not an observation. A Session reaches
+//	AuthStateAuthenticated only after CheckLiveness — a request Anvil itself
+//	pushed through NewRequestIntent, RequireAuthorization and AuditedAdmit —
+//	comes back alive. That is ruling 7's rule ("only an observation Anvil
+//	made through the kernel confirms") applied to a session instead of to an
+//	endpoint. A driver that returns SessionEstablished:true and cannot then
+//	be observed logged in produces AuthStateAuthenticationFailed.
+//
+//	THE RUN TIMELINE IS PARTITIONED, NOT SUMMARISED. Session.Windows()
+//	returns contiguous, non-overlapping windows covering the whole run, each
+//	labelled with one AuthState, and StateAt maps any instant to exactly one.
+//	A window that begins at a PASSED liveness check and ends at a FAILED one
+//	is AuthStateUnverified — the session died somewhere inside it and nobody
+//	knows where — and only a window bracketed by two passes is
+//	AuthStateAuthenticated. AuthState.AuthenticatedCoverage() is an allowlist
+//	of exactly one value, so every other state, including the zero value,
+//	answers false. D.26 joins a CrawlVisit's At() against this.
+//
+// # Everything still goes through the kernel
+//
+// A login is a state-changing request, so it is admitted as one: GET the login
+// page, then POST to it, both through GateAudit.AuditedAdmit. The POST needs
+// an explicit per-endpoint allow (authz.EndpointAllowance, gate 15) or the
+// kernel refuses it — which means an operator has to name the login endpoint
+// on purpose before Anvil will ever submit a credential to it. That is not a
+// control this file adds; it is the kernel's, and this file's job is to route
+// through it rather than around it.
+//
+// The technique is pinned to authz.TechniqueAuthenticatedRead and is not
+// configurable, for the reason crawlMethod is a const: a caller who could
+// choose it could choose one gate 15 judges differently.
+//
+// codedMaxAuthAttempts exists for a reason worth stating: a forced re-login is
+// a credential submission, and an unbounded loop of them against a target that
+// keeps refusing IS authz.TechniqueAccountLockout, which is on gate 15's
+// destructive denylist. The bound is what stops Anvil's own session recovery
+// from turning into the denylisted technique.
+//
+// # What this file does not do
+//
+// It does not parse .anvil/target.yaml. D.1 (internal/dast/target) parses and
+// validates the `auth` section — method is an allowlist of one value, steps_ref
+// is path-checked and repo-contained — and AuthStepsFromManifest reads that
+// result rather than the file.
+//
+// It does not parse the steps document either. That document holds the
+// credential, so the component that reads it is a SEAM (AuthStepLoader) and
+// its absence is a loud typed refusal, exactly as ClientSpider's is. This
+// module has no YAML parser (see RefusalYAMLUnsupported), so
+// SystemAuthStepLoader always refuses on every host today.
+//
+// It holds no socket and cannot: D.9's gate 3 tier 1 makes that structural.
+// The browser lives behind AuthDriver, and the obligations on an implementer
+// are stated on that interface and enforced nowhere here — the same shape
+// ClientSpider and engines.ZapRunner have, and the same integration lane owes
+// the proof.
+package inventory
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math/rand/v2"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/Susquehanna-Syntax/Anvil/internal/dast/authz"
+	"github.com/Susquehanna-Syntax/Anvil/internal/dast/engines"
+	"github.com/Susquehanna-Syntax/Anvil/internal/dast/target"
+)
+
+// ---------------------------------------------------------------------------
+// Sentinel errors
+// ---------------------------------------------------------------------------
+
+var (
+	// ErrNoAuthDriver is returned when authentication was configured and no
+	// browser seam is wired. It is an error and never a session: a run that
+	// could not attempt a login must not produce a value whose Authenticated()
+	// a caller might read as "the target has no auth".
+	ErrNoAuthDriver = errors.New("inventory: no AuthDriver is wired, so no login was " +
+		"attempted and any crawl that follows covers the PUBLIC surface only")
+
+	// ErrNoAuthStepLoader is what SystemAuthStepLoader returns.
+	ErrNoAuthStepLoader = errors.New("inventory: no AuthStepLoader is wired, so the " +
+		"auth.steps_ref document was never read and no explicit step list exists")
+
+	// ErrAuthFailed is what AuthenticateAndMonitor returns when a login was
+	// attempted and did not produce a session Anvil could observe. The
+	// Session is returned ALONGSIDE it, carrying the failed provenance, so a
+	// caller that drops the error still cannot report an authenticated crawl.
+	ErrAuthFailed = errors.New("inventory: authentication was configured and did not " +
+		"succeed; a crawl that follows is an UNAUTHENTICATED crawl and its coverage " +
+		"means something different")
+
+	// ErrSessionLost is what EnsureSessionBeforePhase returns when liveness
+	// failed and the forced re-login did not restore the session.
+	ErrSessionLost = errors.New("inventory: the authenticated session was lost mid-scan " +
+		"and the forced re-login did not restore it")
+
+	// ErrCredentialInArtifact is what the sweep returns. It NEVER carries the
+	// offending bytes, the offending string, or the credential — only the
+	// index of the step whose secret was found, which is Anvil's own
+	// configuration and not the secret.
+	ErrCredentialInArtifact = errors.New("inventory: an authentication-report artifact " +
+		"contained a credential in plaintext and was refused rather than stored")
+
+	// ErrCoverageIsNotAuthenticated is what AssertAllAuthenticated returns.
+	ErrCoverageIsNotAuthenticated = errors.New("inventory: coverage was measured at " +
+		"instants this session cannot describe as authenticated")
+
+	// ErrSecretMarshalled is returned by Secret's Marshal methods. Serializing
+	// a credential is a bug, and a bug in the credential path fails LOUDLY
+	// rather than writing a placeholder into a record nobody re-reads.
+	ErrSecretMarshalled = errors.New("inventory: a credential was handed to a serializer; " +
+		"a Secret is never a record field, and this is a defect in the caller")
+)
+
+// redactedCredential is the ONLY rendering of a Secret. It contains no length
+// hint: length is its own payload.
+//
+// Every byte of it is inside redact()'s allowlist, so redact(marker) == marker
+// and a marker that has been through the ledger is still recognisable. A
+// marker spelled with square brackets came back as "?credential redacted?",
+// which is a different string and would not compare equal in any test that
+// looked for it. TestRedactionDoesNotDefeatTheSweep pins both markers.
+const redactedCredential = "{credential redacted}"
+
+// refusedForCredential replaces a whole driver-authored string in which a
+// credential was found. The string is not partially rewritten; see the header.
+const refusedForCredential = "{string refused: it contained a credential}"
+
+// ---------------------------------------------------------------------------
+// Coded bounds
+// ---------------------------------------------------------------------------
+
+const (
+	// codedMaxAuthSteps bounds an operator's step list.
+	codedMaxAuthSteps = 64
+
+	// codedMaxSecretBytes bounds one credential.
+	codedMaxSecretBytes = 4096
+
+	// codedMaxAuthAttempts bounds how many times ONE session may submit
+	// credentials — the initial login plus every forced re-login. See the
+	// header: an unbounded retry loop is authz.TechniqueAccountLockout, which
+	// gate 15 denies, and Anvil must not arrive there through its own
+	// recovery path.
+	codedMaxAuthAttempts = 3
+
+	// codedMaxArtifactBytes bounds ONE stored report artifact.
+	codedMaxArtifactBytes = 4 << 20
+
+	// codedMaxArtifacts bounds how many artifacts one run stores.
+	codedMaxArtifacts = 256
+
+	// codedMaxAliveStatuses bounds the configured liveness allowlist.
+	codedMaxAliveStatuses = 16
+
+	// codedMaxStepWait bounds a WAIT step. A step list that can pause for an
+	// hour is a way to spend gate 14's wall-clock cap on nothing.
+	codedMaxStepWait = 2 * time.Minute
+)
+
+// authTechnique is the technique every request in this file declares.
+//
+// A const, not configuration: a login and a session probe are reads performed
+// with credentials the operator supplied for the purpose, which is exactly
+// what authz.TechniqueAuthenticatedRead names. A caller who could choose it
+// could choose one gate 15 judges differently.
+const authTechnique = authz.TechniqueAuthenticatedRead
+
+// authNavMethod and authSubmitMethod are the two requests a browser-based
+// login makes: the navigation to the login page, and the credential
+// submission. They are admitted SEPARATELY because gate 15 judges them
+// differently — the POST is state-changing and needs an explicit
+// per-endpoint allow, the GET does not — and folding them into one admission
+// would hide the one that needs the operator's permission.
+const (
+	authNavMethod    = authz.MethodGet
+	authSubmitMethod = authz.MethodPost
+)
+
+// authLivenessMethod is the method a session probe uses. A liveness check
+// reads; it never changes state.
+const authLivenessMethod = authz.MethodGet
+
+// ---------------------------------------------------------------------------
+// Secret
+// ---------------------------------------------------------------------------
+
+// Secret is a credential value that cannot be printed.
+//
+// The value is held XOR-masked so that no path through fmt, encoding or
+// reflection can reach the plaintext: Format answers every verb with
+// redactedCredential, the Marshal methods refuse, and a reflective walk of a
+// struct that holds one — the case a String() method does NOT cover, because
+// fmt cannot call a method on a field it cannot Interface() — finds two byte
+// slices.
+//
+// The mask is not encryption; see this file's header for exactly what it does
+// and does not defend against.
+//
+// The zero value holds nothing, Present() is false, and Reveal() returns "".
+type Secret struct {
+	enc    []byte
+	pad    []byte
+	sealed bool
+}
+
+// NewSecret seals a credential value.
+//
+// An empty credential is refused rather than stored: "" is what a failed
+// environment lookup produces, and a login step configured with a credential
+// nobody supplied must fail here rather than submit an empty password.
+func NewSecret(raw string) (Secret, error) {
+	if raw == "" {
+		return Secret{}, fmt.Errorf("inventory: %w: the credential is empty. An empty "+
+			"credential is what a failed lookup produces, and submitting one is a "+
+			"login attempt against an account with a blank password", ErrRefused)
+	}
+	if len(raw) > codedMaxSecretBytes {
+		return Secret{}, fmt.Errorf("inventory: %w: the credential exceeds the coded "+
+			"bound of %d bytes", ErrRefused, codedMaxSecretBytes)
+	}
+	pad := make([]byte, len(raw))
+	for i := 0; i < len(pad); i += 8 {
+		v := rand.Uint64()
+		for j := 0; j < 8 && i+j < len(pad); j++ {
+			pad[i+j] = byte(v >> (8 * uint(j)))
+		}
+	}
+	enc := make([]byte, len(raw))
+	for i := 0; i < len(raw); i++ {
+		enc[i] = raw[i] ^ pad[i]
+	}
+	return Secret{enc: enc, pad: pad, sealed: true}, nil
+}
+
+// Present reports whether s holds a credential. The zero value does not.
+func (s Secret) Present() bool { return s.sealed && len(s.enc) > 0 }
+
+// Reveal is THE ONE EXIT, and it exists because a driver has to type the
+// credential into a form.
+//
+// Every caller of it in this package is in the credential path by design:
+// the sweep (which compares artifact bytes against it and discards the result)
+// and nothing else. A driver receives the Secret and calls this itself, at the
+// keystroke, and owes the same obligation the rest of this file keeps.
+func (s Secret) Reveal() string {
+	if !s.sealed {
+		return ""
+	}
+	b := make([]byte, len(s.enc))
+	for i := range s.enc {
+		b[i] = s.enc[i] ^ s.pad[i]
+	}
+	return string(b)
+}
+
+// Format renders s for EVERY fmt verb. It is deliberately not a String()
+// method: fmt consults Formatter before anything else, so %d, %x and %#v are
+// covered by this and would not be covered by Stringer alone.
+func (s Secret) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(redactedCredential))
+}
+
+// String renders s for a caller that reaches for it directly.
+func (s Secret) String() string { return redactedCredential }
+
+// MarshalJSON refuses. See ErrSecretMarshalled.
+func (s Secret) MarshalJSON() ([]byte, error) { return nil, ErrSecretMarshalled }
+
+// MarshalText refuses, which also closes encoding/json's TextMarshaler route
+// and every encoder that honours it.
+func (s Secret) MarshalText() ([]byte, error) { return nil, ErrSecretMarshalled }
+
+// ---------------------------------------------------------------------------
+// Steps — explicit, never autodetection
+// ---------------------------------------------------------------------------
+
+// AuthStepKind is one step of a browser-based login flow.
+//
+// The five literals are plan/50-dast.md D.24's own list. They are ZAP
+// Authentication Helper step types; this module does not drive ZAP on any host
+// it has measured, so the mapping from these names to ZAP's configuration is
+// the integration lane's to prove and is NOT claimed here.
+//
+// AUTO_STEPS is on the list and is not a contradiction of "never
+// autodetection". It is an EXPLICITLY REQUESTED step that performs the
+// packaged username-and-password fill at a point the operator chose. What
+// D.24 forbids is letting ZAP work out the whole login flow by itself; a step
+// list containing AUTO_STEPS is still a step list somebody wrote.
+type AuthStepKind string
+
+const (
+	// AuthStepUnset is the zero value and names nothing.
+	AuthStepUnset AuthStepKind = ""
+	// AuthStepAutoSteps fills the configured username and password.
+	AuthStepAutoSteps AuthStepKind = "AUTO_STEPS"
+	// AuthStepClick clicks the element the selector names.
+	AuthStepClick AuthStepKind = "CLICK"
+	// AuthStepCustomField types a value into a named field.
+	AuthStepCustomField AuthStepKind = "CUSTOM_FIELD"
+	// AuthStepTOTPField types a time-based one-time code into a named field.
+	AuthStepTOTPField AuthStepKind = "TOTP_FIELD"
+	// AuthStepWait pauses for a bounded interval.
+	AuthStepWait AuthStepKind = "WAIT"
+)
+
+// AuthStepKindValues returns every legal literal.
+func AuthStepKindValues() []AuthStepKind {
+	return []AuthStepKind{
+		AuthStepAutoSteps, AuthStepClick, AuthStepCustomField,
+		AuthStepTOTPField, AuthStepWait,
+	}
+}
+
+// Recognised reports whether k is one of the enumerated kinds. The zero value
+// is not.
+func (k AuthStepKind) Recognised() bool {
+	for _, v := range AuthStepKindValues() {
+		if v == k {
+			return true
+		}
+	}
+	return false
+}
+
+// secretBearingStepKinds is the ALLOWLIST of step kinds that put a credential
+// on the screen or on the wire.
+//
+// It is an allowlist and the direction of its failure is chosen: a kind
+// nobody classified is NOT on it, so Bearing() is false, so a screenshot of it
+// would be stored. That would be the wrong direction — so the callers do not
+// consult Bearing() alone. screenshotAllowedForStep refuses any step index it
+// cannot resolve to a recognised, classified step, which turns "nobody
+// classified this kind" into suppression rather than into storage.
+func secretBearingStepKinds() map[AuthStepKind]bool {
+	return map[AuthStepKind]bool{
+		AuthStepAutoSteps:   true,
+		AuthStepCustomField: true,
+		AuthStepTOTPField:   true,
+	}
+}
+
+// Bearing reports whether a step of this kind carries a credential.
+func (k AuthStepKind) Bearing() bool { return secretBearingStepKinds()[k] }
+
+// AuthStep is one step, as an operator wrote it.
+//
+// Exported fields, like authz.RequestFacts: a caller has to be able to write
+// the facts down. Nothing is authorized because an AuthStep exists —
+// NewAuthSteps validates every field and seals the list.
+type AuthStep struct {
+	// Kind is required and must be recognised.
+	Kind AuthStepKind
+	// Selector names the element or field the step acts on. For
+	// AUTO_STEPS it is the USERNAME, which is not a credential: it names
+	// which account the scan authenticated as, and internal/record/mask.go
+	// keeps it for exactly that reason.
+	Selector string
+	// Value is the credential. Required for a secret-bearing kind and
+	// refused on any other: a CLICK that carries a password is a step list
+	// somebody wrote by mistake, and a mistake in the credential path is
+	// refused rather than ignored.
+	Value Secret
+	// Wait is the pause for a WAIT step, required there and refused
+	// elsewhere.
+	Wait time.Duration
+}
+
+// AuthSteps is a sealed, validated login flow bound to the manifest that
+// declared it.
+type AuthSteps struct {
+	method    string
+	sourceRef string
+	steps     []AuthStep
+	sealed    bool
+}
+
+// NewAuthSteps validates a step list and seals it.
+//
+// method must be target.AuthMethodBrowser — D.1's allowlist of one — and is
+// re-checked here rather than trusted, because AuthSteps can also be built
+// from a step list that never came through a Manifest at all.
+//
+// An EMPTY step list is refused. An empty list is autodetection under another
+// name: it asks the driver to work the login out for itself, which is the one
+// thing D.24 forbids.
+//
+// A list with no secret-bearing step is refused. A login flow that submits no
+// credential is not a login flow, and a session it produced could not honestly
+// be called authenticated.
+func NewAuthSteps(method, sourceRef string, steps []AuthStep) (AuthSteps, error) {
+	if method != target.AuthMethodBrowser {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: auth.method is %q and the only "+
+			"method D.1 accepts is %q", ErrRefused, redact(method), target.AuthMethodBrowser)
+	}
+	if strings.TrimSpace(sourceRef) == "" {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list names no source. A "+
+			"step list whose provenance nobody recorded cannot be joined back to the "+
+			"manifest that declared it", ErrRefused)
+	}
+	if len(steps) == 0 {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list is empty. An empty "+
+			"list is autodetection under another name — it asks the driver to work the "+
+			"login out for itself — and D.24 requires an explicit step list", ErrRefused)
+	}
+	if len(steps) > codedMaxAuthSteps {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list has %d steps and the "+
+			"coded bound is %d", ErrRefused, len(steps), codedMaxAuthSteps)
+	}
+	// The step list came from a document that holds credentials, so its own
+	// unvalidated fields are swept before they can appear in a refusal
+	// message. A loader that put the password in the `kind` field would
+	// otherwise leak it through this function's error text.
+	var offered []Secret
+	for _, st := range steps {
+		if st.Value.Present() {
+			offered = append(offered, st.Value)
+		}
+	}
+	bearing := 0
+	out := make([]AuthStep, len(steps))
+	for i, st := range steps {
+		if !st.Kind.Recognised() {
+			return AuthSteps{}, fmt.Errorf("inventory: %w: step %d names kind %q, which "+
+				"is on none of the enumerated step kinds %v",
+				ErrRefused, i+1, sanitizeForLedger(string(st.Kind), offered),
+				AuthStepKindValues())
+		}
+		if st.Kind.Bearing() {
+			bearing++
+			if !st.Value.Present() {
+				return AuthSteps{}, fmt.Errorf("inventory: %w: step %d is a %s and carries "+
+					"no credential. A secret-bearing step with an empty Secret submits an "+
+					"empty value", ErrRefused, i+1, st.Kind)
+			}
+		} else if st.Value.Present() {
+			return AuthSteps{}, fmt.Errorf("inventory: %w: step %d is a %s and carries a "+
+				"credential. Only %v put a credential on the wire, and a secret on any "+
+				"other step is a step list somebody wrote by mistake",
+				ErrRefused, i+1, st.Kind, sortedBearingKinds())
+		}
+		switch st.Kind {
+		case AuthStepWait:
+			if st.Wait <= 0 || st.Wait > codedMaxStepWait {
+				return AuthSteps{}, fmt.Errorf("inventory: %w: step %d is a WAIT of %v and "+
+					"must be in (0, %v]. A WAIT with no bound spends gate 14's wall-clock "+
+					"cap on nothing", ErrRefused, i+1, st.Wait, codedMaxStepWait)
+			}
+		default:
+			if st.Wait != 0 {
+				return AuthSteps{}, fmt.Errorf("inventory: %w: step %d is a %s and carries "+
+					"a WAIT duration, which only a WAIT step has", ErrRefused, i+1, st.Kind)
+			}
+		}
+		if st.Kind == AuthStepClick || st.Kind == AuthStepCustomField {
+			if strings.TrimSpace(st.Selector) == "" {
+				return AuthSteps{}, fmt.Errorf("inventory: %w: step %d is a %s and names "+
+					"no selector", ErrRefused, i+1, st.Kind)
+			}
+		}
+		if len(st.Selector) > maxIdentBytes {
+			return AuthSteps{}, fmt.Errorf("inventory: %w: step %d's selector is %d bytes "+
+				"and the coded bound is %d", ErrRefused, i+1, len(st.Selector), maxIdentBytes)
+		}
+		out[i] = st
+	}
+	if bearing == 0 {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: no step in the list submits a "+
+			"credential. A flow that submits nothing is not a login, and a session it "+
+			"produced could not honestly be called authenticated", ErrRefused)
+	}
+	return AuthSteps{method: method, sourceRef: sourceRef, steps: out, sealed: true}, nil
+}
+
+func sortedBearingKinds() []AuthStepKind {
+	var out []AuthStepKind
+	for _, k := range AuthStepKindValues() {
+		if k.Bearing() {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// Constructed reports whether a came from NewAuthSteps.
+func (a AuthSteps) Constructed() bool { return a.sealed && len(a.steps) > 0 }
+
+// Len is how many steps the flow has.
+func (a AuthSteps) Len() int { return len(a.steps) }
+
+// Method is the manifest's declared auth method.
+func (a AuthSteps) Method() string { return a.method }
+
+// SourceRef is the manifest's auth.steps_ref, verbatim.
+func (a AuthSteps) SourceRef() string { return a.sourceRef }
+
+// Kinds returns the ordered step kinds. It deliberately returns no selectors
+// and no Secrets: this is what a ledger row may name.
+func (a AuthSteps) Kinds() []AuthStepKind {
+	out := make([]AuthStepKind, len(a.steps))
+	for i, s := range a.steps {
+		out[i] = s.Kind
+	}
+	return out
+}
+
+// Steps returns a COPY of the step list, Secrets included. It is what an
+// AuthDriver is handed and there is no other way to reach the credential.
+func (a AuthSteps) Steps() []AuthStep {
+	out := make([]AuthStep, len(a.steps))
+	copy(out, a.steps)
+	return out
+}
+
+// Format renders the step list for a log line WITHOUT its selectors or its
+// secrets, for every verb.
+func (a AuthSteps) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(fmt.Sprintf("authSteps(%d steps from %s: %v)",
+		len(a.steps), redact(a.sourceRef), a.Kinds())))
+}
+
+// secrets returns every credential in the flow. Unexported: it exists for the
+// sweep and for nothing else.
+func (a AuthSteps) secrets() []Secret {
+	var out []Secret
+	for _, s := range a.steps {
+		if s.Value.Present() {
+			out = append(out, s.Value)
+		}
+	}
+	return out
+}
+
+// stepBears reports whether the 1-based step index is a credential step.
+// An index outside the list answers TRUE — fail closed, because the caller is
+// screenshotAllowedForStep and "I cannot resolve this step" must suppress.
+func (a AuthSteps) stepBears(oneBased int) bool {
+	if oneBased < 1 || oneBased > len(a.steps) {
+		return true
+	}
+	return a.steps[oneBased-1].Kind.Bearing()
+}
+
+// ---------------------------------------------------------------------------
+// The step loader seam
+// ---------------------------------------------------------------------------
+
+// AuthStepLoader reads the auth.steps_ref document.
+//
+// It is a seam because that document holds the credential: the component that
+// parses it is the component that decides how a value becomes a Secret, and
+// that decision belongs with whoever owns the secret store, not with a crawl
+// helper. An implementation MUST construct every credential through NewSecret
+// and MUST NOT retain the plaintext anywhere else.
+type AuthStepLoader interface {
+	// LoadAuthSteps reads the document at path — already resolved and
+	// repo-contained by D.1 — and returns the steps it declares.
+	LoadAuthSteps(ctx context.Context, path string) ([]AuthStep, error)
+}
+
+// SystemAuthStepLoader returns the loader this host can use.
+//
+// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY. auth.steps_ref is a YAML
+// document (D.1's checkYAMLExt) and this module has no YAML parser — the same
+// fact RefusalYAMLUnsupported records for Tier 0 spec bodies. Returning a
+// loader that produced an empty step list would be autodetection with extra
+// steps, and NewAuthSteps refuses an empty list anyway.
+//
+// It never returns (nil, nil).
+func SystemAuthStepLoader() (AuthStepLoader, error) {
+	return nil, fmt.Errorf("%w: auth.steps_ref names a YAML document and this module has "+
+		"no YAML parser (see RefusalYAMLUnsupported). Nothing read the step list, so no "+
+		"login can be attempted", ErrNoAuthStepLoader)
+}
+
+// AuthStepsFromManifest turns D.1's validated `auth` section into a sealed
+// step list.
+//
+// It re-parses nothing: internal/dast/target already validated that
+// auth.method is on the allowlist of one and that auth.steps_ref is a
+// repo-relative, repo-contained YAML path, and AuthStepsPath resolves it.
+//
+// A manifest with NO auth section returns (AuthSteps{}, nil) — the zero value,
+// whose Constructed() is false. That is the honest answer: this target
+// declares no authentication, so the correct run is an unauthenticated one,
+// and UnauthenticatedSession is how a caller says so on the record.
+func AuthStepsFromManifest(ctx context.Context, m *target.Manifest, repoRoot string,
+	loader AuthStepLoader) (AuthSteps, error) {
+
+	if m == nil {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: no manifest was supplied, so "+
+			"nothing declared an auth section one way or the other", ErrUnconstructed)
+	}
+	if m.Auth == nil {
+		return AuthSteps{}, nil
+	}
+	if loader == nil {
+		return AuthSteps{}, fmt.Errorf("%w: the manifest declares auth.steps_ref %q",
+			ErrNoAuthStepLoader, redact(m.Auth.StepsRef))
+	}
+	path := m.AuthStepsPath(repoRoot)
+	if path == "" {
+		return AuthSteps{}, fmt.Errorf("inventory: %w: the manifest declares an auth "+
+			"section whose steps_ref resolved to no path", ErrRefused)
+	}
+	steps, err := loader.LoadAuthSteps(ctx, path)
+	if err != nil {
+		// The loader touched the credential document. Its error text is
+		// therefore treated as capable of containing a credential and is NOT
+		// forwarded — only the fact of failure and the manifest's own
+		// steps_ref, which D.1 validated and which Anvil wrote down.
+		return AuthSteps{}, fmt.Errorf("inventory: %w: the AuthStepLoader failed on the "+
+			"document auth.steps_ref names (%q). Its error text is not reproduced here: "+
+			"it read a document that holds a credential",
+			ErrRefused, redact(m.Auth.StepsRef))
+	}
+	return NewAuthSteps(m.Auth.Method, m.Auth.StepsRef, steps)
+}
+
+// ---------------------------------------------------------------------------
+// The browser seam
+// ---------------------------------------------------------------------------
+
+// AuthRequest is one kernel-admitted request in the authentication path.
+//
+// A composite literal in another package produces the zero value, whose
+// Constructed() is false — the property CrawlRequest, ConfirmRequest and
+// engines.AdmittedRequest all hold.
+type AuthRequest struct {
+	auth      authz.Authorization
+	target    authz.Target
+	method    authz.Method
+	path      string
+	technique authz.Technique
+	navSeq    authz.AuditSeq
+	submitSeq authz.AuditSeq
+	steps     AuthSteps
+	sealed    bool
+}
+
+// Constructed reports whether r was built by this file.
+func (r AuthRequest) Constructed() bool { return r.sealed && r.target.Constructed() }
+
+// Authorization returns the kernel token this request rests on. An
+// implementor MUST pass it to authz.RequireAuthorization (or
+// authz.PinnedDialAddress) immediately before constructing a socket.
+func (r AuthRequest) Authorization() authz.Authorization { return r.auth }
+
+// Target returns the authorized destination, pinned address and all.
+func (r AuthRequest) Target() authz.Target { return r.target }
+
+// Method returns the method the audited admission named.
+func (r AuthRequest) Method() authz.Method { return r.method }
+
+// Path returns the concrete request path.
+func (r AuthRequest) Path() string { return r.path }
+
+// Technique returns the technique gate 15 judged.
+func (r AuthRequest) Technique() authz.Technique { return r.technique }
+
+// NavAuditSeq is the gate-21 row the login NAVIGATION was admitted under, or 0
+// for a liveness probe.
+func (r AuthRequest) NavAuditSeq() authz.AuditSeq { return r.navSeq }
+
+// SubmitAuditSeq is the gate-21 row the credential SUBMISSION was admitted
+// under, or 0 for a liveness probe.
+func (r AuthRequest) SubmitAuditSeq() authz.AuditSeq { return r.submitSeq }
+
+// Steps returns the login flow. It is populated for Authenticate and empty for
+// ProbeSession: a liveness check needs the session, never the credential.
+func (r AuthRequest) Steps() AuthSteps { return r.steps }
+
+// Format renders the request for a log line, for every verb, without reaching
+// the step list's selectors or secrets.
+func (r AuthRequest) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(fmt.Sprintf("authRequest(%s %s, nav %d, submit %d, %v)",
+		r.method, redact(r.path), r.navSeq, r.submitSeq, r.steps)))
+}
+
+// AuthOutcome is what the driver did with a login flow.
+//
+// EVERY STRING FIELD IS DRIVER-AUTHORED AND UNTRUSTED, and every one goes
+// through the sweep and then redact() before it reaches the ledger.
+type AuthOutcome struct {
+	// NavStatus and NavLatency describe the navigation to the login page.
+	NavStatus  int
+	NavLatency time.Duration
+	// SubmitStatus and SubmitLatency describe the credential submission.
+	SubmitStatus  int
+	SubmitLatency time.Duration
+	// SessionEstablished is the DRIVER'S CLAIM that a session exists. It is
+	// not believed: a Session reaches AuthStateAuthenticated only after
+	// CheckLiveness observes one through the kernel. The zero value is false,
+	// which is the fail-closed direction.
+	SessionEstablished bool
+	// LandedPath is where the flow ended up.
+	LandedPath string
+	// FailedAtStep is the 1-based step that failed, or 0.
+	FailedAtStep int
+	// Detail is the driver's own explanation.
+	Detail string
+	// Artifacts are the authentication report's contents: screenshots, HTTP
+	// exchanges and storage state.
+	Artifacts []AuthArtifact
+}
+
+// AuthProbe is what the driver saw when asked whether the session is alive.
+type AuthProbe struct {
+	// Status is the HTTP status. A value outside [100,599] is treated as
+	// "the seam returned nothing" and is never read as an answer.
+	Status int
+	// Latency feeds gates 16 and 17.
+	Latency time.Duration
+	// Location is the Location header verbatim on a 3xx. A bounce to the
+	// login path is the classic silent logout.
+	Location string
+	// SessionPresent is the driver's report that the session cookie or
+	// storage entry still exists. The zero value is false.
+	SessionPresent bool
+}
+
+// AuthDriver is the browser seam for the authentication path.
+//
+// # The obligations an implementation takes on
+//
+//  1. HONOUR THE AUTHORIZATION. Call authz.RequireAuthorization with
+//     AuthRequest.Authorization() and AuthRequest.Target() immediately before
+//     each socket exists.
+//  2. STAY ON THE ADMITTED TARGET. Every request the flow makes is to
+//     AuthRequest.Target(). A login that redirects off-host is a walk-off,
+//     and gate 13 can only judge a hop the driver hands back.
+//  3. NEVER WRITE A CREDENTIAL ANYWHERE ANVIL DOES NOT SWEEP. The Secret
+//     reaches the keystroke and nothing else: not a driver log, not a
+//     temporary file, not an exception message. AuthOutcome.Detail is swept
+//     by this package, and a driver that puts a credential in it will have
+//     the whole string refused, which is a bug report and not a fix.
+//  4. RUN THE EXPLICIT STEP LIST, in order, and nothing else. No
+//     autodetection of the login form.
+//
+// Obligations 1 through 4 are STATED HERE AND ENFORCED NOWHERE IN THIS FILE.
+// They are contracts on the implementer, of the same kind ClientSpider and
+// engines.ZapRunner state, and an integration lane owes the proof.
+type AuthDriver interface {
+	// Authenticate runs the explicit step list and reports what happened.
+	Authenticate(ctx context.Context, req AuthRequest) (AuthOutcome, error)
+	// ProbeSession issues ONE request to the liveness path using the session
+	// the last Authenticate established, and reports what came back. It must
+	// NOT follow a redirect: the Location is what tells Anvil the session was
+	// bounced to the login page.
+	ProbeSession(ctx context.Context, req AuthRequest) (AuthProbe, error)
+}
+
+// SystemAuthDriver returns the authentication driver this host can run.
+//
+// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY — and the error is D.15's
+// own, obtained by CALLING engines.SystemZapRunner rather than by asserting
+// what it would say. D.24's driver is ZAP's Authentication Helper; no ZAP
+// runner adapter is compiled into this module, so there is no Authentication
+// Helper either.
+//
+// MEASURED 2026-08-22, PowerShell, on the development host (recorded in
+// internal/dast/engines/zap.go's header and in SKIPPED-CONTROLS U5): no zap.sh,
+// no zap, no zap.bat, no docker. A JVM is present; ZAP is not.
+//
+// It never returns (nil, nil).
+func SystemAuthDriver() (AuthDriver, error) {
+	_, err := engines.SystemZapRunner()
+	if err == nil {
+		return nil, fmt.Errorf("inventory: %w: engines.SystemZapRunner returned a runner "+
+			"and no Authentication Helper adapter is wired to it. A ZAP that can run and "+
+			"an auth flow Anvil can drive are two different things, and the second one "+
+			"is missing", ErrNoAuthDriver)
+	}
+	return nil, fmt.Errorf("%w: D.24's driver is ZAP's Authentication Helper and ZAP is "+
+		"not drivable here: %w", ErrNoAuthDriver, err)
+}
+
+// ---------------------------------------------------------------------------
+// The authentication report
+// ---------------------------------------------------------------------------
+
+// AuthArtifactKind is one kind of authentication-report artifact.
+// plan/50-dast.md D.24: "screenshots + HTTP + storage".
+type AuthArtifactKind string
+
+const (
+	// AuthArtifactUnset is the zero value and names nothing.
+	AuthArtifactUnset AuthArtifactKind = ""
+	// AuthArtifactScreenshot is a rendered image. THE ONE KIND NO BYTE SWEEP
+	// CAN CLEAR, because a credential in it is pixels.
+	AuthArtifactScreenshot AuthArtifactKind = "screenshot"
+	// AuthArtifactHTTPExchange is a request/response transcript.
+	AuthArtifactHTTPExchange AuthArtifactKind = "http_exchange"
+	// AuthArtifactStorageState is cookies, localStorage and sessionStorage.
+	AuthArtifactStorageState AuthArtifactKind = "storage_state"
+)
+
+// AuthArtifactKindValues returns every legal literal.
+func AuthArtifactKindValues() []AuthArtifactKind {
+	return []AuthArtifactKind{
+		AuthArtifactScreenshot, AuthArtifactHTTPExchange, AuthArtifactStorageState,
+	}
+}
+
+// Recognised reports whether k is one of the enumerated kinds.
+func (k AuthArtifactKind) Recognised() bool {
+	for _, v := range AuthArtifactKindValues() {
+		if v == k {
+			return true
+		}
+	}
+	return false
+}
+
+// AuthArtifact is one artifact the driver produced. Its Name and Bytes are
+// driver-authored and untrusted.
+type AuthArtifact struct {
+	// Kind is required and must be recognised.
+	Kind AuthArtifactKind
+	// Step is the 1-based step this artifact belongs to, or 0 for an
+	// artifact covering the whole flow. A screenshot with Step 0 cannot be
+	// checked against the step list, so it is suppressed.
+	Step int
+	// Name is a driver-authored label.
+	Name string
+	// Bytes are the artifact's contents.
+	Bytes []byte
+}
+
+// ArtifactDisposition says what happened to one artifact, and why. It is an
+// enum for the reason CrawlOutcome is one: "it was not stored" is several
+// different facts, and only some of them are decisions.
+type ArtifactDisposition string
+
+const (
+	// ArtifactDispositionUnset is the zero value and names nothing.
+	ArtifactDispositionUnset ArtifactDisposition = ""
+	// ArtifactStored: it went to the sink.
+	ArtifactStored ArtifactDisposition = "stored"
+	// ArtifactSuppressedCredentialStep: a screenshot of a step that types a
+	// credential. Pixels, so the sweep cannot clear it; it is never stored.
+	ArtifactSuppressedCredentialStep ArtifactDisposition = "suppressed_screenshot_of_a_credential_step"
+	// ArtifactSuppressedByPolicy: ScreenshotPolicySuppressAll.
+	ArtifactSuppressedByPolicy ArtifactDisposition = "suppressed_all_screenshots_by_policy"
+	// ArtifactRefusedCredentialFound: THE CREDENTIAL WAS IN THE BYTES. The
+	// whole artifact is dropped, not rewritten.
+	ArtifactRefusedCredentialFound ArtifactDisposition = "refused_the_bytes_contained_a_credential"
+	// ArtifactRefusedUnrecognisedKind: the driver named a kind nobody
+	// enumerated, so no rule about it exists.
+	ArtifactRefusedUnrecognisedKind ArtifactDisposition = "refused_unrecognised_artifact_kind"
+	// ArtifactRefusedTooLarge: over codedMaxArtifactBytes.
+	ArtifactRefusedTooLarge ArtifactDisposition = "refused_artifact_exceeded_the_coded_bound"
+	// ArtifactRefusedBudget: codedMaxArtifacts was reached.
+	ArtifactRefusedBudget ArtifactDisposition = "refused_the_coded_artifact_count_bound_was_reached"
+	// ArtifactRefusedNoSink: nothing was wired to store it.
+	ArtifactRefusedNoSink ArtifactDisposition = "refused_no_artifact_sink_is_wired"
+	// ArtifactRefusedSinkFailed: the sink returned an error.
+	ArtifactRefusedSinkFailed ArtifactDisposition = "refused_the_sink_returned_an_error"
+)
+
+// Stored reports whether this disposition means the bytes left for the sink.
+func (d ArtifactDisposition) Stored() bool { return d == ArtifactStored }
+
+// ScreenshotPolicy is the operator's choice about screenshots. There is no
+// default and the zero value is refused: "store a screenshot of the login
+// form" is the permissive direction, and a Go zero value must never mean it.
+type ScreenshotPolicy string
+
+const (
+	// ScreenshotPolicyUnset is the zero value and is refused by
+	// validateAuthConfig.
+	ScreenshotPolicyUnset ScreenshotPolicy = ""
+	// ScreenshotPolicyExceptCredentialSteps stores screenshots of every step
+	// EXCEPT the ones that type a credential, and except any screenshot whose
+	// step cannot be resolved.
+	ScreenshotPolicyExceptCredentialSteps ScreenshotPolicy = "store_except_credential_steps"
+	// ScreenshotPolicySuppressAll stores no screenshot at all. HTTP and
+	// storage artifacts are unaffected — they are bytes, and bytes are swept.
+	ScreenshotPolicySuppressAll ScreenshotPolicy = "suppress_all_screenshots"
+)
+
+// ScreenshotPolicyValues returns every legal literal.
+func ScreenshotPolicyValues() []ScreenshotPolicy {
+	return []ScreenshotPolicy{
+		ScreenshotPolicyExceptCredentialSteps, ScreenshotPolicySuppressAll,
+	}
+}
+
+// Recognised reports whether p is one of the enumerated policies.
+func (p ScreenshotPolicy) Recognised() bool {
+	for _, v := range ScreenshotPolicyValues() {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
+
+// StoredArtifact is what an ArtifactSink receives: swept bytes, a redacted
+// name, and no way for the sink to have been handed anything else.
+type StoredArtifact struct {
+	kind   AuthArtifactKind
+	step   int
+	name   string
+	bytes  []byte
+	sealed bool
+}
+
+// Constructed reports whether a came from the store path in this file.
+func (a StoredArtifact) Constructed() bool { return a.sealed && a.kind.Recognised() }
+
+// Kind is the artifact kind.
+func (a StoredArtifact) Kind() AuthArtifactKind { return a.kind }
+
+// Step is the 1-based step, or 0.
+func (a StoredArtifact) Step() int { return a.step }
+
+// Name is the driver's label, swept and redacted.
+func (a StoredArtifact) Name() string { return a.name }
+
+// Bytes returns a COPY of the swept artifact contents.
+func (a StoredArtifact) Bytes() []byte {
+	out := make([]byte, len(a.bytes))
+	copy(out, a.bytes)
+	return out
+}
+
+// ArtifactSink stores the authentication report.
+//
+// plan/50-dast.md D.24 requires every run to store the report for
+// diagnosability. A nil sink is therefore a recorded refusal on every
+// artifact, never a silent drop: a report nobody kept and a login that
+// produced no artifacts are different findings.
+type ArtifactSink interface {
+	StoreAuthArtifact(ctx context.Context, a StoredArtifact) error
+}
+
+// ArtifactRecord is one ledger row about one artifact. IT HOLDS NO BYTES —
+// only their count, which is why the ledger itself can never be the leak.
+type ArtifactRecord struct {
+	kind        AuthArtifactKind
+	step        int
+	name        string
+	size        int
+	disposition ArtifactDisposition
+	detail      string
+}
+
+// Kind is the artifact kind, as the driver named it.
+func (r ArtifactRecord) Kind() AuthArtifactKind { return r.kind }
+
+// Step is the 1-based step, or 0.
+func (r ArtifactRecord) Step() int { return r.step }
+
+// Name is the driver's label, swept and redacted.
+func (r ArtifactRecord) Name() string { return r.name }
+
+// Size is how many bytes the artifact had. Never the bytes.
+func (r ArtifactRecord) Size() int { return r.size }
+
+// Disposition is what happened to it.
+func (r ArtifactRecord) Disposition() ArtifactDisposition { return r.disposition }
+
+// Detail is a short Anvil-authored explanation.
+func (r ArtifactRecord) Detail() string { return r.detail }
+
+// String renders the row for a log line.
+func (r ArtifactRecord) String() string {
+	return fmt.Sprintf("%s step %d %q (%d bytes) -> %s: %s",
+		r.kind, r.step, r.name, r.size, r.disposition, r.detail)
+}
+
+// AuthReport is the authentication report's ledger: one row per artifact the
+// driver offered, whatever became of it.
+type AuthReport struct {
+	records []ArtifactRecord
+}
+
+// Records returns a COPY of every row.
+func (rep AuthReport) Records() []ArtifactRecord {
+	out := make([]ArtifactRecord, len(rep.records))
+	copy(out, rep.records)
+	return out
+}
+
+// Offered is how many artifacts the driver produced.
+func (rep AuthReport) Offered() int { return len(rep.records) }
+
+// StoredCount is how many reached the sink.
+func (rep AuthReport) StoredCount() int {
+	n := 0
+	for _, r := range rep.records {
+		if r.disposition.Stored() {
+			n++
+		}
+	}
+	return n
+}
+
+// DispositionMix counts the ledger by disposition.
+func (rep AuthReport) DispositionMix() map[ArtifactDisposition]int {
+	out := map[ArtifactDisposition]int{}
+	for _, r := range rep.records {
+		out[r.disposition]++
+	}
+	return out
+}
+
+// CredentialRefusals is how many artifacts were dropped because a credential
+// was found in their bytes. A NON-ZERO VALUE IS A DEFECT IN THE DRIVER, not a
+// success of the sweep: the sweep caught it here, and the same bytes may have
+// reached the driver's own log where Anvil cannot see them.
+func (rep AuthReport) CredentialRefusals() int {
+	return rep.DispositionMix()[ArtifactRefusedCredentialFound]
+}
+
+// AssertNoCredentialWasFound returns an error when the sweep refused anything.
+func (rep AuthReport) AssertNoCredentialWasFound() error {
+	if n := rep.CredentialRefusals(); n > 0 {
+		return fmt.Errorf("%w: %d artifact(s) were refused. The sweep caught them before "+
+			"the sink, and it can only see what the driver hands Anvil: the same bytes "+
+			"may have reached the driver's own log", ErrCredentialInArtifact, n)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// AuthState — the provenance D.26 consumes
+// ---------------------------------------------------------------------------
+
+// AuthState labels what a stretch of a run's coverage means.
+//
+// # Why this is declared here
+//
+// internal/record has no session vocabulary today — InventoryProvenance says
+// how an endpoint was FOUND, not whether Anvil was logged in when it found it.
+// So this is declared here and FLAGGED TO THE ORCHESTRATOR for hoisting into
+// internal/record beside InventoryProvenance if D.26 needs it in the record,
+// exactly as D.23's ScanTrigger was. Until then this is the one place the
+// vocabulary is written.
+//
+// # The zero value is not a value
+//
+// AuthStateUnset names nothing and AuthenticatedCoverage() is false for it. A
+// Go zero value must never mean "this coverage was authenticated".
+type AuthState string
+
+const (
+	// AuthStateUnset is the zero value and names nothing.
+	AuthStateUnset AuthState = ""
+	// AuthStateUnauthenticated: no login has succeeded in this stretch —
+	// either none was configured, or none had run yet. Coverage here is the
+	// PUBLIC surface, honestly labelled.
+	AuthStateUnauthenticated AuthState = "unauthenticated"
+	// AuthStateAuthenticationFailed: a login WAS configured and did not
+	// produce a session Anvil could observe. Coverage here is the public
+	// surface too — and the difference from AuthStateUnauthenticated is the
+	// whole finding, because it means the scan is missing everything behind
+	// the login.
+	AuthStateAuthenticationFailed AuthState = "authentication_failed"
+	// AuthStateAuthenticated: this stretch is bracketed by two PASSED
+	// liveness observations, so the session held across all of it. THE ONLY
+	// STATE WHOSE COVERAGE MAY BE CALLED AUTHENTICATED.
+	AuthStateAuthenticated AuthState = "authenticated"
+	// AuthStateUnverified: this stretch began at a passed liveness check and
+	// ended at a FAILED one. The session died somewhere inside it and nobody
+	// knows where, so its coverage is neither authenticated nor public.
+	AuthStateUnverified AuthState = "authenticated_at_the_start_and_lost_by_the_end"
+	// AuthStateSessionLost: liveness failed and no re-login has restored the
+	// session.
+	AuthStateSessionLost AuthState = "session_lost"
+)
+
+// AuthStateValues returns every legal literal.
+func AuthStateValues() []AuthState {
+	return []AuthState{
+		AuthStateUnauthenticated, AuthStateAuthenticationFailed, AuthStateAuthenticated,
+		AuthStateUnverified, AuthStateSessionLost,
+	}
+}
+
+// Recognised reports whether s is one of the enumerated states.
+func (s AuthState) Recognised() bool {
+	for _, v := range AuthStateValues() {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// authenticatedCoverageStates is an ALLOWLIST OF EXACTLY ONE, matched by
+// identity. A state nobody enumerated is not on it, and neither is the zero
+// value.
+func authenticatedCoverageStates() map[AuthState]bool {
+	return map[AuthState]bool{AuthStateAuthenticated: true}
+}
+
+// AuthenticatedCoverage reports whether coverage measured in this state may be
+// described as authenticated.
+func (s AuthState) AuthenticatedCoverage() bool { return authenticatedCoverageStates()[s] }
+
+// ---------------------------------------------------------------------------
+// The session ledger
+// ---------------------------------------------------------------------------
+
+// SessionEventKind is one thing that happened to a session.
+type SessionEventKind string
+
+const (
+	// SessionEventUnset is the zero value and names nothing.
+	SessionEventUnset SessionEventKind = ""
+	// SessionEventLoginAttempted: a credential submission was about to be
+	// admitted.
+	SessionEventLoginAttempted SessionEventKind = "login_attempted"
+	// SessionEventLoginRefusedByKernel: a gate refused the login request. The
+	// commonest cause is gate 15 — nobody put POST <login path> on the
+	// EndpointAllowance.
+	SessionEventLoginRefusedByKernel SessionEventKind = "login_refused_by_the_kernel"
+	// SessionEventLoginFailed: the driver ran the flow and no session came
+	// out of it.
+	SessionEventLoginFailed SessionEventKind = "login_failed"
+	// SessionEventLoginClaimed: the DRIVER says a session exists. Not
+	// believed until an observation says so.
+	SessionEventLoginClaimed SessionEventKind = "driver_claimed_a_session"
+	// SessionEventVerified: Anvil observed the session alive through the
+	// kernel. THE ONLY EVENT THAT PRODUCES AuthStateAuthenticated.
+	SessionEventVerified SessionEventKind = "session_observed_alive"
+	// SessionEventLivenessFailed: Anvil observed that the session is gone.
+	SessionEventLivenessFailed SessionEventKind = "session_observed_gone"
+	// SessionEventReLoginForced: liveness failed between phases and a fresh
+	// login was forced.
+	SessionEventReLoginForced SessionEventKind = "re_login_forced"
+	// SessionEventReLoginSucceeded: the forced login produced an observed
+	// session.
+	SessionEventReLoginSucceeded SessionEventKind = "re_login_succeeded"
+	// SessionEventReLoginFailed: it did not.
+	SessionEventReLoginFailed SessionEventKind = "re_login_failed"
+	// SessionEventAttemptsExhausted: codedMaxAuthAttempts was reached. See
+	// the header: the bound exists so Anvil's recovery cannot become
+	// authz.TechniqueAccountLockout.
+	SessionEventAttemptsExhausted SessionEventKind = "credential_submission_budget_exhausted"
+	// SessionEventReportWritten: the authentication report was processed.
+	// One row per LOGIN, carrying the artifact counts, so a reader of the
+	// ledger alone can see whether a report exists.
+	SessionEventReportWritten SessionEventKind = "authentication_report_written"
+	// SessionEventNoAuthConfigured: this target declares no auth section, so
+	// no login was attempted. It is a DIFFERENT fact from a login that
+	// failed, and UnauthenticatedSession is what records it.
+	SessionEventNoAuthConfigured SessionEventKind = "no_auth_section_is_declared"
+)
+
+// SessionEventKindValues returns every legal literal.
+func SessionEventKindValues() []SessionEventKind {
+	return []SessionEventKind{
+		SessionEventLoginAttempted, SessionEventLoginRefusedByKernel,
+		SessionEventLoginFailed, SessionEventLoginClaimed, SessionEventVerified,
+		SessionEventLivenessFailed, SessionEventReLoginForced,
+		SessionEventReLoginSucceeded, SessionEventReLoginFailed,
+		SessionEventAttemptsExhausted, SessionEventReportWritten,
+		SessionEventNoAuthConfigured,
+	}
+}
+
+// Recognised reports whether k is one of the enumerated event kinds.
+func (k SessionEventKind) Recognised() bool {
+	for _, v := range SessionEventKindValues() {
+		if v == k {
+			return true
+		}
+	}
+	return false
+}
+
+// SessionEvent is one row of the session's ledger.
+//
+// Detail is ALWAYS Anvil-authored or swept-then-redacted; nothing reaches it
+// straight from a driver.
+type SessionEvent struct {
+	kind   SessionEventKind
+	at     time.Time
+	seq    authz.AuditSeq
+	status int
+	detail string
+}
+
+// Kind is what happened.
+func (e SessionEvent) Kind() SessionEventKind { return e.kind }
+
+// At is the run-clock instant.
+func (e SessionEvent) At() time.Time { return e.at }
+
+// AuditSeq is the gate-21 row this event was admitted under, or 0.
+func (e SessionEvent) AuditSeq() authz.AuditSeq { return e.seq }
+
+// Status is the HTTP status involved, or 0.
+func (e SessionEvent) Status() int { return e.status }
+
+// Detail is a short, swept, redacted explanation.
+func (e SessionEvent) Detail() string { return e.detail }
+
+// String renders the event for a log line.
+func (e SessionEvent) String() string {
+	return fmt.Sprintf("%s at %s [seq %d status %d]: %s",
+		e.kind, e.at.UTC().Format(time.RFC3339Nano), e.seq, e.status, e.detail)
+}
+
+// AuthWindow is a contiguous stretch of the run with one AuthState.
+//
+// Windows tile the run: the first begins at the session's start instant, each
+// ends where the next begins, and the last is OPEN (To().IsZero()). That is
+// what makes StateAt total — every instant at or after the start lands in
+// exactly one window — and totality is the point: a summary can omit a
+// stretch, a partition cannot.
+type AuthWindow struct {
+	from          time.Time
+	to            time.Time
+	state         AuthState
+	verifiedStart bool
+	verifiedEnd   bool
+}
+
+// From is the instant the window opens, inclusive.
+func (w AuthWindow) From() time.Time { return w.from }
+
+// To is the instant the window closes, exclusive. The zero value means the
+// window is still open.
+func (w AuthWindow) To() time.Time { return w.to }
+
+// Open reports whether the window has not been closed.
+func (w AuthWindow) Open() bool { return w.to.IsZero() }
+
+// State is what coverage in this window means.
+func (w AuthWindow) State() AuthState { return w.state }
+
+// VerifiedStart reports whether the window opened at a PASSED liveness
+// observation.
+func (w AuthWindow) VerifiedStart() bool { return w.verifiedStart }
+
+// VerifiedEnd reports whether the window closed at a PASSED liveness
+// observation. A window with both is bracketed, which is the only shape that
+// earns AuthStateAuthenticated.
+func (w AuthWindow) VerifiedEnd() bool { return w.verifiedEnd }
+
+// Contains reports whether t falls in the window.
+func (w AuthWindow) Contains(t time.Time) bool {
+	if t.Before(w.from) {
+		return false
+	}
+	if w.to.IsZero() {
+		return true
+	}
+	return t.Before(w.to)
+}
+
+// String renders the window for a log line.
+func (w AuthWindow) String() string {
+	end := "open"
+	if !w.to.IsZero() {
+		end = w.to.UTC().Format(time.RFC3339Nano)
+	}
+	return fmt.Sprintf("[%s .. %s] %s", w.from.UTC().Format(time.RFC3339Nano), end, w.state)
+}
+
+// ---------------------------------------------------------------------------
+// AuthConfig
+// ---------------------------------------------------------------------------
+
+// AuthConfig is everything AuthenticateAndMonitor needs. Nothing in it has a
+// default that means "permitted".
+type AuthConfig struct {
+	// Governor is the kernel's per-request interceptor for this target.
+	Governor *authz.Governor
+
+	// Audit is gate 21's writer, coupled to the interceptor by AuditedAdmit.
+	Audit *authz.GateAudit
+
+	// Authorization is the kernel token for Target. authz.Adjudicate is the
+	// only mint.
+	Authorization authz.Authorization
+
+	// Target is the admitted target. The login and the liveness probe both
+	// live on it.
+	Target authz.Target
+
+	// Scope is the NARROWED scope — gate 11 already applied. Both paths are
+	// checked against it, which is fail-closed on an origin nobody
+	// determined. A robots.txt that disallows the login path therefore stops
+	// the login, which is the correct answer and not a bug.
+	Scope authz.Scope
+
+	// Steps is the explicit login flow. Required and sealed.
+	Steps AuthSteps
+
+	// Driver is the browser seam. A nil Driver is a loud refusal and never a
+	// silently unauthenticated run.
+	Driver AuthDriver
+
+	// Sink stores the authentication report. A nil Sink produces a recorded
+	// refusal per artifact rather than a silent drop.
+	Sink ArtifactSink
+
+	// LoginPath is where the credential is submitted. POST on it must be on
+	// the Governor's EndpointAllowance or gate 15 refuses the submission,
+	// which means an operator named this endpoint on purpose.
+	LoginPath string
+
+	// LivenessPath is a path that REQUIRES authentication. Required, no
+	// default: a liveness check against a public path answers 200 forever
+	// and would report a dead session as alive, which is the exact failure
+	// D.24 exists to detect.
+	LivenessPath string
+
+	// AliveStatuses is the allowlist of statuses that mean "still logged
+	// in". Required and non-empty; matched by identity. Anything else — and
+	// any redirect back to LoginPath — is a dead session.
+	AliveStatuses []int
+
+	// Screenshots is the operator's screenshot policy. Required; the zero
+	// value is refused.
+	Screenshots ScreenshotPolicy
+
+	// Clock advances the instant between requests, exactly as
+	// CrawlConfig.Clock does and for the same reason: gate 14's bucket
+	// refills from the elapsed interval. Optional; absent, the run instant is
+	// reused and the kernel refuses the overflow, which shows up as a
+	// kernel-refused login rather than as a session that quietly never
+	// existed.
+	Clock ClockSource
+}
+
+// Constructed reports whether cfg carries what an authentication run needs.
+// Every clause is one validateAuthConfig also checks.
+func (c AuthConfig) Constructed() bool {
+	return c.Target.Constructed() && c.Scope.Constructed() &&
+		c.Governor.Constructed() && c.Audit.Constructed() &&
+		authz.RequireAuthorization(c.Authorization, c.Target) == nil &&
+		c.Steps.Constructed() && c.Screenshots.Recognised() &&
+		len(c.AliveStatuses) > 0 && len(c.AliveStatuses) <= codedMaxAliveStatuses
+}
+
+func validateAuthConfig(cfg AuthConfig) error {
+	if !cfg.Target.Constructed() {
+		return fmt.Errorf("inventory: %w: the auth helper was handed a Target "+
+			"authz.NewTarget never built, so no login request can be expressed",
+			ErrUnconstructed)
+	}
+	if !cfg.Scope.Constructed() {
+		return fmt.Errorf("inventory: %w: the auth helper was handed a Scope "+
+			"authz.NewScope never built. The zero Scope permits no path, which is the "+
+			"correct answer and a login that cannot happen", ErrUnconstructed)
+	}
+	if !cfg.Governor.Constructed() {
+		return fmt.Errorf("inventory: %w: the auth helper was handed a Governor "+
+			"authz.NewGovernor never built. A nil governor enforces nothing, and "+
+			"enforcing nothing is not admitting everything", ErrUnconstructed)
+	}
+	if !cfg.Audit.Constructed() {
+		return fmt.Errorf("inventory: %w: the auth helper was handed a GateAudit "+
+			"authz.NewGateAudit never built. A credential submission with no audit row "+
+			"cannot be joined back to who authorized it", ErrUnconstructed)
+	}
+	if err := authz.RequireAuthorization(cfg.Authorization, cfg.Target); err != nil {
+		return fmt.Errorf("inventory: %w: %w", ErrRefused, err)
+	}
+	if !cfg.Steps.Constructed() {
+		return fmt.Errorf("inventory: %w: the login flow is not a sealed AuthSteps. "+
+			"NewAuthSteps is the only constructor, and it refuses an empty list because "+
+			"an empty list is autodetection under another name", ErrUnconstructed)
+	}
+	if !cfg.Screenshots.Recognised() {
+		return fmt.Errorf("inventory: %w: the screenshot policy is %q and must be one of "+
+			"%v. There is no default: storing a screenshot of a login form is the "+
+			"permissive direction, and a Go zero value must never mean it",
+			ErrRefused, redact(string(cfg.Screenshots)), ScreenshotPolicyValues())
+	}
+	if len(cfg.AliveStatuses) == 0 || len(cfg.AliveStatuses) > codedMaxAliveStatuses {
+		return fmt.Errorf("inventory: %w: %d liveness statuses were configured and the "+
+			"allowlist must hold 1..%d. There is no default, because a default would be "+
+			"Anvil deciding what \"still logged in\" looks like for an application it "+
+			"has never seen", ErrRefused, len(cfg.AliveStatuses), codedMaxAliveStatuses)
+	}
+	for i, s := range cfg.AliveStatuses {
+		if s < minStatusCode || s > maxStatusCode {
+			return fmt.Errorf("inventory: %w: liveness status %d is %d, which is not an "+
+				"HTTP status", ErrRefused, i, s)
+		}
+	}
+	if err := checkAuthPath(cfg, "login", cfg.LoginPath); err != nil {
+		return err
+	}
+	if err := checkAuthPath(cfg, "liveness", cfg.LivenessPath); err != nil {
+		return err
+	}
+	if cfg.LoginPath == cfg.LivenessPath {
+		return fmt.Errorf("inventory: %w: the login path and the liveness path are both "+
+			"%q. A liveness check against the login page answers 200 whether or not the "+
+			"session exists, which reports every dead session as alive — the exact "+
+			"failure this packet exists to detect", ErrRefused, redact(cfg.LoginPath))
+	}
+	if !authTechnique.Classified() || authTechnique.Destructive() {
+		return fmt.Errorf("inventory: %w: the pinned auth technique %q is unclassified or "+
+			"destructive under gate 15", ErrRefused, authTechnique)
+	}
+	return nil
+}
+
+// checkAuthPath runs one configured path through the kernel's own validation
+// and gate 11's narrowing, before any request is built from it.
+func checkAuthPath(cfg AuthConfig, what, path string) error {
+	if path == "" {
+		return fmt.Errorf("inventory: %w: no %s path was configured. There is no default: "+
+			"Anvil guessing a login or session endpoint would submit a credential to a "+
+			"path nobody chose", ErrRefused, what)
+	}
+	if err := kernelAcceptsPath(cfg.Target, authNavMethod, path); err != nil {
+		return fmt.Errorf("inventory: %w: the %s path was rejected: %w", ErrRefused, what, err)
+	}
+	if !cfg.Scope.PermitsPath(cfg.Target.Canonical(), cfg.Target.Port(), path) {
+		return fmt.Errorf("inventory: %w: Scope.PermitsPath refused the %s path %q: "+
+			"either no allow entry covers this origin, or gate 11's narrowing removed "+
+			"this path, or no robots determination covers the origin at all — which is "+
+			"refused rather than assumed permissive",
+			ErrRefused, what, redact(path))
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Session
+// ---------------------------------------------------------------------------
+
+// Session is one authentication attempt and everything that happened to it.
+//
+// A nil *Session answers false to Authenticated() and AuthStateUnset to
+// State(). That is deliberate: `sess, err := AuthenticateAndMonitor(...)`
+// followed by a caller that drops err still cannot produce an authenticated
+// claim from a nil session.
+type Session struct {
+	cfg       AuthConfig
+	state     AuthState
+	startedAt time.Time
+	events    []SessionEvent
+	report    AuthReport
+	attempts  int
+	verified  int
+	failures  int
+	relogins  int
+	sealed    bool
+}
+
+// Format renders a session for a log line, for every verb, WITHOUT reaching
+// its configuration — which holds the step list, which holds the credentials.
+func (s *Session) Format(f fmt.State, _ rune) {
+	if s == nil {
+		_, _ = f.Write([]byte("session(nil)"))
+		return
+	}
+	_, _ = f.Write([]byte(fmt.Sprintf(
+		"session(%s, %d attempt(s), %d verified, %d liveness failure(s), %d artifact(s))",
+		s.state, s.attempts, s.verified, s.failures, s.report.Offered())))
+}
+
+// Constructed reports whether s came from this file.
+func (s *Session) Constructed() bool { return s != nil && s.sealed }
+
+// State is the session's CURRENT state. Nil answers AuthStateUnset.
+func (s *Session) State() AuthState {
+	if s == nil {
+		return AuthStateUnset
+	}
+	return s.state
+}
+
+// Authenticated reports whether the session is, right now, one whose coverage
+// may be called authenticated. Nil answers false.
+func (s *Session) Authenticated() bool { return s.State().AuthenticatedCoverage() }
+
+// StartedAt is the run-clock instant the session began.
+func (s *Session) StartedAt() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	return s.startedAt
+}
+
+// Attempts is how many credential submissions this session made — the initial
+// login plus every forced re-login. Bounded by codedMaxAuthAttempts.
+func (s *Session) Attempts() int {
+	if s == nil {
+		return 0
+	}
+	return s.attempts
+}
+
+// Verifications is how many times Anvil OBSERVED the session alive.
+func (s *Session) Verifications() int {
+	if s == nil {
+		return 0
+	}
+	return s.verified
+}
+
+// LivenessFailures is how many times Anvil observed it gone.
+func (s *Session) LivenessFailures() int {
+	if s == nil {
+		return 0
+	}
+	return s.failures
+}
+
+// ReLogins is how many forced re-logins ran.
+func (s *Session) ReLogins() int {
+	if s == nil {
+		return 0
+	}
+	return s.relogins
+}
+
+// Events returns a COPY of the session ledger, in order.
+func (s *Session) Events() []SessionEvent {
+	if s == nil {
+		return nil
+	}
+	out := make([]SessionEvent, len(s.events))
+	copy(out, s.events)
+	return out
+}
+
+// Report returns the authentication report's ledger.
+func (s *Session) Report() AuthReport {
+	if s == nil {
+		return AuthReport{}
+	}
+	return AuthReport{records: s.report.Records()}
+}
+
+// SourceRef names the manifest's auth.steps_ref this session's flow came from,
+// or "" when there is no flow.
+func (s *Session) SourceRef() string {
+	if s == nil {
+		return ""
+	}
+	return s.cfg.Steps.SourceRef()
+}
+
+// CoverageLabel is one sentence naming what coverage collected under this
+// session means. It is the sentence a report writes instead of the word
+// "authenticated".
+func (s *Session) CoverageLabel() string {
+	switch s.State() {
+	case AuthStateAuthenticated:
+		return "authenticated: Anvil observed the session alive through the kernel, so " +
+			"coverage collected inside a bracketed window includes surface behind the login"
+	case AuthStateAuthenticationFailed:
+		return "PUBLIC SURFACE ONLY: authentication was configured and did not succeed, so " +
+			"everything behind the login is missing from this run's coverage and the " +
+			"denominator is smaller than the application"
+	case AuthStateUnauthenticated:
+		return "public surface: no authentication was configured for this target, so " +
+			"coverage is of the unauthenticated application"
+	case AuthStateUnverified:
+		return "UNVERIFIED: the session was alive at the start of this stretch and gone by " +
+			"the end, so coverage collected in it is neither authenticated nor public"
+	case AuthStateSessionLost:
+		return "SESSION LOST: the session was lost mid-scan and no re-login restored it, so " +
+			"coverage after that point is the public surface"
+	default:
+		return "unknown: no session state was recorded, which is never read as authenticated"
+	}
+}
+
+// note appends one ledger row. detail is swept against this session's
+// credentials and then redacted, in that order — see sanitizeForLedger.
+func (s *Session) note(kind SessionEventKind, at time.Time, seq authz.AuditSeq,
+	status int, detail string) {
+
+	s.events = append(s.events, SessionEvent{
+		kind:   kind,
+		at:     at,
+		seq:    seq,
+		status: status,
+		detail: sanitizeForLedger(detail, s.cfg.Steps.secrets()),
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Windows — the partition StateAt is total over
+// ---------------------------------------------------------------------------
+
+// Windows returns the run timeline as contiguous, non-overlapping windows.
+//
+// It is computed from the event ledger every time rather than maintained
+// incrementally, for one reason: a window's state is not knowable when it
+// opens. A stretch that begins at a passed liveness check is provisionally
+// authenticated and is DOWNGRADED to AuthStateUnverified if the next liveness
+// event is a failure — the session died somewhere inside it. Only a stretch
+// bracketed by two passes keeps AuthStateAuthenticated.
+func (s *Session) Windows() []AuthWindow {
+	if s == nil || !s.sealed {
+		return nil
+	}
+	cur := AuthWindow{from: s.startedAt, state: AuthStateUnauthenticated}
+	var out []AuthWindow
+	closeInto := func(at time.Time, verifiedEnd bool) {
+		cur.to = at
+		cur.verifiedEnd = verifiedEnd
+		out = append(out, cur)
+	}
+	for _, e := range s.events {
+		switch e.kind {
+		case SessionEventVerified:
+			closeInto(e.at, true)
+			cur = AuthWindow{from: e.at, state: AuthStateAuthenticated, verifiedStart: true}
+		case SessionEventLivenessFailed:
+			if cur.verifiedStart {
+				// The downgrade. It was alive when this window opened and it
+				// is gone now; nothing observed the moment in between.
+				cur.state = AuthStateUnverified
+			}
+			closeInto(e.at, false)
+			cur = AuthWindow{from: e.at, state: AuthStateSessionLost}
+		case SessionEventLoginFailed, SessionEventLoginRefusedByKernel:
+			if cur.verifiedStart {
+				cur.state = AuthStateUnverified
+			}
+			closeInto(e.at, false)
+			cur = AuthWindow{from: e.at, state: AuthStateAuthenticationFailed}
+		case SessionEventReLoginFailed, SessionEventAttemptsExhausted:
+			closeInto(e.at, false)
+			cur = AuthWindow{from: e.at, state: AuthStateSessionLost}
+		}
+	}
+	return append(out, cur)
+}
+
+// StateAt maps one instant to exactly one AuthState.
+//
+// An instant BEFORE the session started answers AuthStateUnauthenticated: at
+// that point no login had run, which is the truthful label and also the
+// fail-closed one.
+func (s *Session) StateAt(t time.Time) AuthState {
+	if s == nil {
+		return AuthStateUnset
+	}
+	ws := s.Windows()
+	if len(ws) == 0 || t.Before(ws[0].from) {
+		return AuthStateUnauthenticated
+	}
+	for _, w := range ws {
+		if w.Contains(t) {
+			return w.state
+		}
+	}
+	return AuthStateUnset
+}
+
+// PartitionByState counts instants by the state of the window each falls in.
+// It is the shape D.26 needs: a crawl's visit instants in, a labelled
+// breakdown out.
+func (s *Session) PartitionByState(instants []time.Time) map[AuthState]int {
+	out := map[AuthState]int{}
+	for _, t := range instants {
+		out[s.StateAt(t)]++
+	}
+	return out
+}
+
+// AssertAllAuthenticated returns an error naming HOW MANY instants fell
+// outside an authenticated window, and in which states.
+//
+// It asserts the COUNT rather than the existence of an authenticated window: a
+// run whose first request landed in an authenticated window and whose other
+// four hundred did not is exactly the shape this is written against.
+func (s *Session) AssertAllAuthenticated(instants []time.Time) error {
+	mix := s.PartitionByState(instants)
+	bad := 0
+	var parts []string
+	for _, st := range append([]AuthState{AuthStateUnset}, AuthStateValues()...) {
+		if st.AuthenticatedCoverage() {
+			continue
+		}
+		if n := mix[st]; n > 0 {
+			bad += n
+			parts = append(parts, fmt.Sprintf("%s: %d", st, n))
+		}
+	}
+	if bad == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %d of %d instant(s) are not authenticated coverage (%s). %s",
+		ErrCoverageIsNotAuthenticated, bad, len(instants), strings.Join(parts, ", "),
+		s.CoverageLabel())
+}
+
+// AssertNoCredentialInLedger re-derives the sweep over the RECORDED ledger.
+//
+// It is deliberately a second, independent look: note() and the artifact path
+// decide, and this reads back what those decisions actually produced. A check
+// that can only see the decision cannot see the damage — if the sweep is ever
+// wrong, this is what says so, from evidence, in the value an operator holds.
+//
+// It never names the credential and never returns it.
+func (s *Session) AssertNoCredentialInLedger() error {
+	if s == nil {
+		return nil
+	}
+	secrets := s.cfg.Steps.secrets()
+	if len(secrets) == 0 {
+		return nil
+	}
+	check := func(where, text string) error {
+		if i, hit := credentialIn([]byte(text), secrets); hit {
+			return fmt.Errorf("%w: the credential from step-secret %d appears in %s. The "+
+				"offending text is NOT reproduced here", ErrCredentialInArtifact, i+1, where)
+		}
+		return nil
+	}
+	for i, e := range s.events {
+		if err := check(fmt.Sprintf("session event %d (%s)", i+1, e.kind), e.detail); err != nil {
+			return err
+		}
+		if err := check(fmt.Sprintf("session event %d rendered", i+1), e.String()); err != nil {
+			return err
+		}
+	}
+	for i, r := range s.report.records {
+		if err := check(fmt.Sprintf("artifact record %d rendered", i+1), r.String()); err != nil {
+			return err
+		}
+	}
+	if err := check("the coverage label", s.CoverageLabel()); err != nil {
+		return err
+	}
+	return check("the session rendering", fmt.Sprintf("%v %s", s, s.SourceRef()))
+}
+
+// AssertReportRetained returns an error when a login ran and NOTHING of its
+// authentication report was stored.
+//
+// plan/50-dast.md D.24 requires every run to store the report. A run that
+// stored nothing is not automatically a defect — every artifact may have been
+// a suppressed screenshot — so this names which it was rather than passing on
+// len(x) > 0.
+func (s *Session) AssertReportRetained() error {
+	if s == nil || !s.sealed {
+		return fmt.Errorf("inventory: %w: no session, so no authentication report",
+			ErrUnconstructed)
+	}
+	if s.attempts == 0 {
+		return nil
+	}
+	if s.report.Offered() == 0 {
+		return fmt.Errorf("inventory: %w: %d credential submission(s) ran and the driver "+
+			"produced NO report artifact. D.24 requires screenshots, HTTP and storage on "+
+			"every run: a login nobody can diagnose is the shape research/22's Risk #7 "+
+			"takes", ErrRefused, s.attempts)
+	}
+	if s.report.StoredCount() == 0 {
+		return fmt.Errorf("inventory: %w: %d artifact(s) were offered and none was "+
+			"stored. Disposition mix: %v", ErrRefused, s.report.Offered(),
+			s.report.DispositionMix())
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// UnauthenticatedSession
+// ---------------------------------------------------------------------------
+
+// UnauthenticatedSession is how a caller records, on the ledger, that this
+// target declares NO authentication.
+//
+// It exists so that "no auth section in the manifest" and "auth was configured
+// and failed" are different values rather than the same nil. Both produce
+// unauthenticated coverage; only the second means the scan is missing the
+// application's interior, and a report that cannot tell them apart cannot say
+// so.
+func UnauthenticatedSession(now authz.Clock) *Session {
+	return &Session{
+		state:     AuthStateUnauthenticated,
+		startedAt: now.Instant(),
+		sealed:    true,
+		events: []SessionEvent{{
+			kind: SessionEventNoAuthConfigured,
+			at:   now.Instant(),
+			detail: "no auth section is declared for this target, so no login was " +
+				"attempted and coverage is of the public surface",
+		}},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuthenticateAndMonitor
+// ---------------------------------------------------------------------------
+
+// AuthenticateAndMonitor is D.24: run the explicit login flow, store the
+// authentication report, and OBSERVE the resulting session through the kernel.
+//
+// # Signature
+//
+// plan/50-dast.md D.24 writes it `AuthenticateAndMonitor(target *Target, steps
+// AuthSteps) (*Session, error)`. There is no `*Target` in this package — the
+// kernel's authz.Target is the type, and it is one of a dozen things an
+// authenticated request needs — so the target, the steps and the kernel
+// objects arrive in an AuthConfig, exactly as D.18's Config, D.22's
+// ConfirmConfig and D.23's CrawlConfig do. The ctx and the run clock are
+// explicit for the same reason CrawlWithClientSpider's are.
+//
+// # It returns a Session AND an error together, on failure
+//
+// That is unusual and it is the point. A caller that drops the error still
+// holds a value whose Authenticated() is false, whose State() is
+// AuthStateAuthenticationFailed and whose CoverageLabel() says PUBLIC SURFACE
+// ONLY. There is no shape of this API in which a failed login and a successful
+// crawl combine into an authenticated result.
+//
+// # Order
+//
+//	1 validate; refuse rather than degrade
+//	2 admit the login NAVIGATION (GET) through the kernel
+//	3 admit the credential SUBMISSION (POST) through the kernel — gate 15
+//	  refuses this one unless an operator put it on the EndpointAllowance
+//	4 only now does anything leave, and it leaves through AuthDriver
+//	5 ObserveResponse on both leases; gates 16 and 17 see the login too
+//	6 STORE THE REPORT — always, on success and on failure alike, because a
+//	  login that failed is the one somebody needs the screenshots for
+//	7 the driver's claim is recorded and NOT believed
+//	8 CheckLiveness: Anvil's own observation, through the kernel. Only this
+//	  produces AuthStateAuthenticated.
+func AuthenticateAndMonitor(ctx context.Context, cfg AuthConfig, now authz.Clock) (*Session, error) {
+	s := &Session{
+		cfg:       cfg,
+		state:     AuthStateUnauthenticated,
+		startedAt: now.Instant(),
+		sealed:    true,
+	}
+	if err := validateAuthConfig(cfg); err != nil {
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginFailed, now.Instant(), 0, 0,
+			"the authentication configuration was refused before any request was built: "+
+				errText(err))
+		return s, fmt.Errorf("%w: %w", ErrAuthFailed, err)
+	}
+	if err := s.login(ctx, now, false); err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
+// login runs one credential submission and then verifies it.
+func (s *Session) login(ctx context.Context, now authz.Clock, forced bool) error {
+	if s.attempts >= codedMaxAuthAttempts {
+		at := s.clockFor(now)
+		s.state = AuthStateSessionLost
+		s.note(SessionEventAttemptsExhausted, at.Instant(), 0, 0, fmt.Sprintf(
+			"this session has already submitted credentials %d times, which is the coded "+
+				"bound. An unbounded retry loop against a target that keeps refusing is "+
+				"gate 15's denylisted authentication_lockout_sequence, and Anvil must not "+
+				"reach it through its own recovery path", s.attempts))
+		return fmt.Errorf("%w: the credential-submission budget of %d was exhausted",
+			ErrAuthFailed, codedMaxAuthAttempts)
+	}
+
+	if s.cfg.Driver == nil {
+		at := s.clockFor(now)
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginFailed, at.Instant(), 0, 0,
+			"no AuthDriver is wired, so no login was attempted. This is a fact about "+
+				"Anvil: any crawl that follows covers the PUBLIC surface only")
+		return fmt.Errorf("%w: %w", ErrAuthFailed, ErrNoAuthDriver)
+	}
+
+	s.attempts++
+	at := s.clockFor(now)
+	s.note(SessionEventLoginAttempted, at.Instant(), 0, 0, fmt.Sprintf(
+		"attempt %d of %d, %d step(s) from %s, forced=%v",
+		s.attempts, codedMaxAuthAttempts, s.cfg.Steps.Len(), redact(s.cfg.Steps.SourceRef()),
+		forced))
+
+	// Step 2: the navigation. A safe method; gate 15 needs no allowance.
+	navLease, navSeq, err := s.admit(authNavMethod, s.cfg.LoginPath, at)
+	if err != nil {
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginRefusedByKernel, at.Instant(), 0, 0,
+			"the kernel refused the login NAVIGATION: "+errText(err))
+		return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+	}
+
+	// Step 3: the submission. A state-changing method, so gate 15 refuses it
+	// unless POST <login path> is on the Governor's EndpointAllowance — which
+	// is an operator naming this endpoint on purpose before Anvil will ever
+	// send a credential to it.
+	subAt := s.clockFor(now)
+	subLease, subSeq, err := s.admit(authSubmitMethod, s.cfg.LoginPath, subAt)
+	if err != nil {
+		// The navigation lease is still held. Release it as a connection
+		// error: nothing was issued on it, and a leaked lease would spend
+		// gate 14's concurrency slot for the rest of the run.
+		s.release(navLease, at, 0, 0, false)
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginRefusedByKernel, subAt.Instant(), navSeq, 0,
+			"the kernel refused the credential SUBMISSION: "+errText(err))
+		return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+	}
+
+	req := AuthRequest{
+		auth:      s.cfg.Authorization,
+		target:    s.cfg.Target,
+		method:    authSubmitMethod,
+		path:      s.cfg.LoginPath,
+		technique: authTechnique,
+		navSeq:    navSeq,
+		submitSeq: subSeq,
+		steps:     s.cfg.Steps,
+		sealed:    true,
+	}
+
+	// Step 4: the only thing that leaves the process.
+	outcome, derr := s.cfg.Driver.Authenticate(ctx, req)
+
+	// Step 5. Both leases are released exactly once, whatever happened.
+	if derr != nil {
+		s.release(navLease, at, 0, 0, false)
+		s.release(subLease, subAt, 0, 0, false)
+	} else {
+		s.release(navLease, at, outcome.NavStatus, outcome.NavLatency,
+			isHTTPStatus(outcome.NavStatus))
+		s.release(subLease, subAt, outcome.SubmitStatus, outcome.SubmitLatency,
+			isHTTPStatus(outcome.SubmitStatus))
+	}
+
+	// Step 6. THE REPORT IS STORED ON FAILURE TOO. A login that failed is the
+	// one somebody needs the screenshots for.
+	s.storeArtifacts(ctx, outcome.Artifacts, subAt)
+
+	if derr != nil {
+		s.state = AuthStateAuthenticationFailed
+		// The driver's error text touched the credential path, so it is swept
+		// before it reaches the ledger, exactly like its Detail.
+		s.note(SessionEventLoginFailed, subAt.Instant(), subSeq, 0,
+			"the AuthDriver returned an error: "+s.sweep(errText(derr)))
+		return fmt.Errorf("%w: the AuthDriver failed", ErrAuthFailed)
+	}
+	if !isHTTPStatus(outcome.SubmitStatus) {
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginFailed, subAt.Instant(), subSeq, 0, fmt.Sprintf(
+			"the driver reported submission status %d, which is not an HTTP status. A "+
+				"value that is not an answer is never read as one", outcome.SubmitStatus))
+		return fmt.Errorf("%w: the driver returned a submission status that is not an "+
+			"HTTP status", ErrAuthFailed)
+	}
+	if !outcome.SessionEstablished {
+		s.state = AuthStateAuthenticationFailed
+		s.note(SessionEventLoginFailed, subAt.Instant(), subSeq, outcome.SubmitStatus,
+			fmt.Sprintf("the driver reports no session (failed at step %d of %d, landed "+
+				"on %s): %s", outcome.FailedAtStep, s.cfg.Steps.Len(),
+				s.sweep(outcome.LandedPath), s.sweep(outcome.Detail)))
+		return fmt.Errorf("%w: the driver established no session", ErrAuthFailed)
+	}
+
+	// Step 7. The claim, recorded and not believed.
+	s.note(SessionEventLoginClaimed, subAt.Instant(), subSeq, outcome.SubmitStatus,
+		fmt.Sprintf("the driver claims a session (landed on %s): %s. A claim is not an "+
+			"observation; the state does not change until CheckLiveness says so",
+			s.sweep(outcome.LandedPath), s.sweep(outcome.Detail)))
+
+	// Step 8. ANVIL'S OWN OBSERVATION.
+	alive, lerr := CheckLiveness(ctx, s, now)
+	if lerr != nil || !alive {
+		s.state = AuthStateAuthenticationFailed
+		if forced {
+			s.note(SessionEventReLoginFailed, s.lastEventAt(subAt.Instant()), subSeq, 0,
+				"the forced re-login's session could not be observed alive")
+		}
+		return fmt.Errorf("%w: the driver claimed a session and Anvil could not observe "+
+			"one through the kernel", ErrAuthFailed)
+	}
+	s.state = AuthStateAuthenticated
+	if forced {
+		s.relogins++
+		s.note(SessionEventReLoginSucceeded, s.lastEventAt(subAt.Instant()), subSeq, 0,
+			"the forced re-login produced a session Anvil observed alive")
+	}
+	return nil
+}
+
+func (s *Session) lastEventAt(fallback time.Time) time.Time {
+	if len(s.events) == 0 {
+		return fallback
+	}
+	return s.events[len(s.events)-1].at
+}
+
+// admit runs one request through NewRequestIntent, RequireAuthorization and
+// GateAudit.AuditedAdmit — the same three calls D.22's probeOne and D.23's
+// crawlOne make, in the same order.
+func (s *Session) admit(method authz.Method, path string, at authz.Clock) (
+	*authz.Lease, authz.AuditSeq, error) {
+
+	intent, err := authz.NewRequestIntent(authz.RequestFacts{
+		Origin:   authz.OriginInitial,
+		Admitted: s.cfg.Target,
+		Next:     s.cfg.Target,
+		Method:   method,
+		Path:     path,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("inventory: %w: %s %s is not a valid request intent: %w",
+			ErrRefused, method, redact(path), err)
+	}
+	// Gate 3's runtime half, at the moment a socket could be constructed.
+	if err := authz.RequireAuthorization(s.cfg.Authorization, s.cfg.Target); err != nil {
+		return nil, 0, fmt.Errorf("inventory: %w: %w", ErrRefused, err)
+	}
+	lease, res := s.cfg.Audit.AuditedAdmit(s.cfg.Governor, intent, authTechnique, at)
+	if !res.Passed() {
+		return nil, 0, fmt.Errorf("inventory: %w: the kernel refused %s %s at %s: %s",
+			ErrRefused, method, redact(path), res.Gate(), redact(errText(res.Err())))
+	}
+	return lease, s.cfg.Audit.LastSeq(), nil
+}
+
+// release ends one lease exactly once. A lease that is never released spends
+// gate 14's concurrency slot for the rest of the run, which would show up much
+// later as a target that mysteriously stops being probed.
+func (s *Session) release(lease *authz.Lease, at authz.Clock, status int,
+	latency time.Duration, answered bool) {
+
+	if lease == nil {
+		return
+	}
+	var res authz.GateResult
+	if answered {
+		res = s.cfg.Governor.ObserveResponse(lease, status, latency, nil, at)
+	} else {
+		res = s.cfg.Governor.ObserveConnectionError(lease, at)
+	}
+	s.cfg.Audit.AuditedObservation(res, s.cfg.Target, at)
+}
+
+func (s *Session) clockFor(now authz.Clock) authz.Clock {
+	if s.cfg.Clock == nil {
+		return now
+	}
+	return s.cfg.Clock.NextInstant()
+}
+
+func isHTTPStatus(code int) bool { return code >= minStatusCode && code <= maxStatusCode }
+
+// ---------------------------------------------------------------------------
+// CheckLiveness
+// ---------------------------------------------------------------------------
+
+// CheckLiveness asks the target whether the session is still alive, through
+// the kernel.
+//
+// # Signature
+//
+// plan/50-dast.md D.24 writes it `CheckLiveness(session *Session) (bool,
+// error)`. The ctx and the run clock are explicit here for the reason
+// CrawlWithClientSpider's are: a request that leaves the process needs a
+// cancellation and an instant gate 14 can meter against, and reading either
+// from ambient state would make the kernel's rate decision disagree with the
+// request it was made about.
+//
+// # It is FAIL CLOSED in every direction
+//
+// A nil session, an unconstructed one, a driver error, a status that is not an
+// HTTP status, a status outside the configured allowlist, a redirect back to
+// the login path, and a driver reporting that the session cookie is gone all
+// return false. There is no path through this function on which an
+// unanswerable question becomes "alive".
+//
+// D.24 forbids relying on ZAP's logout-avoidance option as a substitute for
+// this: research 22 records that it does not cover the Client Spider, so the
+// component that would keep the session alive is not the component the crawl
+// runs through.
+func CheckLiveness(ctx context.Context, s *Session, now authz.Clock) (bool, error) {
+	if s == nil || !s.sealed {
+		return false, fmt.Errorf("inventory: %w: liveness was asked about a session "+
+			"nothing constructed", ErrUnconstructed)
+	}
+	if !s.cfg.Constructed() {
+		return false, fmt.Errorf("inventory: %w: liveness was asked about a session whose "+
+			"configuration is not usable, so no probe could be admitted", ErrUnconstructed)
+	}
+	if s.cfg.Driver == nil {
+		s.failures++
+		at := s.clockFor(now)
+		s.note(SessionEventLivenessFailed, at.Instant(), 0, 0,
+			"no AuthDriver is wired, so the session could not be observed. An "+
+				"unobservable session is never read as a live one")
+		return false, fmt.Errorf("%w: %w", ErrSessionLost, ErrNoAuthDriver)
+	}
+
+	at := s.clockFor(now)
+	lease, seq, err := s.admit(authLivenessMethod, s.cfg.LivenessPath, at)
+	if err != nil {
+		s.failures++
+		s.note(SessionEventLivenessFailed, at.Instant(), 0, 0,
+			"the kernel refused the liveness probe: "+errText(err))
+		return false, fmt.Errorf("%w: %w", ErrSessionLost, err)
+	}
+
+	req := AuthRequest{
+		auth:      s.cfg.Authorization,
+		target:    s.cfg.Target,
+		method:    authLivenessMethod,
+		path:      s.cfg.LivenessPath,
+		technique: authTechnique,
+		sealed:    true,
+		// steps is deliberately the ZERO AuthSteps: a liveness check needs
+		// the session, never the credential, so the driver is not handed one.
+	}
+	probe, perr := s.cfg.Driver.ProbeSession(ctx, req)
+	if perr != nil {
+		s.release(lease, at, 0, 0, false)
+		s.failures++
+		s.note(SessionEventLivenessFailed, at.Instant(), seq, 0,
+			"the AuthDriver's session probe returned an error: "+s.sweep(errText(perr)))
+		return false, fmt.Errorf("%w: the session probe failed", ErrSessionLost)
+	}
+	if !isHTTPStatus(probe.Status) {
+		s.release(lease, at, 0, 0, false)
+		s.failures++
+		s.note(SessionEventLivenessFailed, at.Instant(), seq, 0, fmt.Sprintf(
+			"the probe returned status %d, which is not an HTTP status and is never read "+
+				"as an answer", probe.Status))
+		return false, fmt.Errorf("%w: the session probe returned no answer", ErrSessionLost)
+	}
+	s.release(lease, at, probe.Status, probe.Latency, true)
+
+	if reason, dead := s.deadSessionReason(probe); dead {
+		s.failures++
+		s.note(SessionEventLivenessFailed, at.Instant(), seq, probe.Status, reason)
+		return false, nil
+	}
+	s.verified++
+	s.note(SessionEventVerified, at.Instant(), seq, probe.Status, fmt.Sprintf(
+		"status %d is on the configured liveness allowlist %v, the session store still "+
+			"holds a session, and the response did not bounce to the login path",
+		probe.Status, s.cfg.AliveStatuses))
+	return true, nil
+}
+
+// deadSessionReason applies the liveness rules in order and names the FIRST
+// one that failed. Every rule's failure direction is "dead".
+func (s *Session) deadSessionReason(p AuthProbe) (string, bool) {
+	if !p.SessionPresent {
+		return "the driver reports that the session cookie or storage entry is gone", true
+	}
+	allowed := false
+	for _, code := range s.cfg.AliveStatuses {
+		if code == p.Status {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return fmt.Sprintf("status %d is not on the configured liveness allowlist %v. The "+
+			"allowlist is matched by identity: a status nobody enumerated is a dead "+
+			"session, not an unknown one", p.Status, s.cfg.AliveStatuses), true
+	}
+	if p.Status >= 300 && p.Status < 400 {
+		if s.bouncesToLogin(p.Location) {
+			return fmt.Sprintf("status %d redirects back to the login path, which is the "+
+				"classic silent logout: the application answered, so a status check "+
+				"alone would have called this alive", p.Status), true
+		}
+	}
+	return "", false
+}
+
+// bouncesToLogin reports whether a Location header points at the login path.
+//
+// It resolves the header the same way the crawl resolves an href — through
+// resolveLinkPath, which uses the KERNEL's canonicalization — so this file
+// holds no second opinion about what two addresses being equal means. A
+// Location that will not resolve at all counts as a bounce: an unreadable
+// redirect is not evidence the session survived.
+func (s *Session) bouncesToLogin(location string) bool {
+	if strings.TrimSpace(location) == "" {
+		return false
+	}
+	p, err := resolveLinkPath(s.cfg.Target, s.cfg.LivenessPath, location)
+	if err != nil {
+		return true
+	}
+	return stripQuery(p) == stripQuery(s.cfg.LoginPath)
+}
+
+// ---------------------------------------------------------------------------
+// EnsureSessionBeforePhase
+// ---------------------------------------------------------------------------
+
+// EnsureSessionBeforePhase is the between-phases call D.24 specifies: check
+// liveness, and force AuthenticateAndMonitor's login again on failure.
+//
+// It is the ONLY thing that turns a mid-scan logout into a recovered session,
+// and it is bounded: codedMaxAuthAttempts caps the total credential
+// submissions this session may make, for the reason in this file's header.
+//
+// On an unrecoverable loss the session's state is AuthStateSessionLost and the
+// window that was open is closed — so a phase that runs after this returns an
+// error is recorded as unauthenticated coverage, not as a gap.
+func EnsureSessionBeforePhase(ctx context.Context, s *Session, now authz.Clock) error {
+	if s == nil || !s.sealed {
+		return fmt.Errorf("inventory: %w: no session, so nothing can be ensured before "+
+			"the next phase", ErrUnconstructed)
+	}
+	alive, err := CheckLiveness(ctx, s, now)
+	if alive && err == nil {
+		return nil
+	}
+	at := s.clockFor(now)
+	s.state = AuthStateSessionLost
+	s.note(SessionEventReLoginForced, at.Instant(), 0, 0, fmt.Sprintf(
+		"liveness failed before the next scan phase (%d failure(s) so far), so a fresh "+
+			"login is forced. The probes issued between the last verification and this "+
+			"one are UNVERIFIED coverage: the session was alive at the start of that "+
+			"window and gone by its end", s.failures))
+
+	if lerr := s.login(ctx, now, true); lerr != nil {
+		s.state = AuthStateSessionLost
+		return fmt.Errorf("%w: %w", ErrSessionLost, lerr)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// The report path
+// ---------------------------------------------------------------------------
+
+// storeArtifacts runs every artifact through the rules and the sweep, and
+// records what became of it. NOTHING is dropped silently.
+func (s *Session) storeArtifacts(ctx context.Context, arts []AuthArtifact, at authz.Clock) {
+	secrets := s.cfg.Steps.secrets()
+	for _, a := range arts {
+		rec := ArtifactRecord{
+			kind: a.Kind,
+			step: a.Step,
+			name: sanitizeForLedger(a.Name, secrets),
+			size: len(a.Bytes),
+		}
+		switch {
+		case len(s.report.records) >= codedMaxArtifacts:
+			rec.disposition = ArtifactRefusedBudget
+			rec.detail = fmt.Sprintf("the coded artifact bound of %d was reached",
+				codedMaxArtifacts)
+		case !a.Kind.Recognised():
+			rec.disposition = ArtifactRefusedUnrecognisedKind
+			rec.detail = fmt.Sprintf("kind %q is on none of %v, so no rule about storing "+
+				"it exists and it is refused rather than stored under a default",
+				sanitizeForLedger(string(a.Kind), secrets), AuthArtifactKindValues())
+		case len(a.Bytes) > codedMaxArtifactBytes:
+			rec.disposition = ArtifactRefusedTooLarge
+			rec.detail = fmt.Sprintf("%d bytes exceeds the coded bound of %d",
+				len(a.Bytes), codedMaxArtifactBytes)
+		case a.Kind == AuthArtifactScreenshot && !s.screenshotAllowed(a):
+			rec.disposition, rec.detail = s.screenshotRefusal(a)
+		default:
+			if i, hit := credentialIn(a.Bytes, secrets); hit {
+				rec.disposition = ArtifactRefusedCredentialFound
+				rec.detail = fmt.Sprintf("the credential from step-secret %d appears in "+
+					"these bytes. The whole artifact is refused rather than rewritten: a "+
+					"partial rewrite has to anticipate every encoding and refusing does "+
+					"not. THIS IS A DEFECT IN THE DRIVER", i+1)
+			} else if s.cfg.Sink == nil {
+				rec.disposition = ArtifactRefusedNoSink
+				rec.detail = "no ArtifactSink is wired, so the authentication report was " +
+					"not retained. A report nobody kept and a login that produced no " +
+					"artifacts are different findings"
+			} else {
+				stored := StoredArtifact{
+					kind:   a.Kind,
+					step:   a.Step,
+					name:   rec.name,
+					bytes:  append([]byte(nil), a.Bytes...),
+					sealed: true,
+				}
+				if err := s.cfg.Sink.StoreAuthArtifact(ctx, stored); err != nil {
+					rec.disposition = ArtifactRefusedSinkFailed
+					rec.detail = "the sink returned an error: " +
+						sanitizeForLedger(errText(err), secrets)
+				} else {
+					rec.disposition = ArtifactStored
+					rec.detail = "swept and stored"
+				}
+			}
+		}
+		s.report.records = append(s.report.records, rec)
+	}
+	if len(arts) > 0 {
+		mix := s.report.DispositionMix()
+		s.note(SessionEventReportWritten, at.Instant(), 0, 0, fmt.Sprintf(
+			"authentication report: %d artifact(s) offered, %d stored, mix %v",
+			s.report.Offered(), s.report.StoredCount(), mix))
+	}
+}
+
+// screenshotAllowed applies the screenshot policy. It is FAIL CLOSED on every
+// question it cannot answer.
+func (s *Session) screenshotAllowed(a AuthArtifact) bool {
+	if s.cfg.Screenshots != ScreenshotPolicyExceptCredentialSteps {
+		return false
+	}
+	if a.Step == 0 {
+		// A screenshot that names no step cannot be checked against the step
+		// list. "I cannot tell" is not "it is safe".
+		return false
+	}
+	return !s.cfg.Steps.stepBears(a.Step)
+}
+
+func (s *Session) screenshotRefusal(a AuthArtifact) (ArtifactDisposition, string) {
+	if s.cfg.Screenshots == ScreenshotPolicySuppressAll {
+		return ArtifactSuppressedByPolicy,
+			"the configured policy suppresses every screenshot. HTTP and storage " +
+				"artifacts are unaffected: those are bytes, and bytes are swept"
+	}
+	if a.Step == 0 {
+		return ArtifactSuppressedCredentialStep,
+			"this screenshot names no step, so it cannot be checked against the step " +
+				"list. A credential in an image is PIXELS and no byte sweep can see it, " +
+				"so an unresolvable screenshot is suppressed"
+	}
+	return ArtifactSuppressedCredentialStep, fmt.Sprintf(
+		"step %d is a %s, which types a credential. A credential in an image is PIXELS "+
+			"and no byte sweep can see it, so this screenshot is never stored",
+		a.Step, s.stepKind(a.Step))
+}
+
+func (s *Session) stepKind(oneBased int) AuthStepKind {
+	kinds := s.cfg.Steps.Kinds()
+	if oneBased < 1 || oneBased > len(kinds) {
+		return AuthStepUnset
+	}
+	return kinds[oneBased-1]
+}
+
+// ---------------------------------------------------------------------------
+// The sweep
+// ---------------------------------------------------------------------------
+
+// credentialIn reports whether any credential appears in b, and which one.
+//
+// It searches THREE spellings of each secret: the raw bytes, the query-escaped
+// form and the path-escaped form. Those are the forms a credential takes on
+// its way through an HTTP exchange or a storage dump, and net/url's escapers
+// are used rather than a hand-rolled one so the spellings match what a client
+// would actually have written.
+//
+// The forms it does NOT search — base64, gzip, and pixels — are named in this
+// file's header, with what each would cost to close.
+//
+// It returns the INDEX of the offending secret, never the secret.
+func credentialIn(b []byte, secrets []Secret) (int, bool) {
+	if len(b) == 0 || len(secrets) == 0 {
+		return 0, false
+	}
+	hay := string(b)
+	for i, sec := range secrets {
+		if !sec.Present() {
+			continue
+		}
+		raw := sec.Reveal()
+		if raw == "" {
+			continue
+		}
+		if strings.Contains(hay, raw) {
+			return i, true
+		}
+		if q := url.QueryEscape(raw); q != raw && strings.Contains(hay, q) {
+			return i, true
+		}
+		if p := url.PathEscape(raw); p != raw && strings.Contains(hay, p) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// sweepOnly replaces a whole string in which a credential was found, and
+// otherwise returns it unchanged.
+//
+// IT MUST RUN ON THE RAW STRING, BEFORE ANY REDACTION AND BEFORE THE STRING IS
+// EMBEDDED IN A LARGER ONE. redact() rewrites bytes outside its allowlist to
+// '?', so a credential spelled "s3cr3t Pa55w0rd&9xQz" becomes
+// "s3cr3t Pa55w0rd?9xQz" — which no longer contains the credential, so a sweep
+// run afterwards finds nothing and nineteen of its twenty characters ship.
+// TestRedactionDoesNotDefeatTheSweep is the guard, and it is the reason every
+// driver-authored field is swept individually at the point it arrives rather
+// than once at the end.
+func sweepOnly(s string, secrets []Secret) string {
+	if _, hit := credentialIn([]byte(s), secrets); hit {
+		return refusedForCredential
+	}
+	return s
+}
+
+// sanitizeForLedger is the ONE channel from a driver-authored string to the
+// session ledger: sweep the raw bytes, then fold what remains through redact()
+// for the charset and the length bound.
+func sanitizeForLedger(s string, secrets []Secret) string {
+	return redact(sweepOnly(s, secrets))
+}
+
+// sweep is the per-field call. It runs on a value the moment it arrives from a
+// driver, before it is embedded in a message that redaction would rewrite.
+func (s *Session) sweep(v string) string { return sweepOnly(v, s.cfg.Steps.secrets()) }

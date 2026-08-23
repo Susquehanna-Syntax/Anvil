@@ -102,6 +102,11 @@
       "type": "string",
       "enum": ["runtime_spec", "repo_spec", "static_extraction", "crawl"]
     },
+    "specHarvestOutcome": {
+      "description": "What the SAST spec-harvest pass did. NOT one of the six frozen enums; area 40 owns the vocabulary, the SAST half produces it and D.19 consumes it, with the same two literals on both sides so the handoff needs no mapping. There is no member for the empty string: an empty file list under `harvest_ran` is a fact about the REPOSITORY, under `harvest_skipped` it is a fact about ANVIL, and the difference is the denominator of anvil/dastCoverage.endpointCoverage.",
+      "type": "string",
+      "enum": ["harvest_ran", "harvest_skipped"]
+    },
     "handoffState": {
       "description": "Frozen alongside the six (IMPLEMENTATION-PLAN.md section 6, rulings G9+G10). Not carried on the wire record; declared here so the store DDL (R.4) and area X agree on one vocabulary and area X's deleted anvil_ledger cannot reappear.",
       "type": "string",
@@ -330,6 +335,107 @@
             "scope": { "type": "array", "items": { "type": "string" } },
             "excluded": { "type": "array", "items": { "type": "string" } }
           }
+        },
+        "anvil/specHarvest": { "$ref": "#/$defs/specHarvest" }
+      },
+      "allOf": [
+        {
+          "$comment": "anvil/specHarvest is the SAST half's statement. plan/50-dast.md:628-630 assigns spec harvesting to the SAST tier and forbids the DAST tier from re-deriving it, so a copy on the DAST run is a second durable statement of one fact — the shape S1 and ruling G10 both refuse.",
+          "if": {
+            "type": "object",
+            "required": ["anvil/half"],
+            "properties": { "anvil/half": { "const": "dast" } }
+          },
+          "then": { "not": { "required": ["anvil/specHarvest"] } }
+        }
+      ]
+    },
+
+    "specHarvest": {
+      "description": "run.properties[\"anvil/specHarvest\"] — which API spec files the SAST pass harvested from the target repository, and WHETHER IT RAN AT ALL. An outcome, a file list and an omission count, never a bare file list: the interesting cases are all the ones where the list is short, and a short list with no accompanying statement is indistinguishable from a complete one. Absent means the record makes no statement, which is NOT the same as harvest_skipped.",
+      "type": "object",
+      "required": ["outcome", "files", "omittedFileCount"],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/specHarvestOutcome" },
+        "files": {
+          "$comment": "null is admitted HERE only so the harvest_skipped branch can express it; the harvest_ran branch narrows it back to an array, which is where a null list and an empty list stop being the same observation.",
+          "type": ["array", "null"],
+          "items": { "$ref": "#/$defs/specHarvestFile" }
+        },
+        "omittedFileCount": {
+          "description": "How many spec files the harvest SAW and did NOT carry into `files`. Required under harvest_ran and explicitly `null` under harvest_skipped — never omitted, and never 0 by default: 0 asserts that `files` is COMPLETE, which is the permissive reading a forgetful producer would get free.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "harvest_ran" } }
+          },
+          "then": {
+            "$comment": "A null list and an empty list must not be the same observation.",
+            "properties": {
+              "files": { "type": "array" },
+              "omittedFileCount": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "harvest_skipped" } }
+          },
+          "then": {
+            "$comment": "A pass that did not run cannot have delivered files, and saw nothing to omit. `null` and `[]` are both legal here and mean the same thing, because there is no list to have been written down.",
+            "properties": {
+              "files": { "type": ["array", "null"], "maxItems": 0 },
+              "omittedFileCount": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+
+    "specHarvestFile": {
+      "description": "One harvested spec file. THE BYTES ARE ATTACKER-AUTHORED: a committed openapi.yaml, WSDL or Postman collection is written by whoever can commit to the scanned repository, and every network destination inside one is a repository-supplied address. Nothing here grants scope or authorization.",
+      "type": "object",
+      "required": ["location", "sizeBytes", "contentSha256", "trust"],
+      "properties": {
+        "location": {
+          "description": "SARIF §3.4 artifactLocation naming the file in the target repository. A harvested file nobody can name is a file no operator can go look at when its routes turn out to be wrong.",
+          "type": "object",
+          "required": ["uri"],
+          "properties": {
+            "uri": { "type": "string", "minLength": 1 },
+            "uriBaseId": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "sizeBytes": {
+          "description": "The file's exact length in bytes as harvested. Zero is legal: a repository may commit a zero-byte openapi.yaml, and refusing to record that would delete the file from the harvest list.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentSha256": {
+          "description": "Lowercase-hex SHA-256 of the file's exact bytes AS HARVESTED, before any normalisation, re-encoding or YAML-to-JSON conversion. It states WHICH bytes the DAST tier parsed, so a re-run that produces a different route list can be told apart from a repository that changed.",
+          "$ref": "#/$defs/sha256Hex"
+        },
+        "content": {
+          "description": "SARIF §3.3 artifactContent. Optional, and when present it is the WHOLE file — text length must equal sizeBytes. There is no truncation flag on purpose: a silently truncated spec yields a short route list, which is a smaller coverage denominator, which makes endpoint_coverage look better than it is. Truncate out of band and elide this instead.",
+          "type": "object",
+          "properties": { "text": { "type": "string" } }
+        },
+        "declaredFormat": {
+          "description": "What the HARVESTER claimed the file is. Recorded and never believed — D.19 classifies from the bytes, because the harvester classifies on a path and the path is in the repository. Deliberately NOT an enum this schema freezes: the parser vocabulary is area D's growing allowlist, and freezing a snapshot of it here would make every new parser a produce/consume break.",
+          "type": "string"
+        },
+        "trust": {
+          "description": "Labels the URI, the declared format and the content. A spec file committed to the target repository is external text whatever Anvil did to assemble the struct around it, so `anvil_generated` is excluded by construction.",
+          "$ref": "#/$defs/externalTrust"
         }
       }
     },
@@ -531,6 +637,13 @@
         "excerpt": {
           "description": "<= 800 tokens, pre-trimmed by ingestion, never a whole advisory. External text, so it carries its own trust inline.",
           "$ref": "#/$defs/trustedString"
+        },
+        "licenseManualNote": {
+          "description": "S8's manual override: the QUOTED OPERATIVE SENTENCE from the publisher's own licence text, required by Lane A's licence gate whenever licenseSpdx is NONE, NOASSERTION or a LicenseRef- id — the population where the SPDX identifier establishes nothing. It sits beside the excerpt because it licenses the excerpt: the feed licence attaches to the TEXT, not to Anvil. A TrustedString and not a bare string, because a quotation from a publisher's LICENSE file originated outside Anvil; `anvil_generated` is excluded, and so is a blank note, which would satisfy \"a note exists\" while establishing nothing (the ingestion cache enforces length(trim(...)) > 0 in SQL). This slot does NOT make the record the enforcement point for S8 — that subject is the CI gate — it only makes the note survive into the record.",
+          "allOf": [
+            { "$ref": "#/$defs/trustedString" },
+            { "properties": { "text": { "type": "string", "pattern": "\\S" } } }
+          ]
         }
       }
     },
