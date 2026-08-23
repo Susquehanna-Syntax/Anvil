@@ -1161,9 +1161,14 @@ func TestUnconfirmedIsStructurallyDistinctFromBothOthers(t *testing.T) {
 	}
 
 	// A confirmed finding with a genuinely low ratio is impossible by
-	// construction (confirmed requires matches == attempts), so there is no
-	// confidence value at which confirmed and unconfirmed overlap. Proved by
-	// running every reason through the mapping.
+	// construction (confirmed requires matches == attempts: anything less is
+	// ReasonReproducedIntermittently, which outcomeForReason maps to
+	// unconfirmed), so there is no confidence value at which confirmed and
+	// unconfirmed overlap. Proved by running every reason through the
+	// mapping; the arithmetic itself is driven by
+	// TestIntermittentReproductionIsUnconfirmed on the matches < attempts side
+	// and by TestNoUnconfirmedFindingCarriesFullConfidence on the confidence
+	// side.
 	for _, r := range ReasonValues() {
 		o, err := outcomeForReason(r)
 		if err != nil {
@@ -6783,11 +6788,13 @@ func TestTheDisclosedFixedWidthUnitSplitHasAWitness(t *testing.T) {
 // A WHOLE FAMILY IS NOT ON THIS LIST AND IS NAMED SO ITS ABSENCE IS NOT READ
 // AS COVERAGE. This paragraph used to name ONE member — the JWT pair — and
 // read as if that were the whole gap. It is not; see
-// TestTheBase64URLOracleFamilyIsRefusedByR3, which measures the family and is
-// the disclosure this comment now only summarises. In short: EVERY credential
-// oracle whose evidence class is base64url is refused at NewSignature by R3,
-// upstream of the floor, and that is a real coverage gap in a security
-// scanner rather than one awkward pattern.
+// TestTheContentBearingEvidenceClassFamilyIsRefusedByR3, which measures the
+// family and is the disclosure this comment now only summarises. In short:
+// every oracle whose evidence class admits a LETTER alongside a printable rune
+// that is neither letter nor digit, repeated more times than the pattern
+// spells, is refused at NewSignature by R3, upstream of the floor. Base64url
+// is the face of that an operator meets first; it is not the boundary. That is
+// a real coverage gap in a security scanner rather than one awkward pattern.
 func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 	for _, tc := range []struct {
 		pattern     string
@@ -6885,34 +6892,53 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 	}
 }
 
-// TestTheBase64URLOracleFamilyIsRefusedByR3 is a DISCLOSED COVERAGE GAP,
-// measured, named as the family it is.
+// TestTheContentBearingEvidenceClassFamilyIsRefusedByR3 is a DISCLOSED
+// COVERAGE GAP, measured, named as the family it is.
 //
 // ===========================================================================
-// WHAT THE FAMILY IS
+// WHAT THE FAMILY IS — THE PREDICATE, NOT A LIST OF SIX
 // ===========================================================================
 //
-// Every credential oracle whose evidence class is BASE64URL — a class that
-// admits letters and digits AND `-` or `_` — is refused at NewSignature by R3,
-// before any body exists and therefore upstream of ruling 15's floor. The same
-// is true of standard base64's `+` and `/`, and of a `.` admitted alongside
-// letters to span a JWT's dots.
+// THIS TEST USED TO BE NAMED FOR BASE64URL AND THAT NAME WAS NARROWER THAN
+// WHAT R3 REFUSES. Every member it listed was accurate and measured;
+// base64url is one FACE of the family, picked because it is the alphabet
+// operators reach for. The dead name is not written out here, because
+// TestEveryTestNamedInASourceCommentExists would flag its own narration — as
+// it did, in this diff. The boundary is wider, it is mechanical, and it is
+// this:
+//
+//	R3's counting arm refuses a signature whose repeat draws from a class
+//	that admits a LETTER and at least one printable-ASCII rune that is
+//	NEITHER LETTER NOR DIGIT, whenever the repeat's ceiling exceeds the
+//	pattern's literal footing.
+//
+// `-` and `_` satisfy that. So do `+` and `/`, `.`, `:`, a SPACE, and every
+// punctuation mark. THE PREDICATE IS SWEPT RATHER THAN ILLUSTRATED below:
+// adding each of the 33 printable non-alphanumeric runes in turn to an
+// accepted alphanumeric class flips the verdict to an R3 refusal, all 33 of
+// them, and dropping either half of the conjunction — the letter, or the
+// non-alphanumeric rune — brings the pattern back.
 //
 // WHY R3 REFUSES IT, and it is R3 working correctly rather than a bug.
 // contentBearingClass partitions printable ASCII: a class admitting a LETTER
 // and something that is NEITHER LETTER NOR DIGIT can run from one token into
 // the next, so a repeat of it can carry the response's own prose, markup or
-// JSON. `-` and `_` are exactly such runes. `[0-9A-Za-z_-]{20,60}` is
-// therefore 60 QUOTED positions, and R3's relation is 1:1 against the
-// pattern's literal footing — `eyJ` is three bytes. The class is not
-// token-shaped in R3's sense even though a token is what an operator means by
-// it, because R3 cannot see intent, only the alphabet.
+// JSON. `[0-9A-Za-z_-]{20,60}` is therefore 60 QUOTED positions, and R3's
+// relation is 1:1 against the pattern's literal footing — `eyJ` is three
+// bytes. The class is not token-shaped in R3's sense even though a token is
+// what an operator means by it, because R3 cannot see intent, only the
+// alphabet.
 //
 // THE GAP IS THAT THIS IS ALSO THE ALPHABET OF NEARLY EVERY MODERN BEARER
-// CREDENTIAL. JWTs, Google OAuth access tokens, OpenAI keys, GitLab PATs,
-// Slack tokens and raw `Authorization: Bearer` headers all live in it. A
-// scanner that cannot express an oracle for them cannot report them, and an
-// operator needs to know the SHAPE of that hole rather than one example of it.
+// CREDENTIAL, AND OF SEVERAL THINGS THAT ARE NOT CREDENTIALS AT ALL. JWTs,
+// Google OAuth access tokens, OpenAI keys, GitLab PATs, Slack tokens and raw
+// `Authorization: Bearer` headers live in the base64url face. The wider family
+// also takes a PEM `-----BEGIN ... PRIVATE KEY-----` header (its class admits
+// a space), a `Set-Cookie` value spanning dots and colons, a URL in an
+// `href`, a `\w` token, and a password charset carrying punctuation — all
+// measured below. A scanner that cannot express an oracle for them cannot
+// report them, and an operator needs to know the SHAPE of that hole rather
+// than one example of it.
 //
 // ===========================================================================
 // WHAT AN OPERATOR SHOULD DO INSTEAD, AND WHAT IT COSTS
@@ -6935,16 +6961,18 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 // literal-to-evidence ratio. Neither is the pattern the operator wanted; both
 // are what this gate will compile. That trade is the disclosure.
 //
-// TWO MEMBERS FAIL A DIFFERENT WAY AND ARE NOT COUNTED IN THE SIX. A ceiling-
-// less base64url repeat (`{10,}`) meets R3's UNBOUNDED arm rather than its
-// counting arm, and a bare `[A-Za-z0-9+/]{40,}={0,2}` with no sigil at all is
-// refused by R1 for spelling nothing. Both are refusals an operator would
-// expect; the six below are the ones that look like ordinary oracles and are
-// refused anyway.
-func TestTheBase64URLOracleFamilyIsRefusedByR3(t *testing.T) {
-	// THE SIX MEASURED MEMBERS. quoted/spelled are the two numbers R3's
-	// message reports, written out here so a change to either layer has to
-	// move a number in this file in the same diff.
+// TWO MEMBERS FAIL A DIFFERENT WAY AND ARE NOT COUNTED IN EITHER LIST. A
+// ceiling-less base64url repeat (`{10,}`) meets R3's UNBOUNDED arm rather than
+// its counting arm, and a bare `[A-Za-z0-9+/]{40,}={0,2}` with no sigil at all
+// is refused by R1 for spelling nothing. Both are refusals an operator would
+// expect; the members below are the ones that look like ordinary oracles and
+// are refused anyway.
+func TestTheContentBearingEvidenceClassFamilyIsRefusedByR3(t *testing.T) {
+	// THE SIX MEASURED BASE64URL MEMBERS — one face of the family, kept by
+	// name because they are the shapes an operator writes first. quoted and
+	// spelled are the two numbers R3's message reports, written out here so a
+	// change to either layer has to move a number in this file in the same
+	// diff.
 	for _, tc := range []struct {
 		pattern     string
 		what        string
@@ -6959,38 +6987,98 @@ func TestTheBase64URLOracleFamilyIsRefusedByR3(t *testing.T) {
 		{`Bearer [A-Za-z0-9\-_.]{40,200}`, "a raw Authorization bearer header", 200, 7},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
-			_, err := NewSignature(tc.pattern)
-			if err == nil {
-				t.Fatalf("NewSignature(%q) was ACCEPTED. %s now compiles, which is a "+
-					"REAL IMPROVEMENT and not a failure — but this test is the "+
-					"disclosure of a gap, so close the gap in the comment above "+
-					"before deleting the case",
-					tc.pattern, tc.what)
-			}
-			if !errors.Is(err, ErrSignatureMatchesEverything) {
-				t.Fatalf("NewSignature(%q): err = %v, want an "+
-					"ErrSignatureMatchesEverything", tc.pattern, err)
-			}
-			// R3 AND NOT SOMETHING ELSE. If one of these ever starts
-			// being refused by R1 or by the benign corpus instead, the
-			// family this test names is no longer the family it
-			// describes.
-			if got := err.Error(); !strings.Contains(got, "(rule R3)") {
-				t.Fatalf("NewSignature(%q) was refused, but not by R3: %v\n"+
-					"The disclosure above is specifically about R3 counting a "+
-					"base64url class as quotation", tc.pattern, err)
-			}
-			for _, want := range []string{
-				fmt.Sprintf("quotes up to %d position(s)", tc.wantQuoted),
-				fmt.Sprintf("against %d byte(s) of literal footing", tc.wantSpelled),
-			} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("R3's refusal of %q does not report %q:\n%v",
-						tc.pattern, want, err)
-				}
-			}
+			assertRefusedByR3Counting(t, tc.pattern, tc.what, tc.wantQuoted, tc.wantSpelled)
 		})
 	}
+
+	// THE REST OF THE FAMILY, WHICH THE OLD NAME DID NOT COVER. Not one of
+	// these is base64url; every one of them satisfies the predicate above,
+	// and each carries a rune from a different corner of the partition so
+	// the list cannot be read as six spellings of `_` and `-`.
+	t.Run("the_family_is_wider_than_base64url", func(t *testing.T) {
+		for _, tc := range []struct {
+			pattern     string
+			what        string
+			wantQuoted  int
+			wantSpelled int
+		}{
+			{`session=[A-Za-z0-9+/]{40,64}`,
+				"standard base64, on + and /", 64, 8},
+			{`token=\w{20,40}`,
+				"a \\w token: _ is neither letter nor digit", 40, 6},
+			{`Set-Cookie: sid=[A-Za-z0-9.:]{20,40}`,
+				"a cookie value spanning dots and colons", 40, 16},
+			{`href="[A-Za-z0-9:/.]{20,80}"`,
+				"a URL in an href", 80, 7},
+			{`-----BEGIN [A-Z ]{4,40} PRIVATE KEY-----`,
+				"a PEM private-key header, on a SPACE", 40, 28},
+			{`db_password: [A-Za-z0-9!@#$%^&*]{12,32}`,
+				"a password charset carrying punctuation", 32, 13},
+		} {
+			t.Run(tc.what, func(t *testing.T) {
+				assertRefusedByR3Counting(t, tc.pattern, tc.what, tc.wantQuoted, tc.wantSpelled)
+			})
+		}
+	})
+
+	// THE PREDICATE ITSELF, SWEPT. This is the part that makes the family a
+	// CLASS rather than a list somebody remembered to write down: take a
+	// pattern R3 accepts, add one printable non-alphanumeric rune to its
+	// class, and it is refused — for every such rune there is.
+	//
+	// The rune is written as `\x{hh}` so that `]`, `\`, `^` and `-` need no
+	// special-casing inside the class and the sweep has no holes where an
+	// escaping bug would look like an acceptance.
+	t.Run("every_printable_non_alphanumeric_rune_flips_the_verdict", func(t *testing.T) {
+		const base = `eyJ[0-9A-Za-z%s]{20,60}`
+		if _, err := NewSignature(fmt.Sprintf(base, "")); err != nil {
+			t.Fatalf("the alphanumeric baseline %q is itself refused: %v. Every "+
+				"assertion below would then pass for the wrong reason",
+				fmt.Sprintf(base, ""), err)
+		}
+		swept := 0
+		for r := 0x20; r <= 0x7e; r++ {
+			c := rune(r)
+			if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+				continue
+			}
+			swept++
+			p := fmt.Sprintf(base, fmt.Sprintf(`\x{%02x}`, r))
+			_, err := NewSignature(p)
+			if err == nil {
+				t.Errorf("NewSignature(%q) was ACCEPTED. 0x%02x (%q) is neither letter "+
+					"nor digit, so contentBearingClass should make this class quote "+
+					"60 positions against 3 spelled bytes. The predicate this test "+
+					"states is not the predicate the code runs", p, r, c)
+				continue
+			}
+			if !strings.Contains(err.Error(), "(rule R3)") {
+				t.Errorf("NewSignature(%q) was refused, but not by R3: %v. The family "+
+					"is defined by R3's counting arm; a refusal from R1, R2 or the "+
+					"corpus is a different fact", p, err)
+			}
+		}
+		if swept != 33 {
+			t.Fatalf("swept %d runes, want 33 — printable ASCII is 0x20-0x7e, which is "+
+				"95 runes, of which 62 are alphanumeric", swept)
+		}
+		// BOTH HALVES OF THE CONJUNCTION ARE LOAD-BEARING, so the predicate
+		// is not "a class with punctuation in it" and not "a class with a
+		// letter in it". Dropping either half brings the pattern back.
+		for _, tc := range []struct{ pattern, why string }{
+			{`eyJ[0-9\x{2d}]{20,60}`, "a hyphen with NO letter in the class"},
+			{`eyJ[0-9_]{20,60}`, "an underscore with NO letter in the class"},
+			{`eyJ[0-9 ]{20,60}`, "a space with NO letter in the class"},
+			{`eyJ[0-9A-Za-z]{20,60}`, "letters and digits and nothing else"},
+		} {
+			if _, err := NewSignature(tc.pattern); err != nil {
+				t.Errorf("NewSignature(%q) was REFUSED: %v. %s, so it is outside the "+
+					"predicate and R3's counting arm must not reach it — otherwise "+
+					"the family is wider than this test says and the disclosure is "+
+					"still too narrow", tc.pattern, err, tc.why)
+			}
+		}
+	})
 
 	// THE REMEDY, MEASURED. Same oracles with `_` and `-` out of the class:
 	// accepted, matched, inlined, confirmed.
@@ -7408,4 +7496,851 @@ func TestScalingTheSpelledFootingDoesNotBuyAnOrdinaryPage(t *testing.T) {
 				tc.matchLen, sig.spelled, got, tc.want, tc.why)
 		}
 	}
+}
+
+// ===========================================================================
+// D.30 — WHAT AN EMPTY SPAN MEANS, AND WHERE EVIDENCE COMES FROM
+// ===========================================================================
+
+// TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne is the measurement
+// behind EvidenceRef.ExtractedSpan's doc comment, and it exists because that
+// doc comment said "TWO different situations and SpanOverBroadBytes is what
+// tells them apart" while there were four.
+//
+// A CONSUMER BRANCHING ON SpanOverBroadBytes IS THE READER THIS PROTECTS. The
+// field is exported, its accessor is the first thing a consumer reads, and the
+// sentence told them a zero meant "the signature matched nothing". Three of
+// the four causes below carry a zero, and one of those three is a CONFIRMED
+// finding whose oracle fired on every attempt.
+//
+// The four are asserted on all three fields at once — span, dropped,
+// over-broad — because the claim being pinned is not "each case happens", it
+// is "these are the values a consumer would have to tell them apart by".
+func TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne(t *testing.T) {
+	vulnerable := []byte(`{"error":"` + sqliMarker + `"}`)
+
+	// CAUSE 1 — the signature ran against an application response and matched
+	// nothing. This is the 88 phantoms.
+	t.Run("matched_nothing", func(t *testing.T) {
+		f := confirmAgainst(t, sqliCandidate(t, "/search"),
+			&scriptedReprober{body: func(RawFinding, int) []byte { return []byte(`ordinary page`) }})
+		assertEvidence(t, f, evidenceWant{
+			span: "", dropped: 0, overBroad: 0,
+			reason: ReasonDidNotReproduce, outcome: OutcomeRejected,
+		})
+	})
+
+	// CAUSE 2 — no attempt reached the application, so the signature was
+	// NEVER RUN. The body carried the marker on every attempt; the gate
+	// refused to hand a 429 to the oracle at all.
+	t.Run("the_signature_was_never_run", func(t *testing.T) {
+		f := confirmAgainst(t, sqliCandidate(t, "/search"), &scriptedReprober{
+			status: 429,
+			body:   func(RawFinding, int) []byte { return vulnerable },
+		})
+		assertEvidence(t, f, evidenceWant{
+			span: "", dropped: 0, overBroad: 0,
+			reason: ReasonReprobeIndecisive, outcome: OutcomeUnconfirmed,
+		})
+	})
+
+	// CAUSE 3 — the match was inlinable and every byte of it was dropped as
+	// non-printable. SpanDroppedBytes is the only field that can say so.
+	//
+	// The pattern SPELLS eight non-printable bytes, which is why R2 lets it
+	// compile: R2 refuses a class that can match outside printable ASCII
+	// without spelling the rune, and this spells all eight.
+	t.Run("every_matched_byte_was_dropped", func(t *testing.T) {
+		const control = "\x01\x02\x03\x04\x05\x06\x07\x08"
+		c := sqliCandidate(t, "/search")
+		c.Signature = mustSignature(t, control)
+		f := confirmAgainst(t, c, &scriptedReprober{
+			body: func(RawFinding, int) []byte { return []byte("prefix" + control + "suffix") },
+		})
+		assertEvidence(t, f, evidenceWant{
+			span: "", dropped: 8, overBroad: 0,
+			reason: ReasonReproduced, outcome: OutcomeConfirmed,
+		})
+		// THE POINT OF THIS CASE, SAID OUT LOUD: a CONFIRMED finding, an
+		// oracle that fired three times out of three, and an empty span
+		// beside SpanOverBroadBytes = 0 — the exact pair the old doc
+		// comment told a consumer meant "the signature matched nothing".
+		if conf, known := f.Confidence(); !known || conf != 1.0 {
+			t.Errorf("Confidence() = (%.3f, %v), want (1.000, true)", conf, known)
+		}
+	})
+
+	// CAUSE 4 — the match could not be inlined at all. The ONLY cause
+	// SpanOverBroadBytes names.
+	t.Run("the_match_could_not_be_inlined", func(t *testing.T) {
+		f, _ := overBroadCandidate(t, `anvil-probe-4f2a[0-9A-Za-z]*`,
+			[]byte("anvil-probe-4f2a"+strings.Repeat("a", 5000)), 3)
+		assertEvidence(t, f, evidenceWant{
+			span: "", dropped: 0, overBroad: 5016,
+			reason: ReasonMatchQuotedTheResponse, outcome: OutcomeUnconfirmed,
+		})
+	})
+
+	// BOTH DIRECTIONS OF THE BICONDITIONAL THE FILE HEADER USED TO STATE.
+	// It read "evidence exists exactly when something matched".
+	t.Run("evidence_exists_when_nothing_matched", func(t *testing.T) {
+		for _, tc := range []struct {
+			what string
+			r    *scriptedReprober
+		}{
+			{"the oracle ran and never fired", &scriptedReprober{
+				body: func(RawFinding, int) []byte { return []byte(`ordinary page`) }}},
+			{"the oracle was never run", &scriptedReprober{status: 429,
+				body: func(RawFinding, int) []byte { return vulnerable }}},
+		} {
+			f := confirmAgainst(t, sqliCandidate(t, "/search"), tc.r)
+			ev := f.Evidence()
+			if !ev.Constructed() || len(ev.BodyHash()) != 64 {
+				t.Errorf("%s: Constructed()=%v BodyHash()=%d chars, want a constructed "+
+					"EvidenceRef carrying a SHA-256. Evidence exists here and nothing "+
+					"matched, so the biconditional is false in this direction",
+					tc.what, ev.Constructed(), len(ev.BodyHash()))
+			}
+		}
+	})
+	t.Run("something_matched_and_there_is_no_span", func(t *testing.T) {
+		for _, tc := range []struct{ what, pattern, body string }{
+			{"the match was all non-printable", "\x01\x02\x03\x04\x05\x06\x07\x08",
+				"prefix\x01\x02\x03\x04\x05\x06\x07\x08suffix"},
+			{"the match was over-broad", `anvil-probe-4f2a[0-9A-Za-z]*`,
+				"anvil-probe-4f2a" + strings.Repeat("a", 5000)},
+		} {
+			sig := mustSignature(t, tc.pattern)
+			span, _, _, _, matched := extractSpan([]byte(tc.body), sig)
+			if !matched || span != "" {
+				t.Errorf("%s: extractSpan matched=%v span=%q, want a match and no span. "+
+					"Evidence does not exist whenever something matched",
+					tc.what, matched, printable(span, 48))
+			}
+		}
+	})
+}
+
+// evidenceWant is the verdict TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne
+// asserts. Every field is stated on every case on purpose: a case asserting
+// only the field it is about would pass while a neighbouring field silently
+// took the same value, which is the confusion the test exists to rule out.
+type evidenceWant struct {
+	span      string
+	dropped   int
+	overBroad int
+	reason    Reason
+	outcome   Outcome
+}
+
+func assertEvidence(t *testing.T, f *Finding, want evidenceWant) {
+	t.Helper()
+	ev := f.Evidence()
+	if got := ev.ExtractedSpan(); got != want.span {
+		t.Errorf("ExtractedSpan() = %q, want %q", printable(got, 64), want.span)
+	}
+	if got := ev.SpanDroppedBytes(); got != want.dropped {
+		t.Errorf("SpanDroppedBytes() = %d, want %d", got, want.dropped)
+	}
+	if got := ev.SpanOverBroadBytes(); got != want.overBroad {
+		t.Errorf("SpanOverBroadBytes() = %d, want %d", got, want.overBroad)
+	}
+	if got := f.Reason(); got != want.reason {
+		t.Errorf("Reason() = %q, want %q", got, want.reason)
+	}
+	if got := f.Outcome(); got != want.outcome {
+		t.Errorf("Outcome() = %q, want %q", got, want.outcome)
+	}
+	if !ev.Constructed() || len(ev.BodyHash()) != 64 {
+		t.Errorf("Constructed()=%v BodyHash()=%d chars, want a constructed EvidenceRef "+
+			"carrying a SHA-256 whatever the span says", ev.Constructed(), len(ev.BodyHash()))
+	}
+}
+
+// confirmAgainst runs one candidate through a three-attempt gate wired to the
+// supplied reprober and refuses to swallow an error.
+func confirmAgainst(t *testing.T, c RawFinding, r *scriptedReprober) *Finding {
+	t.Helper()
+	g := mustGate(t, GateConfig{Reprober: r, Attempts: 3})
+	f, err := g.ConfirmFinding(context.Background(), c)
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	return f
+}
+
+// TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne is
+// ConfirmFinding's step 4, and it is here because step 4's doc comment said
+// "or from attempt 1 if none did" and attempt 1 is not where it comes from.
+//
+// THE DIFFERENCE IS A BLOCK PAGE'S HASH ON A FINDING. With attempt 1 answering
+// 429 and attempt 2 answering 200, "attempt 1" would put the defence page's
+// SHA-256 in the record as the body the finding is about. The rule the code
+// actually runs is: the first attempt whose SIGNATURE MATCHED, failing that
+// the first attempt the APPLICATION ANSWERED, failing that attempt 1 — and
+// only the last of those three is attempt 1.
+//
+// The hashes are compared rather than the bodies, because the hash is the only
+// thing about the body that crosses this boundary at all.
+func TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne(t *testing.T) {
+	vulnerable := []byte(`{"error":"` + sqliMarker + `"}`)
+	block := []byte(`<html><body>Request blocked by the WAF.</body></html>`)
+	ordinary := []byte(`ordinary page, no marker here`)
+	blockedFirst := func(_ RawFinding, a int) int {
+		if a == 1 {
+			return 429
+		}
+		return 200
+	}
+
+	for _, tc := range []struct {
+		what   string
+		status func(RawFinding, int) int
+		body   func(RawFinding, int) []byte
+		want   []byte
+		reason Reason
+	}{
+		{
+			what:   "attempt 1 is a block page and attempt 2 answers with the marker",
+			status: blockedFirst,
+			body: func(_ RawFinding, a int) []byte {
+				if a == 1 {
+					return block
+				}
+				return vulnerable
+			},
+			want:   vulnerable,
+			reason: ReasonReproducedIntermittently,
+		},
+		{
+			what:   "attempt 1 is a block page and no later attempt matches",
+			status: blockedFirst,
+			body: func(_ RawFinding, a int) []byte {
+				if a == 1 {
+					return block
+				}
+				return ordinary
+			},
+			want:   ordinary,
+			reason: ReasonReprobeIndecisive,
+		},
+		{
+			what:   "attempt 1 answers and attempt 3 is the one that matches",
+			status: func(RawFinding, int) int { return 200 },
+			body: func(_ RawFinding, a int) []byte {
+				if a == 3 {
+					return vulnerable
+				}
+				return ordinary
+			},
+			want:   vulnerable,
+			reason: ReasonReproducedIntermittently,
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			f := confirmAgainst(t, sqliCandidate(t, "/search"),
+				&scriptedReprober{statusFn: tc.status, body: tc.body})
+			if got, want := f.Evidence().BodyHash(), hashBody(tc.want); got != want {
+				t.Errorf("BodyHash() = %s, want the hash of %q. Step 4's rule is "+
+					"first-match, then first-answered, then attempt 1",
+					got, printable(string(tc.want), 48))
+			}
+			if got := f.Reason(); got != tc.reason {
+				t.Errorf("Reason() = %q, want %q; the fixture is not producing the "+
+					"run this case is about", got, tc.reason)
+			}
+		})
+	}
+
+	// THE THIRD ARM, which IS attempt 1: every attempt indecisive, so there
+	// is no answered attempt to prefer and attempt 1's hash is what is left.
+	t.Run("every_attempt_indecisive_falls_back_to_attempt_1", func(t *testing.T) {
+		f := confirmAgainst(t, sqliCandidate(t, "/search"), &scriptedReprober{
+			status: 429,
+			body: func(_ RawFinding, a int) []byte {
+				return []byte(fmt.Sprintf("blocked, attempt %d", a))
+			},
+		})
+		if got, want := f.Evidence().BodyHash(), hashBody([]byte("blocked, attempt 1")); got != want {
+			t.Errorf("BodyHash() = %s, want attempt 1's. With nothing answered there "+
+				"is no better attempt to take, and taking the LAST one would make the "+
+				"record depend on the attempt count", got)
+		}
+	})
+}
+
+// assertRefusedByR3Counting is one member of the content-bearing-class family,
+// checked against R3's COUNTING arm and against the two integers its message
+// reports.
+//
+// The numbers are passed in rather than derived from the pattern, so a change
+// to either layer has to move a number in this file in the same diff. The
+// refusing RULE is asserted too: a member that starts being refused by R1, by
+// R2 or by the benign corpus is no longer evidence about the family this test
+// names, and would otherwise keep the test green while the disclosure went
+// stale.
+func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, wantSpelled int) {
+	t.Helper()
+	_, err := NewSignature(pattern)
+	if err == nil {
+		t.Fatalf("NewSignature(%q) was ACCEPTED. %s now compiles, which is a "+
+			"REAL IMPROVEMENT and not a failure — but this test is the "+
+			"disclosure of a gap, so close the gap in the comment above "+
+			"before deleting the case", pattern, what)
+	}
+	if !errors.Is(err, ErrSignatureMatchesEverything) {
+		t.Fatalf("NewSignature(%q): err = %v, want an ErrSignatureMatchesEverything",
+			pattern, err)
+	}
+	if got := err.Error(); !strings.Contains(got, "(rule R3)") {
+		t.Fatalf("NewSignature(%q) was refused, but not by R3: %v\n"+
+			"The disclosure above is specifically about R3 counting a "+
+			"content-bearing class as quotation", pattern, err)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("quotes up to %d position(s)", wantQuoted),
+		fmt.Sprintf("against %d byte(s) of literal footing", wantSpelled),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("R3's refusal of %q does not report %q:\n%v", pattern, want, err)
+		}
+	}
+}
+
+// ===========================================================================
+// D.30 — THE ARITHMETIC-CLAIM GUARD
+// ===========================================================================
+
+// TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement is the
+// mechanical half of the round that produced it, and it exists because the
+// human half keeps failing in the same shape.
+//
+// FOUR CONSECUTIVE ROUNDS WERE EACH ASKED TO SWEEP THIS FILE FOR FALSE
+// CLAIMS. Each corrected the sentence it was pointed at and left another
+// behind: one corrected a field comment twelve lines above a defect and an
+// accessor six lines below it, and stepped over the exported method between
+// them. A HUMAN SWEEP OF PROSE IS A DENYLIST OF SENTENCES SOMEBODY REMEMBERED
+// TO READ, which is the shape this repository has spent fifteen rulings
+// learning to distrust.
+//
+// ===========================================================================
+// WHAT IT CHECKS
+// ===========================================================================
+//
+// It cannot read English and does not try. What it can do is require a claim
+// to NAME something a test can look up — the same idiom
+// TestEveryTestNamedInASourceCommentExists uses on test citations, and the
+// same idiom internal/dast/containment's SKIPPED-CONTROLS pointer test uses on
+// entry ids.
+//
+// A comment PARAGRAPH stating a relation must name two things:
+//
+//	AN ENFORCER    an identifier declared in this package — the constant,
+//	               function, field or type that makes the relation hold.
+//	A MEASUREMENT  a Test function declared anywhere in this module. A
+//	               paragraph that is itself the doc comment of a Test needs
+//	               no second citation: the measurement is the next line.
+//
+// Both are resolved, not pattern-matched: an enforcer that is not declared and
+// a test that does not exist both fail, in the same commit as the rename that
+// broke them.
+//
+// ===========================================================================
+// EXACTLY WHAT IT CAN SEE, AND EXACTLY WHAT IT CANNOT
+// ===========================================================================
+//
+// A GUARD THAT SILENTLY COVERS LESS THAN IT APPEARS TO IS THE DEFECT THIS
+// WHOLE FILE HAS BEEN FIGHTING, so its window is written out here and every
+// edge of it is asserted below rather than described.
+//
+// IT SEES a comparison operator — `<=`, `>=`, `==`, `!=`, or a space-delimited
+// `<` or `>` — in a `//` comment in confirm_gate.go or confirm_gate_test.go.
+// Paragraphs are split on blank comment lines, and a godoc display block
+// (every line tab-indented) is folded into the prose paragraph that introduces
+// it, because a bare indented equation cannot carry a citation of its own.
+//
+// IT DOES NOT SEE, and each of these is a real hole:
+//
+//	RELATIONS WRITTEN IN ENGLISH. "more of the response than the pattern
+//	    spells", "half the span bound", "twice the floor", "at most", "bounded
+//	    by" — no operator, no detection. EVERY DEFECT THE ROUND THAT BUILT
+//	    THIS GUARD WAS SENT TO FIX WAS OF EXACTLY THAT SHAPE. This guard would
+//	    have caught none of the five. What it does is stop the NEXT author
+//	    adding an uncited one in the form it can read, and force a citation
+//	    onto the paragraphs around the prose, which is where a reader checking
+//	    a sentence would start.
+//	ANYTHING IN BACKTICKS OR DOUBLE QUOTES. `re.Op == OpAlternate` is a
+//	    specimen and "q <= L/2 <= 256" is a quoted withdrawal, not a live
+//	    claim. Deliberate, and asserted as a decision below.
+//	A TIGHT `<` OR `>`. `<h1[0-9A-Za-z]{0,400}` is an HTML tag and `len(x)>0`
+//	    is a code fragment. Requiring spaces is what keeps those out, and it
+//	    is also how an author could hide a claim from this guard.
+//	coverage.go AND coverage_test.go, which are in this package and outside
+//	    D.27's write scope. Widening the window is one entry in `owned` below;
+//	    the reason it has not been widened is scope, not difficulty.
+//	WHETHER THE CITATION IS APT. It resolves names. A paragraph may cite
+//	    matchQuotesMoreThanItSpells and a real test and still state something
+//	    false about them. This is a forcing function, not a proof — the value
+//	    is that writing the citation puts the enforcer and the sentence in
+//	    front of the same pair of eyes.
+//	STRINGS, plan/*.md, AND EVERY OTHER PACKAGE. Comments only, here only.
+func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing.T) {
+	// The files this packet owns. See the window disclosure above.
+	owned := map[string]bool{"confirm_gate.go": true, "confirm_gate_test.go": true}
+
+	tests := declaredTestsInModule(t)
+	fset := token.NewFileSet()
+	idents, files := declaredIdentsInPackage(t, fset)
+
+	claims, uncited := 0, 0
+	for name, f := range files {
+		if !owned[name] {
+			continue
+		}
+		n, bad := scanArithmeticClaims(fset, f, idents, tests)
+		claims += n
+		for _, v := range bad {
+			uncited++
+			t.Errorf("%s:%d states a relation and cites no %s.\n"+
+				"    %s\n"+
+				"An arithmetic claim a reader cannot follow to the code that enforces "+
+				"it and the test that measures it is read as evidence and is not any. "+
+				"Name the enforcing identifier and the Test in this paragraph, or "+
+				"stop asserting the relation.",
+				name, v.line, v.missing, v.first)
+		}
+	}
+	if claims < 12 {
+		t.Fatalf("only %d arithmetic claims were found across %d owned files; these two "+
+			"files argue in inequalities on nearly every page and a scan finding this "+
+			"few is not reading them", claims, len(owned))
+	}
+	t.Logf("resolved %d arithmetic claims; %d uncited", claims, uncited)
+
+	// ===================================================================
+	// THE WINDOW, ASSERTED. Every line of the disclosure above is a claim
+	// about this scanner, so each one is driven against a synthetic source
+	// rather than trusted. A guard whose own boundary is undescribed is the
+	// thing it exists to prevent.
+	// ===================================================================
+	for _, tc := range []struct {
+		name string
+		src  string
+		want int
+		why  string
+	}{
+		{
+			name: "a relation with no citation at all",
+			src: "package p\n" +
+				"// The unspelled part is at most 256, because q <= 256 always.\n" +
+				"func f() {}\n",
+			want: 1,
+			why:  "this is the case the whole guard exists for",
+		},
+		{
+			name: "a relation citing an enforcer and a test",
+			src: "package p\n" +
+				"// q <= 256 always: matchQuotesMoreThanItSpells is the rule and\n" +
+				"// TestTheConfirmationBoundaryIsPinnedOnBothArms pins both arms of it.\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "a fully cited claim is what the guard is asking for",
+		},
+		{
+			name: "a relation citing an enforcer and no test",
+			src: "package p\n" +
+				"// q <= 256 always, and matchQuotesMoreThanItSpells is the rule.\n" +
+				"func f() {}\n",
+			want: 1,
+			why:  "an unmeasured rule is an argument, not a measurement",
+		},
+		{
+			name: "a relation citing a test and no enforcer",
+			src: "package p\n" +
+				"// q <= 256 always; TestTheConfirmationBoundaryIsPinnedOnBothArms.\n" +
+				"func f() {}\n",
+			want: 1,
+			why:  "a measurement with no named enforcer leaves the reader nothing to read",
+		},
+		{
+			name: "a citation to a test that does not exist",
+			src: "package p\n" +
+				"// q <= 256 always: matchQuotesMoreThanItSpells is the rule and\n" +
+				"// TestThisNameHasNeverBeenDeclaredAnywhereInThisModule measures it.\n" +
+				"func f() {}\n",
+			want: 1,
+			why:  "the citation is RESOLVED; an invented test name is worse than none",
+		},
+		{
+			name: "a citation to an identifier this package does not declare",
+			src: "package p\n" +
+				"// q <= 256 always: enforceTheQuotationCeilingSomewhereElse is the rule\n" +
+				"// and TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"func f() {}\n",
+			want: 1,
+			why:  "an enforcer nobody declared cannot be read",
+		},
+		{
+			name: "an English word that happens to be a declared identifier",
+			src: "package p\n" +
+				"// q <= 256 always: somethingUndeclared is the rule, and\n" +
+				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "THIS IS THE MEASURED VACUITY enforcerShape exists for. `rule` is a " +
+				"declared field name in this package, and without the case rule it " +
+				"satisfied the enforcer citation on its own",
+		},
+		{
+			name: "an all-lower-case declared identifier",
+			src: "package p\n" +
+				"// q <= 256 always: decide is where it lands, and\n" +
+				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "the disclosed COST of enforcerShape: a real declaration with no case " +
+				"boundary cannot carry the citation, and this asserts the price rather " +
+				"than describing it",
+		},
+		{
+			name: "the doc comment of a Test function",
+			src: "package p\n" +
+				"// TestSomething drives matchQuotesMoreThanItSpells at q <= 256.\n" +
+				"func TestSomething() {}\n",
+			want: 0,
+			why:  "the measurement is the next line; a self-citation would be noise",
+		},
+		{
+			name: "an in-body comment inside a Test function",
+			src: "package p\n" +
+				"// TestSomething drives matchQuotesMoreThanItSpells.\n" +
+				"func TestSomething() {\n" +
+				"\t// A second relation, q <= 128 this time, with nothing named.\n" +
+				"}\n",
+			want: 1,
+			why: "the doc-comment exemption is the DOC comment only; a claim buried " +
+				"in a test body is not measured by the enclosing test merely by being there",
+		},
+		{
+			name: "a relation inside backticks",
+			src: "package p\n" +
+				"// The promotion used to ask `re.Op == OpAlternate`, which is a specimen.\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "a quoted code fragment is not an assertion — DELIBERATE, and a hole",
+		},
+		{
+			name: "a relation inside double quotes",
+			src: "package p\n" +
+				"// The withdrawn sentence read \"q <= L/2 <= 256\" and is kept as a quotation.\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "a quoted withdrawal is history, not a live claim — DELIBERATE, and a hole",
+		},
+		{
+			name: "a relation stated in English with no operator",
+			src: "package p\n" +
+				"// At most half of any inlined span is body the pattern did not spell,\n" +
+				"// and never more than twice the floor.\n" +
+				"func f() {}\n",
+			want: 0,
+			why: "THE HOLE THAT MATTERS. Every defect the round that built this guard " +
+				"was sent to fix was of this shape. It is asserted here so the limit " +
+				"is measured rather than described",
+		},
+		{
+			name: "a tag-like angle bracket and a tight comparison",
+			src: "package p\n" +
+				"// `<h1[0-9A-Za-z]{0,400}` was accepted, and asserting len(x)>0 is the\n" +
+				"// mistake in the other direction.\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "requiring spaces around a bare < or > is what keeps markup out",
+		},
+		{
+			name: "an indented display equation under an uncited paragraph",
+			src: "package p\n" +
+				"// The derivation runs like this and names nothing:\n" +
+				"//\n" +
+				"//\tq <= L/2 <= 256.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "a display block is folded into the prose that introduces it, so the " +
+				"citation belongs there and cannot be evaded by indenting the equation",
+		},
+		{
+			name: "an indented display equation under a cited paragraph",
+			src: "package p\n" +
+				"// matchQuotesMoreThanItSpells gives, and\n" +
+				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures:\n" +
+				"//\n" +
+				"//\tq <= L/2 <= 256.\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "the fold has to work in the passing direction too, or it is just noise",
+		},
+		{
+			name: "a banner rule",
+			src: "package p\n" +
+				"// ===========================================================\n" +
+				"// A SECTION HEADING\n" +
+				"// ===========================================================\n" +
+				"func f() {}\n",
+			want: 0,
+			why:  "a rule of equals signs is not a claim about anything",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sfset := token.NewFileSet()
+			f, err := parser.ParseFile(sfset, "synthetic.go", tc.src,
+				parser.ParseComments|parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parsing the synthetic source: %v", err)
+			}
+			_, bad := scanArithmeticClaims(sfset, f, idents, tests)
+			if len(bad) != tc.want {
+				t.Errorf("the scanner reported %d uncited claims, want %d. %s.\n"+
+					"source:\n%s\nreported: %v", len(bad), tc.want, tc.why, tc.src, bad)
+			}
+		})
+	}
+}
+
+// claimSite is one comment paragraph that states a relation.
+type claimSite struct {
+	line    int
+	first   string
+	missing string
+}
+
+var (
+	// relationOp is the FORM a claim has to take to be visible here. A bare
+	// `<` or `>` must be space-delimited: `<h1` is markup and `len(x)>0` is
+	// a code fragment, and neither is an assertion about arithmetic.
+	relationOp = regexp.MustCompile(`(<=|>=|==|!=| < | > )`)
+	// quotedSpan is what a comment quotes rather than claims: a backticked
+	// specimen, a double-quoted sentence, or an arrow.
+	quotedSpan = regexp.MustCompile("(`[^`]*`|\"[^\"]*\"|->|<-|=>|<[A-Za-z][A-Za-z0-9_]*>)")
+	// citeToken is any identifier a paragraph might be naming.
+	citeToken = regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]{2,}\b`)
+	// enforcerShape is the SPELLING an enforcer citation has to have: an
+	// upper-case letter somewhere in it.
+	//
+	// WITHOUT IT THE ENFORCER HALF IS VACUOUS AND THAT WAS MEASURED, NOT
+	// FEARED. This package declares fields and locals called `rule`, `body`,
+	// `span`, `status` and `what`, so a sentence of the form
+	// `q <= 256 always: somethingUndeclared is the rule` resolved `rule` as
+	// its enforcer and passed. Requiring a case boundary is what separates a
+	// NAME from an English word without keeping a denylist of English words.
+	//
+	// ITS COST IS DISCLOSED: an all-lower-case declaration — `decide`,
+	// `printable` — cannot serve as the citation, and a paragraph about one
+	// has to name the camelCase or exported identifier beside it. The two
+	// directions are asserted below.
+	enforcerShape = regexp.MustCompile(`[A-Z]`)
+	// testDecl finds a test function declaration in a source file.
+	testDecl = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+)
+
+// commentProse strips a comment line down to what it ASSERTS: the marker goes,
+// quoted spans go, and a rule of equals or dashes becomes empty.
+func commentProse(text string) string {
+	s := strings.TrimSpace(text)
+	s = strings.TrimPrefix(s, "//")
+	s = quotedSpan.ReplaceAllString(s, " ")
+	if strings.Trim(strings.TrimSpace(s), "=-") == "" {
+		return ""
+	}
+	return s
+}
+
+// scanArithmeticClaims reports how many comment paragraphs in f state a
+// relation, and which of those name neither an enforcer nor a measurement.
+func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
+	idents, tests map[string]bool) (claims int, uncited []claimSite) {
+	// A doc comment on a Test function is measured by that test.
+	selfMeasured := map[*ast.CommentGroup]bool{}
+	for _, d := range f.Decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if ok && fd.Doc != nil && strings.HasPrefix(fd.Name.Name, "Test") {
+			selfMeasured[fd.Doc] = true
+		}
+	}
+
+	for _, g := range f.Comments {
+		for _, p := range paragraphsOf(fset, g) {
+			text := strings.Join(p.lines, "\n")
+			if !relationOp.MatchString(text) {
+				continue
+			}
+			claims++
+			enforcer, measured := false, selfMeasured[g]
+			for _, id := range citeToken.FindAllString(text, -1) {
+				switch {
+				case tests[id]:
+					measured = true
+				case idents[id] && !strings.HasPrefix(id, "Test") && enforcerShape.MatchString(id):
+					enforcer = true
+				}
+			}
+			if enforcer && measured {
+				continue
+			}
+			var missing string
+			switch {
+			case !enforcer && !measured:
+				missing = "enforcing identifier and no measuring Test"
+			case !enforcer:
+				missing = "enforcing identifier declared in this package"
+			default:
+				missing = "Test that measures it"
+			}
+			uncited = append(uncited, claimSite{
+				line: p.line, first: strings.TrimSpace(p.lines[0]), missing: missing,
+			})
+		}
+	}
+	return claims, uncited
+}
+
+// commentParagraph is a run of comment lines with no blank line in it.
+type commentParagraph struct {
+	line  int
+	lines []string
+}
+
+// paragraphsOf splits a comment group on blank comment lines and folds a godoc
+// display block — a paragraph whose every line is tab-indented — into the
+// prose that introduces it. An equation on its own indented line has nowhere
+// to put a citation, and the paragraph above it is where a reader looks.
+func paragraphsOf(fset *token.FileSet, g *ast.CommentGroup) []commentParagraph {
+	var split []commentParagraph
+	cur := commentParagraph{line: -1}
+	for _, c := range g.List {
+		s := commentProse(c.Text)
+		if strings.TrimSpace(s) == "" {
+			if len(cur.lines) > 0 {
+				split = append(split, cur)
+			}
+			cur = commentParagraph{line: -1}
+			continue
+		}
+		if cur.line < 0 {
+			cur.line = fset.Position(c.Pos()).Line
+		}
+		cur.lines = append(cur.lines, s)
+	}
+	if len(cur.lines) > 0 {
+		split = append(split, cur)
+	}
+
+	var folded []commentParagraph
+	for _, p := range split {
+		indented := true
+		for _, l := range p.lines {
+			if len(l) > 0 && l[0] != '\t' {
+				indented = false
+				break
+			}
+		}
+		if indented && len(folded) > 0 {
+			folded[len(folded)-1].lines = append(folded[len(folded)-1].lines, p.lines...)
+			continue
+		}
+		folded = append(folded, p)
+	}
+	return folded
+}
+
+// declaredTestsInModule is every Test function declared anywhere in this
+// module, which is the universe a measurement citation resolves against.
+// Repo-wide rather than package-local for the reason
+// TestEveryTestNamedInASourceCommentExists gives: a comment here may
+// legitimately cite one of the kernel's own guards.
+func declaredTestsInModule(t *testing.T) map[string]bool {
+	t.Helper()
+	declared := map[string]bool{}
+	root := filepath.Join("..", "..", "..")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		for _, m := range testDecl.FindAllStringSubmatch(string(b), -1) {
+			declared[m[1]] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the module for test declarations: %v", err)
+	}
+	if len(declared) < 100 {
+		t.Fatalf("found %d test functions in the module; the walk is not working and "+
+			"every measurement citation would resolve for the wrong reason", len(declared))
+	}
+	return declared
+}
+
+// declaredIdentsInPackage is every name this package declares — functions,
+// methods, constants, variables, types and struct fields — which is the
+// universe an enforcer citation resolves against. Fields are included because
+// a claim about spanOverBroadBytes or minLiteral names a field, and a guard
+// that could not see one would push authors towards vaguer citations.
+func declaredIdentsInPackage(t *testing.T, fset *token.FileSet) (map[string]bool, map[string]*ast.File) {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading the package directory: %v", err)
+	}
+	idents := map[string]bool{}
+	files := map[string]*ast.File{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		f, perr := parser.ParseFile(fset, e.Name(), nil,
+			parser.ParseComments|parser.SkipObjectResolution)
+		if perr != nil {
+			t.Fatalf("parsing %s: %v", e.Name(), perr)
+		}
+		files[e.Name()] = f
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.FuncDecl:
+				idents[v.Name.Name] = true
+			case *ast.ValueSpec:
+				for _, id := range v.Names {
+					idents[id.Name] = true
+				}
+			case *ast.TypeSpec:
+				idents[v.Name.Name] = true
+			case *ast.Field:
+				for _, id := range v.Names {
+					idents[id.Name] = true
+				}
+			}
+			return true
+		})
+	}
+	// The positive control on the walk: it must see the two names every
+	// arithmetic paragraph in this file leans on.
+	for _, must := range []string{"matchQuotesMoreThanItSpells", "MaxUnspelledBytes"} {
+		if !idents[must] {
+			t.Fatalf("the package walk cannot see %s; it is reading the wrong tree and "+
+				"every enforcer citation would fail for the wrong reason", must)
+		}
+	}
+	return idents, files
 }

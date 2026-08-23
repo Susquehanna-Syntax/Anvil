@@ -138,9 +138,21 @@
 // the split is the whole design:
 //
 //	EXTRACTION  always. Its match against the re-probe body IS the evidence
-//	            span. This is why evidence exists exactly when something
-//	            matched, and why there is no second "evidence regex" that
+//	            span, which is why there is no second "evidence regex" that
 //	            could disagree with the oracle.
+//
+//	            THIS USED TO READ "evidence exists exactly when something
+//	            matched" AND THAT BICONDITIONAL IS FALSE IN BOTH DIRECTIONS.
+//	            Evidence without a match: every Finding measured carries an
+//	            EvidenceRef holding the body hash, including one whose
+//	            signature matched nothing and one where no attempt reached
+//	            the application, so the signature was never run at all.
+//	            A match without evidence: a match matchQuotesMoreThanItSpells
+//	            rejects, or one whose every byte is non-printable, yields NO
+//	            SPAN. What is true is narrower and is the useful half — when
+//	            there IS a span, it is the oracle's own match and nothing
+//	            else. TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne
+//	            measures both directions.
 //	ORACLE      only when the class has one. For an oracle-bearing class,
 //	            "the signature matched on every attempt" is reproduction. For
 //	            an oracle-less class the same match is evidence for a human
@@ -322,6 +334,8 @@ const MaxFieldBytes = MaxSpanBytes
 // that section's old "q <= L/2 <= 256" that survived ruling 15 — see the
 // withdrawal there, and matchQuotesMoreThanItSpells for the proof that the
 // floor does not raise it.
+// TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry is where that ceiling is
+// driven over real matches rather than on paper.
 //
 // BOTH FACTS ABOUT THIS CONSTANT ARE PINNED SEPARATELY, because a pin that
 // computes its expectation from the constant it pins cannot see the constant
@@ -988,6 +1002,8 @@ type Signature struct {
 // bytes in it and s for its literal bytes. R3 gives q <= minLiteral, and
 // minLiteral <= s because minLiteral is a lower bound on the literal every
 // path requires, so q <= s = L - q and therefore
+// — as TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry sweeps rather than
+// asserts, over every footing from 1 to 64 —
 //
 //	q <= L/2 <= 256.
 //
@@ -1019,6 +1035,9 @@ type Signature struct {
 // itself — floored at MaxUnspelledBytes, ratio above it — where no class
 // definition is involved at all, and the q <= 256 ceiling comes out of that
 // pair unchanged rather than out of R3.
+// TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells runs both arms of that
+// pair over matches, and TestTheConfirmationBoundaryIsPinnedOnBothArms pins
+// where each one turns over.
 //
 // THE ORDER OF THAT SENTENCE MATTERS AND IT USED TO RUN THE OTHER WAY. The
 // paragraph above derives q <= L/2 <= 256 from R3, and R3 is a best-effort
@@ -1029,6 +1048,9 @@ type Signature struct {
 // satisfies q <= MaxUnspelledBytes = 256, and matchQuotesMoreThanItSpells is
 // what carries that, not R3. R3 is what refuses such a pattern EARLY; it is
 // not what makes the surviving inequality hold.
+// TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry measures the surviving
+// clause; TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled measures that
+// it does not depend on which spelling R3 happened to see.
 //
 // THE FIRST CLAUSE IS NOT ENFORCED FOR EVERY SIGNATURE AND THE SENTENCE THAT
 // SAID IT WAS IS DELETED RATHER THAN QUALIFIED. It read: "Every claim in this
@@ -1508,9 +1530,12 @@ func alphabetIsAmbiguous(runes []rune) bool {
 //	three into the one class that would have been content-bearing.
 //
 // So where a union is formed, the count of DECLARED positions is promoted to
-// quotation if the union is content-bearing. declared >= quoted always, so
-// this can only ever raise the number, which is the direction this gate fails
-// in.
+// quotation if the union is content-bearing. In quotationOverUnion's own
+// terms, declared >= quoted always, so this can only ever raise the number,
+// which is the direction this gate fails
+// in. TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes drives
+// the promotion, including the patterns the carve-out exists for, which is
+// where a promotion that raised the number too far would show up.
 func quotationOverUnion(s patternShape) int {
 	if contentBearingClass(s.consumes) {
 		return maxShape(s.quoted, s.declared)
@@ -1953,7 +1978,10 @@ func optionalWidth(sub int) int {
 }
 
 // repeatWidth is the width of a repeat of a unit `positions` wide, run between
-// min and max times (max < 0 for no ceiling).
+// min and max times (max < 0 for no ceiling), and
+// TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam drives both
+// readings of that ceiling — `*` and `+` for max < 0, `{0,400}` for a stated
+// one — which is what keeps the no-ceiling arm from being unreachable.
 func repeatWidth(sub, min, max int) int {
 	if sub == 0 {
 		return 0
@@ -2712,19 +2740,49 @@ func (e EvidenceRef) BodyHash() string { return e.bodyHash }
 
 // ExtractedSpan returns the bounded, printable-ASCII regex match.
 //
-// It is empty in TWO different situations and SpanOverBroadBytes is what
-// tells them apart: the signature matched nothing (0), or the signature
-// matched something extraction would not inline (non-zero) — because the
-// match was over MaxSpanBytes, or because more of it was body than the
-// pattern spelled.
+// SpanOverBroadBytes DOES NOT TELL A CONSUMER WHY THIS IS EMPTY. It separates
+// ONE cause from the rest and a consumer branching on it alone is wrong about
+// the others. FOUR CAUSES ARE MEASURED, by
+// TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne, which reports the value
+// every field takes on each:
+//
+//	SpanOverBroadBytes NON-ZERO — the signature matched and extraction would
+//	    not inline the match. Two rules produce this and neither is
+//	    distinguished from the other here: the match was longer than
+//	    MaxSpanBytes, or matchQuotesMoreThanItSpells was true of it.
+//	SpanOverBroadBytes ZERO, SpanDroppedBytes NON-ZERO — the match WAS
+//	    inlinable and every byte of it was dropped as non-printable.
+//	SpanOverBroadBytes ZERO, SpanDroppedBytes ZERO — either the signature ran
+//	    against a body the application answered with and matched nothing, or
+//	    no attempt reached the application at all and the signature was never
+//	    run. NOTHING ON EvidenceRef SEPARATES THOSE TWO; Finding.Reason()
+//	    describes the run, not the attempt this evidence came from.
+//
+// THE SENTENCE THIS REPLACED SAID "empty in TWO different situations and
+// SpanOverBroadBytes is what tells them apart", and it described the second as
+// the match being "over MaxSpanBytes, or ... more of it was body than the
+// pattern spelled". THE SECOND HALF WAS THE PRE-FLOOR PREDICATE AND IS
+// MEASURABLY FALSE: `Z[0-9A-Za-z]*` against `Z` plus 200 alphanumerics carries
+// 200 bytes the pattern did not spell against 1 it did, and the 201-byte span
+// is INLINED with SpanOverBroadBytes 0 on a CONFIRMED finding. See
+// MaxUnspelledBytes and matchQuotesMoreThanItSpells for the floor that admits
+// it.
 func (e EvidenceRef) ExtractedSpan() string { return e.span }
 
 // SpanDroppedBytes returns how many bytes extraction removed as
 // non-printable.
+//
+// Non-zero beside an EMPTY ExtractedSpan is the one empty-span cause this
+// package can name from EvidenceRef alone: the match was inlinable and nothing
+// in it survived the charset.
 func (e EvidenceRef) SpanDroppedBytes() int { return e.spanDroppedBytes }
 
 // SpanOverBroadBytes returns the match length when the match could not be
 // inlined at all, 0 otherwise. Non-zero always accompanies an empty span.
+//
+// THE CONVERSE DOES NOT HOLD AND THE DIFFERENCE IS THE WHOLE HAZARD. Zero does
+// not mean there is a span; see ExtractedSpan for the three other causes of an
+// empty one that this field reports zero for.
 func (e EvidenceRef) SpanOverBroadBytes() int { return e.spanOverBroadBytes }
 
 // Constructed reports whether e came from newEvidenceRef. The zero value has
@@ -3605,6 +3663,13 @@ func (g *Gate) ReproberWired() bool { return g.Constructed() && g.reprober != ni
 //
 // # The order, and what each step is for
 //
+// Steps 2 and 3 are driven by
+// TestAReprobeThatDidNotHappenIsNotAConfirmationAndIsNotARejection and
+// TestEveryAttemptIsIssuedAndOneAttemptCannotStandForThree; step 4's
+// attempt-selection rule by
+// TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne;
+// step 5's agreement by TestDecideTablePrecedenceIsAsDocumented.
+//
 //	1  the gate is constructed and the candidate validates. Validation runs
 //	   BEFORE egress: a candidate that cannot produce an interpretable
 //	   Finding must not spend requests against a live target first.
@@ -3615,9 +3680,15 @@ func (g *Gate) ReproberWired() bool { return g.Constructed() && g.reprober != ni
 //	   Issued == false, aborts the whole candidate: a partial re-probe is not
 //	   a re-probe, and confirming on two of three attempts because the third
 //	   errored is exactly the arithmetic this gate exists to prevent.
-//	4  evidence is taken from the FIRST attempt whose signature matched, or
-//	   from attempt 1 if none did. The body is hashed, the match is extracted
-//	   and bounded, and the body goes out of scope here.
+//	4  evidence is taken from the FIRST attempt whose signature matched;
+//	   failing that, from the first attempt the APPLICATION ANSWERED; failing
+//	   that, from attempt 1. The body is hashed, the match is extracted and
+//	   bounded, and the body goes out of scope here.
+//	   THIS STEP USED TO SAY "or from attempt 1 if none did" AND THAT IS
+//	   MEASURABLY FALSE: with attempt 1 answering 429 and attempt 2 answering
+//	   200, the evidence carries attempt 2's body hash, because a block page
+//	   is not an observation of the application and must not be the body a
+//	   Finding references.
 //	5  the reason is decided, and outcomeForReason decides the outcome from
 //	   it, so the two cannot disagree.
 //
@@ -3800,12 +3871,20 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     dropped" — a signature that did not match an authorization finding
 //     disproves nothing, so this class can never reach OutcomeRejected.
 //
-//  2. A MATCH QUOTED MORE OF THE RESPONSE THAN THE SIGNATURE SPELLS. This is
-//     ruling 14, and it is where the over-broadness guarantee actually lives —
-//     on the match, where it is one comparison between two integers in hand,
-//     rather than on the pattern, where it is an incomplete static analysis
-//     that nine rounds of spellings walked past. See
-//     matchQuotesMoreThanItSpells.
+//  2. A MATCH'S UNSPELLED PART RAN PAST BOTH MaxUnspelledBytes AND THE
+//     SIGNATURE'S OWN FOOTING. This is ruling 14 as ruling 15 floored it, and
+//     it is where the over-broadness guarantee actually lives — on the match,
+//     where it is one comparison between two integers in hand, rather than on
+//     the pattern, where it is an incomplete static analysis that nine rounds
+//     of spellings walked past. See matchQuotesMoreThanItSpells.
+//
+//     THE HEADING USED TO BE THE PRE-FLOOR PREDICATE WORN AS A TITLE — "a
+//     match quoted more of the response than the signature spells" — which
+//     names a rule this gate stopped applying at ruling 15 and which rule 7
+//     below already corrects in its own words. `Z[0-9A-Za-z]*` against `Z`
+//     plus 200 alphanumerics quotes 200 unspelled bytes against 1 spelled and
+//     does NOT arrive here; it arrives at rule 7, confirmed.
+//     TestTheConfirmationBoundaryIsPinnedOnBothArms holds the boundary.
 //
 //     IT OUTRANKS "MATCHED NOTHING" AND THAT ORDERING IS MANDATORY, for the
 //     same reason rule 3 outranks it. An over-broad match is not evidence
@@ -4024,6 +4103,10 @@ func (l Ledger) FindingCountForStatus() int { return l.ConfirmedCount() }
 // finding nothing could decide, or 88 candidates that were never re-probed
 // because no Reprober was wired, both produce a zero confirmed count and
 // neither is a clean scan.
+// TestAssertNotSilentlyCleanFiresOnEveryWayOfReachingZeroDishonestly walks
+// every route to that zero, and
+// TestEightyEightPhantomsAloneProduceCompletedCleanAndThatIsHonest is the one
+// route where the zero is the truth.
 //
 // It is an error rather than a different status because choosing the status
 // is not this packet's call: record.DeriveDastStatus owns the mapping and
@@ -4163,6 +4246,9 @@ func hashBody(body []byte) string {
 //     has q=256 and L=259 and inlines all 259. q <= MaxUnspelledBytes = 256
 //     is the half that survives, it holds for every inlined span whatever R3
 //     saw, and its proof is in matchQuotesMoreThanItSpells.
+//     TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry sweeps the
+//     surviving half; TestTheConfirmationBoundaryIsPinnedOnBothArms pins the
+//     255/256/257 edge the withdrawn half used to cover.
 //
 //     THE SENTENCE THAT USED TO END THIS PARAGRAPH WAS MEASURABLY FALSE AND
 //     IS KEPT AS A QUOTATION SO THE CORRECTION IS LEGIBLE. It read: "a
@@ -4264,7 +4350,8 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // AT CONFIRMATION TIME THE MATCH IS IN HAND. matchLen and spelled are two
 // integers. The invariant is that the unspelled part of the match — the bytes
 // the pattern's own literal footing does not account for, q = matchLen -
-// spelled — is within EITHER of two bounds:
+// spelled — is within EITHER of two bounds, each pinned one under, exact and
+// one over by TestTheConfirmationBoundaryIsPinnedOnBothArms:
 //
 //	q <= MaxUnspelledBytes   the FLOOR: the match's unspelled part fits
 //	                         inside what this package already inlines as
@@ -4310,6 +4397,10 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // L = q + spelled >= 2q > MaxSpanBytes — no span. Therefore every inlined span
 // still satisfies q <= MaxUnspelledBytes = 256, which is the same bound the
 // R-rules section derived before this floor was written.
+// TestTheUnspelledFloorIsExactlyHalfTheSpanBound holds the 2*MaxUnspelledBytes
+// == MaxSpanBytes step this argument turns on, and
+// TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry measures the conclusion
+// over real matches.
 //
 // ===========================================================================
 // WHAT THE FLOOR ADMITS — THE RESIDUAL, MEASURED, NOT HOPED
