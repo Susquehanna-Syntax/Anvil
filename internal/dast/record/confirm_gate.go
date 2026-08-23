@@ -98,14 +98,18 @@
 //     S7 sanctions, so an over-long match yields NO span rather than a
 //     shorter one. See EvidenceRef.spanOverBroadBytes and extractSpan, which
 //     also states what that rule does NOT claim.
-//   - AND A MATCH THAT QUOTES MORE OF THE RESPONSE THAN THE SIGNATURE SPELLS
-//     DOES NOT CONFIRM A FINDING. Withholding the quote while granting the
-//     claim was the worse half of one defect: a pattern that swallowed
-//     12,500,141 bytes of an ordinary page inlined nothing and came out
-//     confirmed at confidence 1.000. The outcome is `unconfirmed` — not
-//     `rejected`, because an over-broad match is not evidence of absence
-//     either. See matchQuotesMoreThanItSpells, which is the whole rule, and
-//     decide()'s rule 2, which is where it is applied.
+//   - AND A MATCH WHOSE UNSPELLED PART IS BIGGER THAN BOTH MaxUnspelledBytes
+//     AND THE SIGNATURE'S OWN FOOTING DOES NOT CONFIRM A FINDING. Withholding
+//     the quote while granting the claim was the worse half of one defect: a
+//     pattern that swallowed 12,500,141 bytes of an ordinary page inlined
+//     nothing and came out confirmed at confidence 1.000. The outcome is
+//     `unconfirmed` — not `rejected`, because an over-broad match is not
+//     evidence of absence either. The MaxUnspelledBytes floor is what keeps
+//     that rule from also taking every credential oracle, whose evidence is a
+//     short character class behind a short literal; it is derived from
+//     MaxSpanBytes and its cost is disclosed. See
+//     matchQuotesMoreThanItSpells, which is the whole rule, and decide()'s
+//     rule 2, which is where it is applied.
 //   - NewSignature refuses a pattern that fires against benignCorpus, a
 //     GENERATED corpus of ordinary responses, which is where the over-broad
 //     patterns come from in the first place.
@@ -302,6 +306,36 @@ const MaxSpanBytes = 512
 // MaxFieldBytes is the bound on every other string. It is MaxSpanBytes by
 // definition; see there.
 const MaxFieldBytes = MaxSpanBytes
+
+// MaxUnspelledBytes is the largest number of UNSPELLED bytes — bytes of a
+// match that the pattern's own literal footing does not account for — that
+// this package has ever been willing to inline into an evidence span. It is
+// the FLOOR under matchQuotesMoreThanItSpells, and it is DERIVED FROM
+// MaxSpanBytes rather than chosen.
+//
+// THE DERIVATION, IN ONE SENTENCE A READER CAN CHECK: an inlined span exists
+// only when its match L fits in MaxSpanBytes, and the quotation relation caps
+// the unspelled bytes q at the spelled bytes s = L - q, so q <= L - q gives
+// 2q <= L <= MaxSpanBytes and therefore q <= MaxSpanBytes/2 = 256 — exactly
+// the q <= L/2 <= 256 the R-rules section already derives. 256 is not a new
+// number: it is the ceiling this package has published on inlined quotation
+// since that section was written.
+//
+// WHY THE FLOOR IS THIS AND NOT MaxSpanBytes ITSELF. Ruling 15 names
+// MaxSpanBytes as "what this package already permits to be inlined", and
+// MaxSpanBytes does bound the whole span — but a span is the pattern's own
+// literals PLUS the response, and the quantity the over-broadness invariant is
+// about is the response half alone. A floor at 512 on the match length is
+// MEASURED WRONG, not merely loose: `X [a-z]*` spells two bytes and takes 302
+// of an ordinary page carrying one long lowercase token, and 302 < 512, so
+// that floor would confirm the minimal witness in
+// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds. The floor has to sit
+// under the quantity R3's sentence is about, and its already-coded value is
+// this one.
+//
+// WHAT THE FLOOR ADMITS IS A DISCLOSED RESIDUAL AND IT IS NAMED IN FULL at
+// matchQuotesMoreThanItSpells. The magnitude is this constant: 256 bytes.
+const MaxUnspelledBytes = MaxSpanBytes / 2
 
 // MaxPatternBytes bounds a Signature's source pattern. A pattern is
 // Anvil-authored or template-derived, but it arrives alongside untrusted
@@ -607,9 +641,10 @@ const (
 	ReasonDidNotReproduce Reason = "did_not_reproduce_on_any_attempt"
 
 	// ReasonMatchQuotedTheResponse: the signature matched, and at least one
-	// of those matches quoted more of the response than the signature
-	// spells. See matchQuotesMoreThanItSpells for the comparison and
-	// decide()'s rule 2 for the precedence.
+	// of those matches carried more unspelled response than BOTH
+	// MaxUnspelledBytes and the signature's own literal footing. See
+	// matchQuotesMoreThanItSpells for the comparison, MaxUnspelledBytes for
+	// where the floor comes from, and decide()'s rule 2 for the precedence.
 	//
 	// WHY THIS OUTCOME AND NOT ANOTHER, since the choice is the whole
 	// content of ruling 14's third paragraph:
@@ -923,18 +958,28 @@ type Signature struct {
 //
 //	q <= L/2 <= 256.
 //
-// AT MOST HALF OF ANY INLINED SPAN IS BODY THE PATTERN DID NOT SPELL, AND
-// NEVER MORE THAN 256 BYTES OF IT. The measured 403-byte h1 inlining is not
-// made smaller by this; it stops compiling.
+// THE 256 IS THE NUMBER THAT SURVIVED AND IT IS NOW CODED, as
+// MaxUnspelledBytes. The measured 403-byte h1 inlining is not made smaller by
+// this; it stops compiling.
 // TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the inequality
 // over real matches rather than restating it.
 //
-// THE SAME INEQUALITY IS ENFORCED ON THE ACTUAL MATCH, AND THAT IS THE HALF
-// THAT CARRIES THE ARITHMETIC. R3 reasons about CONTENT-BEARING positions and
-// says nothing about a class like `[0-9A-Za-z]`; rerunning that round's own
-// attack one class to the left found `<h1[0-9A-Za-z]{0,400}` accepted and
-// inlining 403 bytes. matchQuotesMoreThanItSpells re-applies L - s <= s to the
-// match itself, where no class definition is involved at all.
+// THE "AT MOST HALF" HALF OF THIS PARAGRAPH IS WITHDRAWN BY RULING 15 and the
+// sentence is kept so the withdrawal is visible: it read "AT MOST HALF OF ANY
+// INLINED SPAN IS BODY THE PATTERN DID NOT SPELL, AND NEVER MORE THAN 256
+// BYTES OF IT". The second clause is still true and is now the whole claim.
+// The first is false below the floor: `Z[0-9A-Za-z]*` against 256
+// alphanumerics inlines a 257-byte span of which 256 bytes are the response.
+// That is the floor's disclosed cost, named at MaxUnspelledBytes.
+//
+// THE INEQUALITY IS ENFORCED ON THE ACTUAL MATCH, AND THAT IS THE HALF THAT
+// CARRIES THE ARITHMETIC. R3 reasons about CONTENT-BEARING positions and says
+// nothing about a class like `[0-9A-Za-z]`; rerunning that round's own attack
+// one class to the left found `<h1[0-9A-Za-z]{0,400}` accepted and inlining
+// 403 bytes. matchQuotesMoreThanItSpells re-applies the relation to the match
+// itself — floored at MaxUnspelledBytes, ratio above it — where no class
+// definition is involved at all, and the q <= 256 ceiling comes out of that
+// pair unchanged rather than out of R3.
 //
 // THE ORDER OF THAT SENTENCE MATTERS AND IT USED TO RUN THE OTHER WAY. The
 // paragraph above derives q <= L/2 <= 256 from R3, and R3 is a best-effort
@@ -1077,11 +1122,19 @@ type Signature struct {
 // positions R3 counts as zero. MEASURED at the ceiling: `Z` followed by 127
 // copies of `[ab][,;]` is 1017 bytes, is accepted, and matches 255 bytes of a
 // body it spells one byte of; 128 copies is 1025 bytes and does not compile at
-// all. extractSpan inlines ZERO bytes of that 255-byte match and reports all
-// 255 as SpanOverBroadBytes, because property 1b re-applies L - s <= s to the
-// match with no class definition involved.
-// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes drives both
-// halves.
+// all.
+//
+// WHAT HAPPENS TO THAT 255-BYTE MATCH IS A DISCLOSED RESIDUAL AND RULING 15
+// CHANGED IT. This sentence used to read "extractSpan inlines ZERO bytes of
+// that 255-byte match and reports all 255 as SpanOverBroadBytes", and that is
+// no longer true. 254 of the 255 bytes are unspelled, 254 is inside
+// MaxUnspelledBytes, so the match is INLINED and the finding CONFIRMS. The
+// residual is therefore a confirmation-and-inlining residual of 254 bytes
+// rather than a withheld one, it is not closed, and its magnitude is the
+// floor. See matchQuotesMoreThanItSpells's residual section for why the floor
+// exists and what it costs.
+// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes measures it
+// in that direction.
 //
 // THE SENTENCE THAT USED TO BIND THAT RESIDUAL WAS FALSE, and 255 was never a
 // bound on the family. It read: "THE BOUND ON THAT IS ARITHMETIC, NOT A LIST:
@@ -2465,16 +2518,36 @@ func buildBenignCorpus() []string {
 //	  compile
 //	an OVER-BROAD PATTERN     decided on the pattern's own structure by
 //	                          refuseOverBroadPattern: R1 footing, R2 open
-//	                          positions, R3 quotation. THIS IS THE CONTROL
+//	                          positions, R3 quotation. A BEST-EFFORT EARLY
+//	                          REFUSAL, NOT THE CONTROL
 //	a pattern matching a      it reproduces against a body with nothing
-//	  benign body             wrong with it. THIS IS THE BACKSTOP
+//	  benign body             wrong with it. ALSO A BEST-EFFORT EARLY
+//	                          REFUSAL, NOT THE CONTROL
 //
-// THE ORDER IS THE ARGUMENT. The structural check decides first, because it
-// decides on the pattern and therefore samples nothing; the corpus runs after
-// it, catches the one family structure cannot see (a literal that is ordinary
-// document furniture), and is described as a backstop everywhere it is
-// mentioned. Three rounds of this file described the corpus as the control and
-// three attackers stepped outside it.
+// NEITHER OF THOSE TWO CARRIES THE OVER-BROADNESS GUARANTEE, AND THIS
+// PARAGRAPH IS WHERE THAT IS SAID, because go doc renders this comment and
+// nothing below it. It used to say "THE ORDER IS THE ARGUMENT: the structural
+// check decides first, because it decides on the pattern and therefore samples
+// nothing" — and that argument is WITHDRAWN. Not sampling is not the same as
+// being complete: the structural walk approximates, it is exact only on the
+// shapes shapeWalk has arms for, and `anvil-probe-4f2a` followed by 125 copies
+// of ` [a-z]*` was ACCEPTED here at spelled=141 and then matched 12,500,141
+// bytes of an ordinary page. A SIGNATURE THIS FUNCTION RETURNS HAS NOT BEEN
+// PROVEN NARROW.
+//
+// WHERE THE GUARANTEE IS: matchQuotesMoreThanItSpells, at confirmation time,
+// on the match that actually happened. It reads two integers and compares
+// them; no pattern, spelling, operator or parser change reaches it. Read that
+// function before trusting anything either refusal above appears to promise.
+//
+// THE ORDER STILL MATTERS, for two smaller reasons that survive the
+// withdrawal. The structural check runs first because it is microseconds and
+// the corpus scan is not, and because the patterns that cost seconds against a
+// megabyte are exactly the ones R2 refuses on sight. The corpus then catches
+// the one family structure cannot see — a literal that is ordinary document
+// furniture. Three rounds of this file described the corpus as the control and
+// three attackers stepped outside it; the fourth described the structural
+// rules as the control and the fifth stepped outside those.
 //
 // The engine is RE2, so a compiled Signature cannot backtrack catastrophically
 // however hostile the body it is later run against.
@@ -3992,15 +4065,35 @@ func hashBody(body []byte) string {
 //     So the inequality R3 argues for at COMPILE time is enforced again here
 //     at EXTRACTION time, over the actual match, for every class: with s the
 //     pattern's minLiteral and L the match length, a span exists only when
-//     L - s <= s. Nothing is exempt, there is no class list, and the
-//     arithmetic gives the same q <= L/2 <= 256 for a pattern R3 never
-//     looked at. The cost is stated rather than hidden: a 20-byte
-//     `AKIA[0-9A-Z]{16}` match against four spelled bytes now yields NO
-//     SPAN, so the key id itself is not inlined. The finding is still
-//     CONFIRMED and still carries the body hash — and a 16-character AWS key
-//     id is a credential, so declining to quote it into a prompt-bound field
-//     is the right answer arrived at by the right rule.
-//     TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is the sweep.
+//     the unspelled part L - s is inside MaxUnspelledBytes or inside s.
+//     Nothing is exempt, there is no class list, and the arithmetic still
+//     gives q <= L/2 <= 256 for a pattern R3 never looked at — see the proof
+//     in matchQuotesMoreThanItSpells.
+//
+//     THE SENTENCE THAT USED TO END THIS PARAGRAPH WAS MEASURABLY FALSE AND
+//     IS KEPT AS A QUOTATION SO THE CORRECTION IS LEGIBLE. It read: "a
+//     20-byte `AKIA[0-9A-Z]{16}` match against four spelled bytes now yields
+//     NO SPAN, so the key id itself is not inlined. The finding is still
+//     CONFIRMED and still carries the body hash". The first half was true.
+//     THE SECOND HALF WAS NOT, and it was the justification carrying the
+//     whole trade: ruling 14 made this same comparison decide the outcome, so
+//     the AKIA match did not yield a span AND did not confirm — a reproduced
+//     AWS key exposure never reached dast_status findings at all. RUN IT;
+//     TestEveryRealOracleConfirmsAGenuineHit does, oracle by oracle.
+//
+//     WHAT HAPPENS NOW, MEASURED: `AKIA[0-9A-Z]{16}` has s=4 and L=20, its
+//     unspelled part is 16, 16 is inside MaxUnspelledBytes, so the match is
+//     not over-broad — the finding is CONFIRMED and the 20-byte span IS
+//     inlined. That is a deliberate reversal of the old paragraph's second
+//     claim as well as its conclusion. An AWS ACCESS KEY ID IS AN IDENTIFIER,
+//     not the secret access key, and it is the one string an operator needs
+//     in order to go and revoke the thing; withholding it while asserting the
+//     finding left a reader with a confirmed credential exposure they could
+//     not act on. A signature whose class really does carry a secret still
+//     inlines at most MaxUnspelledBytes of it, beside the body hash, in a
+//     field bounded at MaxSpanBytes.
+//     TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is the sweep and
+//     it runs the boundary on both arms.
 //
 //     RULING 14 MADE THIS COMPARISON DECIDE THE OUTCOME AS WELL AS THE SPAN,
 //     and that is why the arithmetic moved into matchQuotesMoreThanItSpells
@@ -4075,10 +4168,95 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // runs whose quotation the concat arm never promoted.
 //
 // AT CONFIRMATION TIME THE MATCH IS IN HAND. matchLen and spelled are two
-// integers. The invariant is `matchLen - spelled <= spelled`: at most as many
-// bytes of the match are unaccounted-for by the pattern's own literal footing
-// as are accounted for by it. There is no analysis, no alphabet, no corpus,
-// no sample and therefore no budget.
+// integers. The invariant is that the unspelled part of the match — the bytes
+// the pattern's own literal footing does not account for, q = matchLen -
+// spelled — is within EITHER of two bounds:
+//
+//	q <= MaxUnspelledBytes   the FLOOR: the match's unspelled part fits
+//	                         inside what this package already inlines as
+//	                         evidence, so it cannot be "the response"
+//	q <= spelled             the RATIO: above the floor, R3's relation
+//
+// There is no analysis, no alphabet, no corpus, no sample and therefore no
+// budget. Both numbers in the comparison are measured off the match that
+// happened; the only constant is MaxUnspelledBytes, and that one is arithmetic
+// from MaxSpanBytes.
+//
+// ===========================================================================
+// RULING 15: WHY THE RATIO ALONE WAS WRONG BELOW THE FLOOR
+// ===========================================================================
+//
+// `matchLen - spelled <= spelled` was the whole rule for one round, and it is
+// correct about over-broad matches and WRONG about ordinary credential
+// oracles. spelled counts LITERAL footing, while a credential oracle's
+// evidence is by construction a character class: the literal is the sigil and
+// the class is the secret. MEASURED, before this floor existed:
+//
+//	AKIA[0-9A-Z]{16}                   spelled=4  matchLen=20  UNCONFIRMED
+//	ghp_[0-9A-Za-z]{36}                spelled=4  matchLen=40  UNCONFIRMED
+//	sk_live_[0-9a-zA-Z]{24}            spelled=8  matchLen=32  UNCONFIRMED
+//	PHPSESSID=[0-9a-f]{26,32}          spelled=10 matchLen=42  UNCONFIRMED
+//	(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ spelled=8  matchLen=20  UNCONFIRMED
+//
+// A REPRODUCED AWS KEY EXPOSURE landed unconfirmed and never reached
+// dast_status findings. That is not a conservative gate, it is a gate that
+// cannot report the class of finding it exists to report.
+//
+// THE INVARIANT IS ABOUT MAGNITUDE, NOT RATIO. R3's sentence is "past that
+// point the span is the RESPONSE rather than evidence about it". A twenty-byte
+// match is not a response. A twelve-megabyte match is. A ratio cannot tell
+// them apart, because a short oracle with a short class has the same ratio as
+// a long pattern swallowing a page. The floor is what supplies the magnitude,
+// and above it the ratio still decides.
+//
+// THE FLOOR DOES NOT RAISE THE PACKAGE'S PUBLISHED CEILING ON INLINED
+// QUOTATION, and this is the check worth doing before believing the rest. For
+// any span that is inlined at all, L <= MaxSpanBytes. If q > MaxUnspelledBytes
+// then the ratio arm must have allowed it, so q <= spelled and
+// L = q + spelled >= 2q > MaxSpanBytes — no span. Therefore every inlined span
+// still satisfies q <= MaxUnspelledBytes = 256, which is the same bound the
+// R-rules section derived before this floor was written.
+//
+// ===========================================================================
+// WHAT THE FLOOR ADMITS — THE RESIDUAL, MEASURED, NOT HOPED
+// ===========================================================================
+//
+// A floor is a weakening and it costs something. What it costs is exactly
+// this: a match whose unspelled part is at most 256 bytes now CONFIRMS and is
+// INLINED however little the pattern spells. The worst case an attacker can
+// buy is one byte of footing against 256 bytes of response — `Z[0-9A-Za-z]*`
+// against a body of 256 alphanumerics is a 257-byte span, 256 bytes of which
+// are the target's, and a confirmed finding on top of it.
+//
+// THREE RESIDUALS THIS FILE ALREADY DISCLOSED CHANGE SHAPE, and they are named
+// here rather than left for a reader to rediscover:
+//
+//   - THE ALNUM-PREFIX (h1) FAMILY IS NOT CLOSED BY THIS FLOOR AND WAS NOT
+//     CLOSED BEFORE IT. `<h1[0-9A-Za-z]{0,400}` still fails — 400 unspelled is
+//     over the floor and over three spelled — but `<h1[0-9A-Za-z]{0,256}`
+//     compiles, matches 259 bytes, and now confirms while inlining 256
+//     verbatim body bytes. The residual is not closed. Its magnitude moved
+//     from "bounded by the pattern's own footing" to "bounded by 256".
+//   - THE CONCATENATION-OF-NARROW-CLASSES RESIDUAL. `Z` followed by 127 copies
+//     of `[ab][,;]` is accepted by R3, matches 255 bytes against one spelled,
+//     and is now inlined and confirmed rather than withheld.
+//     TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes measures
+//     it at its ceiling in the new direction.
+//   - THE STATIC-LAYER SPLIT WITNESS. `X [a-z]*` at 302 bytes is still
+//     refused, because 300 unspelled is over the floor. Shortened to a body
+//     with 256 lowercase bytes after the marker it would be admitted.
+//
+// WHY THAT TRADE IS PAYABLE, STATED PLAINLY RATHER THAN ASSUMED. The honest
+// alternative was checked first and does not hold: R1/R2/R3 do NOT refuse
+// these patterns early, and the static layer is known incomplete, so nothing
+// upstream is standing behind the floor. What is true is the second answer —
+// a match at or under the floor is bounded by MaxSpanBytes, which is bounded
+// by what an operator actually reads, so the worst case of the floor is ONE
+// MISLEADING 512-BYTE SPAN carrying at most 256 bytes of target text, beside a
+// body hash, on a finding that names its own signature. The worst case without
+// the floor is that no credential oracle in the suite ever confirms. A
+// swallowed page cannot arrive through the floor at any size, because the
+// floor is 256 bytes and a page is not.
 //
 // WHY THAT ENDS THE CLASS. A new regexp operator, a new spelling, a parser
 // change, a pattern nobody imagined — none of them can produce a confirmation
@@ -4090,8 +4268,21 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // matchLen-spelled is an UPPER bound on the unspelled bytes in this match.
 // Both directions are the safe ones: understating the footing or overstating
 // the quotation can only refuse a span and withhold a confirmation, never
-// grant one. On a Signature NewSignature did not build, spelled is 0 and every
-// non-empty match fails this — the fail-closed value.
+// grant one.
+//
+// A SIGNATURE NewSignature DID NOT BUILD GETS NO FLOOR. R1 refuses a pattern
+// with no literal footing, so spelled >= 1 for every constructed Signature;
+// spelled == 0 means a hand-assembled one, and there the floor is not merely
+// skipped, every non-empty match fails outright. That is the fail-closed value
+// and it is spelled out as its own arm rather than left to arithmetic, because
+// with q = matchLen the floor would otherwise hand an unvetted pattern 256
+// free bytes. TestAnUnvettedSignatureGetsNoFloor drives it, and it was written
+// because deleting the arm turned nothing red.
+//
+// THE BOUNDARY OF BOTH ARMS IS PINNED, one under, exact, one over, by
+// TestTheConfirmationBoundaryIsPinnedOnBothArms. Every other fixture in the
+// suite over-quotes by orders of magnitude and would stay green if the floor
+// or the ratio moved by a factor of two.
 //
 // TWO CALLERS, ONE COMPARISON. extractSpan asks it about INLINING (property
 // 1b); ConfirmFinding asks it about the OUTCOME (decide's rule 2). They were
@@ -4099,7 +4290,17 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // questions, which is why a pattern matching 12,500,141 bytes of an ordinary
 // page returned confirmed at confidence 1.000 while inlining nothing.
 func matchQuotesMoreThanItSpells(matchLen, spelled int) bool {
-	return matchLen-spelled > spelled
+	if spelled <= 0 {
+		// No footing at all, so there is nothing for a floor to be
+		// relative to. See the fail-closed paragraph above.
+		return matchLen > 0
+	}
+	unspelled := matchLen - spelled
+	// THE FLOOR FIRST, then the ratio. Read it as one sentence: a match is
+	// over-broad when the part of it the pattern did not spell is larger
+	// than anything this package inlines as evidence AND larger than the
+	// pattern's own footing.
+	return unspelled > MaxUnspelledBytes && unspelled > spelled
 }
 
 // assertRejectionIsDecisive refuses to emit a REJECTED finding that could not

@@ -4843,9 +4843,16 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 	// A CONCATENATION is a sequence of positions, each with one alphabet, so
 	// R3 does not promote its union — and that is a deliberate line, not an
 	// oversight, because promoting at a concatenation is what would refuse
-	// the nginx pattern in part 2. What it costs is bounded by arithmetic:
+	// the nginx pattern in part 2.
+	//
+	// WHAT IT COSTS IS NOT BOUNDED BY MaxPatternBytes, and the sentence that
+	// used to sit here said it was: "What it costs is bounded by arithmetic:
 	// every such position must be SPELLED OUT, the cheapest two-rune class
-	// is four bytes, and MaxPatternBytes is 1024.
+	// is four bytes, and MaxPatternBytes is 1024". MaxPatternBytes bounds
+	// the number of ELEMENTS in a concatenation; an element may be an
+	// unbounded repeat, which is how the 12,500,141-byte attack exists at
+	// 891 pattern bytes. What follows is the ceiling OF THIS SHAPE —
+	// fixed-width two-rune classes — and of nothing wider.
 	const worstPairs = 127
 	worst := "Z" + strings.Repeat("[ab][,;]", worstPairs)
 	if len(worst) > MaxPatternBytes {
@@ -4864,24 +4871,48 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"which is the same defect as understating it", err)
 	}
 	body := []byte("Z" + strings.Repeat("a,b;", worstPairs))
-	span, _, overBroad, _, matched := extractSpan(body, sig)
+	span, _, overBroad, matchLen, matched := extractSpan(body, sig)
 	if !matched {
 		t.Fatalf("the residual fixture did not match its own body; the measurement below " +
 			"is vacuous")
 	}
-	if len(span) != 0 {
-		t.Errorf("extractSpan INLINED %d byte(s) of the residual match. The whole reason "+
-			"this residual is disclosed rather than closed is that property 1b refuses "+
-			"to inline it: %q", len(span), span)
-	}
-	if overBroad != 2*worstPairs+1 {
-		t.Errorf("extractSpan reported %d over-broad byte(s), want %d. The residual is a "+
-			"CONFIRMATION residual of a known size, and if the size has changed the "+
-			"disclosure has to change with it", overBroad, 2*worstPairs+1)
-	}
 	if sig.spelled != 1 {
 		t.Errorf("the residual fixture spells %d byte(s), want 1; it is supposed to be the "+
 			"worst ratio the pattern budget can buy", sig.spelled)
+	}
+	if matchLen != 2*worstPairs+1 {
+		t.Errorf("the residual match is %d bytes, want %d; the measurement is of a "+
+			"different fixture than the one disclosed", matchLen, 2*worstPairs+1)
+	}
+
+	// RULING 15 REVERSED THE DIRECTION OF THIS MEASUREMENT AND THE OLD ONE
+	// IS QUOTED SO THE REVERSAL IS LEGIBLE. It asserted `len(span) == 0` and
+	// `overBroad == 255`, on the reasoning that "the whole reason this
+	// residual is disclosed rather than closed is that property 1b refuses
+	// to inline it". Property 1b now has a floor: 254 of these 255 bytes are
+	// unspelled, 254 is inside MaxUnspelledBytes, so the match is INLINED
+	// and the finding CONFIRMS.
+	//
+	// THE RESIDUAL DID NOT CLOSE, IT CHANGED SHAPE, and this is the shape.
+	// It is asserted at full size — one spelled byte, 254 of the target's —
+	// because that is the number the disclosure at MaxUnspelledBytes names,
+	// and a residual whose measurement is left in the old direction reads to
+	// the next reader as a residual that was fixed.
+	if len(span) != matchLen || overBroad != 0 {
+		t.Errorf("the residual match inlined %d of %d bytes (over=%d); ruling 15's floor "+
+			"admits it whole and the disclosure says so. If this is withheld again "+
+			"the floor has moved and MaxUnspelledBytes has to move with it",
+			len(span), matchLen, overBroad)
+	}
+	if q := matchLen - sig.spelled; q > MaxUnspelledBytes {
+		t.Errorf("the residual carries %d unspelled bytes and the published ceiling is "+
+			"%d; an inlined span may never exceed it", q, MaxUnspelledBytes)
+	}
+	rf, _ := overBroadCandidate(t, worst, body, 3)
+	if got, want := rf.Outcome(), OutcomeConfirmed; got != want {
+		t.Errorf("the residual came out %q, want %q. It is a CONFIRMING residual now, "+
+			"and pretending otherwise here would leave the honest sentence in the "+
+			"control's header contradicted by its own test", got, want)
 	}
 
 	// PART 4: THE MEASUREMENT THE SPELLING FAMILY RESTS ON, KEPT LIVE.
@@ -4950,6 +4981,13 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 // answer was not to widen R3 until it caught this too; it was to enforce the
 // same inequality a second time, at extraction, over the actual match, where
 // no class definition is involved at all.
+//
+// RULING 15 PUT A FLOOR UNDER THAT INEQUALITY AND THIS TEST MEASURES WHAT THE
+// FLOOR ADMITS, IN BOTH DIRECTIONS. The 400-wide h1 spelling is still refused.
+// The SAME FAMILY RESPELT AT THE FLOOR — `<h1[0-9A-Za-z]{0,256}` — is
+// ADMITTED, inlines 256 verbatim body bytes and confirms, and that is asserted
+// below rather than left for a reader to find. The residual is not closed by
+// the floor; its magnitude is now the floor.
 func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 	// THE MEASURED CASE, by name and with the same fixture.
 	attack := `<h1[0-9A-Za-z]{0,400}`
@@ -4971,17 +5009,57 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 			"for", overBroad)
 	}
 
-	// THE SWEEP. For every footing from 1 to 48, the longest match that
-	// satisfies L-s <= s keeps its span and the next byte loses it. The
-	// boundary is asserted on BOTH sides, because a rule that only ever
-	// refuses, or only ever allows, is not a boundary.
+	// THE SAME FAMILY AT THE FLOOR, WHICH THE FLOOR ADMITS. Disclosed at
+	// MaxUnspelledBytes and measured here so the disclosure cannot rot into
+	// "the h1 residual was closed". An attacker who wanted the 403-byte
+	// inlining and cannot have it can still have 256 of it, plus the
+	// confirmation the 400-wide spelling never got.
+	respelt := fmt.Sprintf(`<h1[0-9A-Za-z]{0,%d}`, MaxUnspelledBytes)
+	rs := mustSignature(t, respelt)
+	rspan, _, rover, rlen, rmatched := extractSpan(body, rs)
+	if !rmatched {
+		t.Fatalf("%q did not match the h1 fixture", respelt)
+	}
+	if len(rspan) != MaxUnspelledBytes+3 || rover != 0 || rlen != MaxUnspelledBytes+3 {
+		t.Errorf("%q: span=%d bytes over=%d matchLen=%d, want a %d-byte inlined span. "+
+			"The floor admits this and the disclosure at MaxUnspelledBytes says so; "+
+			"if it no longer does, the disclosure is now wrong in the direction that "+
+			"overstates the residual", respelt, len(rspan), rover, rlen,
+			MaxUnspelledBytes+3)
+	}
+	if rf, _ := overBroadCandidate(t, respelt, body, 3); rf.Outcome() != OutcomeConfirmed {
+		t.Errorf("%q came out %q; the disclosed residual is that it CONFIRMS, and a "+
+			"disclosure that overstates the damage ages exactly as badly as one that "+
+			"understates it", respelt, rf.Outcome())
+	}
+
+	// THE SWEEP, AND RULING 15 MOVED WHERE ITS BOUNDARY SITS. It used to
+	// step the footing from 1 to 48 and assert that `extra == footing` kept
+	// its span while `extra == footing+1` lost it — the bare ratio. Under
+	// the floor that is the wrong boundary for every footing under
+	// MaxUnspelledBytes, and asserting it is what made `AKIA[0-9A-Z]{16}`
+	// yield nothing.
+	//
+	// THE BOUNDARY FOR A SPAN IS NOW EXACTLY MaxUnspelledBytes, WHATEVER THE
+	// FOOTING, and that is a derived fact rather than a second rule. Above
+	// the floor the ratio arm needs unspelled <= spelled, so the match is at
+	// least 2*unspelled > 2*MaxUnspelledBytes = MaxSpanBytes bytes long and
+	// property 1 has already refused it. So at EXTRACTION the ratio arm is
+	// unreachable, and the floor is the whole visible boundary. The ratio
+	// arm is observable at the OUTCOME, where matchLen has no ceiling:
+	// TestTheConfirmationBoundaryIsPinnedOnBothArms drives it there.
 	for footing := 1; footing <= 48; footing++ {
 		lit := strings.Repeat("Z", footing)
 		sig := mustSignature(t, lit+`[0-9A-Za-z]*`)
 		for _, tc := range []struct {
 			extra    int
 			wantSpan bool
-		}{{footing, true}, {footing + 1, false}} {
+		}{
+			{footing, true},
+			{footing + 1, true}, // over the old ratio, under the floor
+			{MaxUnspelledBytes, true},
+			{MaxUnspelledBytes + 1, false},
+		} {
 			b := []byte(lit + strings.Repeat("a", tc.extra))
 			span, _, over, _, ok := extractSpan(b, sig)
 			if !ok {
@@ -4989,32 +5067,66 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 			}
 			if (span != "") != tc.wantSpan {
 				t.Errorf("footing=%d match=%d bytes (%d unspelled): span=%q over=%d, "+
-					"want span=%v. The rule is L-s <= s and the boundary must be "+
-					"exactly there", footing, len(b), tc.extra, printable(span, 32),
-					over, tc.wantSpan)
+					"want span=%v. The rule is `unspelled <= MaxUnspelledBytes=%d or "+
+					"unspelled <= spelled`, and the boundary must be exactly there",
+					footing, len(b), tc.extra, printable(span, 32), over, tc.wantSpan,
+					MaxUnspelledBytes)
 			}
 			if tc.wantSpan && len(span) != len(b) {
 				t.Errorf("footing=%d: a span inside the budget was %d bytes, want the "+
 					"whole %d-byte match", footing, len(span), len(b))
 			}
+			// THE CEILING THE FLOOR DOES NOT RAISE. Whatever this sweep
+			// inlines, it never carries more than MaxUnspelledBytes of
+			// body — the claim matchQuotesMoreThanItSpells proves and
+			// this loop is entitled to falsify.
+			if q := len(span) - footing; span != "" && q > MaxUnspelledBytes {
+				t.Errorf("footing=%d inlined a span carrying %d unspelled bytes, and the "+
+					"published ceiling is %d", footing, q, MaxUnspelledBytes)
+			}
 		}
 	}
 
-	// THE COST, ASSERTED SO IT IS KNOWN RATHER THAN DISCOVERED. A signature
-	// whose whole job is to quote a token loses its span. It does NOT lose
-	// its verdict or its body hash, which is what makes the trade payable.
+	// THE COST OF THE FLOOR, ASSERTED AT ITS WORST CASE. One byte of
+	// footing buys MaxUnspelledBytes bytes of response, inlined, and a
+	// confirmation on top of it. This is the residual disclosed at
+	// MaxUnspelledBytes, measured rather than described, and it is here so
+	// that shrinking or growing the floor cannot happen quietly.
+	cheap := mustSignature(t, `Z[0-9A-Za-z]*`)
+	worstBody := []byte("Z" + strings.Repeat("a", MaxUnspelledBytes))
+	worstSpan, _, worstOver, _, ok := extractSpan(worstBody, cheap)
+	if !ok {
+		t.Fatal("the worst-case floor fixture did not match")
+	}
+	if len(worstSpan) != MaxUnspelledBytes+1 || worstOver != 0 {
+		t.Errorf("the worst case the floor admits inlined %d bytes (over=%d); the "+
+			"disclosure says the whole %d-byte match, of which %d bytes are the "+
+			"target's", len(worstSpan), worstOver, MaxUnspelledBytes+1, MaxUnspelledBytes)
+	}
+
+	// THE COST THE OLD PARAGRAPH CLAIMED, INVERTED, because it was false in
+	// the direction that mattered. The old sentence said the AKIA span was
+	// withheld and "the finding is still CONFIRMED"; the finding was NOT
+	// confirmed, and a reproduced AWS key exposure never reached
+	// dast_status. Under the floor the span comes back and so does the
+	// verdict. See TestEveryRealOracleConfirmsAGenuineHit for the rest of
+	// the suite's oracles.
 	akia := mustSignature(t, `AKIA[0-9A-Z]{16}`)
-	span, _, over, _, ok := extractSpan([]byte("... AKIA1234567890ABCDEF ..."), akia)
+	span, _, over, matchLen, ok := extractSpan([]byte("... AKIA1234567890ABCDEF ..."), akia)
 	if !ok {
 		t.Fatal("the AKIA fixture did not match")
 	}
-	if span != "" {
-		t.Errorf("AKIA[0-9A-Z]{16} inlined %q. Four spelled bytes do not buy sixteen "+
-			"unspelled ones, and a 16-character AWS key id is a credential", span)
+	if span != "AKIA1234567890ABCDEF" {
+		t.Errorf("AKIA[0-9A-Z]{16} inlined %q, want the whole 20-byte match. Sixteen "+
+			"unspelled bytes are inside MaxUnspelledBytes=%d, and an AWS access key "+
+			"ID is the identifier an operator revokes by", span, MaxUnspelledBytes)
 	}
-	if over != 20 {
-		t.Errorf("SpanOverBroadBytes = %d, want 20: the match length must be recorded "+
-			"even when the span is withheld", over)
+	if over != 0 || matchLen != 20 {
+		t.Errorf("AKIA: over=%d matchLen=%d, want over=0 matchLen=20", over, matchLen)
+	}
+	if matchQuotesMoreThanItSpells(matchLen, akia.spelled) {
+		t.Errorf("matchQuotesMoreThanItSpells(%d, %d) = true; the oracle this gate exists "+
+			"to report would not confirm", matchLen, akia.spelled)
 	}
 
 	// AND THE OTHER DIRECTION, so this is a rule and not a ban on classes:
@@ -6633,5 +6745,402 @@ func TestTheDisclosedFixedWidthUnitSplitHasAWitness(t *testing.T) {
 	}
 	if got := f.Evidence().ExtractedSpan(); got != "" {
 		t.Errorf("span = %q", printable(got, 64))
+	}
+}
+
+// ===========================================================================
+// RULING 15 — the floor, and the direction the ratio alone was wrong in
+// ===========================================================================
+
+// TestEveryRealOracleConfirmsAGenuineHit is ruling 15's ACCEPTANCE half, and
+// it is the half the previous round did not have.
+//
+// A gate that refuses everything passes every over-broadness test in this
+// file. Nine rounds tightened the refusal and none of them asked the opposite
+// question, so the tightening ran past the oracles: MEASURED on the tree as it
+// was, with `matchLen - spelled > spelled` as the whole rule,
+//
+//	AKIA[0-9A-Z]{16}                 spelled=4  matchLen=20  UNCONFIRMED
+//	Server: nginx/1\.[0-9]+\.[0-9]+  spelled=17 matchLen=20  confirmed
+//	X-Debug-Token: [0-9a-f]+         spelled=15 matchLen=31  UNCONFIRMED
+//
+// A REPRODUCED AWS KEY EXPOSURE LANDED UNCONFIRMED and never reached
+// dast_status findings. spelled counts LITERAL footing, and a credential
+// oracle's evidence is by construction a character class — the literal is the
+// sigil, the class is the secret — so the ratio is structurally hostile to
+// exactly the signatures the suite is made of.
+//
+// THIS TEST IS THE ACCEPTANCE LIST, NAMED — eighteen oracles. The twelve the
+// package's own positive control calls "every signature this suite and the
+// plan actually use", the three real shapes the union rule's non-vacuity list
+// names, and the credential shapes an external verifier used (AWS is one of
+// the twelve already; GitHub, Stripe and PHPSESSID are the three that are
+// not). Each has a genuine hit, and each is asserted on the outcome AND on the
+// two integers the rule reads. The numbers are written down rather than
+// derived in the assertion, so a change to either layer has to move a number
+// here in the same diff.
+//
+// ONE SHAPE IS NOT ON THIS LIST AND IS NAMED SO ITS ABSENCE IS NOT READ AS
+// COVERAGE: `eyJ[0-9A-Za-z_-]{20,60}\.eyJ[0-9A-Za-z_-]{20,60}`, a JWT pair, is
+// REFUSED BY NewSignature — the class admits letters and also `_` and `-`, so
+// R3 counts 120 quoted positions against seven spelled bytes. That is the
+// STATIC layer refusing at compile time, not the floor, and ruling 15 changed
+// nothing about it: a pattern that never compiles never reaches a match. It is
+// recorded here as a KNOWN GAP in the oracle vocabulary rather than as a
+// finding about the floor, and no remedy is asserted because none was
+// measured.
+func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
+	for _, tc := range []struct {
+		pattern     string
+		body        string
+		wantSpelled int
+		wantMatch   int
+		what        string
+	}{
+		// THE TWELVE FROM THE PACKAGE'S OWN POSITIVE CONTROL.
+		{sqliPattern, "<pre>" + sqliMarker + "</pre>", 44, 60,
+			"the packet's stop-condition oracle"},
+		{`"role":"admin"`, `{"user":"x","role":"admin"}`, 14, 14,
+			"a pure literal: the ratio was never a problem here and it must stay that way"},
+		{spanBoundaryPattern, "ANVIL-SPAN-BEGIN4f2aANVIL-SPAN-END", 30, 34,
+			"the probe-marker pair against a SHORT payload, which is the case the " +
+				"hostile-body test never covered"},
+		{`You have an error in your SQL syntax`, "x" + sqliMarker, 36, 36,
+			"the same oracle with no class at all"},
+		{`root:[x*]:0:0:`, "root:x:0:0:root:/root:/bin/bash", 10, 11,
+			"an /etc/passwd disclosure: one one-rune-choice class inside a literal"},
+		{`AKIA[0-9A-Z]{16}`, "... AKIA1234567890ABCDEF ...", 4, 20,
+			"THE NAMED CASE: an AWS key id, four spelled bytes and sixteen of class"},
+		{`Server: nginx/1\.[0-9]+\.[0-9]+`, "Server: nginx/1.24.0\r\n", 17, 20,
+			"a version banner; it confirmed before the floor too, and it is here as " +
+				"the control that the floor changed nothing above it"},
+		{`<script>alert\(1\)</script>`, "<p><script>alert(1)</script></p>", 25, 25,
+			"a reflected-XSS marker: literal throughout"},
+		{`java\.lang\.NullPointerException`, "at java.lang.NullPointerException\n", 30, 30,
+			"a stack-trace leak"},
+		{`blocked by policy reference [0-9]{4}-[A-Z]{2}`, "blocked by policy reference 4021-AC",
+			29, 35, "the WAF marker the containment tests use"},
+		{`(?i)PHP Fatal error:  Uncaught [A-Za-z]{1,40}`, "PHP Fatal error:  Uncaught TypeError",
+			27, 36, "a case-insensitive class, which the parser expands past ASCII"},
+		{`X-Debug-Token: [0-9a-f]+`, "X-Debug-Token: 9f2c1a4b8e7d6053\r\n", 15, 31,
+			"a narrow class with NO repeat ceiling: the shape the ratio punishes hardest"},
+
+		// THE THREE THE UNION RULE'S NON-VACUITY LIST NAMES AS REAL SHAPES.
+		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`, "leaked 10.20.30.41 ZZZZ", 8, 16,
+			"a dotted quad: the internal-address leak ruling 15's message names"},
+		{`(?i)(error|warning|expired)`, "session expired at 12:00", 5, 7,
+			"the disclosed word-list residual, as an oracle"},
+		{`(?:GET|POST|PUT) /admin/[a-z]{1,20} ZZZZ`, "POST /admin/users ZZZZ", 16, 22,
+			"an unrepeated alternation over a method list"},
+
+		// THE FOUR CREDENTIAL SHAPES THE EXTERNAL VERIFIER USED.
+		{`ghp_[0-9A-Za-z]{36}`, "token ghp_" + strings.Repeat("A", 36) + " end", 4, 40,
+			"a GitHub personal access token"},
+		{`sk_live_[0-9a-zA-Z]{24}`, "key sk_live_" + strings.Repeat("b", 24), 8, 32,
+			"a Stripe live secret key"},
+		{`PHPSESSID=[0-9a-f]{26,32}`, "Set-Cookie: PHPSESSID=" + strings.Repeat("a", 32), 10, 42,
+			"a session id in a Set-Cookie header"},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			sig, err := NewSignature(tc.pattern)
+			if err != nil {
+				t.Fatalf("NewSignature(%q) = %v. %s. A real oracle the early layer "+
+					"refuses is a gate nobody can configure", tc.pattern, err, tc.what)
+			}
+			if sig.spelled != tc.wantSpelled {
+				t.Errorf("spelled = %d, want %d", sig.spelled, tc.wantSpelled)
+			}
+			span, _, over, matchLen, matched := extractSpan([]byte(tc.body), sig)
+			if !matched {
+				t.Fatalf("%q did not match its own genuine hit %q. %s",
+					tc.pattern, printable(tc.body, 64), tc.what)
+			}
+			if matchLen != tc.wantMatch {
+				t.Errorf("matchLen = %d, want %d", matchLen, tc.wantMatch)
+			}
+			if matchQuotesMoreThanItSpells(matchLen, sig.spelled) {
+				t.Errorf("matchQuotesMoreThanItSpells(%d, %d) = true. %s. This is a "+
+					"GENUINE HIT and the gate is calling it the response",
+					matchLen, sig.spelled, tc.what)
+			}
+			if over != 0 || span == "" {
+				t.Errorf("over=%d span=%q: a genuine hit must be inlined; %s",
+					over, printable(span, 64), tc.what)
+			}
+
+			// THE OUTCOME, END TO END, WHICH IS WHAT RULING 15 IS ABOUT.
+			// The span mattering less than the verdict is the lesson of
+			// the round before this one.
+			f, _ := overBroadCandidate(t, tc.pattern, []byte(tc.body), 3)
+			if got, want := f.Outcome(), OutcomeConfirmed; got != want {
+				t.Fatalf("outcome = %q, want %q (reason=%q). %s: spelled=%d matchLen=%d",
+					got, want, f.Reason(), tc.what, sig.spelled, matchLen)
+			}
+			if conf, known := f.Confidence(); !known || conf != 1.0 {
+				t.Errorf("Confidence() = (%.3f, %v), want (1.000, true)", conf, known)
+			}
+			t.Logf("spelled=%d matchLen=%d unspelled=%d outcome=%s span=%q",
+				sig.spelled, matchLen, matchLen-sig.spelled, f.Outcome(),
+				printable(span, 48))
+		})
+	}
+}
+
+// TestTheConfirmationBoundaryIsPinnedOnBothArms is the boundary no
+// confirmation-layer test pinned.
+//
+// Every ruling-14 fixture over-quotes by orders of magnitude — 12,500,141
+// bytes against 141, 5001 against 1, 302 against 2 — so changing the relation
+// from 2x to 4x, or moving the floor by a factor of two, left all of them
+// green. A guard whose tests only ever feed it values far from its boundary is
+// a guard whose boundary is not under test.
+//
+// SO BOTH ARMS ARE PINNED HERE, one under, exact, one over:
+//
+//	THE FLOOR ARM   spelled=1, unspelled 255 / 256 / 257 against
+//	                MaxUnspelledBytes=256
+//	THE RATIO ARM   spelled=300, unspelled 299 / 300 / 301 — a footing over
+//	                the floor, which is the only place the ratio still decides
+//
+// The ratio arm needs spelled > MaxUnspelledBytes to be reachable at all, and
+// that is not an inconvenience of the fixture, it is the shape of the rule: a
+// match whose unspelled part is inside the floor never reaches the ratio.
+func TestTheConfirmationBoundaryIsPinnedOnBothArms(t *testing.T) {
+	for _, arm := range []struct {
+		name     string
+		pattern  string
+		spelled  int
+		wantSpan bool
+	}{
+		{"floor", `Z[0-9A-Za-z]*`, 1, true},
+		{"ratio", strings.Repeat("Z", 300) + `[0-9A-Za-z]*`, 300, false},
+	} {
+		sig := mustSignature(t, arm.pattern)
+		if sig.spelled != arm.spelled {
+			t.Fatalf("%s arm: spelled = %d, want %d; the fixture is not sitting where "+
+				"this test says it is", arm.name, sig.spelled, arm.spelled)
+		}
+		// The boundary value each arm is pinned against.
+		edge := MaxUnspelledBytes
+		if arm.name == "ratio" {
+			edge = arm.spelled
+		}
+		for _, tc := range []struct {
+			label       string
+			unspelled   int
+			wantOutcome Outcome
+		}{
+			{"one_under", edge - 1, OutcomeConfirmed},
+			{"exactly_at_the_boundary", edge, OutcomeConfirmed},
+			{"one_over", edge + 1, OutcomeUnconfirmed},
+		} {
+			t.Run(arm.name+"/"+tc.label, func(t *testing.T) {
+				body := []byte(strings.Repeat("Z", arm.spelled) +
+					strings.Repeat("a", tc.unspelled))
+				matchLen := arm.spelled + tc.unspelled
+
+				// THE PREDICATE ITSELF, so a failure names the two
+				// integers rather than only the verdict.
+				wantOver := tc.wantOutcome == OutcomeUnconfirmed
+				if got := matchQuotesMoreThanItSpells(matchLen, arm.spelled); got != wantOver {
+					t.Errorf("matchQuotesMoreThanItSpells(%d, %d) = %v, want %v "+
+						"(unspelled=%d, floor=%d, spelled=%d)",
+						matchLen, arm.spelled, got, wantOver, tc.unspelled,
+						MaxUnspelledBytes, arm.spelled)
+				}
+
+				f, _ := overBroadCandidate(t, arm.pattern, body, 3)
+				if got := f.Outcome(); got != tc.wantOutcome {
+					t.Fatalf("outcome = %q, want %q: %d unspelled bytes against %d "+
+						"spelled, with the floor at %d. The boundary must be "+
+						"EXACTLY here — a rule at twice or half this number passes "+
+						"every other fixture in this file",
+						got, tc.wantOutcome, tc.unspelled, arm.spelled,
+						MaxUnspelledBytes)
+				}
+				if tc.wantOutcome == OutcomeUnconfirmed {
+					if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+						t.Errorf("reason = %q, want %q", got, want)
+					}
+					if got := f.Evidence().ExtractedSpan(); got != "" {
+						t.Errorf("span = %q", printable(got, 32))
+					}
+					return
+				}
+				// A CONFIRMED VERDICT DOES NOT IMPLY A SPAN, and the
+				// ratio arm is where the two come apart: its matches run
+				// past MaxSpanBytes, so property 1 withholds the span
+				// while the outcome stands. That is pre-existing rule-1
+				// behaviour, asserted here so this test cannot be read
+				// as promising a span with every confirmation.
+				gotSpan := f.Evidence().ExtractedSpan() != ""
+				if gotSpan != arm.wantSpan {
+					t.Errorf("span present = %v, want %v (matchLen=%d, MaxSpanBytes=%d)",
+						gotSpan, arm.wantSpan, matchLen, MaxSpanBytes)
+				}
+				if arm.wantSpan {
+					q := len(f.Evidence().ExtractedSpan()) - arm.spelled
+					if q > MaxUnspelledBytes {
+						t.Errorf("the inlined span carries %d unspelled bytes and the "+
+							"published ceiling is %d", q, MaxUnspelledBytes)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestAnUnvettedSignatureGetsNoFloor is the fail-closed arm of
+// matchQuotesMoreThanItSpells, and it exists because BREAKING THE ARM DID NOT
+// TURN ANYTHING RED.
+//
+// The arm was written, the whole package was run with it deleted, and every
+// test still passed. A guard nothing can falsify is a guard that is not there,
+// and this file's standard is that such a claim is deleted rather than
+// qualified — so it is either demonstrated here or it comes out.
+//
+// WHAT IT PROTECTS. spelled is Signature.spelled, which refuseOverBroadPattern
+// fills in and R1 guarantees is at least 1. A Signature assembled by hand
+// carries spelled=0, and with q = matchLen - spelled = matchLen the floor
+// would hand that unvetted pattern MaxUnspelledBytes free bytes of any
+// response — an inlined span from a pattern no rule ever looked at. The arm
+// refuses every non-empty match instead.
+//
+// ConfirmFinding cannot be the vehicle: an unsealed Signature is refused by
+// validation long before a body is read, which is the OUTER half of the same
+// fail-closed posture and is asserted here too. So the arm is driven where it
+// is reachable — extractSpan, and the predicate itself.
+func TestAnUnvettedSignatureGetsNoFloor(t *testing.T) {
+	// A pattern that would sail through the floor if it had one: three
+	// unspelled bytes, far under MaxUnspelledBytes.
+	raw := Signature{re: regexp.MustCompile(`Z[0-9A-Za-z]*`), src: `Z[0-9A-Za-z]*`, sealed: true}
+	if raw.spelled != 0 {
+		t.Fatalf("the fixture spells %d; it is supposed to be the hand-assembled zero",
+			raw.spelled)
+	}
+	body := []byte("Zabc")
+	span, _, over, matchLen, matched := extractSpan(body, raw)
+	if !matched {
+		t.Fatal("the fixture did not match its own body")
+	}
+	if matchLen != 4 {
+		t.Fatalf("matchLen = %d, want 4", matchLen)
+	}
+	if !matchQuotesMoreThanItSpells(matchLen, raw.spelled) {
+		t.Errorf("matchQuotesMoreThanItSpells(%d, 0) = false. Four unspelled bytes are "+
+			"inside MaxUnspelledBytes=%d, so the floor has been applied to a signature "+
+			"NewSignature never vetted", matchLen, MaxUnspelledBytes)
+	}
+	if span != "" || over != matchLen {
+		t.Errorf("span=%q over=%d: an unvetted signature must inline nothing, whatever "+
+			"the floor would otherwise allow", printable(span, 32), over)
+	}
+
+	// EVERY LENGTH, not just one, because "no floor" is the claim and one
+	// sample under the floor cannot distinguish it from a smaller floor.
+	for _, n := range []int{1, 2, MaxUnspelledBytes - 1, MaxUnspelledBytes, MaxUnspelledBytes + 1} {
+		if !matchQuotesMoreThanItSpells(n, 0) {
+			t.Errorf("matchQuotesMoreThanItSpells(%d, 0) = false; every non-empty match "+
+				"against zero footing is over-broad", n)
+		}
+	}
+	// AND THE ZERO-LENGTH MATCH IS NOT, so this is a rule and not a constant
+	// true. A zero-byte match quotes nothing.
+	if matchQuotesMoreThanItSpells(0, 0) {
+		t.Error("matchQuotesMoreThanItSpells(0, 0) = true; an empty match quotes nothing " +
+			"and the arm has become an unconditional refusal")
+	}
+
+	// THE OUTER HALF. The gate never sees an unsealed Signature at all, and
+	// that is asserted rather than assumed, because if it ever did the arm
+	// above would be the only thing standing between an unvetted pattern and
+	// a confirmed finding.
+	c := sqliCandidate(t, "/search")
+	c.Signature = Signature{re: regexp.MustCompile(`Z[0-9A-Za-z]*`), src: `Z[0-9A-Za-z]*`}
+	g := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return body }},
+		Attempts: 3,
+	})
+	if _, err := g.ConfirmFinding(context.Background(), c); err == nil {
+		t.Error("ConfirmFinding accepted a Signature NewSignature did not build")
+	}
+}
+
+// TestScalingTheSpelledFootingDoesNotBuyAnOrdinaryPage re-runs the attack that
+// asks the obvious question about a ratio: if confirmation turns on
+// `unspelled <= spelled`, can an attacker simply make spelled enormous?
+//
+// THEY CAN MAKE IT ENORMOUS. MaxPatternBytes bounds the pattern, not the
+// footing: a counted repeat spells 1000 bytes in seven, so 144 of them inside
+// a 1020-byte pattern spell 144,000. MEASURED below rather than argued.
+//
+// IT BUYS NOTHING, AND THE REASON IS THE ONE THING A RATIO OVER A REAL MATCH
+// CANNOT BE TALKED OUT OF: to match at all, the response must actually contain
+// those 144,000 literal bytes. A page that does is not an ordinary page — it
+// is a page that echoed the signature's own marker 144,000 times. The attack
+// fails at the MATCH, before any predicate is consulted, and this test asserts
+// that on an ordinary document.
+//
+// THE RATIO'S SHAPE AT THAT SCALE IS DISCLOSED RATHER THAN LEFT IMPLICIT, and
+// it is PRE-EXISTING — ruling 15's floor neither created nor widened it. A
+// 288,000-byte match against 144,000 spelled bytes is inside the ratio and
+// would confirm; 288,001 is not. No span is inlined either way, because both
+// run past MaxSpanBytes, so no byte of the response reaches a prompt-bound
+// field in either case. The arithmetic is asserted on integers rather than by
+// running a 288 KB regex match, which costs a minute and a half and measures
+// RE2 rather than this rule.
+func TestScalingTheSpelledFootingDoesNotBuyAnOrdinaryPage(t *testing.T) {
+	const copies = 144
+	pattern := strings.Repeat(`Z{1000}`, copies) + `[0-9A-Za-z]*`
+	if len(pattern) > MaxPatternBytes {
+		t.Fatalf("the fixture is %d bytes and MaxPatternBytes is %d; it is supposed to sit "+
+			"just under the ceiling", len(pattern), MaxPatternBytes)
+	}
+	if over := strings.Repeat(`Z{1000}`, copies+1) + `[0-9A-Za-z]*`; len(over) <= MaxPatternBytes {
+		t.Errorf("%d copies is %d bytes and still fits under MaxPatternBytes=%d, so this "+
+			"is not the ceiling and the footing below is understated",
+			copies+1, len(over), MaxPatternBytes)
+	}
+	sig := mustSignature(t, pattern)
+	if got, want := sig.spelled, copies*1000; got != want {
+		t.Fatalf("spelled = %d, want %d. The point of this fixture is that a 1020-byte "+
+			"pattern can spell %d bytes; if it no longer can, the attack it re-runs has "+
+			"stopped existing and this test measures nothing", got, want, want)
+	}
+
+	// THE ATTACK: an ordinary document. It does not match, so there is no
+	// verdict to argue about.
+	const ordinary = `<!doctype html><html><head><title>Acme Store</title></head><body>` +
+		`<h1>Welcome</h1><p>Everything is fine here; nothing is wrong.</p></body></html>`
+	if _, _, _, _, matched := extractSpan([]byte(ordinary), sig); matched {
+		t.Error("the scaled-footing signature MATCHED an ordinary document. A pattern " +
+			"requiring 144,000 literal bytes cannot, and if it can the footing count " +
+			"is not a lower bound on what a match requires")
+	}
+	f, _ := overBroadCandidate(t, pattern, []byte(ordinary), 3)
+	if got := f.Outcome(); got == OutcomeConfirmed {
+		t.Fatalf("outcome = %q against an ordinary page", got)
+	}
+	if got, want := f.Reason(), ReasonDidNotReproduce; got != want {
+		t.Errorf("reason = %q, want %q: the oracle RAN and never fired, which is a "+
+			"different fact from a match the gate would not credit", got, want)
+	}
+
+	// THE ARITHMETIC AT SCALE, ON INTEGERS. Both sides of the ratio's
+	// boundary, so scaling the footing cannot be read as scaling the
+	// allowance past what the footing actually paid for.
+	for _, tc := range []struct {
+		matchLen int
+		want     bool
+		why      string
+	}{
+		{2 * copies * 1000, false, "unspelled exactly equals spelled: inside the ratio"},
+		{2*copies*1000 + 1, true, "one byte past it"},
+		{12500141, true, "the scaled concatenation's match length, against this footing"},
+	} {
+		if got := matchQuotesMoreThanItSpells(tc.matchLen, sig.spelled); got != tc.want {
+			t.Errorf("matchQuotesMoreThanItSpells(%d, %d) = %v, want %v: %s",
+				tc.matchLen, sig.spelled, got, tc.want, tc.why)
+		}
 	}
 }
