@@ -2018,6 +2018,19 @@ func TestAuditedPersistDisclosureWithholdsTheProofWhenTheAuditWriteFails(t *test
 	if p.Valid() {
 		t.Fatalf("an unaudited persist handed back gate 18's publication proof")
 	}
+	// AND IT LOOKS AT THE STORE. This assertion is the half this test did not
+	// have: withholding the proof says nothing about whether the state
+	// transition landed, and against the previous ordering it HAD landed —
+	// the durable write ran first and the audit failure could not undo it.
+	if n := len(store.rows); n != 0 {
+		t.Fatalf("the store holds %d disclosure rows after a persist that was refused for "+
+			"a failed audit write. A refused decision that applied its side effect "+
+			"anyway is not refused", n)
+	}
+	if state, err := store.DisclosureStateFor(p4Finding); err != nil || state != DisclosureStateUnset {
+		t.Fatalf("the store reads %q (err %v) after a refused persist; want %q",
+			state, err, DisclosureStateUnset)
+	}
 
 	// The proof is what gate 18 requires, so an unaudited persist cannot
 	// publish.
@@ -2036,6 +2049,242 @@ func TestAuditedPersistDisclosureWithholdsTheProofWhenTheAuditWriteFails(t *test
 	p4AssertPassed(t, out, Gate19DisclosureStateInDB)
 	req.Persisted = p
 	p4AssertPassed(t, checkGate18Publication(req, p4RunDay(t, 60), store), Gate18Embargo)
+}
+
+// p4MovingStore answers DisclosureStateFor with `first` on its FIRST call and
+// `then` on every call after it, and otherwise behaves like p4Store.
+//
+// It is the interleave the decide/audit/apply split introduced the room for:
+// gate 19 reads the state, gate 21's audit row is written, and BEFORE the
+// durable write lands somebody else records a row. Without the re-read in
+// applyDisclosureState, the write that was authorised against `first` is
+// applied on top of `then` — which is the withheld-overwrite defect again,
+// reached through the timing rather than through a second call.
+type p4MovingStore struct {
+	first DisclosureState
+	then  DisclosureState
+	reads int
+	next  AuditSeq
+	rows  []DisclosureRecord
+}
+
+func (s *p4MovingStore) Medium() StorageMedium { return MediumRecordStoreSQLite }
+
+func (s *p4MovingStore) PutDisclosureState(r DisclosureRecord) (AuditSeq, error) {
+	s.rows = append(s.rows, r)
+	s.next++
+	return s.next, nil
+}
+
+func (s *p4MovingStore) DisclosureStateFor(FindingID) (DisclosureState, error) {
+	s.reads++
+	if s.reads == 1 {
+		return s.first, nil
+	}
+	return s.then, nil
+}
+
+// TestAuditedPersistDisclosureAppliesNothingWhenTheAuditWriteFails is the
+// round-4 verifier's attack, run as a test, end to end, through the exported
+// route, against ONE SHARED STORE.
+//
+// # What was measured against the previous ordering
+//
+// AuditedPersistDisclosure applied the durable write and audited afterwards.
+// Withholding the proof on an audit failure was the whole of its defence, and
+// a proof is worth nothing against a store that already holds the row. With a
+// sink that simply errors — a locked table, a full disk; NO MALICIOUS SINK IS
+// REQUIRED — this ran:
+//
+//	persist withheld                      passed=true   store: withheld
+//	persist released, FAILING SINK        passed=false  store: embargoed, 0 rows
+//	persist embargoed, no release at all   passed=true  <- the control is gone
+//	publish                               passed=true
+//
+// The middle step is a refusal that CHANGED THE STATE. Everything after it is
+// legitimate: gate 19 has nothing to hold, because the store no longer says
+// withheld, and the audit log holds three indistinguishable allow rows with no
+// record of the transition that made them possible.
+//
+// Each of the four steps below is asserted, so a regression at any one of them
+// fails here rather than downstream.
+func TestAuditedPersistDisclosureAppliesNothingWhenTheAuditWriteFails(t *testing.T) {
+	emb := p4Embargo(t)
+	store := p4RecordStore()
+	sink := &recordingSink{}
+	audit := p4AuditAt(t, sink, p4RunDay(t, 60))
+
+	// ---- Step 1: record the withholding. This one is meant to succeed. ----
+	withheldRec, res := NewDisclosureRecord(emb, DisclosureStateWithheld, p4Key(t))
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+	_, res = audit.AuditedPersistDisclosure(store, withheldRec)
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+	if state, err := store.DisclosureStateFor(p4Finding); err != nil ||
+		state != DisclosureStateWithheld {
+		t.Fatalf("the store reads %q (err %v) after the withholding was recorded; the rest "+
+			"of this test would prove nothing", state, err)
+	}
+
+	// ---- Step 2: a LEGITIMATE release, whose audit write fails. ----
+	//
+	// The release is fully formed — allowlisted reason, evidence — so gate 19
+	// itself permits the transition. The refusal comes from gate 21 alone,
+	// which is exactly the case where the old ordering had already applied it.
+	openRec, res := NewDisclosureRecord(emb, DisclosureStateEmbargoed, p4Key(t))
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+	released, res := openRec.ReleaseWithholding(WithholdingReleaseVendorPublished,
+		"vendor advisory GHSA-fake-0001 published 2026-09-01")
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+
+	broken := p4AuditAt(t, failingSink{err: errors.New("audit table is locked")},
+		p4RunDay(t, 60))
+	proof, out := broken.AuditedPersistDisclosure(store, released)
+	if out.Passed() {
+		t.Fatal("a release was reported as allowed with no audit row behind it")
+	}
+	if out.Gate() != Gate21ImmutableAudit {
+		t.Fatalf("the refusal is attributed to %s; want gate 21", out.Gate())
+	}
+	if proof.Valid() {
+		t.Fatal("an unaudited release handed back gate 18's publication proof")
+	}
+
+	// THE ASSERTION THE OLD TEST DID NOT MAKE. Against the previous ordering
+	// the store holds two rows here and reads `embargoed`.
+	if n := len(store.rows); n != 1 {
+		t.Fatalf("the store holds %d rows after a release that was refused for a failed "+
+			"audit write; it held 1 before. The refusal applied its side effect", n)
+	}
+	state, err := store.DisclosureStateFor(p4Finding)
+	if err != nil {
+		t.Fatalf("reading the state back: %v", err)
+	}
+	if state != DisclosureStateWithheld {
+		t.Fatalf("the store reads %q after a REFUSED release; want %q. A state transition "+
+			"that survives its own refusal is a transition with no audit row behind it",
+			state, DisclosureStateWithheld)
+	}
+
+	// ---- Step 3: the consequence. Without step 2's guarantee this passes. ----
+	//
+	// A plain embargoed row, carrying no release reason and no evidence, is
+	// what gate 19's withheld rule exists to refuse. It can only be refused
+	// while the store still says `withheld`.
+	bare, res := NewDisclosureRecord(emb, DisclosureStateEmbargoed, p4Key(t))
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+	_, res = audit.AuditedPersistDisclosure(store, bare)
+	p4AssertRefused(t, res, Gate19DisclosureStateInDB, ReasonDisclosureWithholdingHeld)
+
+	// ---- Step 4: and publication stays refused, because gate 18 asks the
+	// store rather than the caller. ----
+	p4AssertRefused(t, checkGate18Publication(PublicationRequest{
+		Finding:   p4Finding,
+		Ownership: p4ThirdParty(t),
+		Embargo:   emb,
+		Persisted: p4Persisted(t, p4RecordStore(), emb, DisclosureStateEmbargoed),
+	}, p4RunDay(t, 60), store), Gate18Embargo, ReasonPublicationFindingWithheld)
+
+	// The audit log tells the truth about all of it: one allow for the
+	// withholding, one deny for the bare overwrite, and nothing at all for the
+	// release whose row could not be written.
+	if len(sink.rows) != 2 {
+		t.Fatalf("the working sink holds %d rows; want the withholding's allow and the "+
+			"bare overwrite's deny: %+v", len(sink.rows), sink.rows)
+	}
+	if sink.rows[0].Outcome != OutcomeAllow || sink.rows[1].Outcome != OutcomeDeny {
+		t.Fatalf("audit outcomes are %q then %q; want allow then deny",
+			sink.rows[0].Outcome, sink.rows[1].Outcome)
+	}
+}
+
+// TestAuditedPersistDisclosureRecordsTheWriteFailureNextToItsAllow guards the
+// residual the DECIDE-AUDIT-APPLY order leaves.
+//
+// The allow row is written before the durable write is attempted, so a store
+// that then fails leaves an allow row for a transition that did not happen.
+// That row is not left standing alone: the failure is recorded next to it and
+// the caller is refused. Gate 18 reads the STORE and not the audit log, so the
+// allow row unlocks nothing — which is why this residual is the safe one and
+// the previous ordering's (a durable write with NO row) was not.
+func TestAuditedPersistDisclosureRecordsTheWriteFailureNextToItsAllow(t *testing.T) {
+	emb := p4Embargo(t)
+	rec, res := NewDisclosureRecord(emb, DisclosureStateEmbargoed, p4Key(t))
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+
+	store := &p4Store{
+		medium: MediumRecordStoreSQLite,
+		err:    errors.New("disk full"),
+	}
+	sink := &recordingSink{}
+	audit := p4Audit(t, sink)
+
+	proof, out := audit.AuditedPersistDisclosure(store, rec)
+	p4AssertRefused(t, out, Gate19DisclosureStateInDB, ReasonDisclosureWriteFailed)
+	if proof.Valid() {
+		t.Fatal("a persist whose durable write failed handed back a publication proof")
+	}
+	if n := len(store.rows); n != 0 {
+		t.Fatalf("the store kept %d rows despite the write failing", n)
+	}
+	if len(sink.rows) != 2 {
+		t.Fatalf("the audit holds %d rows; want the decision's allow and the write "+
+			"failure's deny beside it: %+v", len(sink.rows), sink.rows)
+	}
+	if sink.rows[0].Outcome != OutcomeAllow {
+		t.Fatalf("the first row is %q; the decision was allowed", sink.rows[0].Outcome)
+	}
+	if sink.rows[1].Outcome != OutcomeDeny || sink.rows[1].Reason != ReasonDisclosureWriteFailed {
+		t.Fatalf("the write failure is not recorded beside its allow: %+v", sink.rows[1])
+	}
+}
+
+// TestApplyRefusesAWriteWhoseStateMovedUnderIt covers the window the split
+// opened.
+//
+// DECIDE-AUDIT-APPLY puts gate 21's audit write between the state read and the
+// state write, so a row landing in that window would otherwise be overwritten
+// by a decision made before it existed. The store below holds nothing when
+// gate 19 looks and `withheld` when the write is about to land — the exact
+// interleave — and the write is refused rather than applied.
+//
+// This NARROWS the window and does not close it; applyDisclosureState's header
+// says so and says what closing it would take.
+func TestApplyRefusesAWriteWhoseStateMovedUnderIt(t *testing.T) {
+	emb := p4Embargo(t)
+	rec, res := NewDisclosureRecord(emb, DisclosureStateEmbargoed, p4Key(t))
+	p4AssertPassed(t, res, Gate19DisclosureStateInDB)
+
+	// Nothing recorded when gate 19 decides; `withheld` by the time it writes.
+	store := &p4MovingStore{first: DisclosureStateUnset, then: DisclosureStateWithheld}
+	sink := &recordingSink{}
+	audit := p4Audit(t, sink)
+
+	proof, out := audit.AuditedPersistDisclosure(store, rec)
+	p4AssertRefused(t, out, Gate19DisclosureStateInDB, ReasonDisclosureStateMovedUnderWrite)
+	if proof.Valid() {
+		t.Fatal("the refused write handed back a publication proof")
+	}
+	if n := len(store.rows); n != 0 {
+		t.Fatalf("%d rows landed on a store whose state moved between the check and the "+
+			"write. A `withheld` recorded in that window is exactly what must not be "+
+			"overwritten", n)
+	}
+	if store.reads < 2 {
+		t.Fatalf("the store was read %d times; the apply half must re-read, or this test "+
+			"cannot distinguish the guard from its absence", store.reads)
+	}
+
+	// The control: a store whose answer does NOT move is written normally, so
+	// the refusal above is the movement and not merely the second read.
+	steady := &p4MovingStore{first: DisclosureStateUnset, then: DisclosureStateUnset}
+	proof, out = audit.AuditedPersistDisclosure(steady, rec)
+	p4AssertPassed(t, out, Gate19DisclosureStateInDB)
+	if !proof.Valid() {
+		t.Fatal("a steady store produced a passing gate and an invalid proof")
+	}
+	if n := len(steady.rows); n != 1 {
+		t.Fatalf("the steady store holds %d rows; want the one that was written", n)
+	}
 }
 
 // ---------------------------------------------------------------------------

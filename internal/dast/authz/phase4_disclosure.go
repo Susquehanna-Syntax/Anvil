@@ -196,6 +196,7 @@ const (
 	ReasonDisclosureReleaseUnsupported   Reason = "gate19.release_reason_not_on_the_allowlist"
 	ReasonDisclosureReleaseUnevidenced   Reason = "gate19.release_reason_carries_no_evidence"
 	ReasonDisclosureReleaseNotApplicable Reason = "gate19.release_offered_where_nothing_is_being_released"
+	ReasonDisclosureStateMovedUnderWrite Reason = "gate19.recorded_state_moved_between_the_check_and_the_write"
 	ReasonDisclosurePersisted            Reason = "gate19.disclosure_state_persisted_in_the_record_store"
 )
 
@@ -1723,32 +1724,54 @@ func (p PersistedDisclosure) Seq() AuditSeq { return p.seq }
 // Key returns the audit key the row is joined on.
 func (p PersistedDisclosure) Key() AuditKey { return p.key }
 
-// PersistDisclosureState is gate 19: write the disclosure state, and only to
-// the record store.
+// disclosureDecision is what gate 19 concluded about a row BEFORE anything
+// durable happened — the two facts the apply half needs and must not re-derive
+// by asking the store a second question.
 //
-// The write and the proof are minted together, in that order, for the reason
-// Adjudicate mints a grant only after the audit write lands: a proof issued
-// before the write would be a proof of an intention.
-func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
+// medium is read once, for the reason checkDisclosureMedium's header gives.
+// prior is the state the store held at the moment the decision was made, and
+// the apply half checks that it has not moved since.
+type disclosureDecision struct {
+	medium StorageMedium
+	prior  DisclosureState
+}
+
+// decideDisclosurePersist is gate 19's DECISION half: every check, and no
+// durable write.
+//
+// # WHY THE DECISION AND THE WRITE ARE TWO FUNCTIONS
+//
+// Because AuditedPersistDisclosure has to put gate 21's audit row BETWEEN
+// them. It used to run the whole of persistDisclosureState and audit
+// afterwards, and an audit sink that failed — a full disk, a locked table, no
+// malice required — then left the disclosure state transition PERMANENTLY
+// APPLIED with zero audit rows behind it. Applied to a withholding release
+// that consumed the withheld-survives-a-second-row control outright: the store
+// stopped saying `withheld`, so the next persist carrying no release reason
+// and no evidence was permitted, and publication cleared. See
+// AuditedPersistDisclosure's header for the measured sequence.
+func decideDisclosurePersist(store DisclosureStore, rec DisclosureRecord) (disclosureDecision, GateResult) {
 	const g = Gate19DisclosureStateInDB
 	if !rec.Constructed() {
-		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureRecordUnconstructed,
+		return disclosureDecision{}, gateFailed(g, ReasonDisclosureRecordUnconstructed,
 			"the disclosure row was not built by NewDisclosureRecord, so it carries no "+
 				"finding, no state and no audit key. Writing it would put a row in the "+
 				"record store that says nothing and reads as \"looked at, nothing "+
 				"embargoed\".")
 	}
 	if store == nil {
-		return PersistedDisclosure{}, checkGate19DisclosureStore(nil)
+		return disclosureDecision{}, checkGate19DisclosureStore(nil)
 	}
 	// READ THE MEDIUM ONCE. The value checked here and the value stamped into
-	// the proof below must be the same value, not two answers to one question.
+	// the proof by the apply half must be the same value, not two answers to one
+	// question. It is carried in disclosureDecision rather than re-read for
+	// exactly that reason.
 	medium := store.Medium()
 	if res := checkDisclosureMedium(medium); !res.Passed() {
-		return PersistedDisclosure{}, res
+		return disclosureDecision{}, res
 	}
 
-	// ---- THE STATE MACHINE, which this function used not to have ----
+	// ---- THE STATE MACHINE, which gate 19 used not to have ----
 	//
 	// Without it, "persist withheld, then persist embargoed" was two
 	// successful writes and the second one won. Every value was sealed and
@@ -1758,14 +1781,14 @@ func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (Persis
 	prior, rerr := store.DisclosureStateFor(rec.Finding())
 	switch {
 	case rerr != nil:
-		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureReadFailed,
+		return disclosureDecision{}, gateFailed(g, ReasonDisclosureReadFailed,
 			"the state this finding is already in could not be read, so this write cannot "+
 				"be checked against it. A write that cannot see the row it is replacing "+
 				"is how a recorded `withheld` becomes advisory.",
 			"store error: "+rerr.Error())
 	case prior == DisclosureStateWithheld && rec.State() != DisclosureStateWithheld &&
 		rec.releaseReason == WithholdingReleaseUnset:
-		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureWithholdingHeld,
+		return disclosureDecision{}, gateFailed(g, ReasonDisclosureWithholdingHeld,
 			"this finding's recorded state is `withheld` and this row moves it out of "+
 				"that state, carrying no allowlisted release reason and no evidence. "+
 				"Shortening an embargo takes both; reversing a decision not to publish "+
@@ -1774,13 +1797,55 @@ func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (Persis
 			"recorded state: "+string(prior),
 			"row would write: "+string(rec.State()))
 	case prior != DisclosureStateWithheld && rec.releaseReason != WithholdingReleaseUnset:
-		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureReleaseNotApplicable,
+		return disclosureDecision{}, gateFailed(g, ReasonDisclosureReleaseNotApplicable,
 			"this row carries a withholding release, and the state it would replace is not "+
 				"`withheld`, so there is nothing to release. The release is refused "+
 				"rather than ignored: an unused reason token written next to a "+
 				"transition that did not happen is a row a reviewer will believe.",
 			"recorded state: "+redactUntrusted(string(prior)),
 			"release reason: "+string(rec.releaseReason))
+	}
+
+	return disclosureDecision{medium: medium, prior: prior}, gatePassed(g)
+}
+
+// applyDisclosureState is gate 19's APPLY half: the durable write, and the
+// minting of the proof, against a decision that has already been made and —
+// on the audited route — already recorded.
+//
+// # THE RE-READ IS NOT BELT AND BRACES
+//
+// Splitting the decision from the write puts gate 21's audit row between them,
+// and that widens the window between "the store said `withheld`" and "the
+// store is written". So the apply half asks once more and REFUSES if the
+// answer moved. This NARROWS the window; it does not close it, and saying
+// otherwise would be a claim this package cannot demonstrate — DisclosureStore
+// offers no compare-and-set, so two writers can still interleave between this
+// read and the PutDisclosureState below. What it does buy is that the ordinary
+// case — the audit write taking time while another writer lands a row — is
+// refused rather than silently overwriting a decision that was made against a
+// state that no longer exists. Closing it takes a conditional write —
+// PutDisclosureState taking the state it expects to replace — on an interface
+// that G19-1 already records as having no implementation in this tree.
+// TestApplyRefusesAWriteWhoseStateMovedUnderIt is the guard on the half that
+// does exist.
+func applyDisclosureState(store DisclosureStore, rec DisclosureRecord, d disclosureDecision) (PersistedDisclosure, GateResult) {
+	const g = Gate19DisclosureStateInDB
+	switch now, rerr := store.DisclosureStateFor(rec.Finding()); {
+	case rerr != nil:
+		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureReadFailed,
+			"the state this finding is in could not be re-read immediately before the "+
+				"write, so the decision that authorised this write cannot be confirmed "+
+				"to still apply.",
+			"store error: "+rerr.Error())
+	case now != d.prior:
+		return PersistedDisclosure{}, gateFailed(g, ReasonDisclosureStateMovedUnderWrite,
+			"this finding's recorded state changed between the check and the write, so "+
+				"the decision that authorised this write was made against a state the "+
+				"store no longer holds. The write is refused rather than applied: "+
+				"re-read the state and decide again.",
+			"state at the check: "+redactUntrusted(string(d.prior)),
+			"state now:          "+redactUntrusted(string(now)))
 	}
 
 	seq, err := store.PutDisclosureState(rec)
@@ -1801,11 +1866,26 @@ func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (Persis
 	return PersistedDisclosure{
 		finding: rec.Finding(),
 		state:   rec.State(),
-		medium:  medium,
+		medium:  d.medium,
 		seq:     seq,
 		key:     rec.Key(),
 		sealed:  true,
 	}, gatePassed(g)
+}
+
+// persistDisclosureState is the two halves run back to back, with nothing
+// between them.
+//
+// It is what an UNAUDITED caller gets, and in this tree that is tests only:
+// AuditedPersistDisclosure is the sole production route and it deliberately
+// does NOT call this, because the whole point of the split is what it puts
+// between the halves.
+func persistDisclosureState(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
+	d, res := decideDisclosurePersist(store, rec)
+	if !res.Passed() {
+		return PersistedDisclosure{}, res
+	}
+	return applyDisclosureState(store, rec, d)
 }
 
 // ===========================================================================
@@ -2539,15 +2619,68 @@ func (a *GateAudit) AuditedPush(req PushRequest) GateResult {
 // what makes gate 18's requirement for one meaningful: a disclosure state that
 // was written to the store but whose write was never audited does not produce
 // the proof gate 18 asks for, so it cannot be used to publish.
+//
+// # THE AUDIT ROW GOES BEFORE THE DURABLE WRITE, AND THAT ORDER IS THE CONTROL
+//
+// This function used to run the whole of persistDisclosureState and audit
+// afterwards. Withholding the proof was not enough, because the STATE
+// TRANSITION had already landed and there is no proof to withhold from a store
+// that already holds the row. Measured through this exported route against the
+// shipped tree, one shared store, a sink that returns an error — a locked
+// table or a full disk, no malicious sink required:
+//
+//	AuditedPersistDisclosure(store, withheld)                 passed=true
+//	AuditedPersistDisclosure(store, released, FAILING SINK)   passed=false
+//	    ... and the store now reads `embargoed`, with no audit row
+//	AuditedPersistDisclosure(store, embargoed)                passed=true
+//	    ... no release reason, no evidence, and gate 19 permits it
+//	AuditedPublication(store, ...)                            passed=true
+//
+// The refusal in the middle consumed the entire withheld-survives-a-second-row
+// control and left three indistinguishable allow rows behind it. Gate 21's own
+// rule is that a decision is not "allowed" if its paired audit write fails; an
+// applied, irreversible side effect makes that rule unenforceable after the
+// fact.
+//
+// So the order is DECIDE, AUDIT, APPLY. It is the same shape as AuditedAdmit's
+// lease.Release, reached the other way round: AuditedAdmit cannot decide before
+// the slot is taken, so it reverses the side effect; this can decide before
+// anything durable happens, so it never takes one.
+//
+// # What the ordering leaves, stated rather than papered over
+//
+// An allow row can land for a transition whose write then fails. A second row
+// records that failure, the caller gets the refusal, and NOTHING durable
+// changed. That residual is strictly the safer one: gate 18 reads the STORE
+// and not the audit log, so an allow row with no write behind it unlocks
+// nothing, whereas the defect this replaced was a write with no row behind it,
+// which unlocked everything downstream of it.
+// TestAuditedPersistDisclosureAppliesNothingWhenTheAuditWriteFails is the
+// guard, and it is the measurement above run as a test.
 func (a *GateAudit) AuditedPersistDisclosure(store DisclosureStore, rec DisclosureRecord) (PersistedDisclosure, GateResult) {
-	p, res := persistDisclosureState(store, rec)
 	subject, err := SubjectFinding(rec.Finding())
 	if err != nil {
 		subject = subjectUnidentified("finding")
 	}
+
+	// ---- DECIDE. Nothing durable has happened when this returns. ----
+	d, res := decideDisclosurePersist(store, rec)
+
+	// ---- AUDIT. A decision whose row did not land is not a decision. ----
 	_, out := a.Record(res, subject, a.RunClock().Now())
 	if !out.Passed() {
 		return PersistedDisclosure{}, out
+	}
+
+	// ---- APPLY. ----
+	p, applied := applyDisclosureState(store, rec, d)
+	if !applied.Passed() {
+		// The allow row above stands and would otherwise read as a completed
+		// transition. Record the failure next to it. The refusal is returned
+		// whether or not THIS row lands, because nothing durable changed
+		// either way.
+		a.Record(applied, subject, a.RunClock().Now())
+		return PersistedDisclosure{}, applied
 	}
 	return p, out
 }

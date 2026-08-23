@@ -37,6 +37,33 @@
 // source-level assertion, no goroutines — is what runs in every lane. The
 // exclusion is recorded in internal/SKIPPED-CONTROLS.md as G4-1 rather than
 // hidden behind a t.Skip.
+//
+// ===========================================================================
+// BEFORE YOU REPORT ANYTHING ABOUT THE RACE DETECTOR ON THIS HOST: WHICH SHELL
+// ===========================================================================
+//
+// `go test -race` WORKS FROM POWERSHELL AND FAILS FROM GIT BASH on this
+// machine, uniformly across every package. The Git Bash failure is:
+//
+//	==25268==ERROR: ThreadSanitizer failed to allocate 0x000004aa0000
+//	(78249984) bytes at 0x100eff42d0000 (error code: 87)
+//	FAIL	github.com/Susquehanna-Syntax/Anvil/internal/dast/authz	1.031s
+//
+// Error code 87 is Windows ERROR_INVALID_PARAMETER out of a reservation at a
+// fixed high address. It is an ADDRESS-SPACE problem in the Git Bash
+// environment. IT IS NOT A DATA RACE, IT IS NOT A BROKEN TREE, AND IT IS NOT
+// THIS FILE'S BUILD TAG — the tag excludes one test, and this failure hits
+// every package including ones with no goroutines at all.
+//
+// Measured from PowerShell on 2026-08-22, `go test -race -count=1 ./...`:
+// 25 packages ok, 0 data races, 0 ThreadSanitizer errors. (The two failures in
+// that run were an unrelated gate-3 egress finding and a build failure, both
+// in internal/dast/containment, and neither mentions a race.)
+//
+// This disagreement has now cost two review rounds: a worker reported that
+// -race "cannot build on this machine", a critic called that false, and both
+// were right about their own shell. So: RUN IT FROM POWERSHELL, and whatever
+// you report about the race detector, SAY WHICH SHELL PRODUCED IT.
 
 package authz
 

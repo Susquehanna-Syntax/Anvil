@@ -581,6 +581,284 @@ deadlines are distinguishable from one honest disclosure. That is a change to
 `GateAudit.Record`'s allow-row construction and is worth doing regardless of
 which of the three lands, because it costs nothing and today the allow row
 records only that a gate said yes.
+## U1 — DAST network containment (D.11) has never run against a kernel
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/netns.go`, `internal/dast/containment/netns_test.go` |
+| **`t.Skip` sites** | **Zero.** Every test in the package runs and asserts on every platform. This entry is here because a green package is still not a proven control |
+| **Skipped here?** | N/A — nothing skips. What is missing is not a test, it is a kernel |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That `nft` installs the generated ruleset; that a Linux kernel actually drops a packet addressed to `169.254.169.254` / `fd00:ec2::254` from inside the namespace; that the `ConnectProbe` implementation (owned by the anvil-dast binary, D.14/D.15 — it does not exist yet) turns a real dropped connect into the `DialFailure` this package's classifier expects; that `ip netns exec` places the canary where `ReadNetnsInode` stat'd |
+| **Security control?** | **Yes, and it is the one that authorizes probing at all.** "The sandbox is contained" is the claim that lets Anvil fire a DAST probe. A containment layer that reported contained-when-unverified is the failure that gets someone breached |
+| **Verdict** | **OPEN. Not legitimate, not accepted — unexecuted.** |
+
+### What the suite does prove, on Windows and on Linux alike
+
+The package is split so that everything except the `exec` is a pure function,
+and all of it is tested:
+
+- `BuildRuleset` is pure. A golden test pins the entire generated `nft` script,
+  and `TestMetadataDropsPrecedeEveryAcceptRule` pins the *order* — nftables
+  evaluates top to bottom, so a suite that only asserted "the drop is present"
+  and "the accept is present" would pass on a ruleset with them the wrong way
+  round, which is a ruleset where the metadata endpoint is reachable.
+- `TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity` sweeps 393,226
+  addresses (measured) and asserts `authz.AddressIsReserved(a) ⇒
+  DeniedByRuleset(a)`. 36,086 of them are reserved, so the implication is not
+  vacuous, and the test fails if that count reaches zero.
+- `EvaluateCanaryReport` is pure, and every branch of it is exercised:
+  reachable, missing probe, duplicate probe, absent outcome, unrecognised
+  outcome, indeterminate outcome, wrong namespace, the *host* namespace,
+  unrequested extras, and an empty probe list.
+- `TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns` is D.11's stop
+  condition: 20 runs against a canary reporting `reachable` (the empty-ruleset
+  fixture, research 19 risk #5's shape), 20 aborts; then 20 runs against a
+  correctly blocked report, 20 passes, so the first half is not passing because
+  the function refuses everything.
+- `SystemCommander` **refuses** on any non-Linux GOOS and
+  `TestSystemCommanderRefusesOffLinux` asserts that refusal on this host. There
+  is no no-op Commander, so there is no path by which Windows returns "contained".
+
+### What it does not prove, and exactly what would settle it
+
+Everything above is a statement about Anvil's decision logic. None of it is a
+statement about a kernel. Windows has no network namespaces and no nftables;
+WSL2 is present on the dev host and is **not** the target runtime, so it does
+not settle this either.
+
+What would settle it, in order of decreasing cost:
+
+1. **A privileged Linux CI lane.** `runs-on: ubuntu-latest` with
+   `nftables` and `iproute2` installed and the job running as root (or with
+   `CAP_NET_ADMIN` + `CAP_SYS_ADMIN`). The lane creates a namespace, calls
+   `SetupNetns`, then calls `AssertContainment` and requires it to pass — and
+   then, as the negative control the house style requires, flushes the table
+   (`ip netns exec <ns> nft flush ruleset`) and requires `AssertContainment` to
+   **fail**. Without that second half the lane proves nothing: a lane where the
+   probe cannot fail is not a check. **This is the one that closes the entry.**
+2. **The errno half alone**, cheaper and partial: on any Linux runner, without
+   privileges, dial a blackholed address and record which errno a real
+   `connect` delivers, to confirm the `ConnectProbe` implementation's errno
+   table maps it to `DialFailureSilentTimeout` / `DialFailureNoRoute` rather
+   than to `DialFailureUnclassified`. **This one cannot run until the
+   implementation exists**: gate 3 forbids a socket inside `internal/dast`, so
+   `internal/dast/containment` ships the interface, the classification rules
+   and the verdict, and nothing that can connect.
+3. **A `docker run --network none` smoke test**, cheapest and weakest: proves a
+   canary in a namespace with no route reports `blocked`, which exercises the
+   plumbing but not the nftables ruleset, because there is nothing to filter.
+
+### The open dependency
+
+`AssertContainment` execs the canary through `Commander` (os/exec, which gate 3
+treats as inert and whose justification line already names D.11). The canary
+itself is `CanaryMain`, which lives here — but the `ConnectProbe` it needs is
+**not implemented anywhere in the tree**, because gate 3 refuses a socket
+inside `internal/dast` and there is no allowlist for it. The implementation
+belongs to the anvil-dast binary and will be flagged by gate 3's tier 2, which
+means it must be added to `nonKernelEgressAllowlist` in `phase0_build.go` with
+a written justification. That edit is the review gate 3 exists to force and it
+is deliberately not made here.
+
+**Until that lands, D.11 is a specification plus a verdict, not a running
+probe.** `AssertContainment` fails closed in the meantime — a canary that
+cannot run is refused, not waved through — so the failure direction is safe,
+but no scan can pass the containment gate at all yet.
+
+Until (1) exists, **`internal/dast/containment` is a control that runs in zero
+CI lanes against a kernel**, and this entry is the standing record of that.
+`AssertContainment` must not be wired into a scan path that treats its absence
+as success; it returns an error on every platform where it cannot check.
+
+## U2 — DAST target provisioning (D.10) has never run against a Docker daemon
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/provision.go`, `internal/dast/containment/provision_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestThisPackageSkipsNothing` reads the test file and fails if one appears. This entry is here because a green package is still not a proven control |
+| **Skipped here?** | N/A — nothing skips. What is missing is not a test, it is a container engine |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a real implementation of the `Docker` seam produces the shapes this package decides on. Specifically: that `docker compose up` applies `UpRequest.Runtime` to **every** service; that a real container's `HostConfig.Runtime` reads `runsc`; that a real `docker info` can report the gVisor **platform** at all; that a real runner can tell a build failure from a start failure from a health timeout; and that `ProbeHealth` issues its probe from the probe engine's namespace rather than from inside the target |
+| **Security control?** | **Yes.** "The target ran under gVisor with no host bind mounts" is the claim that makes firing probes at it acceptable, and `booted_clean` is the value that lets the record read as a real scan |
+| **Verdict** | **OPEN. Not legitimate, not accepted — unexecuted.** |
+
+**Docker is not installed on the host this packet was written on.** Measured,
+not assumed: `Get-Command docker` and `Get-Command runsc` both return nothing
+on `go1.26.5 windows/amd64`, Windows 11.
+
+**Nothing in the tree implements the `Docker` interface.** A repository-wide
+grep for `ComposeUp` and `EngineInfo(` finds the interface, its call sites in
+`provision.go`, and the test fake — no production implementation. So the seam's
+contract (written out in the `Docker` doc comment as five numbered obligations)
+is today enforced by nobody.
+
+### What the suite does prove, on Windows and on Linux alike
+
+Everything except the engine call is a pure function of a recorded shape, and
+all of it is tested — 112 passing assertions, 0 skips, clean under `go test
+-race` from PowerShell:
+
+- `Stage.Provenance()` is total over all 14 stages, and
+  `TestStageValuesCoversEveryDeclaredStage` reads `provision.go`'s own source
+  so a stage added to the const block and left out of `StageValues()` is caught.
+- `TestNoStageCanBeReadAsScannedClean` sweeps all 14 stages × all 5
+  `HalfStatus` values through `record.DeriveDastStatus` and asserts none
+  derives a status where `MeansDynamicallyScannedClean()` holds. That pins the
+  *relation* S6 requires, not the literals.
+- Each of the five `record.TargetProvenance` values has its own test, and the
+  two failure families are separated by 6 + 16 recorded-shape cases.
+- `containmentViolations` is pure. 21 cases break one guard each, with an
+  unmutated control asserting the fixture reports zero violations — so a guard
+  that rejected everything would not pass the suite.
+- The gVisor runtime assertion is made against **every** container in the
+  project, including exited ones and dependencies, and a broken-runtime
+  dependency is one of the 16 boot-failure cases.
+
+### What it does not prove, and exactly what would settle it
+
+In order of decreasing cost:
+
+1. **A Linux CI lane with Docker Engine and gVisor.** Install gVisor and
+   register the runtime (`runsc install --runtime=runsc -- --platform=systrap`,
+   then restart the daemon). Check in a throwaway Compose fixture with two
+   services — `web` (with a `healthcheck:`) and `db` (without one) — and a real
+   `Docker` implementation. The lane then asserts, **positively**:
+   - `docker compose -p anvil-<hash> -f fixture.yaml up -d --wait
+     --force-recreate --remove-orphans` succeeds;
+   - `docker inspect --format '{{.HostConfig.Runtime}}' <web>` prints `runsc`,
+     **and the same for `<db>`** — this is obligation 2 of the seam contract
+     and is the one this package cannot check for itself;
+   - `docker inspect --format '{{index .Config.Labels
+     "com.docker.compose.service"}}' <web>` prints `web`;
+   - `Provision` returns a `Target` with `Provenance() == booted_clean` and an
+     `ImageDigest()` matching `^sha256:[0-9a-f]{64}$`.
+
+   And **negatively**, without which the lane proves nothing:
+   - the same fixture with `healthcheck:` deleted from `web` must refuse with
+     `ErrNotHealthy` at `StageHealth` — this is the case where `up --wait`
+     returns success instantly and the whole `HealthNone` zero-value trap
+     exists to catch it;
+   - the same lane with the `runsc` runtime unregistered must refuse with
+     `ErrRunscUnavailable` at `StagePreflightRuntime` **and `docker compose up`
+     must never appear in the daemon log**;
+   - a fixture whose `web` service adds `volumes: ["/var/run/docker.sock:/var/run/docker.sock"]`
+     must refuse at `StageContainment`.
+   **This is the one that closes the entry.**
+2. **The failure-classification half alone**, cheaper and partial: on any host
+   with Docker and no gVisor, run three fixtures — one whose `build:` stage
+   exits non-zero, one whose image is fine and whose `command:` is a nonexistent
+   binary, and one whose healthcheck never passes — and record what a real
+   `docker compose up --wait` returns for each. That is the only evidence that
+   `UpStatusBuildFailed` / `UpStatusStartFailed` / `UpStatusHealthTimeout` are
+   distinguishable in practice, and the build/boot provenance split depends on
+   them being distinguishable.
+3. **The platform half alone**, cheapest: on a host with gVisor, confirm that
+   the engine exposes the configured `--platform` at all (via `docker info` or
+   `/etc/docker/daemon.json` `runtimeArgs`). If it does not, `RuntimeInfo.Platform`
+   can only ever be empty and this package refuses every provision — which is
+   fail-closed and useless, and would need the check moved to `runsc --version`.
+
+Until (1) exists, **`Provision` is a control that runs in zero CI lanes against
+a container engine**, and this entry is the standing record of that. No caller
+may treat a `*ProvisionError` as advisory: it is the only thing standing
+between an unprovable boot and a record that says `booted_clean`.
+
+---
+
+## U3 — DAST target reset (D.13) has never destroyed a real container, and cannot replay a seed at all
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/reset.go`, `internal/dast/containment/reset_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestResetFileSkipsNothing` reads the test file and fails if one appears |
+| **Skipped here?** | N/A — nothing skips. Two separate things are missing: a container engine, and a component that does not exist yet |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | (a) That a real `docker compose down -v` removes what the verification then asserts is gone, and that a real `docker volume ls --filter label=com.docker.compose.project=<p>` can answer the volume question at all. (b) That a manifest declaring `seed:` can be reset — it cannot, and `NewResetter` refuses it |
+| **Security control?** | **Yes, indirectly and strongly.** Reset is what makes probe *k+1* an independent observation of probe *k*'s target. A reset that quietly half-succeeded makes every finding after it a claim about an application nobody can name, and the record still says `booted_clean` |
+| **Verdict** | **OPEN. Not legitimate, not accepted — (a) unexecuted, (b) unimplemented and refused loudly.** |
+
+**Docker is not installed on the host this packet was written on** — the same
+measurement recorded in U2 above. `internal/dast/containment` still implements
+no production `Docker`, and now also no production `VolumeInspector`.
+
+### What the suite does prove, on Windows and on Linux alike
+
+The decision logic is a pure function of recorded shapes, and it is driven by a
+world model that actually destroys and actually recreates, so the failure modes
+are exercised rather than described:
+
+- **The stop condition, directly.** `TestNoStateSurvivesAReset` writes a marker
+  to the authorized service's writable layer and to its volume, resets, and
+  asserts neither is reachable.
+  `TestTheStateSurvivalCheckCanSeeSurvivingState` is its negative control: the
+  same harness, with the `-v` dropped, must still SEE the marker and the reset
+  must refuse. Without that second test the first one asserts nothing.
+- **The order, not only the calls.**
+  `TestResetVerifiesTheDestroyBeforeReProvisioning` pins the exact call
+  sequence — `down`, then both listings, then D.10's `Provision` unchanged.
+  Moving the verification after the re-provision was tried, live: it does not
+  merely stop catching the damage, it reports a false positive, because the
+  containers it sees are the ones `up` just made.
+- **Both halves of "indistinguishable from a first provision".** Same project,
+  service, image ref, digest, health URL, runtime, platform and provisioning
+  path; DIFFERENT container id for the authorized service AND for every other
+  container in the project. `TestVerifyFreshChecksEveryDeclaredField` breaks
+  one field per case with an unmutated control, so a verifier that rejected
+  everything would not pass.
+- **`Provenance()` is total over the reset stages, no stage maps to
+  `booted_clean`, and `TestNoResetStageCanBeReadAsScannedClean` sweeps every
+  stage × every `record.HalfStatus` through `record.DeriveDastStatus` asserting
+  none derives a status where `MeansDynamicallyScannedClean()` holds.**
+- **Fifteen guards were broken one at a time, watched go red, and restored
+  byte-for-byte** (SHA-256 `9369CE4D…6EBE` before and after each).
+
+### What it does not prove, and exactly what would settle it
+
+1. **A Linux CI lane with Docker Engine and gVisor** — the same lane U2 needs,
+   extended. On top of U2's assertions it must run, **positively**: provision
+   the two-service fixture, `docker exec` a write into the `web` container's
+   writable layer *and* an `INSERT` into the `db` service's named volume,
+   `Reset`, then assert (i) `docker ps -a --filter
+   label=com.docker.compose.project=anvil-<hash>` is empty *between* the down
+   and the up, (ii) `docker volume ls --filter
+   label=com.docker.compose.project=anvil-<hash>` is empty at the same moment,
+   (iii) the file and the row are both gone from the new containers, and (iv)
+   every container id differs from the pre-reset set while `ImageDigest()` is
+   byte-identical.
+   And **negatively**, without which the lane proves nothing:
+   - the same reset driven with `down` **without** `-v` must refuse at
+     `ResetStageDestroyUnverified` naming the surviving volume — this is the
+     one failure the container listing cannot see and it is the reason
+     `VolumeInspector` exists;
+   - a `docker volume ls` that errors (e.g. the daemon socket closed
+     mid-teardown) must refuse, not read as "there are none".
+   **This is the one that closes half (a).**
+2. **A seed-execution component.** `NewResetter` refuses any manifest with a
+   `seed:` section (`ErrResetSeedNotReplayable`), because a destroy-and-recreate
+   discards the seed's effects and nothing in this tree replays them: the
+   target it would hand back is an *unseeded* one, and calling that "the
+   declared initial state" is precisely the silent substitution D.13 exists to
+   prevent. plan/50-dast.md declares `seed.command` at line 1106 and assigns no
+   packet to execute it. What settles this: a component that runs
+   `seed.command` in exec form after health passes, plus a seam here that
+   replays it after each re-provision **with evidence that it ran** — the same
+   standard the four observations already meet, not an exit code alone. Until
+   then this is a REFUSAL, not a gap: no seeded manifest can be silently
+   half-reset, it simply cannot be reset.
+3. **`Target` invalidation under concurrency**, cheapest and narrowest.
+   `invalidate` writes `Target.sealed` and `Target` carries no mutex, so a
+   caller resetting one target while another goroutine reads the same handle is
+   a data race. plan/50-dast.md places D.13 in the **serial** group and nothing
+   in this package resets two targets at once, so no test exercises it and
+   `go test -race` (PowerShell, 26 packages, 0 races) says nothing about it.
+   What would settle it: a mutex on `Target` — an edit to `provision.go`, which
+   is outside D.13's write scope — or a documented single-owner contract
+   enforced at the call site when the probe engine (D.14+) lands.
+
+Until (1) exists, **`Reset` is a control that runs in zero CI lanes against a
+container engine**, and this entry is the standing record of that.
+
 ---
 
 # LEGITIMATE
@@ -756,3 +1034,8 @@ Skips still firing on this host, all classified LEGITIMATE above:
 `TestCollectAgainstTheRealHost` (L1), `TestRealTrivyScansAFixtureRepo` (L4),
 `TestBothConsumersAgree` (L5), `TestPinnedLicenceBodiesMatchTheirPins` ×11
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
+
+Controls with **zero** skips and still nothing behind them: G19-1, G4-1, G18-2, U1.
+U1 (`internal/dast/containment`, D.11 network containment) is the newest and
+the highest-stakes: the package is green on Windows and has never run against a
+Linux kernel. See its entry for the CI lane that would close it.
