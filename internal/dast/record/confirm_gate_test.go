@@ -4705,9 +4705,10 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 				"spelled rune is outside the union then lowercase prose is quotable " +
 				"without limit against sixteen bytes of footing"},
 		{`anvil-probe-4f2a(?:([a-z])|([ ]))*`,
-			"the space written as a one-rune CLASS. classShape reads `[ ]` as a " +
-				"literal, which is right — and is exactly why the literal has to be " +
-				"in the union too"},
+			"the space written as a one-rune CLASS. classShape never sees one: " +
+				"regexp/syntax rewrites `[ ]` into the LITERAL space before this " +
+				"walk starts, which is exactly why the literal has to be in the " +
+				"union too. See TestAOneRuneClassNeverReachesTheWalk"},
 		{`anvil-probe-4f2a(?:(a)|(b)|(c)|(d)|(e)|(f)|(g)|(h)|(i)|(j)|(k)|(l)|(m)|` +
 			`(n)|(o)|(p)|(q)|(r)|(s)|(t)|(u)|(v)|(w)|(x)|(y)|(z)|( )|(,)|(\.))*`,
 			"NOT ONE CLASS ANYWHERE. Twenty-nine captured single-rune literals " +
@@ -5482,5 +5483,547 @@ func TestNoUnconfirmedFindingCarriesFullConfidence(t *testing.T) {
 	if conf, ok := f.Confidence(); !ok || conf != 1.0 || f.Outcome() != OutcomeConfirmed {
 		t.Fatalf("the control case gave outcome=%q confidence=(%v,%v); full confidence is "+
 			"unreachable and every assertion above is vacuous", f.Outcome(), conf, ok)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RULING 13 — one language, one verdict, however it is spelled
+// ---------------------------------------------------------------------------
+
+// TestEverySpellingOfOneLanguageGetsTheSameVerdict is the test seven rounds of
+// operator enumeration could not give this control, and it is the reason
+// `decided` is computed from a node's DENOTED LANGUAGE instead of from its
+// operator tag.
+//
+// THE SEQUENCE IT ENDS. Each earlier round closed one spelling of one evasion
+// and left the next spelling open: a status list, an entity-name bound, a
+// benign corpus, a generator's alphabet, a union that existed only at depth 0,
+// a class-union that excluded literals, and an alternation check keyed on the
+// AST NODE. The last of those was MEASURED, and the three lines are kept as a
+// fixture below:
+//
+//	Z(?:[a,]?)*      REFUSED (rule R3)
+//	Z(?:(?:a|,)?)*   REFUSED (rule R3)
+//	Z(?:a?,?)*       ACCEPTED, spelled=1, quoted=0
+//
+// Three spellings of ONE LANGUAGE — all of `{a, ','}*` after a marker — two
+// refused and one accepted, because `x?` denotes `(?:|x)` and a concatenation
+// of optionals denotes the alternation over their powerset, so nothing in the
+// third pattern's tree is an OpAlternate for an operator test to find.
+//
+// WHAT THIS TEST ASSERTS IS A PROPERTY AND NOT A LIST. For each alphabet it
+// generates spellings MECHANICALLY — optional against alternation-with-empty,
+// bounded repeat against optional, nested groups, capturing against
+// non-capturing, a class against a one-branch alternation, a hex escape
+// against a spelled rune — then:
+//
+//  1. PROVES they denote the same language, by enumerating every string
+//     over the alphabet up to a length and requiring identical membership.
+//     A mis-transcribed spelling fails there rather than silently weakening
+//     the property below.
+//  2. Requires the CONTROL to return the same verdict for every one of
+//     them, and the same RULE when it refuses.
+//
+// Nobody has to enumerate operators for this to catch the next round: a new
+// spelling of an old language is a new entry in the list of spellings, and it
+// gets held to the verdict its language already has.
+//
+// THE NON-VACUITY HALF IS THE SECOND AND THIRD ALPHABET. A control that
+// refused every repeat would pass part 2 trivially, so two of the three
+// alphabets are ones R3 deliberately allows — letters only, and digits with a
+// dot — and every spelling of those has to be ACCEPTED.
+func TestEverySpellingOfOneLanguageGetsTheSameVerdict(t *testing.T) {
+	// marker is the literal footing. Without it R1 refuses every pattern
+	// here for having no literal content, and R3 — the rule under test —
+	// would never be reached at all.
+	const marker = "Z"
+
+	for _, family := range []struct {
+		name       string
+		alphabet   []rune
+		wantRefuse bool
+		why        string
+	}{
+		{"letters and punctuation", []rune{'a', ','}, true,
+			"the union crosses a letter into punctuation, so a position drawing " +
+				"from it can run out of the token the pattern declared and into " +
+				"the next one. This is the evasion family"},
+		{"letters only", []rune{'a', 'b'}, false,
+			"a letters-only alphabet cannot leave the token it declared, and this " +
+				"is the disclosed word-list residual. If these start being refused, " +
+				"R3 has become a ban on repeats"},
+		{"digits and a dot", []rune{'0', '.'}, false,
+			"digits and a dot carry no letter, so the dotted-quad and version-banner " +
+				"shapes stay legal. This is the case that separates 'the union holds " +
+				"the literals' from 'the union bans literals'"},
+	} {
+		spellings := unboundedRunSpellings(family.alphabet)
+		if len(spellings) < 12 {
+			t.Fatalf("%s: the generator produced %d spellings; a property over a "+
+				"handful of spellings is a list with extra steps",
+				family.name, len(spellings))
+		}
+
+		// PART 1: they really are one language. Membership is measured,
+		// not asserted in a comment.
+		ref := spellings[0]
+		refRE := regexp.MustCompile(`^(?:` + ref.frag + `)$`)
+		words := stringsOverAlphabetUpTo(family.alphabet, 8)
+		// Strings using a rune OUTSIDE the alphabet must be excluded by
+		// every spelling too, or "same language" is only being checked on
+		// the inside of the language.
+		words = append(words, "z", "a;b", "!", string(family.alphabet)+"\x01")
+		if len(words) < 400 {
+			t.Fatalf("%s: the equivalence witness is %d strings; that is too small a "+
+				"sample to distinguish two spellings that differ", family.name, len(words))
+		}
+		for _, sp := range spellings[1:] {
+			re := regexp.MustCompile(`^(?:` + sp.frag + `)$`)
+			for _, w := range words {
+				if got, want := re.MatchString(w), refRE.MatchString(w); got != want {
+					t.Fatalf("%s: spelling %s (%q) and reference %s (%q) disagree on "+
+						"%q: %v vs %v. They are not the same language, so holding "+
+						"them to one verdict would be asserting something false",
+						family.name, sp.name, sp.frag, ref.name, ref.frag, w, got, want)
+				}
+			}
+		}
+
+		// PART 2: one language, one verdict — and one rule.
+		for _, sp := range spellings {
+			pattern := marker + sp.frag
+			spelled, err := refuseOverBroadPattern(pattern)
+			switch {
+			case family.wantRefuse && err == nil:
+				t.Errorf("%s: spelling %s — refuseOverBroadPattern(%q) ACCEPTED it with "+
+					"spelled=%d, and the same language spelled %s is refused. %s. A "+
+					"verdict that depends on the spelling is a verdict about the AST "+
+					"and not about what the pattern can match",
+					family.name, sp.name, pattern, spelled, ref.name, family.why)
+			case family.wantRefuse && !strings.Contains(err.Error(), "rule R3"):
+				t.Errorf("%s: spelling %s — refuseOverBroadPattern(%q) refused it for "+
+					"%q, not rule R3. Refusing one spelling by a different rule means "+
+					"the rule under test is still evaded and only the sample widened",
+					family.name, sp.name, pattern, err)
+			case !family.wantRefuse && err != nil:
+				t.Errorf("%s: spelling %s — refuseOverBroadPattern(%q) = %v. %s",
+					family.name, sp.name, pattern, err, family.why)
+			}
+		}
+	}
+
+	// THE MEASURED FIXTURE, kept verbatim so the three lines in this test's
+	// header are checked on every run rather than remembered. All three must
+	// be refused, and refused THE SAME WAY: same sentinel, same rule, same
+	// message once the pattern text is taken out.
+	msgs := make([]string, 0, 3)
+	for _, p := range []string{`Z(?:[a,]?)*`, `Z(?:(?:a|,)?)*`, `Z(?:a?,?)*`} {
+		_, err := refuseOverBroadPattern(p)
+		if err == nil {
+			t.Fatalf("refuseOverBroadPattern(%q) ACCEPTED it. This is ruling 13's "+
+				"measured case: `x?` is an alternation with the empty string and a "+
+				"concat of optionals is the alternation over their powerset, so an "+
+				"operator test finds no OpAlternate here and promotes nothing", p)
+		}
+		if !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("refuseOverBroadPattern(%q) refused with %v, which is not "+
+				"ErrSignatureMatchesEverything; a caller matching on the sentinel "+
+				"would not see this refusal", p, err)
+		}
+		msgs = append(msgs, strings.Replace(err.Error(), fmt.Sprintf("%q", p), "<pattern>", 1))
+	}
+	for i, m := range msgs[1:] {
+		if m != msgs[0] {
+			t.Errorf("the three spellings are refused with DIFFERENT messages:\n  %q\n  %q\n"+
+				"They are one language and one defect, and reporting them differently "+
+				"tells an operator to go on hunting for the spelling that works",
+				msgs[0], msgs[i+1])
+		}
+	}
+
+	// THE ALPHABET-SCALED FORM, which is what the accepted spelling was
+	// worth. It is the concat-of-optionals spelling over the WHOLE printable
+	// alphabet: 225 bytes, and before ruling 13 it compiled with spelled=16
+	// and quoted=0 and then matched every byte of a marker followed by an
+	// ordinary HTML page.
+	scaled := "anvil-probe-4f2a(?:"
+	for r := rune(printableASCIILo); r <= printableASCIIHi; r++ {
+		scaled += regexp.QuoteMeta(string(r)) + "?"
+	}
+	scaled += ")*"
+	if len(scaled) != 225 {
+		t.Errorf("the scaled fixture is %d bytes and this test says 225; move the number "+
+			"in the same diff that moves the fixture", len(scaled))
+	}
+	if _, err := refuseOverBroadPattern(scaled); err == nil {
+		t.Errorf("refuseOverBroadPattern accepted the whole printable alphabet spelled as "+
+			"a run of optionals: %q", scaled)
+	}
+	// The measurement the refusal is worth, kept live: compiled with regexp
+	// DIRECTLY, because NewSignature refuses it now and that is the point.
+	const ordinaryHTML = `<!doctype html><html><head><title>Acme Store</title></head>` +
+		`<body><h1>anvil-probe-4f2a</h1><p>Welcome to the store, friend. Everything ` +
+		`is fine here; nothing is wrong.</p><ul><li>one</li><li>two</li><li>three</li>` +
+		`</ul><footer>copyright 2026 acme, inc. all rights reserved. contact: ` +
+		`sales@acme.example</footer></body></html>`
+	body := "anvil-probe-4f2a" + ordinaryHTML
+	if len(body) != 337 {
+		t.Fatalf("the scaled fixture's body is %d bytes and the measurement below assumes "+
+			"337", len(body))
+	}
+	m := regexp.MustCompile(scaled).FindStringIndex(body)
+	if m == nil || m[1]-m[0] != len(body) {
+		t.Errorf("the scaled evasion matches %v of the %d bytes of a marker plus an "+
+			"ordinary document; this file says all of them, and if it has drifted the "+
+			"refusal above is unmotivated", m, len(body))
+	}
+}
+
+// spelling is one way of writing a language, with a name a failure can print.
+type spelling struct {
+	name string
+	frag string
+}
+
+// unboundedRunSpellings writes "any string over this alphabet, unbounded" every
+// way this package can think of.
+//
+// IT IS MECHANICAL ON PURPOSE. A hand-written list of patterns is the thing
+// seven rounds of this defect kept escaping; a generator parameterised by the
+// alphabet turns "which operators did somebody remember" into "which rewrites
+// of one language exist", and the rewrites below are the ones regexp/syntax
+// gives an author for free: optionality, alternation with an empty branch,
+// bounded repeats, grouping, capture, class membership, and hex escaping.
+//
+// EVERY ENTRY IS CHECKED TO DENOTE THE SAME LANGUAGE by its only caller before
+// any verdict is compared, so a wrong entry here is a loud failure and not a
+// quietly weaker property.
+func unboundedRunSpellings(alphabet []rune) []spelling {
+	atoms := make([]string, len(alphabet)) // outside a class
+	hexes := make([]string, len(alphabet)) // inside or outside, escape-free
+	for i, r := range alphabet {
+		atoms[i] = regexp.QuoteMeta(string(r))
+		hexes[i] = fmt.Sprintf(`\x%02x`, r)
+	}
+	class := "[" + strings.Join(hexes, "") + "]"
+	alt := strings.Join(atoms, "|")
+	captured := "(" + strings.Join(atoms, ")|(") + ")"
+
+	concatOf := func(suffix string) string {
+		var b strings.Builder
+		for _, a := range atoms {
+			b.WriteString(a)
+			b.WriteString(suffix)
+		}
+		return b.String()
+	}
+	reversedConcatOf := func(suffix string) string {
+		var b strings.Builder
+		for i := len(atoms) - 1; i >= 0; i-- {
+			b.WriteString(atoms[i])
+			b.WriteString(suffix)
+		}
+		return b.String()
+	}
+
+	return []spelling{
+		{"a class under a star", class + "*"},
+		{"the class inside a non-capturing group", "(?:" + class + ")*"},
+		{"the class inside two nested groups", "(?:(?:" + class + "))*"},
+		{"an alternation of literals", "(?:" + alt + ")*"},
+		{"the same alternation CAPTURED", "(?:" + captured + ")*"},
+		{"an alternation with an explicit EMPTY branch", "(?:" + alt + "|)*"},
+		{"an OPTIONAL class inside a star", "(?:" + class + "?)*"},
+		{"an optional ALTERNATION inside a star", "(?:(?:" + alt + ")?)*"},
+		{"a CONCAT OF OPTIONALS — no alternation node anywhere", "(?:" + concatOf("?") + ")*"},
+		{"the same concat of optionals REVERSED", "(?:" + reversedConcatOf("?") + ")*"},
+		{"a concat of optionals written as BOUNDED REPEATS", "(?:" + concatOf("{0,1}") + ")*"},
+		{"a concat of STARS", "(?:" + concatOf("*") + ")*"},
+		{"the class under a bounded repeat inside a star", "(?:" + class + "{0,2})*"},
+		{"the class under a {0,1} inside a star", "(?:" + class + "{0,1})*"},
+		{"a class and an optional class", "(?:" + class + class + "?)*"},
+		{"a PLUS made optional", "(?:" + class + "+)?"},
+		{"the class spelled with HEX ESCAPES outside a class",
+			"(?:" + strings.Join(hexes, "|") + ")*"},
+	}
+}
+
+// stringsOverAlphabetUpTo enumerates every string over an alphabet up to a
+// length, shortest first. It is the equivalence witness: two spellings that
+// denote different languages differ on one of these.
+func stringsOverAlphabetUpTo(alphabet []rune, maxLen int) []string {
+	out := []string{""}
+	frontier := []string{""}
+	for n := 1; n <= maxLen; n++ {
+		next := make([]string, 0, len(frontier)*len(alphabet))
+		for _, w := range frontier {
+			for _, r := range alphabet {
+				next = append(next, w+string(r))
+			}
+		}
+		out = append(out, next...)
+		frontier = next
+	}
+	return out
+}
+
+// TestAOneRuneClassNeverReachesTheWalk deletes a claim rather than qualifying
+// it.
+//
+// classShape used to carry an arm reading a one-rune class as a spelled
+// literal, justified by "reading it as anything else would let `[<][h][1]`
+// evade R1" — and that arm was UNREACHABLE from NewSignature, so the
+// justification could not be demonstrated. regexp/syntax's parser rewrites a
+// one-rune OpCharClass into an OpLiteral before any of this package sees it,
+// which is why `[<][h][1]` arrives as the literal `<h1` with three bytes of
+// footing and R1 was never in danger.
+//
+// THIS TEST IS WHAT MAKES THE DELETION SAFE. It runs the parser over every
+// spelling that could plausibly produce a one-rune class — brackets round a
+// letter, round punctuation, round a hex escape, a one-rune RANGE, a
+// case-folded class, a negated class that leaves one rune — and asserts none
+// of them does. If a future Go release stops folding them, this goes red and
+// the general arm of classShape takes over: declared=1, decided=false,
+// minLiteral=0, which fails toward refusal rather than away from it.
+func TestAOneRuneClassNeverReachesTheWalk(t *testing.T) {
+	var find func(re *syntax.Regexp, hits *[]string)
+	find = func(re *syntax.Regexp, hits *[]string) {
+		if re == nil {
+			return
+		}
+		if re.Op == syntax.OpCharClass && len(re.Rune) == 2 && re.Rune[0] == re.Rune[1] {
+			*hits = append(*hits, re.String())
+		}
+		for _, sub := range re.Sub {
+			find(sub, hits)
+		}
+	}
+
+	for _, p := range []string{
+		`[a]`, `[ ]`, `[,]`, `[.]`, `[$]`, `[\]]`, `[\-]`, `[<][h][1]`,
+		`[a-a]`, `[0-0]`, `[\x61]`, `[\x{212A}]`, `[\x7f]`,
+		`(?i)[a]`, `(?i)[ ]`, `(?i)[a-a]`,
+		`[^\x00-\x{10FFFE}]`, `x[ ]y`, `(?:[ ])`, `([ ])`, `[ ]*`, `[ ]{2}`,
+		`[ab]`, `[a-z]`, `[[:punct:]]`,
+	} {
+		re, err := syntax.Parse(p, syntax.Perl)
+		if err != nil {
+			t.Errorf("syntax.Parse(%q) = %v; the probe cannot say anything about a "+
+				"pattern it could not parse", p, err)
+			continue
+		}
+		var hits []string
+		find(re, &hits)
+		if len(hits) != 0 {
+			t.Errorf("syntax.Parse(%q) produced one-rune char class(es) %v. The arm that "+
+				"read those as spelled literals has been DELETED, so this pattern now "+
+				"reaches classShape's general arm and is judged as an undecided "+
+				"position with zero literal footing. Either restore the arm with this "+
+				"spelling as its witness, or accept the refusal", p, hits)
+		}
+	}
+
+	// THE POSITIVE CONTROL ON THE PROBE. A walker that could not see a
+	// one-rune class would pass the loop above for the wrong reason.
+	synthetic := &syntax.Regexp{Op: syntax.OpCharClass, Rune: []rune{' ', ' '}}
+	var hits []string
+	find(synthetic, &hits)
+	if len(hits) != 1 {
+		t.Fatalf("the probe found %d one-rune class(es) in a regexp that IS one; every "+
+			"assertion above is vacuous", len(hits))
+	}
+
+	// AND THE FAIL-CLOSED DIRECTION, asserted rather than described: if the
+	// parser ever does hand one over, the general arm counts it as an
+	// undecided position that spells nothing.
+	s := classShape(synthetic.Rune)
+	if s.minLiteral != 0 || s.declared != 1 || s.decided {
+		t.Errorf("classShape([' ',' ']) = %+v; without the deleted arm a one-rune class "+
+			"must fail CLOSED — no literal footing, one declared position, undecided — "+
+			"so that an unreachable case becoming reachable costs a refusal and never "+
+			"a confirmation", s)
+	}
+}
+
+// TestCaseFoldingCannotMoveAPositionAcrossTheContentBoundary is the claim
+// shapeWalk's OpLiteral arm rests on, checked by RUNNING the fold rather than
+// by reading a Unicode table.
+//
+// A literal position is DECIDED under ruling 13 even under (?i), on the
+// argument that a fold orbit is a set of spellings of one character the pattern
+// itself wrote down — and that argument is only sound while folding cannot
+// carry a position across the letter / non-letter partition contentBearingClass
+// is built on. If `(?i)a` could fold to a semicolon, a case-insensitive literal
+// would be a way to declare punctuation while spelling a letter, and the whole
+// of R3 would go with it.
+//
+// So: for every printable-ASCII rune, the alphabet spelledRunes derives for it
+// UNDER FOLD must not be content-bearing.
+func TestCaseFoldingCannotMoveAPositionAcrossTheContentBoundary(t *testing.T) {
+	widened := 0
+	for r := rune(printableASCIILo); r <= printableASCIIHi; r++ {
+		folded := spelledRunes([]rune{r}, true)
+		if contentBearingClass(folded) {
+			t.Errorf("the fold orbit of %q is %v, which IS content-bearing. A literal "+
+				"position is treated as decided under (?i) precisely because folding "+
+				"cannot cross the letter / non-letter partition; it can, so "+
+				"shapeWalk's OpLiteral arm is now unsound and a folded literal is a "+
+				"way to declare an alphabet while spelling a rune", r, folded)
+		}
+		if alphabetIsAmbiguous(folded) {
+			widened++
+		}
+	}
+	// NON-VACUITY: if folding widened nothing, the loop above asserted
+	// nothing about folding at all.
+	if widened != 52 {
+		t.Errorf("case folding widened %d of the printable-ASCII runes' alphabets, want 52 "+
+			"(the letters). If it widened none, this test is checking that a no-op is "+
+			"harmless", widened)
+	}
+}
+
+// TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam is the half of
+// ruling 13 that lives in the ORDER of the walk rather than in what it computes.
+//
+// A unit made of a fixed literal and a TRAILING optional is decided on its own:
+// `a,?` puts 'a' at position 0 and ',' at position 1 and nothing anywhere twice.
+// Repeat it and that stops being true — `(?:a,?)*` matches "aa" and "a,", so
+// the seam between traversals is a position holding 'a' on one reading and ','
+// on another, and the unit's alphabet really is that position's alphabet.
+//
+// MEASURED, with the width test present but applied to the REPEAT's own shape
+// instead of to the unit's before its quotation was read:
+//
+//	Z(?:a,?)*   ACCEPTED, spelled=1, quoted=0
+//
+// The promotion landed on the star node, and by then `quoted` had already been
+// read off the un-promoted unit; the star's parent is a concatenation, and a
+// concatenation does not take quotation over a union, so the number nobody read
+// was the number that mattered. See repeatedUnit.
+//
+// THE NON-VACUITY HALF IS THE SECOND TABLE. Repetition does not make everything
+// undecided: a fixed-width unit has no seam, an alphabet with no letter cannot
+// leave its token however the seam lands, and a repeat that runs at most once is
+// not a repetition at all.
+func TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam(t *testing.T) {
+	for _, tc := range []struct{ pattern, why string }{
+		{`Z(?:a,?)*`,
+			"THE MEASURED ONE: a fixed literal and a trailing optional, decided as a " +
+				"unit and undecided at the seam"},
+		{`Z(?:,a?)*`, "the same unit with the two runes swapped"},
+		{`Z(?:a;?)*`, "the same shape over a different punctuation mark"},
+		{`Z(?:a,?)+`, "a plus rather than a star; one traversal is guaranteed and the " +
+			"seam is still there"},
+		{`Z(?:a,?){0,400}`, "the same unit under a CEILING: 400 seams against one " +
+			"spelled byte"},
+		{`Z(?:err, ?)*`, "a longer fixed prefix; the seam does not care how much of " +
+			"the unit is spelled"},
+	} {
+		_, err := refuseOverBroadPattern(tc.pattern)
+		if err == nil {
+			t.Errorf("refuseOverBroadPattern(%q) ACCEPTED it. %s. The unit's shape has to "+
+				"be corrected for the seam BEFORE its quotation is read, or the "+
+				"promotion lands on a node whose parent never looks at it",
+				tc.pattern, tc.why)
+			continue
+		}
+		if !strings.Contains(err.Error(), "rule R3") {
+			t.Errorf("refuseOverBroadPattern(%q) refused it for %q, not R3. %s",
+				tc.pattern, err, tc.why)
+		}
+	}
+
+	for _, tc := range []struct{ pattern, why string }{
+		{`Z(?:abc)*`, "a FIXED-WIDTH unit has no seam to be ambiguous at, and every " +
+			"byte it matches is spelled"},
+		{`Z(?:abc, )*`, "the same, over an alphabet that DOES cross letters into " +
+			"punctuation. Width is what decides here, not the alphabet"},
+		{`Z(?:ab?)*`, "a varying-width unit over LETTERS ONLY: the seam is undecided " +
+			"and its alphabet still cannot leave the token it declared"},
+		{`Z(?:0\.?)*`, "a varying-width unit over a digit and a dot, which is the " +
+			"dotted-quad shape and carries no letter"},
+		{`Z(?:[0-9]\.?)*`, "the same with the digit as a class"},
+		{`Z(?:a,?){0,1}`, "a repeat that runs its unit AT MOST ONCE. Nothing is laid " +
+			"end to end with anything, so there is no seam and the unit's own " +
+			"verdict has to carry — a rule that refused this would be refusing " +
+			"optionality rather than repetition"},
+		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`,
+			"the dotted quad, whose unit is a varying-width digit class and a spelled " +
+				"dot. It is the control that separates 'the seam is undecided' from " +
+				"'the seam is quotation'"},
+	} {
+		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
+			t.Errorf("refuseOverBroadPattern(%q) = %v. %s. A seam rule that refused this "+
+				"would be a ban on repeats wearing ruling 13's clothes",
+				tc.pattern, err, tc.why)
+		}
+	}
+}
+
+// TestAnUndecidedPositionIsCountedWithoutARepetitionToCarryIt is what makes
+// `decided` a statement about the LANGUAGE rather than a flag that happens to
+// be read in one place.
+//
+// After the seam correction landed, every refusal in this file could be
+// credited to repeatedUnit: a repeat is where quotation is taken over a union,
+// so a promotion at any other node had no reader. That is a fine reason for a
+// rule to be right and a terrible reason to believe it — the next round's
+// spelling will be the one that reaches `declared` by a path repeatedUnit is
+// not on. So this test reaches it by one: a bounded repeat that runs its unit
+// AT MOST ONCE is not a repetition, repeatedUnit deliberately leaves it alone,
+// and quotationOverUnion still reads the unit's `declared`. Two of them
+// concatenated against one byte of footing is R3's inequality with no
+// repetition anywhere in the pattern.
+//
+//	Z(?:a?,?){0,1}(?:a?,?){0,1}         the concatenation-of-optionals rule
+//	Z(?:(a)|(,)){0,1}(?:(a)|(,)){0,1}   the alternation rule
+//
+// Each of the two lines in shapeWalk that marks its node undecided is the only
+// thing standing between one of those and acceptance, MEASURED by deleting it:
+// with the concatenation's width test removed the first compiles with
+// spelled=1, and with the alternation's the second does.
+func TestAnUndecidedPositionIsCountedWithoutARepetitionToCarryIt(t *testing.T) {
+	for _, tc := range []struct{ pattern, why string }{
+		{`Z(?:a?,?){0,1}(?:a?,?){0,1}`,
+			"a CONCATENATION OF OPTIONALS, twice, with no repetition to carry it. " +
+				"The concatenation is undecided because a variable-width element " +
+				"slides everything after it into the position it did not fill"},
+		{`Z(?:(a)|(,)){0,1}(?:(a)|(,)){0,1}`,
+			"an ALTERNATION, twice, with no repetition to carry it. A match can leave " +
+				"by any branch, so no branch's structure decides the node's positions"},
+	} {
+		_, err := refuseOverBroadPattern(tc.pattern)
+		if err == nil {
+			t.Errorf("refuseOverBroadPattern(%q) ACCEPTED it. %s. Two undecided positions "+
+				"over an alphabet that crosses letters into punctuation, against one "+
+				"byte of literal footing, is exactly the inequality R3 states",
+				tc.pattern, tc.why)
+			continue
+		}
+		if !strings.Contains(err.Error(), "rule R3") {
+			t.Errorf("refuseOverBroadPattern(%q) refused it for %q, not R3. %s",
+				tc.pattern, err, tc.why)
+		}
+	}
+
+	// NON-VACUITY, three ways: the same shape with the footing R3 asks for,
+	// the same shape over an alphabet R3 allows, and a unit that is decided.
+	// A rule that refused these would be counting positions instead of
+	// counting undecided ones.
+	for _, tc := range []struct{ pattern, why string }{
+		{`ZZ(?:a?,?){0,1}(?:a?,?){0,1}`,
+			"two undecided positions against TWO spelled bytes: R3 satisfied 1:1, " +
+				"which is the remedy its own message tells an author to reach for"},
+		{`Z(?:a?b?){0,1}(?:a?b?){0,1}`,
+			"the same structure over a letters-only union, which cannot leave the " +
+				"token it declared"},
+		{`Z(?:ab){0,1}(?:ab){0,1}`,
+			"a DECIDED unit: fixed width, every byte spelled, nothing undecided to " +
+				"count"},
+	} {
+		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
+			t.Errorf("refuseOverBroadPattern(%q) = %v. %s", tc.pattern, err, tc.why)
+		}
 	}
 }

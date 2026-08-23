@@ -911,19 +911,63 @@ type Signature struct {
 //	A SPELLED RUNE IS IN THE UNION. `(?:([a-z])|( ))*` is a class and a
 //	space, and the space is what turns a lowercase-token alphabet into
 //	prose. See spelledRunes.
-//	AN ALTERNATION IS AN UNDECIDED POSITION. Putting the literals in the
-//	union is not enough by itself, because quotation is promoted from
+//	AN UNDECIDED POSITION IS A DECLARED POSITION. Putting the literals in
+//	the union is not enough by itself, because quotation is promoted from
 //	DECLARED positions and an alternation whose every branch is a spelled
 //	rune declares none. Twenty-nine captured single-rune literals spelling
-//	the alphabet of English prose contain no class at all. So an alternation
-//	over an alphabet of more than one rune counts as at least one declared
-//	position. See the OpAlternate arm of shapeOf.
+//	the alphabet of English prose contain no class at all. So a position
+//	the pattern did not decide, over an alphabet of more than one rune,
+//	counts as at least one declared position. See promoteUndecidedPositions.
 //
-// The price is stated rather than hidden: a repeat of an alternation whose
-// union crosses letters into punctuation is now refused EVEN WHEN EVERY BRANCH
-// IS SPELLED, so `Z(?:err|, )*` no longer compiles. Its bytes are all spelled,
-// but a two-hundred-byte alphabet declaration is not evidence about a
-// response, and R3's remedy — give the repeat a ceiling — still applies.
+// RULING 13 IS WHERE THAT SECOND RULE IS ASKED OF THE RIGHT THING, and it is
+// the correction the round before this one needed. The rule used to be spelled
+// as a test on the AST NODE — `re.Op == OpAlternate` — and an alternation is
+// not the only way to write one. `x?` denotes `(?:|x)`, a repeat with a zero
+// lower bound is optional, and a CONCATENATION OF OPTIONALS denotes the
+// alternation over their powerset. MEASURED, three spellings of ONE language:
+//
+//	Z(?:[a,]?)*      REFUSED (R3)
+//	Z(?:(?:a|,)?)*   REFUSED (R3)
+//	Z(?:a?,?)*       ACCEPTED, spelled=1, quoted=0
+//
+// and the same shape scaled to the whole printable alphabet is 225 bytes, was
+// accepted with quoted=0, and matched all 337 bytes of a marker followed by an
+// ordinary HTML page. So the question is now asked of the LANGUAGE A NODE
+// DENOTES: `decided` is computed bottom-up from an ALLOWLIST of shapes that
+// produce a decided position — a spelled literal, a zero-width assertion, and
+// the compositions of those that keep their positions in place — and every
+// other shape, including every operator nobody has heard of yet, is undecided
+// BY DEFAULT. See patternShape.decided, promoteUndecidedPositions and
+// repeatedUnit, and TestEverySpellingOfOneLanguageGetsTheSameVerdict, which
+// generates equivalent spellings of one language mechanically and holds them
+// all to one verdict without enumerating an operator anywhere.
+//
+// WHERE THE ANALYSIS APPROXIMATES, IT APPROXIMATES TOWARD REFUSAL, and that is
+// a choice with a stated price rather than a claim of completeness. Go's regexp
+// grammar has constructs whose exact per-position alphabet is expensive to
+// compute — an alternation of unequal-width branches, a repeat whose unit's
+// width varies — and for those `decided` says UNDECIDED without working out
+// whether some position really is ambiguous. The asymmetry is the whole reason:
+// a signature refused for being hard to analyse costs its author one rewrite;
+// a signature accepted for the same reason costs a false confirmation at
+// confidence 1.000.
+//
+// The price is stated rather than hidden, and ruling 13 widened it. A repeat
+// whose unit's alphabet crosses letters into punctuation is refused EVEN WHEN
+// EVERY BYTE IT CAN MATCH IS SPELLED, whenever that unit is undecided:
+//
+//	Z(?:err|, )*   an alternation of spelled branches
+//	Z(?:a?,?)*     a concatenation of optionals
+//	Z(?:a,?)*      a fixed prefix and a trailing optional — decided as a
+//	               unit, undecided at the SEAM between traversals, because
+//	               its width varies and the join is a position two runes
+//	               can reach
+//
+// none of which compiles. A two-hundred-byte alphabet declaration is not
+// evidence about a response however it is spelled, and R3's remedy — give the
+// repeat a ceiling, or fix the unit's width — still applies. What is NOT
+// refused is the fixed-width spelled unit `Z(?:abc, )*`: it has no seam to be
+// ambiguous at, and refusing it would make R3 a ban on repeats.
 //
 // WHAT R3 STILL DOES NOT DECIDE, SO IT IS SAID RATHER THAN IMPLIED: a
 // CONCATENATION of differing narrow classes. A concatenation is a sequence of
@@ -1002,6 +1046,59 @@ type patternShape struct {
 	// spells nor confines to printable ASCII. R2 refuses it outright, so
 	// this is a bool and not a count: one open position is enough.
 	open bool
+	// decided reports that EVERY consumable position in the language this
+	// sub-expression denotes is fixed by the pattern to one spelled rune —
+	// so that `consumes`, which is a union over the whole sub-expression, is
+	// NOT any single position's alphabet.
+	//
+	// RULING 13, AND THE REASON THIS IS A FIELD RATHER THAN AN OPERATOR
+	// TEST. The promotion this drives used to ask `re.Op == OpAlternate`.
+	// An OPTIONAL sub-expression is an alternation with the empty string —
+	// `x?` denotes `(?:|x)` — and a concatenation of optionals denotes the
+	// alternation over their powerset, so no node in `(?:a?,?)*` is an
+	// OpAlternate and nothing promoted. MEASURED before this field existed:
+	//
+	//	Z(?:[a,]?)*      REFUSED (R3)
+	//	Z(?:(?:a|,)?)*   REFUSED (R3)
+	//	Z(?:a?,?)*       ACCEPTED, spelled=1, quoted=0
+	//
+	// Three spellings of ONE LANGUAGE. The question was right and it was
+	// being asked of the node instead of the language.
+	//
+	// IT IS AN ALLOWLIST WITH NO DENY SIDE. The zero value is false —
+	// UNDECIDED — and only the shapes shapeWalk can positively account for
+	// set it true. A future operator, or a new spelling of an old one,
+	// lands on the default arm and is ambiguous BY DEFAULT rather than by
+	// somebody remembering to add it. That is the same shape as shapeOf's
+	// open default and as IsApplicationResponseStatus.
+	decided bool
+	// positions is the exact number of rune positions every string in the
+	// denoted language occupies, or positionsVary when it differs between
+	// strings.
+	//
+	// It exists for ONE job: a concatenation's positions stay decided only
+	// while every element before the last has a FIXED width. `a?bc` denotes
+	// {bc, abc}, so position 0 holds 'a' on one reading and 'b' on another —
+	// a variable-width element shifts everything after it into the same
+	// position, which is exactly how `(?:a?,?)*` was spelling an alternation
+	// without writing one.
+	positions int
+}
+
+// positionsVary marks a sub-expression whose strings are not all the same
+// length. Negative for the same reason shapeUnbounded is: arithmetic on it
+// cannot be mistaken for a width.
+const positionsVary = -1
+
+// addPositions concatenates two width counts, saturating to positionsVary.
+func addPositions(a, b int) int {
+	if a == positionsVary || b == positionsVary {
+		return positionsVary
+	}
+	if a > shapeCeiling-b {
+		return positionsVary
+	}
+	return a + b
 }
 
 // shapeUnbounded marks a count that no repeat ceiling bounds. It is negative
@@ -1312,40 +1409,100 @@ func contentBearingClass(runes []rune) bool {
 	return false
 }
 
-// classShape is the per-class verdict: spelled, declared, or open.
+// classShape is the per-class verdict: declared, or open.
 //
 // A class that is not content-bearing still reports declared=1 and its own
 // rune list, because R3's aggregation over a union has to know what the
 // position can consume even when this class alone decides nothing. See
 // quotationOverUnion.
+//
+// EVERY CLASS IS ONE POSITION AND AN UNDECIDED ONE. There used to be an arm
+// here reading a one-rune class as a spelled literal, justified by `[<][h][1]`
+// evading R1. THAT ARM WAS UNREACHABLE and the justification could not be
+// demonstrated, so it is deleted rather than qualified: regexp/syntax's
+// parser.push rewrites a one-rune OpCharClass into an OpLiteral before this
+// walk ever sees it, so `[<][h][1]` arrives as the literal `<h1` with three
+// bytes of footing. TestAOneRuneClassNeverReachesTheWalk runs the parser over
+// every spelling that could plausibly produce one and asserts none does. If
+// the parser ever stops folding them, the general arm below takes the class:
+// declared=1, decided=false, minLiteral=0 — which fails toward refusal.
 func classShape(runes []rune) patternShape {
-	// A class naming exactly one rune is a literal with brackets round it,
-	// and reading it as anything else would let `[<][h][1]` evade R1.
-	if len(runes) == 2 && runes[0] == runes[1] {
-		return patternShape{
-			minLiteral: literalRuneBytes(runes[0], false),
-			consumes:   spelledRunes(runes[:1], false),
-		}
-	}
 	if openClass(runes) {
-		return patternShape{open: true}
+		return patternShape{open: true, positions: 1}
 	}
 	if contentBearingClass(runes) {
-		return patternShape{quoted: 1, declared: 1, consumes: unionRunes(runes, nil)}
+		return patternShape{quoted: 1, declared: 1, consumes: unionRunes(runes, nil),
+			positions: 1}
 	}
-	return patternShape{declared: 1, consumes: unionRunes(runes, nil)}
+	return patternShape{declared: 1, consumes: unionRunes(runes, nil), positions: 1}
 }
 
-// shapeOf walks a parsed pattern.
+// promoteUndecidedPositions is RULING 13, and it is the whole of it: a
+// sub-expression whose denoted language can put more than one rune at a
+// consumable position holds at least one position the pattern did not decide,
+// and R3 counts undecided positions.
+//
+// IT ASKS THE LANGUAGE, NOT THE NODE. `decided` is computed bottom-up over the
+// tree from an allowlist of shapes that produce a decided position — a spelled
+// literal, a zero-width assertion, and the compositions of those that keep
+// their positions in place. Everything else is undecided by default. So the
+// three spellings of one language below all reach this function with
+// decided=false and are refused for the same reason and with the same message:
+//
+//	Z(?:[a,]?)*      a one-rune class in an optional in a star
+//	Z(?:(?:a|,)?)*   an alternation in an optional in a star
+//	Z(?:a?,?)*       a concatenation of optionals in a star — no OpAlternate
+//	                 anywhere in the tree, and ACCEPTED until ruling 13
+//
+// THE BUMP IS TO ONE and not to the number of positions the sub-expression
+// could actually fill. One is what a node can justify from its own structure
+// without a second traversal, and R3's arithmetic stays sound because
+// minLiteral is a MINIMUM over paths: a path through the undecided position
+// contributes no footing. What one buys is the whole of the rule — a repeat of
+// an undecided position is a repeat of an undecided position, so
+// unboundedIfDeclaring and quotationOverUnion refuse it however it was spelled.
+//
+// THE alphabetIsAmbiguous GUARD IS WHAT KEEPS IT FROM BEING A BAN. A node can
+// be undecided in structure and still name exactly one rune — `(?:a|a)`, `a?`
+// inside a star — and a position with a one-rune alphabet is decided by
+// arithmetic even when the tree does not say so. See alphabetIsAmbiguous: its
+// threshold of 2 can never gate a promotion that would otherwise fire, because
+// contentBearingClass needs a letter AND a non-letter and cannot be true of one
+// rune.
+//
+// IT IS IDEMPOTENT, and it has to be: shapeOf applies it to every node on the
+// way out, and the OpAlternate arm applies it early because that arm consumes
+// `declared` in the same breath.
+func promoteUndecidedPositions(s patternShape) patternShape {
+	if !s.decided && alphabetIsAmbiguous(s.consumes) {
+		s.declared = maxShape(s.declared, 1)
+	}
+	return s
+}
+
+// shapeOf walks a parsed pattern and applies ruling 13's promotion to what the
+// walk found.
+//
+// THE PROMOTION IS APPLIED HERE, ONCE, TO EVERY NODE, rather than in the arms
+// that happen to produce ambiguity. That is the correction ruling 13 asked for:
+// an arm-by-arm promotion is an enumeration of operators, and seven rounds of
+// enumeration each closed one spelling and left the next one open. See
+// promoteUndecidedPositions.
+func shapeOf(re *syntax.Regexp) patternShape {
+	return promoteUndecidedPositions(shapeWalk(re))
+}
+
+// shapeWalk is the per-operator structural walk. Callers want shapeOf.
 //
 // THE DEFAULT ARM IS THE POINT. An operator this function has never heard of —
 // a future Go release's, or one added to regexp/syntax after this was written
-// — lands on `open`, which R2 refuses. The failure mode of not knowing is a
-// REFUSED SIGNATURE, never an accepted one, which is the same shape as
+// — lands on `open`, which R2 refuses, and on decided=false, which R3 treats as
+// an undecided position. The failure mode of not knowing is a REFUSED
+// SIGNATURE, never an accepted one, which is the same shape as
 // applicationResponseStatuses: an allowlist with no deny side to keep current.
-func shapeOf(re *syntax.Regexp) patternShape {
+func shapeWalk(re *syntax.Regexp) patternShape {
 	if re == nil {
-		return patternShape{open: true}
+		return patternShape{open: true, positions: positionsVary}
 	}
 	// The single-child operators below index Sub[0]. syntax.Parse never
 	// produces one without a child, so this guard is unreachable from
@@ -1354,7 +1511,7 @@ func shapeOf(re *syntax.Regexp) patternShape {
 	switch re.Op {
 	case syntax.OpCapture, syntax.OpQuest, syntax.OpStar, syntax.OpPlus, syntax.OpRepeat:
 		if len(re.Sub) == 0 {
-			return patternShape{open: true}
+			return patternShape{open: true, positions: positionsVary}
 		}
 	}
 	switch re.Op {
@@ -1363,8 +1520,9 @@ func shapeOf(re *syntax.Regexp) patternShape {
 		syntax.OpNoWordBoundary:
 		// Zero width. It consumes nothing, so it spells nothing and
 		// quotes nothing, and R1 is what refuses a pattern made only of
-		// these.
-		return patternShape{}
+		// these. A sub-expression with no consumable position has no
+		// UNDECIDED position either, so it is decided at width zero.
+		return patternShape{decided: true, positions: 0}
 
 	case syntax.OpLiteral:
 		fold := re.Flags&syntax.FoldCase != 0
@@ -1375,26 +1533,50 @@ func shapeOf(re *syntax.Regexp) patternShape {
 		// consumes carries the spelled runes too. See spelledRunes: a
 		// literal at an alternation position is an alphabet of one, and a
 		// union that omits it is not the alphabet of the position.
-		return patternShape{minLiteral: n, consumes: spelledRunes(re.Rune, fold)}
+		//
+		// A LITERAL IS DECIDED, AND (?i) DOES NOT CHANGE THAT. Under fold
+		// a position's alphabet is the CASE ORBIT of a rune the pattern
+		// SPELLED, and contentBearingClass's partition of printable ASCII
+		// is invariant under case folding: an ASCII letter folds only to
+		// ASCII letters, and an ASCII non-letter folds only to itself. So
+		// a fold orbit can never carry a position across the letter /
+		// non-letter boundary that R3 is about. Asserted by RUNNING the
+		// fold over every printable-ASCII rune in
+		// TestCaseFoldingCannotMoveAPositionAcrossTheContentBoundary,
+		// rather than by reading unicode tables here.
+		return patternShape{minLiteral: n, consumes: spelledRunes(re.Rune, fold),
+			decided: true, positions: len(re.Rune)}
 
 	case syntax.OpCharClass:
 		return classShape(re.Rune)
 
 	case syntax.OpAnyChar, syntax.OpAnyCharNotNL:
-		return patternShape{open: true}
+		return patternShape{open: true, positions: 1}
 
 	case syntax.OpCapture:
 		return shapeOf(re.Sub[0])
 
 	case syntax.OpConcat:
-		var out patternShape
-		for _, sub := range re.Sub {
+		out := patternShape{decided: true, positions: 0}
+		for i, sub := range re.Sub {
 			s := shapeOf(sub)
 			out.minLiteral = addShape(out.minLiteral, s.minLiteral)
 			out.quoted = addShape(out.quoted, s.quoted)
 			out.declared = addShape(out.declared, s.declared)
 			out.consumes = unionRunes(out.consumes, s.consumes)
 			out.open = out.open || s.open
+			// A concatenation's positions stay decided only while every
+			// element is decided AND every element before the last is a
+			// FIXED WIDTH. A variable-width element slides everything
+			// after it into the positions it did not fill, which is the
+			// alternation `a?,?` denotes without writing one.
+			if !s.decided {
+				out.decided = false
+			}
+			if i < len(re.Sub)-1 && s.positions == positionsVary {
+				out.decided = false
+			}
+			out.positions = addPositions(out.positions, s.positions)
 		}
 		// NO UNION PROMOTION HERE, and that is deliberate. A concatenation
 		// is a SEQUENCE of positions, each declared by its own class; it is
@@ -1409,12 +1591,18 @@ func shapeOf(re *syntax.Regexp) patternShape {
 
 	case syntax.OpAlternate:
 		if len(re.Sub) == 0 {
-			return patternShape{open: true}
+			return patternShape{open: true, positions: positionsVary}
 		}
 		out := shapeOf(re.Sub[0])
 		out.consumes = unionRunes(out.consumes, nil)
 		for _, sub := range re.Sub[1:] {
 			s := shapeOf(sub)
+			// A match entering here can leave by any branch, so no
+			// branch's structure decides this node's positions or its
+			// width. This is the ONE arm that reads the operator, and it
+			// reads it to say "undecided" — the fail-closed direction.
+			out.decided = false
+			out.positions = positionsVary
 			// The THINNEST branch decides the footing: a candidate can
 			// take whichever branch it likes.
 			if s.minLiteral < out.minLiteral {
@@ -1435,45 +1623,53 @@ func shapeOf(re *syntax.Regexp) patternShape {
 		// of which is a single spelled rune reports declared=0 — and then
 		// quotationOverUnion, which promotes DECLARED positions, has
 		// nothing to promote even when the union it just computed runs
-		// letters into punctuation. MEASURED before this line existed:
+		// letters into punctuation. MEASURED before the promotion existed:
 		// `anvil-probe-4f2a(?:(a)|(b)|...|(z)|( )|(,)|(\.))*`, thirty-two
 		// captured single-rune literals and not one class, was ACCEPTED
 		// with quoted=0.
 		//
-		// One is a LOWER count than the number of positions some branches
-		// consume, and that is deliberate rather than an oversight: it is
-		// the number this node can justify from its own structure without
-		// a second traversal, and R3's arithmetic stays sound because
-		// minLiteral takes the MINIMUM over branches — a branch drawing
-		// from a class contributes zero footing, so a repeat of a mixed
-		// alternation is judged against the footing of its thinnest
-		// branch. What one buys is the whole of ruling 12 here: a repeat
-		// of an ambiguous position is a repeat of an ambiguous position,
-		// so `unboundedIfDeclaring` refuses it however it was spelled.
-		if len(re.Sub) > 1 && alphabetIsAmbiguous(out.consumes) {
-			out.declared = maxShape(out.declared, 1)
-		}
+		// The promotion is promoteUndecidedPositions and shapeOf applies
+		// it to every node. It is applied HERE TOO, early, because this
+		// arm consumes `declared` in the very next line: quotationOverUnion
+		// promotes DECLARED positions to quotation, and a bump that landed
+		// after it would be a bump nothing read. It is idempotent.
+		out = promoteUndecidedPositions(out)
 		out.quoted = quotationOverUnion(out)
 		return out
 
 	case syntax.OpQuest:
+		// `x?` denotes `(?:|x)`. Its positions are x's positions at x's
+		// offsets, so optionality alone does not undecide them — but the
+		// WIDTH is now 0 or x's, and a variable width is what undecides
+		// whatever a concatenation puts after it.
 		s := shapeOf(re.Sub[0])
 		return patternShape{minLiteral: 0, quoted: s.quoted, declared: s.declared,
-			consumes: s.consumes, open: s.open}
+			consumes: s.consumes, open: s.open, decided: s.decided,
+			positions: optionalWidth(s.positions)}
 
 	case syntax.OpStar:
-		s := shapeOf(re.Sub[0])
+		s := repeatedUnit(shapeOf(re.Sub[0]))
 		return patternShape{minLiteral: 0, quoted: unboundedIfQuoting(s),
-			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open}
+			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open,
+			decided: s.decided, positions: repeatWidth(s.positions, 0, -1)}
 
 	case syntax.OpPlus:
-		s := shapeOf(re.Sub[0])
+		s := repeatedUnit(shapeOf(re.Sub[0]))
 		return patternShape{minLiteral: s.minLiteral, quoted: unboundedIfQuoting(s),
-			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open}
+			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open,
+			decided: s.decided, positions: repeatWidth(s.positions, 1, -1)}
 
 	case syntax.OpRepeat:
+		// A repeat that runs its unit AT MOST ONCE is an optional, not a
+		// repetition: nothing is laid end to end with anything, so the
+		// unit's own verdict carries unchanged. Past one traversal the
+		// seam exists and repeatedUnit is what accounts for it.
 		s := shapeOf(re.Sub[0])
-		out := patternShape{consumes: s.consumes, open: s.open}
+		if re.Max < 0 || re.Max > 1 {
+			s = repeatedUnit(s)
+		}
+		out := patternShape{consumes: s.consumes, open: s.open, decided: s.decided,
+			positions: repeatWidth(s.positions, re.Min, re.Max)}
 		out.minLiteral = mulShape(s.minLiteral, re.Min)
 		if re.Max < 0 {
 			out.quoted = unboundedIfQuoting(s)
@@ -1485,8 +1681,65 @@ func shapeOf(re *syntax.Regexp) patternShape {
 		return out
 
 	default:
-		return patternShape{open: true}
+		return patternShape{open: true, positions: positionsVary}
 	}
+}
+
+// optionalWidth is the width of `x?`: zero when x is empty, and otherwise a
+// width that varies between the two readings.
+func optionalWidth(sub int) int {
+	if sub == 0 {
+		return 0
+	}
+	return positionsVary
+}
+
+// repeatWidth is the width of a repeat of a unit `positions` wide, run between
+// min and max times (max < 0 for no ceiling).
+func repeatWidth(sub, min, max int) int {
+	if sub == 0 {
+		return 0
+	}
+	if sub == positionsVary || max < 0 || min != max {
+		return positionsVary
+	}
+	return mulShapeWidth(sub, min)
+}
+
+// mulShapeWidth is repeatWidth's arithmetic, saturating to positionsVary.
+func mulShapeWidth(a, n int) int {
+	if n <= 0 || a == 0 {
+		return 0
+	}
+	if a == positionsVary || a > shapeCeiling/n {
+		return positionsVary
+	}
+	return a * n
+}
+
+// repeatedUnit is a unit's shape AS IT APPEARS UNDER REPETITION, and it must be
+// applied BEFORE the unit's quotation is read.
+//
+// THE SEAM IS THE POINT. Laying a unit end to end with itself makes a join, and
+// a unit whose WIDTH varies between readings starts its next traversal at an
+// offset that varies with it — so the join is a position more than one rune can
+// reach, and the unit's `consumes` really is that position's alphabet.
+// MEASURED, with the width test present but applied to the repeat's own shape
+// instead of to the unit's:
+//
+//	Z(?:a,?)*   ACCEPTED, spelled=1, quoted=0
+//
+// The unit `a,?` is decided — a fixed literal followed by a trailing optional
+// puts nothing at a position twice — so nothing promoted, `quoted` was read off
+// the un-promoted unit, and the promotion that did land on the star node was
+// read by nobody: its parent is a concatenation, and a concatenation does not
+// take quotation over a union. The order is the whole fix. See
+// TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam.
+func repeatedUnit(s patternShape) patternShape {
+	if s.positions == positionsVary {
+		s.decided = false
+	}
+	return promoteUndecidedPositions(s)
 }
 
 // unboundedIfQuoting is the repeat rule for a ceiling-less repeat.
