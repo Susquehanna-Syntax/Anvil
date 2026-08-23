@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -24,8 +25,8 @@ import (
 // Every test in this file drives provisioning through RECORDED SHAPES of what
 // `docker info`, `docker compose up` and `docker inspect` return. Docker is
 // not installed on the host this packet was written on -- verified, and
-// recorded in internal/SKIPPED-CONTROLS.md D10-1..D10-3 with what would settle
-// each -- so the decision logic is proven here in full and the fidelity of a
+// recorded in internal/SKIPPED-CONTROLS.md as entry U2 with what would settle
+// it -- so the decision logic is proven here in full and the fidelity of a
 // real implementation's shapes is not.
 //
 // The fake records a CALL LOG, because several controls in this file are about
@@ -59,6 +60,18 @@ type fakeDocker struct {
 	upBlocks bool
 	upResult UpResult
 	upErr    error
+
+	// upFunc, when set, replaces the whole ComposeUp body. It is what lets a
+	// test drive the ORDERING between the runner's own status and the
+	// deadline -- the thing refuseAfterUp decides on.
+	upFunc func(ctx context.Context, req UpRequest) (UpResult, error)
+
+	// upDeadline is the deadline ComposeUp OBSERVED on its context, and
+	// upHadDeadline says whether there was one. Recorded because "the call is
+	// bounded" is a claim about the context Provision built, and a test that
+	// waited for the bound to expire would have to wait DefaultBuildBudget.
+	upDeadline    time.Time
+	upHadDeadline bool
 
 	containers    []Container
 	containersErr error
@@ -100,13 +113,24 @@ func (f *fakeDocker) ComposeUp(ctx context.Context, req UpRequest) (UpResult, er
 	f.record(callComposeUp)
 	f.mu.Lock()
 	f.lastUp = req
+	f.upDeadline, f.upHadDeadline = ctx.Deadline()
 	blocks := f.upBlocks
+	fn := f.upFunc
 	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, req)
+	}
 	if blocks {
 		<-ctx.Done()
 		return UpResult{}, ctx.Err()
 	}
 	return f.upResult, f.upErr
+}
+
+func (f *fakeDocker) observedDeadline() (time.Time, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.upDeadline, f.upHadDeadline
 }
 
 func (f *fakeDocker) ProjectContainers(ctx context.Context, project string) ([]Container, error) {
@@ -307,6 +331,7 @@ var stageProvenance = map[Stage]record.TargetProvenance{
 	StageBuild:                record.TargetProvenanceBuildFailed,
 	StageStart:                record.TargetProvenanceBootFailed,
 	StageHealth:               record.TargetProvenanceBootFailed,
+	StageUpBudget:             record.TargetProvenanceBootFailed,
 	StageRunnerContract:       record.TargetProvenanceBootFailed,
 	StageEnumerate:            record.TargetProvenanceBootFailed,
 	StageContainment:          record.TargetProvenanceBootFailed,
@@ -441,6 +466,7 @@ func TestStageDerivesTheExpectedDastStatus(t *testing.T) {
 		StageBuild:                record.DastStatusTargetBootFailed,
 		StageStart:                record.DastStatusTargetBootFailed,
 		StageHealth:               record.DastStatusTargetBootFailed,
+		StageUpBudget:             record.DastStatusTargetBootFailed,
 		StageRunnerContract:       record.DastStatusTargetBootFailed,
 		StageEnumerate:            record.DastStatusTargetBootFailed,
 		StageContainment:          record.DastStatusTargetBootFailed,
@@ -931,24 +957,40 @@ func TestPreflightRefusalsStartAndTearDownNothing(t *testing.T) {
 // The hard timeout is a timeout, not a hang
 // ---------------------------------------------------------------------------
 
-func TestHealthTimeoutIsATimeoutNotAHang(t *testing.T) {
+func TestARunnerThatNeverReturnsIsCutOffAndNotHung(t *testing.T) {
 	fx := newFixtureWithTimeout(t, 1)
 	f := healthyWorld(fx.project)
 	f.upBlocks = true // a runner that never returns on its own
 	p := newProvisioner(t, f, fx.repoRoot)
 
+	// The CALLER's deadline, not the manifest's. The enforced `up` deadline
+	// is now DefaultBuildBudget + the declared health timeout (see that
+	// constant), and waiting %s for a unit test is not a test -- so this
+	// proves the property that actually matters, that Provision returns when
+	// its context ends rather than blocking on the runner forever. The size
+	// of the internally computed deadline is pinned separately, by
+	// TestTheUpBudgetIsBuildPlusHealthAndNotHealthAlone, without waiting for
+	// it.
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
 	start := time.Now()
-	tgt, err := p.Provision(t.Context(), fx.manifest)
+	tgt, err := p.Provision(ctx, fx.manifest)
 	elapsed := time.Since(start)
 
-	mustRefuse(t, tgt, err, StageHealth, record.TargetProvenanceBootFailed, ErrHealthTimeout)
+	// The runner named NO phase, so the refusal must not claim one. This is
+	// the only path on which the clock decides anything.
+	mustRefuse(t, tgt, err, StageUpBudget, record.TargetProvenanceBootFailed, ErrUpBudgetExhausted)
+	if !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("the refusal asserts which phase consumed the budget; nothing observed it: %v", err)
+	}
 
 	if elapsed > 20*time.Second {
-		t.Fatalf("the declared timeout was 1s and Provision took %s", elapsed)
+		t.Fatalf("Provision blocked for %s on a runner that never returns", elapsed)
 	}
-	if elapsed < 900*time.Millisecond {
-		t.Errorf("Provision returned in %s, before the declared 1s timeout could have "+
-			"elapsed; the deadline is not the thing that ended the wait", elapsed)
+	if elapsed < 150*time.Millisecond {
+		t.Errorf("Provision returned in %s, before the 200ms context could have elapsed; the "+
+			"deadline is not the thing that ended the wait", elapsed)
 	}
 	// The context that expired is the one teardown would inherit. It must
 	// still run, or a timed-out project is left running.
@@ -957,17 +999,135 @@ func TestHealthTimeoutIsATimeoutNotAHang(t *testing.T) {
 	}
 }
 
-func TestUpRequestCarriesTheDeclaredTimeout(t *testing.T) {
-	fx := newFixtureWithTimeout(t, 45)
+// TestTheUpBudgetIsBuildPlusHealthAndNotHealthAlone is HIGH 2's first half.
+//
+// health.timeout_seconds is the HEALTH budget: D.1 validates it against
+// health.interval_seconds ("the health check would never poll"), so D.1 already
+// treats it as a polling budget. Spending it on `docker build` first means that
+// on a cold cache the health wait gets whatever is left, which is nothing --
+// and a target that boots perfectly well is recorded boot_failed.
+//
+// So the enforced deadline is DefaultBuildBudget + the declared timeout, and
+// the request carries both budgets separately. This reads the deadline the fake
+// OBSERVED rather than waiting for it to expire.
+func TestTheUpBudgetIsBuildPlusHealthAndNotHealthAlone(t *testing.T) {
+	const declared = 45 * time.Second
+	fx := newFixtureWithTimeout(t, int(declared/time.Second))
 	f := healthyWorld(fx.project)
 	p := newProvisioner(t, f, fx.repoRoot)
 
+	before := time.Now()
 	if _, err := p.Provision(t.Context(), fx.manifest); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
-	if got, want := f.lastUp.Timeout, 45*time.Second; got != want {
+	after := time.Now()
+
+	if got, want := f.lastUp.Timeout, declared; got != want {
 		t.Errorf("UpRequest.Timeout = %s, want the manifest's %s", got, want)
 	}
+	if got, want := f.lastUp.BuildTimeout, DefaultBuildBudget; got != want {
+		t.Errorf("UpRequest.BuildTimeout = %s, want %s", got, want)
+	}
+	if f.lastUp.BuildTimeout == f.lastUp.Timeout {
+		t.Error("the build budget and the health budget are the same value, so a test could " +
+			"not tell which one the deadline was built from")
+	}
+
+	deadline, ok := f.observedDeadline()
+	if !ok {
+		t.Fatal("ComposeUp was called with no deadline at all; a runner that ignores its own " +
+			"Timeout field could then hang this call forever")
+	}
+	// The window the deadline must land in, computed from the two clock reads
+	// around the call so it holds however slow the machine is.
+	lo := before.Add(DefaultBuildBudget + declared)
+	hi := after.Add(DefaultBuildBudget + declared)
+	if deadline.Before(lo) || deadline.After(hi) {
+		t.Fatalf("ComposeUp's deadline is %s; want build budget + declared health timeout "+
+			"(%s + %s), i.e. between %s and %s",
+			deadline, DefaultBuildBudget, declared, lo, hi)
+	}
+	// And the regression the split exists to prevent: the deadline must NOT
+	// be the health timeout alone.
+	if !deadline.After(after.Add(declared)) {
+		t.Fatalf("ComposeUp's deadline is %s, which is within the declared health timeout of "+
+			"%s. The whole `up` -- build, pull, create, start -- is being charged to the "+
+			"health budget, so an ordinary cold-cache build is recorded as a health failure",
+			deadline, declared)
+	}
+}
+
+// TestTheRunnersOwnStatusBeatsTheClock is HIGH 2's second half, and it is the
+// critic's demonstration turned into a test.
+//
+// refuseAfterUp used to check the deadline FIRST, so any failure surfacing
+// after the budget elapsed was recorded as a health timeout -- boot_failed --
+// including a runner that explicitly said UpStatusBuildFailed. A slow image
+// build is the normal case on a cold cache, and build_failed and boot_failed
+// send the operator to two different files.
+//
+// The runner watched the build. The clock watched a stopwatch.
+func TestTheRunnersOwnStatusBeatsTheClock(t *testing.T) {
+	cases := []struct {
+		name     string
+		status   UpStatus
+		stage    Stage
+		prov     record.TargetProvenance
+		sentinel error
+	}{
+		{"a build failure reported after the deadline", UpStatusBuildFailed,
+			StageBuild, record.TargetProvenanceBuildFailed, ErrBuildFailed},
+		{"a start failure reported after the deadline", UpStatusStartFailed,
+			StageStart, record.TargetProvenanceBootFailed, ErrStartFailed},
+		{"a health timeout reported after the deadline", UpStatusHealthTimeout,
+			StageHealth, record.TargetProvenanceBootFailed, ErrHealthTimeout},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newFixtureWithTimeout(t, 1)
+			f := healthyWorld(fx.project)
+			f.upFunc = func(ctx context.Context, _ UpRequest) (UpResult, error) {
+				// Wait for the deadline to blow, then answer with the phase
+				// the runner actually observed -- and with the context error
+				// too, which is what a real runner returns when its own
+				// context ended underneath it.
+				<-ctx.Done()
+				time.Sleep(200 * time.Millisecond)
+				return UpResult{Status: tc.status, Detail: "runner detail"}, ctx.Err()
+			}
+			p := newProvisioner(t, f, fx.repoRoot)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			tgt, err := p.Provision(ctx, fx.manifest)
+
+			pe := mustRefuse(t, tgt, err, tc.stage, tc.prov, tc.sentinel)
+			if pe.Stage() == StageUpBudget {
+				t.Fatal("the clock overrode a phase the runner named")
+			}
+			if !strings.Contains(err.Error(), "runner detail") {
+				t.Errorf("the runner's own diagnostics were dropped: %v", err)
+			}
+		})
+	}
+
+	// The control: with the SAME timing and NO status from the runner, the
+	// answer must be the phase-unknown one. Without this, the cases above
+	// could be passing because the deadline is never noticed at all.
+	t.Run("no status from the runner, and the clock does decide", func(t *testing.T) {
+		fx := newFixtureWithTimeout(t, 1)
+		f := healthyWorld(fx.project)
+		f.upFunc = func(ctx context.Context, _ UpRequest) (UpResult, error) {
+			<-ctx.Done()
+			time.Sleep(200 * time.Millisecond)
+			return UpResult{}, ctx.Err()
+		}
+		p := newProvisioner(t, f, fx.repoRoot)
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		tgt, err := p.Provision(ctx, fx.manifest)
+		mustRefuse(t, tgt, err, StageUpBudget, record.TargetProvenanceBootFailed, ErrUpBudgetExhausted)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,6 +1167,42 @@ func TestUpRequestIsFailClosed(t *testing.T) {
 	}
 	if !filepath.IsAbs(req.ComposeFile) {
 		t.Errorf("UpRequest.ComposeFile = %q, which is not absolute", req.ComposeFile)
+	}
+	// Both budgets must be positive. A zero BuildTimeout would make the
+	// enforced deadline the health timeout alone, which is the collapse the
+	// split exists to undo; a zero Timeout is an unbounded health wait.
+	if req.BuildTimeout <= 0 {
+		t.Errorf("UpRequest.BuildTimeout = %s; a non-positive build budget makes the enforced "+
+			"deadline the health timeout alone", req.BuildTimeout)
+	}
+	if req.Timeout <= 0 {
+		t.Errorf("UpRequest.Timeout = %s; a non-positive health budget is an unbounded wait",
+			req.Timeout)
+	}
+
+	// EVERY FIELD OF UpRequest IS ASSERTED ABOVE, and this is what keeps that
+	// true. The request is the other half of the containment story -- the
+	// observed containers prove what happened, the request proves what was
+	// asked for -- so a field added and left unasserted is a thing this
+	// package asks the runner for that no test looks at. BuildTimeout was
+	// exactly such a field until the assertion above was written.
+	asserted := map[string]bool{
+		"Project": true, "ComposeFile": true, "Runtime": true, "RuntimePlatform": true,
+		"WaitForHealthy": true, "BuildTimeout": true, "Timeout": true,
+		"ForceRecreate": true, "RemoveOrphans": true,
+	}
+	rt := reflect.TypeOf(UpRequest{})
+	for i := 0; i < rt.NumField(); i++ {
+		if name := rt.Field(i).Name; !asserted[name] {
+			t.Errorf("UpRequest.%s is not asserted by this test. The request is what this "+
+				"package asks the container runner to do; an unasserted field is an "+
+				"instruction nobody checks", name)
+		}
+	}
+	for name := range asserted {
+		if _, ok := rt.FieldByName(name); !ok {
+			t.Errorf("this test asserts UpRequest.%s, which no longer exists", name)
+		}
 	}
 }
 
@@ -1510,6 +1706,16 @@ func TestTargetTeardownDestroysVolumes(t *testing.T) {
 
 // TestContainersReturnsACopy: the audit-trail list must not be a handle a
 // caller can edit after containment was asserted against it.
+//
+// IT MUTATES EVERY FIELD, INCLUDING EVERY SLICE ELEMENT, and that is the whole
+// point of the rewrite. The previous version of this test assigned to
+// got[0].Runtime -- one string field -- and passed against a SHALLOW copy,
+// under which Mounts, SecurityOpt, CapDrop, CapAdd, Devices and RepoDigests all
+// still aliased the sealed Target. Writing through the "copy" made the sealed
+// Target's audit trail report a docker.sock bind mount, seccomp=unconfined and
+// CapDrop of nothing. A test that mutates only the field where the copy is real
+// proves nothing; this is the second time that exact defect has been found in
+// this codebase (Scope.Ports was the first).
 func TestContainersReturnsACopy(t *testing.T) {
 	fx := newFixture(t)
 	f := healthyWorld(fx.project)
@@ -1519,20 +1725,259 @@ func TestContainersReturnsACopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
-	got := tgt.Containers()
-	if len(got) == 0 {
+	before := tgt.Containers()
+	if len(before) == 0 {
 		t.Fatal("Containers() is empty")
 	}
-	got[0].Runtime = "runc"
-	if tgt.Containers()[0].Runtime != RuntimeName {
-		t.Fatal("Containers() hands out the sealed slice; a caller edited what " +
-			"containment was asserted against")
+	// The fixture has to actually carry every reference field, or mutating
+	// them proves nothing about a copy that never had them.
+	for i, c := range before {
+		if len(c.Mounts) == 0 || len(c.SecurityOpt) == 0 || len(c.CapDrop) == 0 || len(c.RepoDigests) == 0 {
+			t.Fatalf("fixture problem: container %d has an empty reference field and the "+
+				"aliasing test over it would be vacuous: %+v", i, c)
+		}
+	}
+
+	// A record of the sealed state, taken through the (now deep) copy before
+	// anything is written. If the copy were shallow this snapshot would be
+	// mutated along with everything else, so it is rendered to a string --
+	// values, not handles.
+	sealedBefore := renderContainers(before)
+
+	// THE ATTACK: rewrite every field of the returned value into the shape
+	// containment exists to refuse.
+	got := tgt.Containers()
+	for i := range got {
+		got[i].ID = "rewritten"
+		got[i].Name = "rewritten"
+		got[i].Project = "somebody-elses-project"
+		got[i].Service = "rewritten"
+		got[i].Image = "evil:latest"
+		got[i].ImageID = "sha256:" + strings.Repeat("0", 64)
+		got[i].Runtime = "runc"
+		got[i].State = StateExited
+		got[i].Health = HealthUnhealthy
+		got[i].Privileged = true
+		got[i].ReadonlyRootfs = false
+		got[i].NetworkMode = "host"
+		got[i].PidMode = "host"
+		got[i].IpcMode = "shareable"
+		got[i].UsernsMode = "host"
+
+		// Every slice, TWO WAYS: element assignment (which a shallow copy
+		// carries straight through to the sealed backing array) and append
+		// (which may or may not, depending on capacity -- so element
+		// assignment is the one that actually proves aliasing).
+		for j := range got[i].RepoDigests {
+			got[i].RepoDigests[j] = "registry.evil/x@sha256:" + strings.Repeat("0", 64)
+		}
+		for j := range got[i].CapDrop {
+			got[i].CapDrop[j] = "NONE"
+		}
+		for j := range got[i].SecurityOpt {
+			got[i].SecurityOpt[j] = "seccomp=unconfined"
+		}
+		for j := range got[i].Mounts {
+			got[i].Mounts[j] = Mount{
+				Type:        "bind",
+				Source:      "/var/run/docker.sock",
+				Destination: "/var/run/docker.sock",
+				ReadOnly:    false,
+			}
+		}
+		got[i].CapAdd = append(got[i].CapAdd, "SYS_ADMIN")
+		got[i].Devices = append(got[i].Devices, "/dev/kmsg:/dev/kmsg:rwm")
+	}
+
+	sealedAfter := renderContainers(tgt.Containers())
+	if sealedAfter != sealedBefore {
+		t.Fatalf("Containers() hands out handles into the sealed Target; a caller edited what "+
+			"containment was asserted against.\n--- sealed before ---\n%s\n--- sealed after ---\n%s",
+			sealedBefore, sealedAfter)
+	}
+
+	// And the returned value really was writable -- otherwise the assertion
+	// above could pass because the mutations never happened.
+	if renderContainers(got) == sealedBefore {
+		t.Fatal("the mutations above did not change the returned value at all, so this test " +
+			"cannot detect aliasing")
+	}
+}
+
+// renderContainers is a total, value-only rendering of a container listing.
+// Comparing rendered strings rather than the structs is what makes the
+// before-snapshot immune to the aliasing being tested for.
+func renderContainers(cs []Container) string {
+	var b strings.Builder
+	for _, c := range cs {
+		fmt.Fprintf(&b, "%+v\n", c)
+	}
+	return b.String()
+}
+
+// TestContainerCloneCoversEveryReferenceField is the guard against the NEXT
+// version of this bug.
+//
+// TestContainersReturnsACopy mutates a hand-written list of fields, so a field
+// added to Container later is a field that test silently stops covering. This
+// one walks the struct by reflection and fails on any reference-typed field
+// (slice, map, pointer, interface, channel, func) that is not named in the
+// list the mutation test covers -- which forces the author of the new field to
+// visit Container.clone and this list at the same time.
+func TestContainerCloneCoversEveryReferenceField(t *testing.T) {
+	// The reference fields TestContainersReturnsACopy mutates element-wise.
+	covered := map[string]bool{
+		"RepoDigests": true,
+		"CapAdd":      true,
+		"CapDrop":     true,
+		"SecurityOpt": true,
+		"Devices":     true,
+		"Mounts":      true,
+	}
+	found := map[string]bool{}
+	ct := reflect.TypeOf(Container{})
+	for i := 0; i < ct.NumField(); i++ {
+		f := ct.Field(i)
+		switch f.Type.Kind() {
+		case reflect.Slice, reflect.Map, reflect.Pointer, reflect.Interface,
+			reflect.Chan, reflect.Func:
+			found[f.Name] = true
+			if !covered[f.Name] {
+				t.Errorf("Container.%s is a %s and is not deep-copied by Container.clone nor "+
+					"mutated by TestContainersReturnsACopy. A shallow copy of it aliases the "+
+					"sealed Target -- add it to clone(), to the mutation test, and to the list "+
+					"in this test", f.Name, f.Type.Kind())
+			}
+		}
+	}
+	for name := range covered {
+		if !found[name] {
+			t.Errorf("this test's covered list names Container.%s, which no longer exists or is "+
+				"no longer a reference type. Remove it, so the list keeps meaning something", name)
+		}
+	}
+
+	// Mount is copied by element assignment, which is complete only while
+	// every one of its fields is a value.
+	mt := reflect.TypeOf(Mount{})
+	for i := 0; i < mt.NumField(); i++ {
+		f := mt.Field(i)
+		switch f.Type.Kind() {
+		case reflect.Slice, reflect.Map, reflect.Pointer, reflect.Interface,
+			reflect.Chan, reflect.Func:
+			t.Errorf("Mount.%s is a %s. Container.clone copies Mounts by element assignment, "+
+				"which no longer deep-copies them; clone the field explicitly", f.Name, f.Type.Kind())
+		}
+	}
+}
+
+// TestTheSealedSnapshotIsTakenByValue: the Docker seam is an interface this
+// package does not implement, so an implementation that retains the slices it
+// returned from ProjectContainers must not be able to rewrite the sealed
+// Target's audit trail after containment was asserted against it.
+func TestTheSealedSnapshotIsTakenByValue(t *testing.T) {
+	fx := newFixture(t)
+	f := healthyWorld(fx.project)
+	p := newProvisioner(t, f, fx.repoRoot)
+
+	tgt, err := p.Provision(t.Context(), fx.manifest)
+	if err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	before := renderContainers(tgt.Containers())
+
+	// The seam still holds f.containers -- the very slice it handed over.
+	for i := range f.containers {
+		f.containers[i].Runtime = "runc"
+		for j := range f.containers[i].SecurityOpt {
+			f.containers[i].SecurityOpt[j] = "seccomp=unconfined"
+		}
+		for j := range f.containers[i].Mounts {
+			f.containers[i].Mounts[j] = Mount{Type: "bind", Source: "/var/run/docker.sock"}
+		}
+	}
+
+	if after := renderContainers(tgt.Containers()); after != before {
+		t.Fatalf("the Docker seam rewrote the sealed Target's audit trail after Provision "+
+			"returned.\n--- before ---\n%s\n--- after ---\n%s", before, after)
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Package-level hygiene
 // ---------------------------------------------------------------------------
+
+// TestEverySkippedControlsPointerResolves: this package defers its unproven
+// half to internal/SKIPPED-CONTROLS.md by ENTRY ID, in doc comments a reader is
+// expected to follow. Three of those pointers named a step-numbered id -- one
+// per line of provisioning's doc, in the D.10 numbering -- that was never
+// filed under that name; the entry exists as U2. So the one document holding
+// what this package cannot prove was unreachable from the code deferring to it.
+//
+// A pointer nobody follows is a pointer nobody notices is broken, so this
+// resolves every one of them against the document's actual headings.
+func TestEverySkippedControlsPointerResolves(t *testing.T) {
+	const doc = "../../SKIPPED-CONTROLS.md"
+	body, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("this package's doc comments defer to %s and it cannot be read: %v", doc, err)
+	}
+	// Headings are "## U1 — ..." or "### N3 — ...".
+	headings := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^#{2,3} ([A-Z]+[0-9]+(?:-[0-9]+)?[a-z]?) `).
+		FindAllStringSubmatch(string(body), -1) {
+		headings[m[1]] = true
+	}
+	if len(headings) == 0 {
+		t.Fatalf("no entry headings were found in %s, so every assertion below is vacuous", doc)
+	}
+
+	// The id shapes SKIPPED-CONTROLS.md actually uses, as an ALLOWLIST of
+	// prefixes rather than a denylist of everything else a nearby sentence
+	// might contain. "S6" and "S12" are plan/00-SPINE.md sections and are
+	// deliberately not in it.
+	idIn := regexp.MustCompile(`\b([DUNGHL][0-9]+(?:-[0-9]+)?[a-z]?)\b`)
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("globbing package sources: %v", err)
+	}
+	checked := 0
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		text := string(src)
+		const marker = "SKIPPED-CONTROLS.md"
+		for i := 0; ; {
+			j := strings.Index(text[i:], marker)
+			if j < 0 {
+				break
+			}
+			start := i + j + len(marker)
+			end := start + 160
+			if end > len(text) {
+				end = len(text)
+			}
+			for _, m := range idIn.FindAllStringSubmatch(text[start:end], -1) {
+				checked++
+				if !headings[m[1]] {
+					t.Errorf("%s points at %s entry %q, which is not a heading in that document. "+
+						"Fix the pointer or the entry id -- the document holding this package's "+
+						"unproven half has to be reachable from the code that defers to it",
+						f, doc, m[1])
+				}
+			}
+			i = start
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no SKIPPED-CONTROLS.md entry pointers were found in this package's sources. " +
+			"Either the deferral comments were deleted -- in which case the unproven half is now " +
+			"undocumented -- or this test's pattern no longer matches them and it is a no-op")
+	}
+	t.Logf("resolved %d SKIPPED-CONTROLS.md entry pointers against %d headings", checked, len(headings))
+}
 
 // TestNothingInThisPackageReadsConfiguration: plan/50-dast.md forbids a
 // fallback to a non-gVisor runtime, and a config key that turns an assertion

@@ -268,6 +268,49 @@ That `-race` genuinely does not compile the file was confirmed the same way:
 `go test -race -count=1 -v -run TestScopeBytesAreReadOnceUnderAConcurrentWriter
 ./internal/dast/authz/` reports `[no tests to run]`.
 
+### N4 — every CI job was `ubuntu-latest`, so the containment platform refusal ran nowhere — **CLOSED**
+
+`SystemCommander` refuses on any non-Linux GOOS, and that refusal is what stops
+Anvil reporting a sandbox as contained on a platform where it cannot check
+anything — the claim that authorizes firing DAST probes at all. Its only guard,
+`TestSystemCommanderRefusesOffLinux`, branches on `runtime.GOOS`: on Linux it
+asserts a `Commander` comes back, off Linux it asserts a refusal. All five CI
+jobs ran on `ubuntu-latest`, so only the Linux branch was ever taken and
+deleting the `runtime.GOOS != "linux"` check would have left every lane green.
+
+**Change made.** A `containment-non-linux` job on `windows-latest` running
+`internal/dast/containment` with `-count=1`, plus a step asserting the named
+test actually ran and passed (a `-run` pattern matching nothing exits 0 and
+prints `no tests to run`, which is how this lane would rot) and a `(cached)`
+check, plus a negative control that deletes the platform check, requires the
+guard to go RED **for the right reason**, restores the file with
+`git checkout --` and requires `git diff --exit-code` to be clean.
+
+No `-race` in this lane: the detector needs a gcc toolchain on Windows and the
+`ubuntu-latest` job already runs the whole tree under it.
+
+**The negative control was exercised on this host before it was committed**,
+from Git Bash, against the real mutation the step applies:
+
+```
+$ sed -i 's/if runtime.GOOS != "linux" {/if false {/' internal/dast/containment/netns.go
+$ go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/
+exit=1
+--- FAIL: TestSystemCommanderRefusesOffLinux (0.00s)
+    netns_test.go:173: on windows SystemCommander returned a Commander. A containment
+    layer that reports success on a platform with no network namespaces is the
+    silent-clean failure this package exists to prevent
+```
+
+which is the string the step greps for. The file was restored and re-hashed to
+confirm a byte-for-byte revert (sha256
+`57725537B7B0FEA878F59B5A29D9F0CBCFA277E3B23EBE90A124408ADC03F726` before and
+after).
+
+**What this lane does NOT do:** it does not prove anything about a kernel. The
+Linux branch of that same test still asserts only that a `Commander` comes
+back. U1 remains open.
+
 ### N1 — no CI job runs the real Trivy scan
 
 After H3, `TestRealTrivyScansAFixtureRepo` skips honestly on any machine that
@@ -603,22 +646,40 @@ and all of it is tested:
   evaluates top to bottom, so a suite that only asserted "the drop is present"
   and "the accept is present" would pass on a ruleset with them the wrong way
   round, which is a ruleset where the metadata endpoint is reachable.
-- `TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity` sweeps 393,226
-  addresses (measured) and asserts `authz.AddressIsReserved(a) ⇒
-  DeniedByRuleset(a)`. 36,086 of them are reserved, so the implication is not
-  vacuous, and the test fails if that count reaches zero.
+- `TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity` sweeps 393,264
+  addresses (measured, after the D.12 fix round) and asserts
+  `authz.AddressIsReserved(a) ⇒ DeniedByRuleset(a)`. 36,112 of them are
+  reserved, so the implication is not vacuous, and the test fails if that count
+  reaches zero. The generator now also emits ZONED and IPv4-MAPPED spellings;
+  before it did, it could not construct the input that broke the relation, and
+  it swept 393,226 addresses green while `DeniedByRuleset` returned false for
+  every zoned address.
 - `EvaluateCanaryReport` is pure, and every branch of it is exercised:
   reachable, missing probe, duplicate probe, absent outcome, unrecognised
   outcome, indeterminate outcome, wrong namespace, the *host* namespace,
-  unrequested extras, and an empty probe list.
-- `TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns` is D.11's stop
-  condition: 20 runs against a canary reporting `reachable` (the empty-ruleset
-  fixture, research 19 risk #5's shape), 20 aborts; then 20 runs against a
-  correctly blocked report, 20 passes, so the first half is not passing because
-  the function refuses everything.
+  unrequested extras, an empty probe list, an outcome that disagrees with the
+  reported `DialFailure`, and a silent timeout that did not wait out its
+  declared bound.
+- `TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns` is the SECOND HALF
+  of D.11's stop condition and only the second half: 20 runs against a canary
+  reporting `reachable` (the empty-ruleset fixture, research 19 risk #5's
+  shape), 20 aborts; then 20 runs against a correctly blocked report, 20
+  passes, so the first half is not passing because the function refuses
+  everything. **The stop condition's FIRST clause — "Default-deny ruleset
+  installs correctly on a real target fixture" — is NOT met and cannot be met
+  on this host**: nothing here installs a ruleset anywhere, and item (1) below
+  is what would settle it. This entry previously claimed the whole stop
+  condition was met, which is how a gap ships.
 - `SystemCommander` **refuses** on any non-Linux GOOS and
   `TestSystemCommanderRefusesOffLinux` asserts that refusal on this host. There
   is no no-op Commander, so there is no path by which Windows returns "contained".
+  **That guard now runs in a CI lane**: `containment-non-linux` in
+  `.github/workflows/ci.yml` runs the package on `windows-latest`, asserts the
+  named test actually executed and passed, then DELETES the
+  `runtime.GOOS != "linux"` check, requires the guard to go red naming the
+  returned Commander, and restores the file. Until that lane existed, all five
+  CI jobs were `ubuntu-latest`, only the Linux branch was ever taken, and
+  deleting the refusal would have left every lane green.
 
 ### What it does not prove, and exactly what would settle it
 
@@ -670,6 +731,82 @@ Until (1) exists, **`internal/dast/containment` is a control that runs in zero
 CI lanes against a kernel**, and this entry is the standing record of that.
 `AssertContainment` must not be wired into a scan path that treats its absence
 as success; it returns an error on every platform where it cannot check.
+
+### U1a — the canary proves the `output` path; the `forward` path is proved only on paper
+
+Opened by the D.12 critic's finding that the generated ruleset hooked `output`
+only, which does not see forwarded traffic. The ruleset now installs the
+identical rule list into an `egress` chain at `output` and an `egress_forward`
+chain at `forward`, because a Compose project on a bridge inside the namespace
+has its egress FORWARDED, not output — and `provision.go`'s own `NetworkMode`
+assertion requires exactly that bridge arrangement.
+
+**The asymmetry that remains, stated because it is easy to miss.** The canary
+runs under `ip netns exec`, so it is a process holding a socket IN the
+namespace and its dials traverse the `output` hook. It therefore exercises the
+`output` chain and **not** the `forward` chain. So even on the privileged Linux
+lane item (1) describes, a passing canary would be evidence about the path the
+TARGET DOES NOT USE.
+
+**What would settle it:** the same privileged lane, with the canary run from
+inside a container attached to a bridge in the namespace rather than by `ip
+netns exec` — so that its packets are forwarded, exactly as the target's are.
+Cheaper and partial: on that lane, `nft list ruleset` inside the namespace,
+asserting both chains are present with the same rules and both at `policy
+drop`. That is a configuration check and marking your own homework, which is
+why it is the partial one.
+
+Today the forward chain is pinned by
+`TestTheRulesetHooksForwardAndNotOnlyOutput` and
+`TestEveryHookedChainCarriesTheIdenticalRuleList`, which parse the emitted
+script back with a reader separate from the writer. Both are statements about
+the text, not about a kernel.
+
+### U1b — the canary's timing evidence is self-reported
+
+The verdict `DialFailureSilentTimeout ⇒ blocked` is only sound if the probe
+waited out `DefaultCanaryDialTimeout`; nothing enforced or observed that, and
+the report carried no timing at all, so a `ConnectProbe` built with a 50ms
+dialer would have turned every silent timeout into "blocked" and the whole
+assertion into a green function that could not fail. `Attempt` now carries
+`elapsed_ms` (measured by `RunCanary` around the call it does not control) and
+the raw `failure`, and `EvaluateCanaryReport` refuses a silent timeout below
+1,900 ms (measured floor: `DefaultCanaryDialTimeout` 2s minus a 100 ms
+tolerance) and any outcome that disagrees with `ClassifyDialFailure` of the
+reported reason.
+
+**What that does NOT buy:** the canary is the untrusted half. A substituted or
+malicious binary can write any number it likes, and this package cannot
+authenticate it. What the check buys is that the ORDINARY way this control
+rots — an honest `ConnectProbe` with a dialer shorter than the declared bound
+— now fails loudly. **What would settle the rest:** the same privileged lane,
+comparing the reported `elapsed_ms` against the lane's own wall clock, plus the
+errno measurement item (2) already names.
+
+### U1c — the two halves of this package do not compose, and nothing calls either
+
+**Recorded here so it cannot be forgotten. It is NOT this package's to fix.**
+
+`Provision` seals a `Target` with `booted_clean` without any network namespace
+being involved: it never calls `SetupNetns` and never calls
+`AssertContainment`. A repository-wide grep finds no caller of `Provision`,
+`SetupNetns` or `AssertContainment` anywhere outside this package's own tests.
+So today a target can be provisioned, sealed and recorded `booted_clean` with
+no egress containment installed and no containment assertion run.
+
+The failure direction is currently safe only because nothing runs any of it.
+The moment a scan path calls `Provision` and fires probes, `booted_clean` would
+mean "the container is contained by gVisor" and would NOT mean "its egress is
+default-deny and the metadata endpoint is unreachable" — which is what a
+reader of that value will assume.
+
+**Whose it is:** the integration packet (D.31) plus the scan path, not D.10 or
+D.11. **What would settle it:** a wiring point that (a) builds the `Netns`,
+(b) calls `SetupNetns`, (c) calls `AssertContainment` and refuses on error,
+BEFORE any probe engine starts, and a test asserting that ordering by call log
+— D.12's verdict criterion is explicit that `AssertContainment` must run
+before the probe engines fire, and today there is nothing to assert that
+against.
 
 ## U2 — DAST target provisioning (D.10) has never run against a Docker daemon
 
@@ -758,6 +895,40 @@ In order of decreasing cost:
    `/etc/docker/daemon.json` `runtimeArgs`). If it does not, `RuntimeInfo.Platform`
    can only ever be empty and this package refuses every provision — which is
    fail-closed and useless, and would need the check moved to `runsc --version`.
+
+### U2a — the build budget and the health budget are two numbers no runner has ever honoured
+
+Opened by the D.12 critic's finding that `health.timeout_seconds` was applied
+as the total budget for build + pull + create + start + health, with the
+DEADLINE checked ahead of the runner's own reported status — so a seam
+answering `UpStatusBuildFailed` after the deadline was recorded `boot_failed`.
+A slow image build is the ordinary case on a cold cache, and the two outcomes
+send the operator to two different files.
+
+Two things changed. `refuseAfterUp` now consults the runner's reported status
+FIRST and lets the clock decide only when the runner named no phase at all (a
+distinct `StageUpBudget` / `ErrUpBudgetExhausted`, whose message states that
+which phase consumed the budget is UNKNOWN rather than guessing). And the
+budgets are split: `UpRequest.BuildTimeout` carries `DefaultBuildBudget` (15
+minutes) for build/pull/create/start, `UpRequest.Timeout` carries the declared
+health timeout for the health wait alone, and the enforced context deadline is
+their sum so a runner that ignores both cannot hang the call.
+
+**Unproven, and this is the honest part.** `DefaultBuildBudget` is a POLICY
+BOUND, chosen and not measured — no cold-cache build has been timed on this
+host, because this host has no Docker. And nothing anywhere applies the two
+budgets to the two phases: this package cannot, because the phase boundary is
+inside `docker compose up`, and no implementation of the seam exists. The split
+is today a contract written in the `Docker` interface doc and enforced by
+nobody.
+
+**What would settle it:** the Linux+Docker lane in item (1), with a fixture
+whose `build:` stage sleeps past `DefaultBuildBudget` and a separate fixture
+whose healthcheck never passes, asserting that the first refuses at
+`StageBuild` and the second at `StageHealth` — and, for the budget split
+specifically, that the first fixture is NOT cut off at
+`health.timeout_seconds`. Item (2) already collects the raw material for the
+first half.
 
 Until (1) exists, **`Provision` is a control that runs in zero CI lanes against
 a container engine**, and this entry is the standing record of that. No caller
@@ -858,6 +1029,317 @@ are exercised rather than described:
 
 Until (1) exists, **`Reset` is a control that runs in zero CI lanes against a
 container engine**, and this entry is the standing record of that.
+
+---
+
+## U4 — the Nuclei driver (D.14) has never executed an engine, and cannot yet fire a single request through the kernel
+
+| | |
+|---|---|
+| **File** | `internal/dast/engines/nuclei.go`, `internal/dast/engines/nuclei_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestThisFileSkipsNothing` parses the test file and fails if one appears |
+| **Skipped here?** | N/A — nothing skips. Two separate things are missing: the engine, and a route to an `authz.Authorization` |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no probe engine |
+| **Property unverified** | (a) That a real Nuclei engine, handed a `RunPlan`, honours `TargetSpec.PinnedAddr` instead of re-resolving `TargetSpec.URL`. (b) That `Driver.Fire` admits and issues a request end to end — the admit-and-issue path has **never executed**, because no `Authorization` can be minted from outside package `authz` today |
+| **Security control?** | **Yes, and it is the whole packet.** The driver exists to make it structurally impossible to point Nuclei anywhere the kernel has not admitted |
+| **Verdict** | **OPEN. (a) unexecuted and unenforceable from here; (b) BLOCKED on a kernel decision, not on this host.** |
+
+### (a) nuclei is not installed, and no adapter exists
+
+**Measured** on the development host: `Get-Command nuclei` finds nothing, and
+`go list -m all` contains no `projectdiscovery` module. `SystemEngine()`
+therefore returns `*EngineUnavailableError` on **every** host — it never
+returns a no-op engine — and `ScanResult.AssertNotSilentlyEmpty` refuses to let
+an empty finding list be read as clean when nothing was issued.
+
+The unenforceable half is stated in the `Engine` interface's own doc comment
+and repeated here so it is not lost: `TargetSpec` carries both a `URL` (the
+canonical host from gate 8) and a `PinnedAddr` (gate 9's pinned address). An
+implementation **must** dial `PinnedAddr` and must not resolve the URL's host.
+Anvil's own egress path makes that structural — `authz.PinnedDialAddress`
+returns a `netip.AddrPort` with no hostname in it, so a dialer built on it
+*cannot* re-resolve — but an external engine is a process this package does not
+control. **Nothing in `internal/dast/engines` enforces it.**
+
+### (b) The blocker is gate 11, and it is measured rather than assumed
+
+`authz.Adjudicate` is the only mint for an `authz.Authorization`.
+`authz.admissionChain` contains `Gate11RobotsDeny`, and **nothing is
+registered for it** — `kernel.go`'s own comment says robots.txt is a property
+of an origin *and a path*, that a `gateFunc` receives no path, and that "a
+missing gate is a REFUSAL, never a skipped step", leaving the decision on where
+the robots policy enters the kernel to the orchestrator.
+
+The consequence for D.14 is exact: **`NewTargetSpec`, `NewDriver`,
+`Driver.Fire` and `Driver.Run` cannot be exercised on their success path from
+outside package `authz`.** Every test that would need one instead asserts the
+refusal, and `TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` runs the
+real Phase 1 gates and the real admission chain and pins **where** the chain
+stops. When gate 11 is registered, that test fails and its message lists the
+five tests that must then be written.
+
+### What the suite does prove, on any host
+
+- **The `code:` protocol is rejected at load, not skipped at match time**, and
+  the assertion is against `TemplateSet.Lookup` — the function `Fire` actually
+  calls — rather than against a comment.
+- **The protocol list is an ALLOWLIST.** A table drives `javascript`, `flow`,
+  `headless`, `self-contained`, `dns`, `network`, `tcp`, `file`, `ssl`,
+  `websocket`, `whois`, `requests` and an invented `quantumteleport` through
+  it; none of them contains the substring "code", so a denylist of one passes
+  the first row and fails the rest.
+- **The structural analysis is not defeated by syntax**: quoted keys, a wholly
+  indented document, tabs, a flow mapping, a second YAML document, a `code:`
+  inside an indented block scalar, a `code:` in a comment, CRLF, a BOM, a
+  duplicate key, a top-level sequence — sixteen rows, with four admitted
+  controls so a loader that refused everything would fail.
+- **`WithPDCPUpload` appears in no call expression in the package**, proven by
+  reading the package's own syntax tree, with an anti-vacuity check that the
+  identifier is still *declared* somewhere so a rename cannot silently retire
+  the guard. The spy's call count is the second, weaker half.
+- **Interactsh/OAST is off structurally**, not by default value: this driver
+  proposes only three of the kernel's six request origins, and the three it
+  omits are exactly the three whose protocols the template allowlist refuses.
+  There is no argument to any constructor that turns the other three on.
+- **`RequestProposal` holds nothing that could open a socket**, proven by a
+  recursive reflection walk over its fields and its methods' return types
+  (plan/50-dast.md exit criterion 19, done early). `net/netip` is the one
+  stop-point, by package path, for the reason `authz` lists it inert.
+- **Twelve guards were broken one at a time, watched go red, and restored
+  byte-for-byte** — `nuclei.go` SHA-256 `31FBF061…232A` before and after every
+  one. Two of them are worth naming: replacing the walk's link check with
+  `d.Type()&os.ModeSymlink != 0` makes the **Windows directory junction** walk
+  straight through (this host reports a junction as `os.ModeIrregular`,
+  `IsDir()==false`, symlink bit **clear** — the H1 primitive again), and adding
+  `net/http` to the package is caught both by the local echo *and* by D.9's
+  authoritative tier-1 scanner over the real tree.
+
+### What it does not prove, and exactly what would settle it
+
+1. **Register gate 11 (or rule it out of the admission chain).** This is the
+   orchestrator's decision and it is not D.14's to make. It is the single
+   change that turns five refusal-only tests into end-to-end ones. **This is
+   the one that closes half (b), and it is a kernel edit, not a host problem.**
+2. **A CI lane with the pinned Nuclei engine, and an `Engine` adapter.** It
+   must run, **positively**: load the pinned `nuclei-templates` snapshot
+   (D.17), execute against a fixture target, and assert
+   `AssertNotSilentlyEmpty` returns nil *and* at least one known finding
+   appears. And **negatively**, without which it proves nothing:
+   - the same lane with the engine binary removed must exit
+     `ExitCodeArtefactAbsent` (2) and must **not** report a clean target;
+   - the same lane with an empty template directory must fail with
+     `ErrNoTemplates`;
+   - a fixture template pointing at a host **outside** the scope file must
+     produce a kernel refusal and reach the `Issuer` zero times.
+3. **Template provenance.** Upstream templates carry a trailing `# digest:`
+   line signed by projectdiscovery. **Nothing here verifies it**, and no
+   assumption is made that anything did: every template is analysed
+   structurally regardless of source, and a SHA-256 of its exact bytes is
+   recorded so D.17's pin can be checked against what was actually loaded.
+   What would settle it: projectdiscovery's public key plus their verifier,
+   wired into D.17's promotion step — and, in the meantime, D.17's
+   diff-before-promotion is the control, not this package.
+4. **`internal/ingest/sanitize` is out of reach**, so this package carries a
+   deliberately smaller local scrub. **Measured**: `go test -run
+   TestGate2NoDastPackageReachesTheInferenceLayer ./internal/dast/authz/`
+   fails on an import of it, because every package under `internal/dast` may
+   link only the stdlib, the DAST tree and `kernelImportAllowlist` (one entry:
+   `internal/record`). The scrub removes controls, bidi, zero-width, tag
+   characters and invalid UTF-8 and bounds the length; it does **not** do
+   sanitize's hidden-markup analysis. What would settle it: an entry for
+   `internal/ingest/sanitize` in `kernelImportAllowlist` — a `phase0_build.go`
+   edit, which is D.9's write scope — or moving the shared scrub into
+   `internal/record`, which is already on the list.
+
+Until (1) exists, **the Nuclei driver's admit-and-issue path runs in zero CI
+lanes and zero local ones**, and this entry is the standing record of that.
+
+---
+
+## U5 — the ZAP driver (D.15) has never started a JVM, and ZAP's memory footprint is still unquantified
+
+| | |
+|---|---|
+| **File** | `internal/dast/engines/zap.go`, `internal/dast/engines/zap_test.go` |
+| **`t.Skip` sites** | **Zero.** `nuclei_test.go`'s `TestThisFileSkipsNothing` walks every `.go` file in the package, so it covers `zap_test.go` and would fail if one appeared |
+| **Skipped here?** | N/A — nothing skips. Three separate things are missing: ZAP, a route to an `authz.Authorization`, and any measurement of the JVM |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no ZAP and no ZAP add-ons |
+| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. (c) `ZapDriver.Fire`'s admit-and-issue path, blocked on gate 11 exactly as U4(b) is. (d) **ZAP's JVM memory footprint, which plan/50-dast.md:1253 asks for by name and which this packet deliberately did not guess at.** |
+| **Security control?** | **Yes.** The proxy requirement is the only thing that puts Anvil's kernel in front of a request ZAP makes, and the four caps are the only thing between a scheduled scan and ZAP's unlimited defaults |
+| **Verdict** | **OPEN. (a) and (b) unexecuted on this host; (c) BLOCKED on the same kernel decision as U4; (d) UNMEASURED and recorded as unmeasured.** |
+
+### (d) first, because it is the one the plan asked for
+
+plan/50-dast.md:1253 records ZAP's JVM memory footprint as unquantified
+(research 15's own gap) and notes it decides whether tier-M hardware (spine S9,
+32 GB / 8 core) accommodates a scheduled full scan alongside SAST and the
+coding agent.
+
+**It is still unquantified, and no number appears anywhere in D.15.** That is a
+decision, not an omission: a figure invented here would become the figure
+tier-M sizing is documented against, and it would be documented against
+nothing. `TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage` reads
+`zap.go` and fails if one appears, and also fails if the word "unquantified"
+leaves the file — so filling the gap and updating this entry have to happen in
+the same commit.
+
+**What would settle it, and what stops it here.** The plan's own suggestion is
+one `docker stats` run during a representative scheduled scan.
+**MEASURED 2026-08-22, PowerShell, on the development host:**
+
+```
+Get-Command docker  -> NOT FOUND
+Get-Command zap.sh  -> NOT FOUND
+Get-Command zap     -> NOT FOUND
+Get-Command zap.bat -> NOT FOUND
+Get-Command java    -> C:\Program Files\Common Files\Oracle\Java\javapath\java.exe
+java -version       -> 23.0.2 2025-01-21 (HotSpot 23.0.2+7-58)
+```
+
+So **both halves of the suggested measurement are unavailable here**: no ZAP to
+run and no Docker to measure it with. A **JVM is present**, which narrows the
+gap usefully — this host is not disqualified by a missing runtime, only by a
+missing application — but a `java -Xshare` heap figure from a JVM running
+nothing is not a ZAP scan's RSS and would be worse than no number.
+
+The measurement that settles it, stated so it can be executed without
+re-deriving it:
+
+1. On a Linux host with Docker, run the pinned ZAP image against a fixture
+   target using the plan `ZapAutomationPlan.YAML()` produces, with the four
+   caps at `ZapCapsAtKernelCeiling(authz.CodedCaps())` (today: `threadPerHost`
+   4, `delayInMs` 400, `maxScanDurationInMins` 30, `maxRuleDurationInMins` 30).
+2. Sample `docker stats --no-stream` at least once a minute for the whole scan
+   and record **peak** RSS, not mean — tier-M sizing is a peak question.
+3. Record the figure, the ZAP version, the add-on versions and the target in
+   this entry, and only then in any sizing document.
+4. Re-run it with SAST and the coding agent resident, because the plan's
+   question is about **coexistence**, not about ZAP alone.
+
+### (a) ZAP is not here, and the driver says so rather than passing
+
+`SystemZapRunner()` returns `*ZapUnavailableError` on **every** host — it never
+returns a no-op — and that error unwraps to `ErrEngineUnavailable` and reports
+`ExitCodeArtefactAbsent` (2), which is D.14's constant and not a second one.
+`ZapScanResult.AssertNotSilentlyEmpty` refuses to let an empty finding list be
+read as clean.
+
+**Two strings in `zap.go` are transcribed rather than measured**, and there is
+no ZAP here to check them against: the report template names `sarif-json` and
+`traditional-json-plus`, and the Automation Framework key names in the
+generated plan (`replacer`/`req_header`, `passiveScan-config`,
+`activeScan`'s four cap keys, `env.proxy.hostname`/`port`). What would settle
+it: one `zap.sh -cmd -autorun` against the generated plan on a host with ZAP,
+asserting a zero exit **and** that both report files appear. `Autorun` already
+refuses a zero exit with a missing report, so that lane's negative control is
+built.
+
+### (b) the proxy is required, and nothing here proves ZAP honours it
+
+This is the substantive difference between D.14 and D.15 and the reason U5 is
+not just "U4 with a different binary". Nuclei is driven in-process and gate 3
+tier 1 makes it *structurally* unable to dial from `internal/dast/engines`.
+**ZAP is a JVM with its own HTTP stack**, so the containment argument is:
+
+- `NewZapAutomationPlan` refuses without a `ZapProxy`; `NewZapProxy` refuses
+  any address that is not a loopback literal; `Verify` refuses a rendered
+  document whose proxy block is missing or altered. All three are tested,
+  including by deleting each check and watching the suite go red.
+- Anvil's egress layer assigns `authz.RefuseAllRedirects` to its client's
+  `CheckRedirect`, so Anvil never follows a `Location` automatically. ZAP
+  receives the 3xx; if ZAP follows it, that is a **new request to the proxy**
+  and arrives at gate 13 with `OriginRedirect` and `Hop+1`.
+
+**What none of that proves:** that a ZAP process actually honours `env.proxy`
+for every request, that it has no second egress path (add-on update checks, the
+ZAP API port, an OAST callback from an alpha add-on), and that a runner does
+not leave it able to dial directly. **Nothing in `internal/dast/engines`
+enforces the last one** — it is stated as an obligation on the `ZapRunner`
+implementer in that interface's doc comment. On Linux the enforcement is D.11's
+netns with default-deny egress; on a host without one it is unenforced. **A
+lane that closes this must include the negative control: a fixture target
+reachable ONLY through the proxy, plus a second address reachable only
+directly, and an assertion that the second one was never contacted.**
+
+### (c) the same gate-11 blocker as U4
+
+`NewZapDriver` builds its `TargetSpec` through `NewTargetSpec`, so it cannot be
+constructed without an `authz.Authorization` — and none can be minted from
+outside package `authz` today. `TestNewZapDriverRefusesEveryUnauthorizedRoute`
+asserts the refusal; `nuclei_test.go`'s
+`TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` is the tripwire that
+pins **where** the chain stops, and it covers this file too rather than being
+duplicated. Registering gate 11 unblocks both drivers at once.
+
+### The scheduled-only rule is enforced NOWHERE in this package, by instruction
+
+plan/50-dast.md D.15's forbidden actions require the driver to be
+**trigger-agnostic**: ZAP is gated to scheduled full scans "enforced by the
+caller's trigger-policy check, not by this driver refusing to run". So there is
+no trigger field and no trigger check in `ZapConfig` or `ZapPlanFacts`, and
+`TestThisDriverIsTriggerAgnosticByInstruction` fails if one appears — turning
+the absence into a recorded decision rather than an oversight somebody later
+"fixes" in the wrong layer.
+
+**The consequence is that today nothing anywhere stops ZAP being driven from
+the always-on path**, because the caller that would carry the trigger-policy
+check does not exist yet. That is this entry's, not D.15's, to keep visible
+until it does.
+
+### What the suite does prove, on any host
+
+- **All four caps are explicit, bare positive integers, appear exactly once,
+  and equal the sealed `ZapCaps` gate 14 checked** — so "unlimited", `0`,
+  `-1`, `0400`, `"400"`, `1_000`, `400ms`, `null`, a duplicate key and a
+  *different but bounded* value are each a separate refusal.
+- **The caps' PRODUCT is checked, not only each cap.** The same
+  `ZapCapFacts` is accepted against `authz.CodedCaps()` and refused against a
+  kernel whose requests-per-target-run was lowered — nothing about the four
+  numbers changed, so only the product check can produce the difference.
+- **`ZapCapsAtKernelCeiling` reads the kernel rather than returning
+  constants**, proved by lowering gate 14's floors and requiring every derived
+  value to move.
+- **The run id is an allowlist**, `[A-Za-z0-9._-]`, because it becomes an HTTP
+  header value: CRLF, LF, CR, quote, backslash, space, colon, NUL, tab, DEL,
+  non-ASCII, zero-width, bidi and tag characters are eighteen separate rows.
+- **The context include pattern is `\Q…\E`-quoted** and the URL is re-checked
+  against gate 8's canonical-host grammar, so a host carrying a `\E` cannot
+  end the quote early.
+- **The argv is a vector of exactly four elements and never a shell string**,
+  and `Argv()` is a real copy.
+- **`Verify` runs inside the constructor**, proved through an unexported
+  renderer seam: a renderer that drops one line yields **no plan**, for each of
+  ten lines in turn. Without the seam that call was untestable and deleting it
+  left the whole suite green.
+- **Sixteen guards were broken one at a time, watched go red, and restored
+  byte-for-byte** — `zap.go` SHA-256 `A456F9A5…0942` before and after every
+  one. Two are worth naming. (i) The plan-digest check in `Fire` **passed while
+  deleted**: the fixture driver holds a zero `Authorization`, so the proposal
+  fell through to `authz.RequireAuthorization` and was refused by a different
+  control. The test now asserts both digests appear in the message. (ii) The
+  first `ZapAutomationPlan` stored `reports []ZapReportTemplate`, and because
+  the type is passed by value a copy shared the backing array — the field is
+  gone and the type now carries no reference field at all.
+
+### What it does not prove, and exactly what would settle it
+
+1. **Register gate 11 (or rule it out of the admission chain).** Same item as
+   U4(1), same owner, and it unblocks both drivers.
+2. **A CI lane with ZAP and the pinned add-ons.** Positively: render the plan,
+   run `zap.sh -cmd -autorun`, assert exit 0, both report files non-empty, and
+   `AssertNotSilentlyEmpty` returning nil. Negatively, without which it proves
+   nothing: the same lane with ZAP removed must exit `2` and must not report a
+   clean target; a plan whose report directory is unwritable must fail with
+   `ErrZapReportMissing` rather than clean; and a fixture redirect to a host
+   outside the scope file (ZAP #2546's shape) must be refused at gate 13 and
+   reach the target zero times.
+3. **A containment lane proving `env.proxy` is ZAP's ONLY egress**, with the
+   second-address negative control described in (b).
+4. **The JVM footprint measurement in (d)**, before any tier-M sizing document
+   quotes a number.
+
+Until (1) and (2) exist, **the ZAP driver has never rendered a plan that a ZAP
+process read**, and this entry is the standing record of that.
 
 ---
 
@@ -1025,7 +1507,7 @@ missing artefact and the command that produces it.
 | Sites after | 12 |
 | Hazards found | 9 |
 | Hazards closed by a test-only change | 9 (7 sites removed, 2 narrowed) |
-| Hazards needing a non-test change | 2 (N1 open, N2 closed elsewhere) |
+| Hazards needing a non-test change | 4 (N1 closed by CI, N2 closed elsewhere, N3 closed, N4 closed) |
 | Legitimate skips, left in place | 11 |
 | Skips that fire on the Windows dev host | 4 tests / 15 subtest lines |
 | `t.SkipNow` sites | 0 |
@@ -1035,7 +1517,33 @@ Skips still firing on this host, all classified LEGITIMATE above:
 `TestBothConsumersAgree` (L5), `TestPinnedLicenceBodiesMatchTheirPins` ×11
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
 
-Controls with **zero** skips and still nothing behind them: G19-1, G4-1, G18-2, U1.
-U1 (`internal/dast/containment`, D.11 network containment) is the newest and
-the highest-stakes: the package is green on Windows and has never run against a
-Linux kernel. See its entry for the CI lane that would close it.
+Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
+G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4, U5.
+
+U5 carries the one open question plan/50-dast.md asked a worker to answer and
+that this host cannot: **ZAP's JVM memory footprint (plan/50-dast.md:1253),
+which decides tier-M sizing.** No number was invented; the entry states what
+measuring it takes and a test fails if a figure appears in `zap.go`. U5 also
+records the rule that is enforced nowhere today — ZAP is **scheduled-scans
+only**, and the caller that would carry that check does not exist yet.
+
+U4 is the one to read next after U1c, and its blocker is **not** this host.
+`authz.Gate11RobotsDeny` has no implementation registered, so the admission
+chain refuses every target there and **no `authz.Authorization` can be minted
+from outside package `authz` at all**. That makes D.14's driver — and every
+later packet that needs to issue a request — testable only on its refusal
+paths. Registering gate 11, or ruling it out of the admission chain, is an
+orchestrator decision and is the single change that unblocks the whole
+admit-and-issue path.
+
+U1 (`internal/dast/containment`, D.11 network containment) is the
+highest-stakes of them: the package is green on Windows and has never run
+against a Linux kernel. See its entry for the privileged Linux CI lane that
+would close it, and U1a/U1b for the two things that lane would still not
+settle on its own.
+
+U1c is the one to read first if you are wiring DAST into a scan path.
+`Provision` seals `booted_clean` without any network namespace, nothing in the
+tree calls `Provision`, `SetupNetns` or `AssertContainment`, and the two halves
+of the containment story therefore do not compose yet. That is D.31's, not
+D.10's or D.11's — it is recorded here so it cannot be forgotten.

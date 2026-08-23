@@ -38,8 +38,9 @@
 //
 // Docker is not installed on every host that builds Anvil -- it is not
 // installed on the host this packet was written on, which is recorded in
-// internal/SKIPPED-CONTROLS.md as D10-1 through D10-3 along with exactly what
-// would settle each. The Docker interface below is the ONE boundary between
+// internal/SKIPPED-CONTROLS.md as entry U2, along with the three things that
+// would settle it in order of decreasing cost. The Docker interface below is
+// the ONE boundary between
 // this logic and the container runtime, so the decision logic -- the
 // containment assertions, the identity lookup, the digest resolution, the five
 // provenance outcomes -- is driven in tests by RECORDED SHAPES of what `docker
@@ -149,6 +150,41 @@ const (
 	// teardownGrace bounds how long a destroy-and-recreate teardown may take
 	// after a failure. It is a cap, never a wait.
 	teardownGrace = 60 * time.Second
+
+	// DefaultBuildBudget bounds BUILD, PULL, CREATE and START -- everything
+	// before the health wait begins.
+	//
+	// IT IS A SEPARATE BUDGET FROM health.timeout_seconds, AND THAT IS THE
+	// FIX. The declared health timeout used to be the total budget for the
+	// whole `compose up`, which collapsed two failures with two different
+	// operator fixes into one:
+	//
+	//   - a slow image build is the ORDINARY case on a cold cache. Spending
+	//     the health budget on `docker build` leaves the health wait whatever
+	//     is left, which on a cold cache is nothing, so a target that boots
+	//     perfectly well is recorded boot_failed and the operator is sent to
+	//     debug a healthcheck that never ran.
+	//   - the manifest field is called health.timeout_seconds. D.1 validates
+	//     it against health.interval_seconds -- "the health check would never
+	//     poll" -- so D.1 already treats it as a POLLING budget. Using it as
+	//     a build budget here is this package disagreeing with the type that
+	//     owns the field.
+	//
+	// NOTHING ENFORCES THE SPLIT AT THE PHASE BOUNDARY, because the boundary
+	// is inside `docker compose up` and no implementation of the Docker seam
+	// exists. The two budgets are a contract stated in that interface's doc,
+	// and internal/SKIPPED-CONTROLS.md U2a records that nobody has honoured
+	// it yet, along with the fixture that would settle it.
+	//
+	// It is a compiled-in constant and not a manifest field on purpose:
+	// nothing in this package is configurable (see Provisioner), and D.1's
+	// schema is not this packet's to extend. It is a POLICY BOUND, chosen and
+	// not measured -- no cold-cache build was timed on this host, because
+	// this host has no Docker -- and it is deliberately generous, because the
+	// failure direction of a budget that is too large is a slow refusal while
+	// the failure direction of one that is too small is a correct target
+	// recorded as broken.
+	DefaultBuildBudget = 15 * time.Minute
 )
 
 // allowedSecurityOpt is the complete set of `--security-opt` values a
@@ -224,7 +260,21 @@ var (
 
 	// ErrHealthTimeout: the declared health timeout elapsed before the
 	// authorized service reported healthy. A timeout, never a hang.
+	//
+	// IT IS RETURNED ONLY WHEN THE RUNNER SAYS SO. A deadline that elapsed
+	// while the runner reported nothing is ErrUpBudgetExhausted, because
+	// "the health wait timed out" is a claim about a phase and the clock
+	// cannot see phases.
 	ErrHealthTimeout = errors.New("target never became healthy within the declared timeout")
+
+	// ErrUpBudgetExhausted: the whole `up` budget elapsed and the runner
+	// returned no status at all, so WHICH phase consumed it is unknown.
+	//
+	// It exists because collapsing this into ErrHealthTimeout was a guess
+	// presented as a diagnosis: an ordinary cold-cache image build that
+	// overran was recorded as a target that would not go healthy, and the
+	// operator was sent to debug a healthcheck that had not yet run.
+	ErrUpBudgetExhausted = errors.New("the container runner's whole up budget elapsed without a reported phase")
 
 	// ErrNotHealthy: the runner reported the project up, and the authorized
 	// service's container is not running-and-healthy. This is what catches a
@@ -312,6 +362,12 @@ const (
 	// not running-and-healthy once the runner claimed the project was up.
 	StageHealth Stage = "health"
 
+	// StageUpBudget: the whole `up` budget elapsed with the runner reporting
+	// no phase, so which phase consumed it is unknown. Distinct from
+	// StageBuild, StageStart and StageHealth precisely because it is the
+	// stage that does not know which of them it was.
+	StageUpBudget Stage = "up_budget"
+
 	// StageRunnerContract: the runner returned something uninterpretable.
 	StageRunnerContract Stage = "runner_contract"
 
@@ -347,6 +403,7 @@ func StageValues() []Stage {
 		StageBuild,
 		StageStart,
 		StageHealth,
+		StageUpBudget,
 		StageRunnerContract,
 		StageEnumerate,
 		StageContainment,
@@ -407,6 +464,7 @@ func (s Stage) Provenance() (record.TargetProvenance, error) {
 
 	case StageStart,
 		StageHealth,
+		StageUpBudget,
 		StageRunnerContract,
 		StageEnumerate,
 		StageContainment,
@@ -520,8 +578,8 @@ func (e *ProvisionError) Provisioning() (record.TargetProvisioning, error) {
 //
 // Nothing in this package shells out, opens a socket, or imports a client. A
 // real implementation of this interface is a separate concern and is NOT
-// provided here -- see internal/SKIPPED-CONTROLS.md D10-1..D10-3 for what
-// remains unproven without one and exactly what would settle it.
+// provided here -- see internal/SKIPPED-CONTROLS.md entry U2 for what remains
+// unproven without one and exactly what would settle it.
 //
 // THE CONTRACT AN IMPLEMENTATION OWES, stated here because the compiler cannot
 // state it:
@@ -611,9 +669,19 @@ type UpRequest struct {
 	// healthcheck and depends_on: condition: service_healthy.
 	WaitForHealthy bool
 
-	// Timeout is the manifest's declared health timeout. The context passed
-	// to ComposeUp carries the same deadline, so a runner that ignores this
-	// field is still bounded.
+	// BuildTimeout is the budget for BUILD, PULL, CREATE and START -- always
+	// DefaultBuildBudget. It is NOT the operator's health timeout; see that
+	// constant for why the two are separate.
+	BuildTimeout time.Duration
+
+	// Timeout is the manifest's declared health timeout, and it is the budget
+	// for the HEALTH WAIT ALONE.
+	//
+	// The context passed to ComposeUp carries BuildTimeout+Timeout, so a
+	// runner that ignores both fields is still bounded and cannot hang this
+	// call. That outer deadline is a backstop, not the contract: an
+	// implementation is expected to apply the two budgets to the two phases,
+	// because only the implementation knows where the boundary is.
 	Timeout time.Duration
 
 	// ForceRecreate is always true. reset.strategy is destroy_recreate and
@@ -726,11 +794,79 @@ type Container struct {
 }
 
 // Mount is one entry of a container's Mounts array.
+//
+// EVERY FIELD IS A VALUE. If one ever stops being -- a slice of options, a
+// pointer to a source -- Container.clone below must deep-copy it too, and
+// TestContainerCloneCoversEveryReferenceField is what turns that omission into
+// a failure instead of an aliasing bug.
 type Mount struct {
 	Type        string
 	Source      string
 	Destination string
 	ReadOnly    bool
+}
+
+// clone returns a Container that shares NO memory with the receiver.
+//
+// THIS IS THE Scope.Ports DEFECT, AND IT HAPPENED TWICE.
+//
+// Containers() used to be `copy(out, t.containers)`, which is a shallow copy:
+// the Container structs were duplicated and every SLICE INSIDE them -- Mounts,
+// SecurityOpt, CapDrop, CapAdd, Devices, RepoDigests -- still pointed at the
+// sealed Target's backing arrays. A caller holding the "copy" could rewrite
+// the audit trail containment was asserted against, and demonstrably did:
+// against the suite's own healthyWorld fixture, writing through the returned
+// value made the sealed Target report a docker.sock bind mount,
+// seccomp=unconfined, and CapDrop of nothing.
+//
+// It survived review for the same reason the identical defect survived in
+// authz's Scope.Ports: the test mutated ONE STRING FIELD -- the single place
+// where a shallow copy happens to be real -- and passed. A test that mutates
+// only where the copy is real proves nothing.
+//
+// So: every reference-typed field is cloned here, TestContainersReturnsACopy
+// mutates EVERY field of the returned value including every slice element, and
+// TestContainerCloneCoversEveryReferenceField walks the struct by reflection so
+// that a field added later cannot be forgotten in both places at once.
+func (c Container) clone() Container {
+	out := c
+	out.RepoDigests = cloneStrings(c.RepoDigests)
+	out.CapAdd = cloneStrings(c.CapAdd)
+	out.CapDrop = cloneStrings(c.CapDrop)
+	out.SecurityOpt = cloneStrings(c.SecurityOpt)
+	out.Devices = cloneStrings(c.Devices)
+	if c.Mounts != nil {
+		// Mount is all value fields (see its doc), so element assignment is a
+		// complete copy of each entry.
+		out.Mounts = make([]Mount, len(c.Mounts))
+		copy(out.Mounts, c.Mounts)
+	}
+	return out
+}
+
+// cloneStrings preserves the nil/empty distinction. A nil slice that came back
+// as an empty one would be a difference a caller could observe, and an audit
+// trail that reports `CapAdd: []` where the container reported `CapAdd: null`
+// is reporting something that did not happen.
+func cloneStrings(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+// cloneContainers deep-copies a whole listing.
+func cloneContainers(in []Container) []Container {
+	if in == nil {
+		return nil
+	}
+	out := make([]Container, len(in))
+	for i := range in {
+		out[i] = in[i].clone()
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -844,16 +980,18 @@ func (t *Target) HealthURL() string {
 	return t.healthURL
 }
 
-// Containers returns a copy of every container in the project, for the audit
-// trail. It is a copy so that a caller cannot mutate what containment was
+// Containers returns a DEEP copy of every container in the project, for the
+// audit trail. It is a copy so that a caller cannot mutate what containment was
 // asserted against, and it is emphatically NOT a list of probe targets.
+//
+// "Copy" here means Container.clone, not `copy`. Read that function before
+// changing this one: the shallow version satisfied this doc comment's wording
+// and did not satisfy its claim.
 func (t *Target) Containers() []Container {
 	if t == nil || len(t.containers) == 0 {
 		return nil
 	}
-	out := make([]Container, len(t.containers))
-	copy(out, t.containers)
-	return out
+	return cloneContainers(t.containers)
 }
 
 // Provenance returns record.TargetProvenanceBootedClean for a sealed Target
@@ -916,6 +1054,16 @@ func NewProvisioner(d Docker, repoRoot string) (*Provisioner, error) {
 // Provision brings up the declared target and returns it sealed, or refuses
 // with a *ProvisionError naming one of the five record.TargetProvenance
 // outcomes.
+//
+// WHAT booted_clean DOES NOT MEAN. This function proves the container came up
+// under gVisor with no host bind mounts, no added capabilities, no host
+// namespaces and a read-only rootfs. It does NOT install the default-deny
+// egress ruleset and it does NOT run the containment canary -- netns.go's
+// SetupNetns and AssertContainment are separate exported functions and nothing
+// in the tree calls either. A caller that fires probes on the strength of
+// booted_clean alone is asserting a network containment nobody established.
+// Recorded in internal/SKIPPED-CONTROLS.md as U1c; wiring it belongs to the
+// integration packet.
 //
 // The order below is the contract, and it is ordered so that nothing starts
 // before everything that could refuse has refused:
@@ -1004,6 +1152,7 @@ func (p *Provisioner) Provision(ctx context.Context, m *target.Manifest) (*Targe
 		Runtime:         RuntimeName,
 		RuntimePlatform: RuntimePlatform,
 		WaitForHealthy:  true,
+		BuildTimeout:    DefaultBuildBudget,
 		Timeout:         time.Duration(m.Health.TimeoutSeconds) * time.Second,
 		ForceRecreate:   true,
 		RemoveOrphans:   true,
@@ -1013,7 +1162,12 @@ func (p *Provisioner) Provision(ctx context.Context, m *target.Manifest) (*Targe
 	// as well as passed to the runner, so a runner that ignores its context
 	// still cannot hang this call -- it can only leak, and the teardown
 	// below is what addresses that.
-	upCtx, cancel := context.WithTimeout(ctx, req.Timeout)
+	//
+	// THE DEADLINE IS THE SUM OF THE TWO BUDGETS, not the health budget
+	// alone. Cutting the whole `compose up` off at health.timeout_seconds is
+	// what used to make an ordinary cold-cache build indistinguishable from a
+	// target that would not go healthy. See DefaultBuildBudget.
+	upCtx, cancel := context.WithTimeout(ctx, req.BuildTimeout+req.Timeout)
 	defer cancel()
 
 	res, upErr := p.docker.ComposeUp(upCtx, req)
@@ -1083,8 +1237,15 @@ func (p *Provisioner) Provision(ctx context.Context, m *target.Manifest) (*Targe
 	}
 
 	// 15. Sealed.
-	snapshot := make([]Container, len(containers))
-	copy(snapshot, containers)
+	//
+	// The snapshot is a DEEP copy on the way IN as well as on the way out.
+	// `containers` came from the Docker seam, which is an interface this
+	// package does not implement: an implementation that retains and later
+	// rewrites the slices it handed over would otherwise be editing the
+	// sealed Target's audit trail after containment was asserted against it.
+	// The seam is the untrusted half here, exactly as the canary is on the
+	// netns side.
+	snapshot := cloneContainers(containers)
 
 	return &Target{
 		sealed:       true,
@@ -1103,10 +1264,27 @@ func (p *Provisioner) Provision(ctx context.Context, m *target.Manifest) (*Targe
 	}, nil
 }
 
-// refuseAfterUp turns a failed ComposeUp into the right stage. The deadline is
-// checked FIRST, because a runner that returns its own error after the
-// deadline elapsed still timed out, and ErrHealthTimeout is the name
-// plan/50-dast.md gives that.
+// refuseAfterUp turns a failed ComposeUp into the right stage.
+//
+// THE RUNNER'S OWN STATUS IS CONSULTED BEFORE THE CLOCK, and the previous order
+// was a defect rather than a preference.
+//
+// The deadline used to be checked first, so ANY failure that surfaced after the
+// budget elapsed was recorded as a health timeout -- boot_failed -- including a
+// runner that returned UpStatusBuildFailed. Demonstrated: a seam answering
+// UpStatusBuildFailed at timeout+200ms was recorded boot_failed. A slow image
+// build is not an exotic input; it is the normal case on a cold cache, and the
+// two outcomes send the operator to two different files.
+//
+// The runner watched the build. The clock watched a stopwatch. When they
+// disagree about which phase failed, the one that was there is better evidence,
+// and it is not close.
+//
+// The clock still decides when the runner names NO phase -- UpStatusUnreported
+// with the deadline blown -- and in that case this function says so rather than
+// guessing: see StageUpBudget, which records boot_failed while stating in the
+// message that WHICH phase exhausted the budget is unknown, because nothing
+// observed it. A guess dressed as a diagnosis is worse than a stated unknown.
 func (p *Provisioner) refuseAfterUp(
 	ctx context.Context,
 	project string,
@@ -1115,26 +1293,42 @@ func (p *Provisioner) refuseAfterUp(
 	upErr error,
 	deadlineErr error,
 ) *ProvisionError {
-	switch {
-	case errors.Is(deadlineErr, context.DeadlineExceeded) || errors.Is(upErr, context.DeadlineExceeded):
-		return p.tearDownAndRefuse(ctx, project, StageHealth, ErrHealthTimeout,
-			"the declared hard timeout of %s elapsed while waiting for health; this is "+
-				"a timeout and not a hang, and it is enforced here as well as passed to "+
-				"the runner", req.Timeout)
+	deadlineBlown := errors.Is(deadlineErr, context.DeadlineExceeded) ||
+		errors.Is(upErr, context.DeadlineExceeded)
 
+	switch {
 	case res.Status == UpStatusBuildFailed:
 		return p.tearDownAndRefuse(ctx, project, StageBuild, ErrBuildFailed,
-			"the runner reported a build failure: %s (err=%v). No boot was attempted",
-			res.Detail, upErr)
+			"the runner reported a build failure: %s (err=%v, deadline_blown=%v). No boot was "+
+				"attempted. The runner watched the build and the clock did not, so a build "+
+				"failure that surfaced after the budget elapsed is still a build failure",
+			res.Detail, upErr, deadlineBlown)
 
 	case res.Status == UpStatusStartFailed:
 		return p.tearDownAndRefuse(ctx, project, StageStart, ErrStartFailed,
-			"the image existed and a container would not start: %s (err=%v). This is "+
-				"NOT a build failure and the remediation is different", res.Detail, upErr)
+			"the image existed and a container would not start: %s (err=%v, deadline_blown=%v). "+
+				"This is NOT a build failure and the remediation is different",
+			res.Detail, upErr, deadlineBlown)
 
 	case res.Status == UpStatusHealthTimeout:
 		return p.tearDownAndRefuse(ctx, project, StageHealth, ErrHealthTimeout,
-			"the runner reported the health wait elapsed: %s (err=%v)", res.Detail, upErr)
+			"the runner reported the health wait elapsed after the declared %s: %s (err=%v)",
+			req.Timeout, res.Detail, upErr)
+
+	case res.Status == UpStatusUnreported && deadlineBlown:
+		// THE ONLY PLACE THE CLOCK DECIDES, and it decides only because
+		// nothing else answered. The runner named no phase, so which of build,
+		// pull, create, start or health consumed the budget is UNKNOWN, and
+		// this refusal says that instead of asserting one.
+		return p.tearDownAndRefuse(ctx, project, StageUpBudget, ErrUpBudgetExhausted,
+			"the whole `up` budget of %s elapsed (%s to build, pull, create and start, plus the "+
+				"manifest's declared %s health wait) and the runner returned NO status. Which "+
+				"phase exhausted it is unknown -- nothing observed the boundary -- so this is "+
+				"recorded as a boot failure without claiming the image built. If this recurs on "+
+				"a cold cache, the build budget is the first thing to look at, not the "+
+				"healthcheck. This is a timeout and not a hang: it is enforced here as well as "+
+				"passed to the runner (err=%v, detail=%q)",
+			req.BuildTimeout+req.Timeout, req.BuildTimeout, req.Timeout, upErr, res.Detail)
 
 	case res.Status == UpStatusUnreported:
 		return p.tearDownAndRefuse(ctx, project, StageRunnerContract, ErrRunnerContract,

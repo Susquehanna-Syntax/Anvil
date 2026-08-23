@@ -89,22 +89,52 @@ func (f *fakeCommander) Run(_ context.Context, argv []string, stdin []byte) ([]b
 	return f.respond(argv)
 }
 
-// canaryStdout renders a report the way the real canary would write it.
+// canaryStdout renders a report the way the real canary would write it. The
+// JSON is written out by hand rather than by encoding the struct, so that the
+// wire field NAMES are pinned here too: a renamed json tag would silently keep
+// round-tripping if both halves went through the same encoder.
 func canaryStdout(inode uint64, attempts ...Attempt) []byte {
 	parts := make([]string, 0, len(attempts))
 	for _, a := range attempts {
 		parts = append(parts, fmt.Sprintf(
-			`{"target":%q,"outcome":%q,"detail":%q}`, a.Target, string(a.Outcome), a.Detail))
+			`{"target":%q,"outcome":%q,"detail":%q,"failure":%q,"elapsed_ms":%d}`,
+			a.Target, string(a.Outcome), a.Detail, string(a.Failure), a.ElapsedMillis))
 	}
 	return []byte(fmt.Sprintf(`{"netns_inode":%d,"attempts":[%s]}`+"\n",
 		inode, strings.Join(parts, ",")))
 }
 
+// blockedAttempt is a legitimately blocked attempt: a no-route answer, which
+// the local kernel gives affirmatively and immediately, so it carries no
+// timing burden. See minSilentTimeoutEvidence for the case that does.
+func blockedAttempt(tgt string) Attempt {
+	return Attempt{
+		Target:        tgt,
+		Outcome:       AttemptOutcomeBlocked,
+		Detail:        "no route",
+		Failure:       DialFailureNoRoute,
+		ElapsedMillis: 1,
+	}
+}
+
+// timedOutAttempt is the OTHER legitimately blocked attempt: a plain nftables
+// `drop` answers nothing, so the dialer's own timer fires and the attempt must
+// show it waited out the declared bound.
+func timedOutAttempt(tgt string) Attempt {
+	return Attempt{
+		Target:        tgt,
+		Outcome:       AttemptOutcomeBlocked,
+		Detail:        "no reply of any kind",
+		Failure:       DialFailureSilentTimeout,
+		ElapsedMillis: DefaultCanaryDialTimeout.Milliseconds(),
+	}
+}
+
 func blockedReport() []byte {
 	probes := MetadataProbes()
 	return canaryStdout(fixtureInode,
-		Attempt{Target: probes[0].String(), Outcome: AttemptOutcomeBlocked, Detail: "no route"},
-		Attempt{Target: probes[1].String(), Outcome: AttemptOutcomeBlocked, Detail: "no route"},
+		blockedAttempt(probes[0].String()),
+		blockedAttempt(probes[1].String()),
 	)
 }
 
@@ -252,10 +282,25 @@ table inet anvil_dast {
 	set anvil_deny6 {
 		type ipv6_addr
 		flags interval
-		elements = { ::/128, ::1/128, 64:ff9b::/96, 64:ff9b:1::/48, 2002::/16, fc00::/7, fe80::/10, ff00::/8 }
+		elements = { ::/128, ::1/128, ::ffff:0.0.0.0/96, 64:ff9b::/96, 64:ff9b:1::/48, 2002::/16, fc00::/7, fe80::/10, ff00::/8 }
 	}
 	chain egress {
 		type filter hook output priority filter; policy drop;
+		ip daddr 169.254.169.254 drop
+		ip6 daddr fd00:ec2::254 drop
+		ip daddr 169.254.0.0/16 drop
+		ip6 daddr fe80::/10 drop
+		oifname "lo" ip daddr 127.0.0.0/8 accept
+		oifname "lo" ip6 daddr ::1/128 accept
+		ct state established,related accept
+		ip daddr 172.18.0.0/16 accept
+		ip daddr @anvil_deny4 drop
+		ip6 daddr @anvil_deny6 drop
+		ip daddr 203.0.113.7/32 accept
+		drop
+	}
+	chain egress_forward {
+		type filter hook forward priority filter; policy drop;
 		ip daddr 169.254.169.254 drop
 		ip6 daddr fd00:ec2::254 drop
 		ip daddr 169.254.0.0/16 drop
@@ -291,6 +336,125 @@ func TestBuildRulesetGolden(t *testing.T) {
 		t.Fatal("a hostname reached the nft script. nft would resolve it once at load time and pin " +
 			"whatever it got, which is a TOCTOU hole")
 	}
+}
+
+// TestTheRulesetHooksForwardAndNotOnlyOutput is MEDIUM 7, and it is a test
+// about which PACKETS the ruleset can see rather than about what it says.
+//
+// nftables' `output` hook sees packets from a socket in the namespace. The
+// target is not that: it is a Compose project on a bridge INSIDE the namespace,
+// so its egress is RECEIVED on the bridge and FORWARDED, which is a different
+// hook. provision.go's NetworkMode assertion requires exactly that arrangement.
+// So an output-only ruleset constrained the canary and left the target's own
+// traffic unfiltered -- while the golden test, the ordering test and the canary
+// all reported the sandbox closed.
+//
+// Only the canary's own dials go out via `output`, which is why no existing
+// test could see this: the canary is the one process in the namespace whose
+// traffic the ruleset was constraining.
+func TestTheRulesetHooksForwardAndNotOnlyOutput(t *testing.T) {
+	rs, err := BuildRuleset(fixturePlan(t,
+		&target.Scope{AdditionalEgressAllow: []string{"203.0.113.7"}},
+		netip.MustParsePrefix("172.18.0.0/16"),
+	))
+	if err != nil {
+		t.Fatalf("BuildRuleset: %v", err)
+	}
+	for _, want := range []string{
+		"type filter hook output priority filter; policy drop;",
+		"type filter hook forward priority filter; policy drop;",
+	} {
+		if !strings.Contains(rs.Script, want) {
+			t.Fatalf("the ruleset does not install %q.\nA Compose project's egress is FORWARDED "+
+				"across the bridge in this namespace; a ruleset hooked only at output sees the "+
+				"canary and nothing else.\n%s", want, rs.Script)
+		}
+	}
+	if !strings.Contains(rs.Script, "chain "+ForwardChainName+" {") {
+		t.Fatalf("the forward chain %q is missing from the script:\n%s", ForwardChainName, rs.Script)
+	}
+}
+
+// TestEveryHookedChainCarriesTheIdenticalRuleList: two chains built from two
+// rule lists is two rulesets that can drift, and the one that drifts is the one
+// nobody reads. This parses the emitted script back rather than trusting
+// renderScript's loop, so a hand-edit that gave one chain a shorter list is
+// caught.
+func TestEveryHookedChainCarriesTheIdenticalRuleList(t *testing.T) {
+	rs, err := BuildRuleset(fixturePlan(t,
+		&target.Scope{AdditionalEgressAllow: []string{"203.0.113.7"}},
+		netip.MustParsePrefix("172.18.0.0/16"),
+	))
+	if err != nil {
+		t.Fatalf("BuildRuleset: %v", err)
+	}
+	chains := parseChains(t, rs.Script)
+	hooked := hookedChains()
+	if len(chains) != len(hooked) {
+		t.Fatalf("the script declares %d chains and hookedChains names %d: %v",
+			len(chains), len(hooked), chains)
+	}
+	for _, hc := range hooked {
+		body, ok := chains[hc.Chain]
+		if !ok {
+			t.Fatalf("chain %q is named by hookedChains and absent from the script", hc.Chain)
+		}
+		if body.hook != hc.Hook {
+			t.Fatalf("chain %q is hooked at %q, want %q", hc.Chain, body.hook, hc.Hook)
+		}
+		if body.policy != "drop" {
+			t.Fatalf("chain %q has policy %q; every hooked chain must be default-deny",
+				hc.Chain, body.policy)
+		}
+		if len(body.rules) != len(rs.Rules) {
+			t.Fatalf("chain %q carries %d rules and Ruleset.Rules has %d:\n%v\n%v",
+				hc.Chain, len(body.rules), len(rs.Rules), body.rules, rs.Rules)
+		}
+		for i := range rs.Rules {
+			if body.rules[i] != rs.Rules[i] {
+				t.Fatalf("chain %q rule %d is %q, want %q. The chains have drifted, and order "+
+					"is the control", hc.Chain, i, body.rules[i], rs.Rules[i])
+			}
+		}
+	}
+}
+
+type parsedChain struct {
+	hook   string
+	policy string
+	rules  []string
+}
+
+// parseChains reads the emitted nft script back into chain name -> body. It is
+// deliberately a separate reader from renderScript's writer: a test that asked
+// the writer what it wrote would agree with itself.
+func parseChains(t *testing.T, script string) map[string]parsedChain {
+	t.Helper()
+	out := map[string]parsedChain{}
+	var cur string
+	var body parsedChain
+	for _, raw := range strings.Split(script, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, "chain ") && strings.HasSuffix(line, "{"):
+			cur = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "chain "), "{"))
+			body = parsedChain{}
+		case cur != "" && strings.HasPrefix(line, "type filter hook "):
+			fields := strings.Fields(line)
+			// type filter hook <hook> priority filter; policy <policy>;
+			if len(fields) < 7 {
+				t.Fatalf("chain %q has an unreadable hook line %q", cur, line)
+			}
+			body.hook = fields[3]
+			body.policy = strings.TrimSuffix(fields[len(fields)-1], ";")
+		case cur != "" && line == "}":
+			out[cur] = body
+			cur = ""
+		case cur != "" && line != "":
+			body.rules = append(body.rules, line)
+		}
+	}
+	return out
 }
 
 // TestTheChainIsDefaultDeny pins the two statements that make it default-deny:
@@ -441,6 +605,20 @@ func TestIntraTargetNetworkRefusals(t *testing.T) {
 // entry grants nothing the containment layer forbids. The metadata drop sits
 // above these accepts and would win anyway; refusing at build time means the
 // operator hears about it instead of it quietly doing nothing.
+// THE 4-IN-6 ROWS ARE THE POINT OF THIS TABLE'S SECOND HALF. The six original
+// rows all spelled the metadata address the way a person would, and
+// BuildRuleset ACCEPTED "::ffff:169.254.169.254/128" and emitted an accept rule
+// for it -- because the refusal is netip.Prefix.Contains, and an IPv6 prefix
+// does not contain an IPv4 address however identical the two destinations are.
+// The doc on splitAllowEntries claimed the refusal and this table asserted it,
+// and both were defeated by a spelling neither of them contained.
+//
+// It is the same lesson gate 8 already encodes in the authorization kernel:
+// authz.Canonicalize unwraps an IPv4-mapped literal precisely so that
+// "[::ffff:169.254.169.254]" and "169.254.169.254" cannot compare differently
+// against gate 10's ranges. This is that rule at the network layer, and it
+// reuses the same operation (netip Unmap) rather than a second one that could
+// disagree with it.
 func TestScopeEntryCoveringMetadataIsRefused(t *testing.T) {
 	for _, entry := range []string{
 		"169.254.169.254",
@@ -449,6 +627,11 @@ func TestScopeEntryCoveringMetadataIsRefused(t *testing.T) {
 		"fd00:ec2::254",
 		"fd00:ec2::/32",
 		"::/0",
+		// The IPv4-mapped spellings of the same three IPv4 rows.
+		"::ffff:169.254.169.254",
+		"::ffff:169.254.169.254/128",
+		"::ffff:169.254.0.0/112",
+		"::ffff:0.0.0.0/96",
 	} {
 		t.Run(entry, func(t *testing.T) {
 			p := fixturePlan(t, &target.Scope{AdditionalEgressAllow: []string{entry}})
@@ -457,6 +640,66 @@ func TestScopeEntryCoveringMetadataIsRefused(t *testing.T) {
 				t.Fatalf("BuildRuleset accepted scope entry %q", entry)
 			}
 			mustErrIs(t, err, ErrInvalidPlan, "BuildRuleset")
+		})
+	}
+}
+
+// TestAnIPv4MappedAllowEntryIsEmittedAsIPv4 is the other half of the fix: an
+// entry that is LEGITIMATE in its mapped spelling must not be emitted as an
+// `ip6` rule naming a mapped address, because the target's traffic to that
+// destination is an ordinary IPv4 packet and an ip6 rule would never match it.
+// The entry would silently do nothing under a default-drop policy -- the safe
+// direction, but a silent one.
+func TestAnIPv4MappedAllowEntryIsEmittedAsIPv4(t *testing.T) {
+	for _, tc := range []struct{ entry, want string }{
+		{"::ffff:203.0.113.7", "ip daddr 203.0.113.7/32 accept"},
+		{"::ffff:203.0.113.7/128", "ip daddr 203.0.113.7/32 accept"},
+		{"::ffff:203.0.113.0/120", "ip daddr 203.0.113.0/24 accept"},
+	} {
+		t.Run(tc.entry, func(t *testing.T) {
+			rs, err := BuildRuleset(fixturePlan(t, &target.Scope{AdditionalEgressAllow: []string{tc.entry}}))
+			if err != nil {
+				t.Fatalf("BuildRuleset refused a legitimate mapped entry: %v", err)
+			}
+			if indexOf(rs.Rules, tc.want) < 0 {
+				t.Fatalf("want rule %q, got %v", tc.want, rs.Rules)
+			}
+			if indexOf(rs.Rules, "::ffff:") >= 0 {
+				t.Fatalf("a mapped address reached the ruleset: %v. An `ip6 daddr ::ffff:...` "+
+					"rule never matches an IPv4 packet, so the entry would silently do nothing", rs.Rules)
+			}
+		})
+	}
+}
+
+// TestAnIntraTargetNetworkCannotHideBehindTheMappedSpelling: the same
+// canonicalization on the OTHER operator-supplied input. "::ffff:169.254.0.0/112"
+// is a /16 of IPv4 link-local space wearing a /112 of IPv6, and it would have
+// passed both the width bound (112 >= 32) and the metadata check.
+func TestAnIntraTargetNetworkCannotHideBehindTheMappedSpelling(t *testing.T) {
+	for _, tc := range []struct{ name, cidr, want string }{
+		{"metadata in mapped clothing", "::ffff:169.254.0.0/112", "metadata address"},
+		{"the whole of IPv4 as a /96", "::ffff:0.0.0.0/96", "wider than /8"},
+		{"a legitimate bridge, mapped", "::ffff:172.18.0.0/112", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rs, err := BuildRuleset(fixturePlan(t, nil, netip.MustParsePrefix(tc.cidr)))
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("BuildRuleset refused a legitimate mapped bridge: %v", err)
+				}
+				if indexOf(rs.Rules, "ip daddr 172.18.0.0/16 accept") < 0 {
+					t.Fatalf("the mapped bridge was not emitted as IPv4: %v", rs.Rules)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("BuildRuleset accepted intra-target network %q", tc.cidr)
+			}
+			mustErrIs(t, err, ErrInvalidPlan, "BuildRuleset")
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("refusal %q does not mention %q", err.Error(), tc.want)
+			}
 		})
 	}
 }
@@ -546,6 +789,40 @@ func TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity(t *testing.T) {
 		check(netip.MustParseAddr(s))
 	}
 
+	// THE GENERATOR'S OWN BLIND SPOT, AND WHY IT IS FIXED HERE.
+	//
+	// Every address above comes from AddrFrom4 / AddrFrom16 / ParseAddr on a
+	// zone-free literal, so not one of them can carry an IPv6 ZONE -- and
+	// netip.Prefix.Contains returns false for ANY zoned address, because
+	// prefixes cannot carry zones. So DeniedByRuleset walked the whole deny
+	// set and answered "not denied" for fe80::1%eth0, ::1%lo and
+	// fd00:ec2::254%eth0, and this relation test could not construct the
+	// input that broke the relation it exists to pin.
+	//
+	// A relation test whose generator cannot reach the failing input is a
+	// test that will keep passing through the bug.
+	zoned := 0
+	for _, s := range []string{
+		"fe80::1", "::1", "fd00:ec2::254", "ff02::1", "64:ff9b::1.2.3.4",
+		"2002:c000:204::1", "fc00::1", "::",
+	} {
+		for _, zone := range []string{"eth0", "lo", "1", "%"} {
+			zoned++
+			check(netip.MustParseAddr(s).WithZone(zone))
+		}
+	}
+	// And the IPv4-mapped spelling, on both the reserved and the routable
+	// side, so the unmap is shown to be neither absent nor over-eager.
+	for _, s := range []string{
+		"::ffff:169.254.169.254", "::ffff:127.0.0.1", "::ffff:10.0.0.1",
+		"::ffff:192.168.1.1", "::ffff:0.0.0.0", "::ffff:255.255.255.255",
+	} {
+		check(netip.MustParseAddr(s))
+	}
+	if zoned == 0 {
+		t.Fatal("the zoned sweep visited nothing")
+	}
+
 	if checked < 100000 {
 		t.Fatalf("the sweep only visited %d addresses; it is not covering what its name claims", checked)
 	}
@@ -601,6 +878,101 @@ func TestDeniedByRulesetSeesThroughIPv4MappedIPv6(t *testing.T) {
 	}
 	if DeniedByRuleset(netip.MustParseAddr("::ffff:203.0.113.7")) {
 		t.Fatal("the IPv4-mapped spelling of a routable address is denied; the unmap is too eager")
+	}
+}
+
+// TestDeniedByRulesetSeesThroughAZone is HIGH 3.
+//
+// netip.Prefix.Contains returns FALSE for any address carrying an IPv6 zone --
+// prefixes strip zones, so netip refuses the comparison rather than answering
+// it. DeniedByRuleset walked the entire deny set for "fe80::1%eth0", matched
+// nothing, and reported NOT DENIED. Gate 10 called the same address reserved,
+// so the two layers disagreed in the fail-open direction, and the relation test
+// could not see it because its generator produces no zoned addresses.
+//
+// Stripping the zone is what the ruleset itself does: nftables has no zone
+// concept, a zone never appears on the wire, and the packet the kernel matches
+// carries only the address bytes. So the zone-free form IS what the ruleset
+// sees.
+func TestDeniedByRulesetSeesThroughAZone(t *testing.T) {
+	for _, s := range []string{
+		"fe80::1", "::1", "fd00:ec2::254", "ff02::1", "fc00::1",
+		"64:ff9b::1.2.3.4", "2002:c000:204::1", "::",
+	} {
+		plain := netip.MustParseAddr(s)
+		if !DeniedByRuleset(plain) {
+			t.Fatalf("fixture problem: %s is not in the deny set at all", s)
+		}
+		for _, zone := range []string{"eth0", "lo", "1"} {
+			z := plain.WithZone(zone)
+			if !DeniedByRuleset(z) {
+				t.Fatalf("DeniedByRuleset(%s) is false while DeniedByRuleset(%s) is true. A zone "+
+					"is a local scope identifier that never reaches the wire; the ruleset would "+
+					"drop this packet and the predicate that models the ruleset says it would not", z, plain)
+			}
+			if !GateTenAgreesWith(z) {
+				t.Fatalf("GateTenAgreesWith(%s) is false", z)
+			}
+		}
+	}
+	// The unmap must not become over-eager under a zone either: a routable
+	// address is still routable with a zone on it.
+	for _, s := range []string{"2001:db8::1", "2606:4700::1111"} {
+		z := netip.MustParseAddr(s).WithZone("eth0")
+		if DeniedByRuleset(z) {
+			t.Fatalf("DeniedByRuleset(%s) is true for a routable address; stripping the zone "+
+				"must not change which range the address is in", z)
+		}
+	}
+}
+
+// TestGateTenHasAZoneBlindSpotThisPackageCanonicalizesAround pins a MEASURED
+// property of a package this packet does not write.
+//
+// authz.AddressIsReserved walks netip prefixes and then falls back to the Go
+// runtime's classification. The prefix walk misses every zoned address (see
+// above); the runtime fallback covers loopback, private, link-local, multicast
+// and unspecified but NOT the NAT64, 6to4 and unspecified-with-zone cases. So
+// gate 10 itself reports reserved=false for three spellings it reports
+// reserved=true for without the zone.
+//
+// That is a finding in internal/dast/authz, which is outside this packet's
+// write scope. It is REPORTED to the orchestrator, and it is pinned here so
+// the report can be checked rather than believed -- and so that if authz is
+// fixed, this test fails and the report gets retired instead of rotting.
+//
+// GateTenAgreesWith canonicalizes before asking, so the containment layer is
+// unaffected either way; the assertions below prove that too.
+func TestGateTenHasAZoneBlindSpotThisPackageCanonicalizesAround(t *testing.T) {
+	blind := []string{"64:ff9b::1.2.3.4", "2002:c000:204::1", "::"}
+	for _, s := range blind {
+		plain := netip.MustParseAddr(s)
+		if _, reserved := authz.AddressIsReserved(plain); !reserved {
+			t.Fatalf("fixture problem: gate 10 does not consider %s reserved", s)
+		}
+		z := plain.WithZone("eth0")
+		if _, reserved := authz.AddressIsReserved(z); reserved {
+			t.Fatalf("authz.AddressIsReserved(%s) now reports reserved. The blind spot this "+
+				"package canonicalizes around has been fixed upstream -- retire the note on "+
+				"GateTenAgreesWith and the entry in the orchestrator report, then delete this "+
+				"test", z)
+		}
+		// The containment layer is unaffected, in BOTH directions.
+		if !DeniedByRuleset(z) {
+			t.Fatalf("DeniedByRuleset(%s) is false", z)
+		}
+		if !GateTenAgreesWith(z) {
+			t.Fatalf("GateTenAgreesWith(%s) is false; it must canonicalize before asking gate 10", z)
+		}
+	}
+	// The addresses where the runtime fallback DOES cover the zone, so the
+	// blind spot above is shown to be specific rather than universal.
+	for _, s := range []string{"fe80::1", "::1", "fd00:ec2::254", "ff02::1"} {
+		z := netip.MustParseAddr(s).WithZone("eth0")
+		if _, reserved := authz.AddressIsReserved(z); !reserved {
+			t.Fatalf("authz.AddressIsReserved(%s) reports not-reserved; the blind spot is wider "+
+				"than this test records and the note on GateTenAgreesWith understates it", z)
+		}
 	}
 }
 
@@ -729,8 +1101,8 @@ func TestEvaluateCanaryReportAcceptsAFullyBlockedReport(t *testing.T) {
 	rep := CanaryReport{
 		NetnsInode: fixtureInode,
 		Attempts: []Attempt{
-			{Target: probes[0].String(), Outcome: AttemptOutcomeBlocked, Detail: "no route"},
-			{Target: probes[1].String(), Outcome: AttemptOutcomeBlocked, Detail: "no route"},
+			blockedAttempt(probes[0].String()),
+			blockedAttempt(probes[1].String()),
 		},
 	}
 	if err := EvaluateCanaryReport(ns, probes, rep); err != nil {
@@ -742,6 +1114,260 @@ func TestEvaluateCanaryReportAcceptsAFullyBlockedReport(t *testing.T) {
 	if err := EvaluateCanaryReport(ns, probes, rep); err != nil {
 		t.Fatalf("the same report with the attempts reordered was refused: %v", err)
 	}
+
+	// The other blocked shape: a silent timeout that waited out its budget.
+	// It has to be here as well as in the refusal table, or the timing rule
+	// below would be passing because it refuses every silent timeout.
+	timed := CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts: []Attempt{
+			timedOutAttempt(probes[0].String()),
+			timedOutAttempt(probes[1].String()),
+		},
+	}
+	if err := EvaluateCanaryReport(ns, probes, timed); err != nil {
+		t.Fatalf("a silent-timeout report that waited out the declared %s was refused: %v",
+			DefaultCanaryDialTimeout, err)
+	}
+	// And a policy reject, which is affirmative and instantaneous.
+	rejected := CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts: []Attempt{
+			{Target: probes[0].String(), Outcome: AttemptOutcomeBlocked, Failure: DialFailurePolicyRejected, ElapsedMillis: 0},
+			{Target: probes[1].String(), Outcome: AttemptOutcomeBlocked, Failure: DialFailurePolicyRejected, ElapsedMillis: 0},
+		},
+	}
+	if err := EvaluateCanaryReport(ns, probes, rejected); err != nil {
+		t.Fatalf("an instantaneous EPERM reject was refused; the timing floor must apply to a "+
+			"silent timeout only, because an affirmative kernel answer is correctly immediate: %v", err)
+	}
+}
+
+// TestASilentTimeoutMustHaveWaitedOutItsBudget is MEDIUM 6, and it is the
+// assertion the package's safety argument rested on and did not make.
+//
+// Classifying DialFailureSilentTimeout as BLOCKED is sound only because a
+// REACHABLE metadata endpoint is link-local and answers in well under a
+// millisecond, so an attempt that waited the full DefaultCanaryDialTimeout and
+// heard nothing has genuinely heard nothing. Nothing enforced or observed that
+// timeout: a ConnectProbe with a 50ms dialer -- a plausible choice for a probe
+// that expects to be blocked -- would have reported "silent timeout" for every
+// probe, every probe would have been read as "blocked", and the whole
+// containment gate would have been a green function that could not fail.
+func TestASilentTimeoutMustHaveWaitedOutItsBudget(t *testing.T) {
+	ns := fixtureNetns(t)
+	probes := MetadataProbes()
+	v4, v6 := probes[0].String(), probes[1].String()
+
+	// THE CRITIC'S SCENARIO, EXACTLY: a probe built with a 50ms dialer.
+	fast := func(tgt string) Attempt {
+		a := timedOutAttempt(tgt)
+		a.ElapsedMillis = 50
+		return a
+	}
+	err := EvaluateCanaryReport(ns, probes, CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts:   []Attempt{fast(v4), fast(v6)},
+	})
+	if err == nil {
+		t.Fatal("a report whose every silent timeout gave up after 50ms was accepted. The 2s " +
+			"bound is the entire reason a silent timeout counts as blocked; unenforced, this " +
+			"assertion cannot fail")
+	}
+	mustErrIs(t, err, ErrNotContained, "50ms silent timeout")
+	if !strings.Contains(err.Error(), "silent timeout after 50 ms") {
+		t.Fatalf("the refusal does not name the timing it refused on: %v", err)
+	}
+
+	// The boundary, both sides of it, so the floor is pinned and not merely
+	// present.
+	floor := minSilentTimeoutEvidence().Milliseconds()
+	atFloor := timedOutAttempt(v4)
+	atFloor.ElapsedMillis = floor
+	justUnder := timedOutAttempt(v4)
+	justUnder.ElapsedMillis = floor - 1
+
+	if err := EvaluateCanaryReport(ns, probes, CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts:   []Attempt{atFloor, timedOutAttempt(v6)},
+	}); err != nil {
+		t.Fatalf("an attempt exactly at the %d ms floor was refused: %v", floor, err)
+	}
+	if err := EvaluateCanaryReport(ns, probes, CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts:   []Attempt{justUnder, timedOutAttempt(v6)},
+	}); err == nil {
+		t.Fatalf("an attempt one millisecond under the %d ms floor was accepted", floor)
+	}
+
+	// The floor must be a real bound, not a formality that admits anything.
+	if floor <= 0 {
+		t.Fatalf("minSilentTimeoutEvidence is %d ms; a non-positive floor admits every probe "+
+			"and this whole test is a no-op", floor)
+	}
+	if floor >= DefaultCanaryDialTimeout.Milliseconds()+1 {
+		t.Fatalf("minSilentTimeoutEvidence (%d ms) is above the declared bound (%d ms); no "+
+			"honest probe could ever satisfy it", floor, DefaultCanaryDialTimeout.Milliseconds())
+	}
+	t.Logf("silent-timeout evidence floor: %d ms against a declared %s bound (tolerance %s)",
+		floor, DefaultCanaryDialTimeout, canaryTimingTolerance)
+}
+
+// TestTheReportsTwoHalvesMustAgree is RULE 7. The canary reports both the raw
+// DialFailure and the AttemptOutcome derived from it; this side re-derives the
+// outcome and refuses a disagreement, so a canary that classified a TCP reset
+// as "blocked" cannot have its verdict taken at face value.
+func TestTheReportsTwoHalvesMustAgree(t *testing.T) {
+	ns := fixtureNetns(t)
+	probes := MetadataProbes()
+	v4, v6 := probes[0].String(), probes[1].String()
+
+	cases := []struct {
+		name string
+		bad  Attempt
+		want string
+	}{
+		{
+			name: "a reset dressed up as blocked",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, Failure: DialFailureReset, ElapsedMillis: 1},
+			want: `reports outcome "blocked" for failure reason "reset"`,
+		},
+		{
+			name: "blocked with no reason at all",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, ElapsedMillis: 1},
+			want: `for failure reason ""`,
+		},
+		{
+			name: "blocked for a reason this build does not know",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, Failure: DialFailure("firewalled"), ElapsedMillis: 1},
+			want: `failure reason "firewalled"`,
+		},
+		{
+			name: "a cancelled attempt called blocked",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, Failure: DialFailureCancelled, ElapsedMillis: 1},
+			want: `failure reason "cancelled"`,
+		},
+		{
+			name: "an elapsed time that is not a measurement",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, Failure: DialFailureNoRoute, ElapsedMillis: -1},
+			want: "negative duration is not a measurement",
+		},
+		{
+			name: "an elapsed time far outside the declared bound",
+			bad:  Attempt{Target: v4, Outcome: AttemptOutcomeBlocked, Failure: DialFailureNoRoute, ElapsedMillis: maxCanaryAttemptMillis + 1},
+			want: "did not honour anything like it",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := EvaluateCanaryReport(ns, probes, CanaryReport{
+				NetnsInode: fixtureInode,
+				Attempts:   []Attempt{tc.bad, blockedAttempt(v6)},
+			})
+			if err == nil {
+				t.Fatalf("EvaluateCanaryReport accepted %+v", tc.bad)
+			}
+			mustErrIs(t, err, ErrNotContained, "EvaluateCanaryReport")
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("refusal %q does not mention %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+// TestReachableIsDecidedBeforeTheEvidenceChecks pins the ORDER inside
+// EvaluateCanaryReport. A reachable attempt carries no DialFailure by
+// construction, so an agreement check running first would refuse it as a schema
+// problem -- still an abort, but with the wrong message. The one message in
+// this package that has to be readable is the one saying cloud metadata is
+// reachable.
+func TestReachableIsDecidedBeforeTheEvidenceChecks(t *testing.T) {
+	ns := fixtureNetns(t)
+	probes := MetadataProbes()
+	v4, v6 := probes[0].String(), probes[1].String()
+	err := EvaluateCanaryReport(ns, probes, CanaryReport{
+		NetnsInode: fixtureInode,
+		Attempts: []Attempt{
+			// No Failure, no ElapsedMillis: exactly what RunCanary emits on a
+			// completed handshake.
+			{Target: v4, Outcome: AttemptOutcomeReachable, Detail: "the TCP handshake completed"},
+			blockedAttempt(v6),
+		},
+	})
+	if err == nil {
+		t.Fatal("a reachable metadata endpoint was accepted")
+	}
+	if !strings.Contains(err.Error(), "THE SANDBOX CAN REACH") {
+		t.Fatalf("the abort for a reachable endpoint was reported as something else: %v", err)
+	}
+	if strings.Contains(err.Error(), "two halves disagree") {
+		t.Fatalf("the schema check ran ahead of the reachability check and buried it: %v", err)
+	}
+}
+
+// sleepingProbe is a ConnectProbe that takes a measurable amount of time and
+// holds no socket. It exists so the timing field can be shown to be a
+// MEASUREMENT taken around the call rather than a number the probe supplied.
+type sleepingProbe struct {
+	sleep   time.Duration
+	failure DialFailure
+}
+
+func (p sleepingProbe) Attempt(_ context.Context, _, _ string) (bool, DialFailure, string) {
+	if p.sleep > 0 {
+		time.Sleep(p.sleep)
+	}
+	return false, p.failure, "stub"
+}
+
+// TestRunCanaryTimesEveryAttempt: the elapsed figure has to come from a
+// measurement around the ConnectProbe call, not from the probe's own claim.
+func TestRunCanaryTimesEveryAttempt(t *testing.T) {
+	const sleep = 40 * time.Millisecond
+	rep := RunCanary(context.Background(), sleepingProbe{sleep: sleep, failure: DialFailureNoRoute},
+		fixtureInode, MetadataProbes())
+	if len(rep.Attempts) != 2 {
+		t.Fatalf("RunCanary produced %d attempts, want 2", len(rep.Attempts))
+	}
+	for _, a := range rep.Attempts {
+		if a.ElapsedMillis < sleep.Milliseconds() {
+			t.Fatalf("attempt against %s reports %d ms for a probe that slept %s; the timing is "+
+				"not being measured around the call", a.Target, a.ElapsedMillis, sleep)
+		}
+		if a.Failure != DialFailureNoRoute {
+			t.Fatalf("attempt against %s lost the raw failure reason (%q)", a.Target, string(a.Failure))
+		}
+	}
+	// A probe that answers instantly must not be reported as having waited.
+	// Without this, the assertion above would pass on an implementation that
+	// simply wrote the declared timeout into the field.
+	fast := RunCanary(context.Background(), sleepingProbe{failure: DialFailureNoRoute},
+		fixtureInode, MetadataProbes())
+	for _, a := range fast.Attempts {
+		if a.ElapsedMillis >= sleep.Milliseconds() {
+			t.Fatalf("an instantaneous probe was reported as %d ms elapsed; the field is not a "+
+				"measurement", a.ElapsedMillis)
+		}
+	}
+	// The round trip: what RunCanary produced must survive the wire and be
+	// accepted, or the two halves of the protocol have drifted.
+	parsed, err := ParseCanaryReport(canaryStdout(rep.NetnsInode, rep.Attempts...))
+	if err != nil {
+		t.Fatalf("a report RunCanary produced does not parse: %v", err)
+	}
+	if err := EvaluateCanaryReport(fixtureNetns(t), MetadataProbes(), parsed); err != nil {
+		t.Fatalf("a report RunCanary produced from a no-route probe was refused: %v", err)
+	}
+
+	// AND THE END-TO-END FORM OF THE CRITIC'S SCENARIO: a real ConnectProbe
+	// whose dialer gives up early, driven through RunCanary rather than
+	// through a hand-built Attempt. 40ms against a 2s declared bound.
+	quick := RunCanary(context.Background(), sleepingProbe{sleep: sleep, failure: DialFailureSilentTimeout},
+		fixtureInode, MetadataProbes())
+	if err := EvaluateCanaryReport(fixtureNetns(t), MetadataProbes(), quick); err == nil {
+		t.Fatalf("a ConnectProbe that reported a silent timeout after ~%s was accepted as "+
+			"evidence of containment; the declared bound is %s", sleep, DefaultCanaryDialTimeout)
+	}
 }
 
 // TestEvaluateCanaryReportRefusals is the heart of the packet: every way a
@@ -751,9 +1377,7 @@ func TestEvaluateCanaryReportRefusals(t *testing.T) {
 	ns := fixtureNetns(t)
 	probes := MetadataProbes()
 	v4, v6 := probes[0].String(), probes[1].String()
-	blocked := func(tgt string) Attempt {
-		return Attempt{Target: tgt, Outcome: AttemptOutcomeBlocked, Detail: "no route"}
-	}
+	blocked := blockedAttempt
 
 	cases := []struct {
 		name string
@@ -959,9 +1583,23 @@ func TestAssertContainmentRefusesANilCommanderAndAnEmptyCanaryPath(t *testing.T)
 	}
 }
 
-// TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns is plan/50-dast.md
-// D.11's stop condition, verbatim: "the deliberately-broken fixture is caught
-// by the assertion probe every time in a 20-run flake check."
+// TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns is the SECOND HALF of
+// plan/50-dast.md D.11's stop condition, and only the second half.
+//
+// The stop condition, verbatim, is TWO clauses joined by a semicolon:
+//
+//	"Default-deny ruleset installs correctly on a real target fixture; the
+//	 deliberately-broken fixture is caught by the assertion probe every time in
+//	 a 20-run flake check."
+//
+// This test is the clause after the semicolon, and it is met. THE CLAUSE
+// BEFORE IT IS NOT MET AND CANNOT BE MET ON THIS HOST: there is no real target
+// fixture, no kernel, no nftables, and nothing here installs a ruleset
+// anywhere. internal/SKIPPED-CONTROLS.md entry U1 is the standing record of
+// that half, and a privileged Linux CI lane is what would settle it.
+//
+// The distinction is not pedantry. An exit criterion recorded as met when half
+// of it is unexecuted is how a gap ships.
 //
 // The fixture is a namespace whose nftables ruleset is EMPTY -- the exact
 // research-19 risk #5 shape, where the policy object exists, nothing enforces

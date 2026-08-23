@@ -163,8 +163,55 @@ func invalidPlanf(format string, args ...any) error {
 // could delete somebody else's ruleset.
 const TableName = "anvil_dast"
 
-// ChainName is the egress chain inside TableName.
+// ChainName is the egress chain inside TableName, hooked at `output`.
 const ChainName = "egress"
+
+// ForwardChainName is the egress chain hooked at `forward`, and it carries
+// EXACTLY the same rules as ChainName.
+//
+// IT IS NOT REDUNDANT WITH ChainName. THE OUTPUT HOOK CANNOT SEE THE TRAFFIC
+// THIS PACKAGE EXISTS TO STOP.
+//
+// nftables' `output` hook sees packets whose SOURCE SOCKET is in the namespace
+// -- a process running directly in it. That is the canary, launched by `ip
+// netns exec`, and it is not the target. The target is a Compose project: its
+// containers sit in their own namespaces on a bridge INSIDE this namespace, so
+// a packet a container sends is received on the bridge and ROUTED ONWARD, which
+// is the `forward` hook and not `output`. provision.go's own NetworkMode
+// assertion requires exactly that arrangement -- the authorized service must be
+// on a network of this Compose project, which is a bridge, which forwards.
+//
+// So an output-only ruleset constrained the canary and nothing else, while
+// every test in this package -- the golden script, the ordering test, the
+// canary's own blocked verdict -- reported it closed. That is the shape of
+// failure this package was written to make impossible, occurring in the
+// package's own ruleset.
+//
+// WHAT THIS STILL DOES NOT PROVE: the canary runs under `ip netns exec`, so it
+// holds a socket IN the namespace and its own dials traverse `output`, not
+// `forward`. It therefore exercises the chain the TARGET DOES NOT USE. Recorded
+// in internal/SKIPPED-CONTROLS.md as U1a, with what would settle it.
+//
+// WHY THERE IS NO `input` CHAIN, stated rather than left as an omission. The
+// property asserted here is what the target can REACH. `input` is inbound: the
+// probe engine lives outside the namespace and must reach the target, and the
+// health probe (provision.go step 14) must reach the declared health URL. A
+// default-drop input chain would refuse both, turning every scan into
+// unreachable_at_scan_time. Inbound reachability is not the SSRF-to-metadata
+// path and adding a hook that breaks the scan buys nothing against it.
+const ForwardChainName = "egress_forward"
+
+// hookedChains is every chain the generated script installs, with the nftables
+// hook each is attached to, IN EMISSION ORDER. It is one list so that a chain
+// added here is automatically carried through renderScript and through
+// TestEveryHookedChainCarriesTheIdenticalRuleList, rather than being a second
+// place that has to be remembered.
+func hookedChains() []struct{ Chain, Hook string } {
+	return []struct{ Chain, Hook string }{
+		{ChainName, "output"},
+		{ForwardChainName, "forward"},
+	}
+}
 
 // NetnsRunDir is where iproute2 keeps named network namespaces. It is where
 // ReadNetnsInode stats, and it is a constant rather than a parameter for the
@@ -415,6 +462,7 @@ const (
 	denyIPv4Future      = "240.0.0.0/4"    // RFC 1112, incl. 255.255.255.255.
 	denyIPv6Unspecified = "::/128"         // RFC 4291.
 	denyIPv6Loopback    = "::1/128"        // RFC 4291.
+	denyIPv6V4Mapped    = "::ffff:0:0/96"  // RFC 4291 2.5.5.2; see below.
 	denyIPv6NAT64       = "64:ff9b::/96"   // RFC 6052; an IPv4 range in disguise.
 	denyIPv6NAT64Local  = "64:ff9b:1::/48" // RFC 8215; likewise.
 	denyIPv6SixToFour   = "2002::/16"      // RFC 3056; likewise.
@@ -422,6 +470,56 @@ const (
 	denyIPv6LinkLocal   = "fe80::/10"      // RFC 4291.
 	denyIPv6Multicast   = "ff00::/8"       // RFC 4291.
 )
+
+// WHY ::ffff:0:0/96 IS IN THE EMITTED SET AND NOT ONLY IN THE PREDICATE.
+//
+// DeniedByRuleset canonicalizes an IPv4-mapped address to its dotted quad
+// before matching, so the PREDICATE has always answered "denied" for
+// "::ffff:169.254.169.254". The emitted nftables ruleset did not: its
+// anvil_deny6 set held no mapped range, so `ip6 daddr @anvil_deny6 drop` would
+// not have matched that destination on the wire.
+//
+// A predicate that is stricter than the ruleset it claims to model is a check
+// that cannot see the damage: every test in this package asks DeniedByRuleset
+// and would have reported the sandbox closed while the kernel left it open.
+// The two are reconciled in the STRICTER direction -- the whole mapped range is
+// dropped outright, so the model and the wire now say the same thing. Nothing
+// legitimate is lost: a v4-mapped destination in an actual IPv6 packet is not
+// a destination any target needs.
+
+// canonicalAddr is the ONE canonicalization every address comparison in this
+// package goes through, and it exists because netip's own comparisons are
+// spelling-sensitive in two directions that both fail OPEN:
+//
+//  1. IPv4-MAPPED IPv6. netip.Prefix.Contains compares families, so
+//     "169.254.0.0/16" does not contain "::ffff:169.254.169.254" and
+//     "::ffff:169.254.169.254/128" does not contain "169.254.169.254". The
+//     authorization kernel already encodes this lesson in gate 8
+//     (authz.Canonicalize unwraps an IPv4-mapped literal precisely so that
+//     "[::ffff:169.254.169.254]" and "169.254.169.254" cannot compare
+//     differently against gate 10's ranges) and this is the same rule at the
+//     network layer. It is Unmap, exactly as authz.AddressIsReserved and
+//     authz.scopeEnumeratesAddress spell it, so the two layers cannot disagree
+//     about what an address IS before they disagree about whether it is denied.
+//
+//  2. ZONED IPv6. netip.Prefix.Contains returns FALSE for any address carrying
+//     a zone, unconditionally -- prefixes cannot carry zones, so netip refuses
+//     the comparison rather than answering it. "fe80::1%eth0", "::1%lo" and
+//     "fd00:ec2::254%eth0" therefore walked the entire deny set and came out
+//     the far side reported as NOT DENIED. Measured, not reasoned: see
+//     TestDeniedByRulesetSeesThroughAZone.
+//     Stripping the zone is correct rather than merely convenient, because
+//     nftables has no zone concept at all: a zone is a local scope identifier
+//     for a link-local address, it never appears on the wire, and the packet
+//     the kernel matches against the ruleset carries only the 16 address bytes.
+//     So the zone-free form IS what the ruleset sees, and stripping it makes
+//     the predicate model the ruleset instead of contradicting it.
+//
+// FAIL CLOSED: an invalid address canonicalizes to an invalid address, and
+// every caller treats invalid as denied.
+func canonicalAddr(addr netip.Addr) netip.Addr {
+	return addr.WithZone("").Unmap()
+}
 
 // DenyPrefixesV4 returns the IPv4 half of the deny set, freshly parsed.
 func DenyPrefixesV4() []netip.Prefix {
@@ -435,8 +533,9 @@ func DenyPrefixesV4() []netip.Prefix {
 // DenyPrefixesV6 returns the IPv6 half of the deny set, freshly parsed.
 func DenyPrefixesV6() []netip.Prefix {
 	return mustPrefixes(
-		denyIPv6Unspecified, denyIPv6Loopback, denyIPv6NAT64, denyIPv6NAT64Local,
-		denyIPv6SixToFour, denyIPv6ULA, denyIPv6LinkLocal, denyIPv6Multicast,
+		denyIPv6Unspecified, denyIPv6Loopback, denyIPv6V4Mapped, denyIPv6NAT64,
+		denyIPv6NAT64Local, denyIPv6SixToFour, denyIPv6ULA, denyIPv6LinkLocal,
+		denyIPv6Multicast,
 	)
 }
 
@@ -448,13 +547,61 @@ func mustPrefixes(raw ...string) []netip.Prefix {
 	return out
 }
 
+// canonicalPrefix is canonicalAddr for a PREFIX, and it is what every
+// operator-supplied CIDR goes through before anything is decided about it.
+//
+// The IPv4-mapped spelling defeats a prefix comparison exactly as it defeats an
+// address comparison, and it did: BuildRuleset ACCEPTED
+// "::ffff:169.254.169.254/128" as a scope allow entry and emitted an accept
+// rule for it, because netip.Prefix.Contains compares families and that prefix
+// does not contain the dotted-quad metadata address. The six-row table that was
+// supposed to assert the refusal held six spellings, none of them this one.
+//
+// So an IPv4-mapped prefix is UNWRAPPED to the dotted-quad prefix it names --
+// "::ffff:169.254.169.254/128" becomes "169.254.169.254/32", and
+// "::ffff:0.0.0.0/96" becomes "0.0.0.0/0", which is then refused for covering
+// the metadata address, which is the correct answer for a rule that would let
+// every IPv4 destination through.
+//
+// A mapped prefix with fewer than 96 bits is REFUSED rather than unwrapped: it
+// straddles the boundary of the mapped range and names IPv6 space outside it,
+// so there is no dotted quad it is equivalent to. In practice such a prefix
+// cannot reach here masked -- netip masks "::ffff:0:0/95" to "::fffe:0:0/95",
+// whose address is no longer IPv4-mapped, and every caller requires a masked
+// prefix -- but the refusal is written rather than reasoned about, because the
+// alternative is a silently wrong bits-96 subtraction if a caller ever stops
+// requiring masked input.
+//
+// netip.PrefixFrom drops any zone on the address it is given (verified), so a
+// prefix cannot carry one and there is no zone case here.
+func canonicalPrefix(p netip.Prefix) (netip.Prefix, error) {
+	if !p.IsValid() {
+		return netip.Prefix{}, fmt.Errorf("not a valid prefix")
+	}
+	if !p.Addr().Is4In6() {
+		return p, nil
+	}
+	const mappedPrefixBits = 96
+	if p.Bits() < mappedPrefixBits {
+		return netip.Prefix{}, fmt.Errorf("%q is an IPv4-mapped prefix shorter than /%d, so it "+
+			"also names IPv6 space outside ::ffff:0:0/%d and there is no IPv4 prefix it is "+
+			"equivalent to; write the IPv4 range in dotted-quad form",
+			p.String(), mappedPrefixBits, mappedPrefixBits)
+	}
+	return netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-mappedPrefixBits), nil
+}
+
 // DeniedByRuleset reports whether addr falls in the compiled-in deny set.
+//
+// The address is put through canonicalAddr first. Read that function's comment
+// before changing this one: comparing an address to a prefix without it is
+// wrong for two spellings, both of which fail OPEN.
 //
 // FAIL CLOSED: an INVALID address is denied. netip.Addr's zero value is
 // invalid, and a zero value that reported "not denied" would be a zero value
 // that authorized something.
 func DeniedByRuleset(addr netip.Addr) bool {
-	a := addr.Unmap()
+	a := canonicalAddr(addr)
 	if !a.IsValid() {
 		return true
 	}
@@ -503,12 +650,16 @@ type Ruleset struct {
 	// Script is the complete `nft -f -` input.
 	Script string
 
-	// Rules is the egress chain's rules IN EVALUATION ORDER. It is exported
-	// so the ordering guarantees can be pinned by index relation rather than
-	// by grepping the script text: nftables evaluates a chain top to bottom,
-	// so "the metadata drop precedes every accept" is a statement about
-	// ORDER, and a test that only checked both lines were present would pass
-	// on a ruleset that had swapped them.
+	// Rules is the rule list IN EVALUATION ORDER, installed identically into
+	// EVERY chain hookedChains names -- `output` and `forward`. It is
+	// exported so the ordering guarantees can be pinned by index relation
+	// rather than by grepping the script text: nftables evaluates a chain top
+	// to bottom, so "the metadata drop precedes every accept" is a statement
+	// about ORDER, and a test that only checked both lines were present would
+	// pass on a ruleset that had swapped them.
+	//
+	// One list, both chains, by construction: see ForwardChainName for why
+	// there are two chains and renderScript for why they cannot diverge.
 	Rules []string
 
 	// UnexpressedAllowEntries are scope.additional_egress_allow entries that
@@ -590,6 +741,11 @@ func BuildRuleset(p Plan) (Ruleset, error) {
 	//    that dropped 127.0.0.0/8 outright would make every manifest's health
 	//    gate fail and every service name unresolvable. Note that this traffic
 	//    never leaves the namespace.
+	//
+	//    In the `forward` chain these two rules never match -- nothing is
+	//    forwarded out of `lo` -- and they are emitted there anyway rather
+	//    than maintaining a second, shorter rule list. An inert rule costs a
+	//    line; two rule lists cost a divergence nobody notices.
 	add("oifname \"lo\" ip daddr %s accept", denyIPv4Loopback)
 	add("oifname \"lo\" ip6 daddr %s accept", denyIPv6Loopback)
 
@@ -600,6 +756,14 @@ func BuildRuleset(p Plan) (Ruleset, error) {
 
 	// 5. The target's own Compose networks. The bounded hole; see
 	//    checkIntraTargetNetworks.
+	//
+	//    LOAD-BEARING IN THE `forward` CHAIN. A container's traffic to a
+	//    sibling, and the probe engine's traffic INTO the target, are both
+	//    forwarded across the Compose bridge, so with the forward chain at
+	//    `policy drop` these accepts are what make the target reachable at
+	//    all. A plan that omits them does not open a hole -- it makes the scan
+	//    fail as unreachable_at_scan_time, which is the safe direction and is
+	//    a fact the operator hears rather than a silent pass.
 	for _, pfx := range intra {
 		fam := "ip"
 		if pfx.Addr().Is6() {
@@ -658,12 +822,17 @@ func renderScript(rules []string) string {
 	b.WriteString("table inet " + TableName + " {\n")
 	writeSet(&b, denySetV4, "ipv4_addr", DenyPrefixesV4())
 	writeSet(&b, denySetV6, "ipv6_addr", DenyPrefixesV6())
-	b.WriteString("\tchain " + ChainName + " {\n")
-	b.WriteString("\t\ttype filter hook output priority filter; policy drop;\n")
-	for _, r := range rules {
-		b.WriteString("\t\t" + r + "\n")
+	// EVERY hooked chain gets the IDENTICAL rule list from the IDENTICAL
+	// slice. Two chains built from two rule lists is two rulesets that can
+	// drift, and the one that drifts is the one nobody reads.
+	for _, hc := range hookedChains() {
+		b.WriteString("\tchain " + hc.Chain + " {\n")
+		b.WriteString("\t\ttype filter hook " + hc.Hook + " priority filter; policy drop;\n")
+		for _, r := range rules {
+			b.WriteString("\t\t" + r + "\n")
+		}
+		b.WriteString("\t}\n")
 	}
-	b.WriteString("\t}\n")
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -712,6 +881,14 @@ func checkIntraTargetNetworks(in []netip.Prefix) ([]netip.Prefix, error) {
 			return nil, invalidPlanf("intra_target_networks[%d] is %q, which has host bits set; "+
 				"write it masked (%q) so that what is allowed is unambiguous", i, p.String(), p.Masked().String())
 		}
+		// Canonicalize BEFORE the width bound and the metadata check, for the
+		// reason canonicalPrefix states: "::ffff:169.254.0.0/112" is a /16 of
+		// IPv4 link-local space wearing a /112 of IPv6, and both checks below
+		// would read the disguise rather than the range.
+		p, err := canonicalPrefix(p)
+		if err != nil {
+			return nil, invalidPlanf("intra_target_networks[%d]: %v", i, err)
+		}
 		minBits := minIntraTargetV4Bits
 		if p.Addr().Is6() {
 			minBits = minIntraTargetV6Bits
@@ -736,6 +913,12 @@ func checkIntraTargetNetworks(in []netip.Prefix) ([]netip.Prefix, error) {
 // splitAllowEntries partitions scope.additional_egress_allow into the entries
 // nftables can express (addresses and CIDRs) and the ones it cannot
 // (hostnames), and REFUSES any address entry that lands on a metadata address.
+//
+// "ANY ADDRESS ENTRY" MEANS ANY SPELLING OF ONE. Every entry goes through
+// canonicalAddr / canonicalPrefix before the metadata comparison, because the
+// comparison is netip.Prefix.Contains and Contains is spelling-sensitive: this
+// function's doc made exactly the claim above while accepting
+// "::ffff:169.254.169.254/128" and emitting an accept rule for it.
 func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 	if m.Scope == nil {
 		return nil, nil, nil
@@ -756,7 +939,11 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 				return nil, nil, invalidPlanf("%s %q has host bits set; write it masked (%q)",
 					field, raw, p.Masked().String())
 			}
-			pfx = p
+			c, cerr := canonicalPrefix(p)
+			if cerr != nil {
+				return nil, nil, invalidPlanf("%s: %v", field, cerr)
+			}
+			pfx = c
 		default:
 			a, err := netip.ParseAddr(raw)
 			if err != nil {
@@ -765,7 +952,10 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 				unexpressed = append(unexpressed, raw)
 				continue
 			}
-			a = a.Unmap()
+			a = canonicalAddr(a)
+			if !a.IsValid() {
+				return nil, nil, invalidPlanf("%s %q does not canonicalize to an address", field, raw)
+			}
 			pfx = netip.PrefixFrom(a, a.BitLen())
 		}
 		for _, probe := range probes {
@@ -786,6 +976,17 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 
 // SetupNetns installs the default-deny egress ruleset into the target's
 // network namespace.
+//
+// NOBODY CALLS IT YET, AND NOTHING COMPOSES THE TWO HALVES OF THIS PACKAGE.
+// Provision seals a Target as booted_clean without any network namespace being
+// involved: it never calls this function and never calls AssertContainment, and
+// a repository-wide grep finds no caller of any of the three outside this
+// package's own tests. So booted_clean today means "the container is contained
+// by gVisor" and does NOT mean "its egress is default-deny". Wiring that is the
+// integration packet's, not this one's, and it is recorded in
+// internal/SKIPPED-CONTROLS.md as U1c so it cannot be forgotten -- including
+// D.12's criterion that AssertContainment must run BEFORE any probe engine
+// starts.
 //
 // It DOES NOT assert containment. That is deliberate and it is the whole
 // reason AssertContainment is a separate exported function: if setup returned
@@ -888,15 +1089,69 @@ func parseNetnsLink(s string) (uint64, error) {
 const CanarySubcommand = "__anvil-dast-netns-canary"
 
 // DefaultCanaryDialTimeout bounds one connect attempt. It is the contract a
-// ConnectProbe implementation honours; this package cannot enforce it, because
-// this package does not hold the socket.
+// ConnectProbe implementation honours.
 //
 // It is short on purpose, and the asymmetry in the package doc is why that is
 // safe rather than sloppy: a REACHABLE metadata endpoint is link-local and
-// answers in well under a millisecond, so shortening the timeout can only
+// answers in well under a millisecond, so a timeout in this range can only
 // convert a slow "blocked" into a "blocked" -- it can never convert a
 // "reachable" into a "blocked".
+//
+// THAT ARGUMENT IS ONLY SOUND IF THE TIMEOUT IS ACTUALLY WAITED OUT, and this
+// package does not hold the socket, so it cannot make a ConnectProbe wait. It
+// used to not check either: every report was accepted without a single number
+// in it, so a ConnectProbe built with a 50ms dialer -- an entirely plausible
+// choice for a probe that expects to be blocked -- would have turned every
+// silent timeout into "blocked" and the whole containment assertion into a
+// green no-op that could not fail.
+//
+// So the canary now REPORTS its elapsed time per attempt and
+// EvaluateCanaryReport refuses a silent-timeout verdict whose timing cannot
+// support it. See minSilentTimeoutEvidence.
+//
+// The canary remains the UNTRUSTED half and this package cannot authenticate
+// it: a substituted binary can write any number it likes. What the check buys
+// is that the ordinary way this control rots -- an honest probe with too short
+// a dialer -- now fails loudly. The rest is internal/SKIPPED-CONTROLS.md U1b.
 const DefaultCanaryDialTimeout = 2 * time.Second
+
+// canaryTimingTolerance is how much short of DefaultCanaryDialTimeout a
+// genuine silent timeout may measure.
+//
+// It is not zero because the elapsed figure is wall-clock around the whole
+// Attempt call and clock granularity is coarse on some platforms (Windows'
+// default timer interval is ~15.6ms). It is small because its whole job is to
+// be too small to admit a probe that did not wait: at 100ms against a 2s
+// contract, a probe must show at least 1.9s, and the 50ms dialer above is
+// refused by a factor of thirty-eight.
+const canaryTimingTolerance = 100 * time.Millisecond
+
+// minSilentTimeoutEvidence is the least elapsed time that makes
+// DialFailureSilentTimeout mean anything.
+//
+// SILENCE IS ONLY EVIDENCE IF YOU LISTENED. A plain nftables `drop` answers
+// nothing, so the dialer's own timer is what fires and the attempt must have
+// consumed the full budget. An attempt that reported "nothing came back" after
+// a fraction of the budget has not shown that nothing was coming -- it has
+// shown that it stopped waiting, and a reply arriving one millisecond later
+// would have been a REACHABLE metadata endpoint.
+//
+// The other two blocked failures are not subject to this: DialFailureNoRoute
+// and DialFailurePolicyRejected are AFFIRMATIVE answers from the local kernel
+// (ENETUNREACH, EPERM) and are correctly returned in microseconds. Applying a
+// timing floor to them would refuse the fastest correct answers there are.
+func minSilentTimeoutEvidence() time.Duration {
+	return DefaultCanaryDialTimeout - canaryTimingTolerance
+}
+
+// maxCanaryAttemptMillis bounds a reported elapsed time from above.
+//
+// A probe declaring a 2s contract and reporting 11 minutes did not honour any
+// bound this package can reason about, and a number that large is more likely
+// a garbage field than a measurement. Above the bound the report is refused
+// rather than believed; the direction is the same as everywhere else here --
+// an answer this build cannot interpret is not a blocked answer.
+const maxCanaryAttemptMillis = 60_000
 
 // AttemptOutcome is what one connect attempt established.
 //
@@ -947,6 +1202,35 @@ type Attempt struct {
 	Target  string         `json:"target"`
 	Outcome AttemptOutcome `json:"outcome"`
 	Detail  string         `json:"detail"`
+
+	// Failure is the RAW reason the ConnectProbe gave, carried alongside the
+	// Outcome derived from it rather than instead of it.
+	//
+	// Both are reported so the RELATION between them can be pinned instead of
+	// only the values: EvaluateCanaryReport recomputes
+	// ClassifyDialFailure(Failure) and refuses any attempt whose Outcome does
+	// not match. A report claiming "blocked" while naming "reset" is a report
+	// from something that is not this build's canary, and it is refused
+	// rather than half-believed.
+	//
+	// It is also what makes the timing rule expressible at all: "blocked"
+	// alone cannot be checked for timing, because a no-route blocked is
+	// correctly instantaneous and a silent-timeout blocked must not be.
+	//
+	// FAIL CLOSED: the zero value is DialFailureUnset, which classifies as
+	// INDETERMINATE, so an attempt that omits this field aborts the run.
+	Failure DialFailure `json:"failure"`
+
+	// ElapsedMillis is how long the attempt took, measured by RunCanary
+	// around the ConnectProbe call.
+	//
+	// It is the evidence behind a DialFailureSilentTimeout verdict, and
+	// without it that verdict is an assertion that cannot fail. See
+	// minSilentTimeoutEvidence.
+	//
+	// FAIL CLOSED: the zero value is 0, which is below every floor, so an
+	// attempt that omits this field cannot produce a silent-timeout pass.
+	ElapsedMillis int64 `json:"elapsed_ms"`
 }
 
 // CanaryReport is the canary's whole answer, written to stdout as one JSON
@@ -1006,6 +1290,12 @@ func ParseCanaryReport(raw []byte) (CanaryReport, error) {
 //     matched by Target string identity.
 //   - RULE 5 -- rep.Attempts carries NO attempt for anything not in want.
 //   - RULE 6 -- every attempt's outcome is AttemptOutcomeBlocked.
+//   - RULE 7 -- every attempt's Outcome AGREES with
+//     ClassifyDialFailure(Attempt.Failure). The report carries both, and a
+//     report whose two halves disagree is not this build's report.
+//   - RULE 8 -- every attempt's ElapsedMillis is a usable measurement, and an
+//     attempt blocked by DialFailureSilentTimeout waited at least
+//     minSilentTimeoutEvidence. Silence is only evidence if you listened.
 //
 // Anything else is ErrNotContained. There is no warning path and no partial
 // credit: rule 4 in particular means a canary that quietly stopped probing
@@ -1058,22 +1348,51 @@ func EvaluateCanaryReport(ns Netns, want []Probe, rep CanaryReport) error {
 				"expected and duplicates make the answer ambiguous", len(got), key)
 		}
 		a := got[0]
-		switch a.Outcome {
-		case AttemptOutcomeReachable:
+		// THE ORDER OF THE THREE BLOCKS BELOW IS DELIBERATE, and each one
+		// exists so a refusal names the thing that is actually wrong. Every
+		// path here aborts; what differs is what the operator is told, and a
+		// reachable metadata endpoint reported as a schema problem is a
+		// message nobody acts on.
+		//
+		//   1. REACHABLE first. A reachable attempt carries no DialFailure by
+		//      construction (RunCanary lets "connected" win over any reported
+		//      failure), so the agreement check in step 3 would refuse it as
+		//      "the two halves disagree" and bury the one message in this
+		//      package that has to be read.
+		//   2. The outcome VALUE next -- absent, or a literal this build does
+		//      not know. Both would also fail the agreement check, and
+		//      "carries no outcome" is what an operator can act on.
+		//   3. Then the evidence: the outcome must agree with the reported
+		//      failure reason, and the timing must be able to support it.
+		if a.Outcome == AttemptOutcomeReachable {
 			return notContainedf("THE SANDBOX CAN REACH %s. Cloud instance metadata is reachable "+
 				"from inside netns %q, so an SSRF in the target would hand out credentials. "+
 				"The scan is aborted. Canary detail: %s", key, ns.Name(), a.Detail)
+		}
+		if a.Outcome == AttemptOutcomeUnset {
+			return notContainedf("the canary's attempt against %s carries no outcome; an absent "+
+				"outcome is not a blocked outcome", key)
+		}
+		if !a.Outcome.Valid() {
+			return notContainedf("the canary's attempt against %s carries outcome %q, which this "+
+				"build does not recognise", key, string(a.Outcome))
+		}
+		if err := checkAttemptEvidence(ns, key, a); err != nil {
+			return err
+		}
+		switch a.Outcome {
 		case AttemptOutcomeBlocked:
 			// The only passing case.
 		case AttemptOutcomeIndeterminate:
 			return notContainedf("the canary could not establish whether %s is reachable from "+
 				"netns %q (%s). Unknown is not contained", key, ns.Name(), a.Detail)
-		case AttemptOutcomeUnset:
-			return notContainedf("the canary's attempt against %s carries no outcome; an absent "+
-				"outcome is not a blocked outcome", key)
 		default:
+			// Unreachable: the three checks above have already accounted for
+			// every AttemptOutcome literal. It is here because a literal
+			// added to the enum and forgotten in this switch must refuse, not
+			// fall through into the "blocked" path.
 			return notContainedf("the canary's attempt against %s carries outcome %q, which this "+
-				"build does not recognise", key, string(a.Outcome))
+				"build's evaluation does not handle", key, string(a.Outcome))
 		}
 	}
 	// Extras. A report carrying attempts nobody asked for is a report from
@@ -1090,6 +1409,57 @@ func EvaluateCanaryReport(ns Netns, want []Probe, rep CanaryReport) error {
 		sort.Strings(extras)
 		return notContainedf("the canary reported attempts against %s, which were not requested; "+
 			"this is not the report this build asked for", strings.Join(extras, ", "))
+	}
+	return nil
+}
+
+// checkAttemptEvidence is RULES 7 and 8: the reported verdict must agree with
+// the reported reason, and the reported timing must be able to support the
+// reported reason.
+//
+// It exists because the package's safety argument used to rest on a number
+// nobody carried and a classification nobody re-derived. Both halves are now
+// in the report and both are re-checked here, on the host side, where the
+// decision is made -- not in the canary, which is the untrusted half.
+//
+// It is not called for AttemptOutcomeReachable; see the caller.
+func checkAttemptEvidence(ns Netns, key string, a Attempt) error {
+	// RULE 7. Recompute rather than trust. The canary reports both halves and
+	// this side owns the mapping, so a canary that classified differently --
+	// an older build, a different program, an edited fixture -- is caught
+	// here instead of having its verdict taken at face value.
+	wantOutcome, _ := ClassifyDialFailure(a.Failure)
+	if a.Outcome != wantOutcome {
+		return notContainedf("the canary's attempt against %s reports outcome %q for failure "+
+			"reason %q, and this build classifies that reason as %q. The report's own two "+
+			"halves disagree, so it is not the report this build asked for",
+			key, string(a.Outcome), string(a.Failure), string(wantOutcome))
+	}
+
+	// RULE 8, first half: the number has to be a measurement.
+	if a.ElapsedMillis < 0 {
+		return notContainedf("the canary's attempt against %s reports %d ms elapsed; a negative "+
+			"duration is not a measurement", key, a.ElapsedMillis)
+	}
+	if a.ElapsedMillis > maxCanaryAttemptMillis {
+		return notContainedf("the canary's attempt against %s reports %d ms elapsed and the cap "+
+			"is %d ms. The probe declared a %s bound and did not honour anything like it, so "+
+			"nothing it reports about netns %q can be interpreted against that bound",
+			key, a.ElapsedMillis, maxCanaryAttemptMillis, DefaultCanaryDialTimeout, ns.Name())
+	}
+
+	// RULE 8, second half: SILENCE IS ONLY EVIDENCE IF YOU LISTENED.
+	if a.Failure == DialFailureSilentTimeout {
+		floor := minSilentTimeoutEvidence()
+		if time.Duration(a.ElapsedMillis)*time.Millisecond < floor {
+			return notContainedf("the canary's attempt against %s reports a silent timeout after "+
+				"%d ms, and a silent timeout is only evidence of a packet drop if the attempt "+
+				"waited out its declared %s bound (at least %d ms here). A probe that stopped "+
+				"listening early has shown that it stopped listening, not that %s is "+
+				"unreachable from netns %q -- a reply arriving a millisecond later would have "+
+				"been a REACHABLE metadata endpoint",
+				key, a.ElapsedMillis, DefaultCanaryDialTimeout, floor.Milliseconds(), key, ns.Name())
+		}
 	}
 	return nil
 }
@@ -1258,6 +1628,18 @@ func ClassifyDialFailure(f DialFailure) (AttemptOutcome, string) {
 // RunCanary performs the attempts and returns the report. inode is the
 // canary's own namespace inode, read by the caller (CanaryMain) so that this
 // function holds no capability of its own.
+//
+// IT TIMES EVERY ATTEMPT, and the timing is what makes a silent-timeout verdict
+// checkable on the host side. The measurement is taken HERE rather than being
+// asked of the ConnectProbe, because a probe that reports its own honesty is
+// not a measurement of it: this loop brackets the call it does not control.
+//
+// It is still the canary reporting on itself and the canary is the untrusted
+// half -- a substituted binary can write any number it likes. What the number
+// buys is that the ordinary way this control rots, a ConnectProbe built with a
+// dialer shorter than DefaultCanaryDialTimeout, now fails loudly instead of
+// producing a green verdict. That is the difference between an assertion and a
+// no-op, and it is not the same thing as authenticating the canary.
 func RunCanary(ctx context.Context, probe ConnectProbe, inode uint64, probes []Probe) CanaryReport {
 	rep := CanaryReport{NetnsInode: inode, Attempts: make([]Attempt, 0, len(probes))}
 	for _, p := range probes {
@@ -1268,16 +1650,31 @@ func RunCanary(ctx context.Context, probe ConnectProbe, inode uint64, probes []P
 		if p.Addr.Is6() {
 			network = "tcp6"
 		}
+		started := time.Now()
 		connected, failure, detail := probe.Attempt(ctx, network, p.String())
+		elapsed := time.Since(started).Milliseconds()
+		if elapsed < 0 {
+			// A clock that ran backwards. Report it as it measured rather
+			// than clamping: EvaluateCanaryReport refuses a negative elapsed,
+			// and a silently clamped 0 would be refused with a message about
+			// the wrong thing.
+			elapsed = -1
+		}
 		if connected {
 			// Reachable wins over any reported failure. That is the
 			// fail-closed direction: a probe that both connected and reported
 			// a failure is confused, and the confused reading that aborts is
 			// the safe one.
+			// Failure is left UNSET on a reachable attempt, deliberately: the
+			// probe's failure reason is meaningless once the handshake
+			// completed, and EvaluateCanaryReport decides reachable before it
+			// checks the outcome/failure agreement precisely so this case
+			// aborts with the reachability message and not a schema one.
 			rep.Attempts = append(rep.Attempts, Attempt{
-				Target:  p.String(),
-				Outcome: AttemptOutcomeReachable,
-				Detail:  "the TCP handshake completed",
+				Target:        p.String(),
+				Outcome:       AttemptOutcomeReachable,
+				Detail:        "the TCP handshake completed",
+				ElapsedMillis: elapsed,
 			})
 			continue
 		}
@@ -1286,7 +1683,11 @@ func RunCanary(ctx context.Context, probe ConnectProbe, inode uint64, probes []P
 			why = why + " (" + detail + ")"
 		}
 		rep.Attempts = append(rep.Attempts, Attempt{
-			Target: p.String(), Outcome: outcome, Detail: why,
+			Target:        p.String(),
+			Outcome:       outcome,
+			Detail:        why,
+			Failure:       failure,
+			ElapsedMillis: elapsed,
 		})
 	}
 	return rep
@@ -1348,10 +1749,30 @@ func CanaryMain(ctx context.Context, w io.Writer, probe ConnectProbe) int {
 //
 // It is exported and lives in the non-test file because it is not test-only
 // scaffolding -- a caller assembling a plan can ask it directly.
+//
+// BOTH SIDES ARE ASKED ABOUT THE SAME CANONICAL ADDRESS. Handing the raw
+// spelling to one side and the canonical one to the other would compare two
+// different questions, and the answer would drift with the spelling rather than
+// with the address.
+//
+// It matters in a direction worth naming, because it is a live blind spot and
+// not a hypothetical: authz.AddressIsReserved walks netip prefixes first and
+// falls back to the Go runtime's own classification, and NEITHER layer sees a
+// zoned address in the NAT64, 6to4 or unspecified ranges. MEASURED on
+// go1.26.5: AddressIsReserved reports reserved=false for "64:ff9b::1.2.3.4%eth0",
+// "2002:c000:204::1%eth0" and "::%eth0", and reserved=true for the same three
+// with the zone removed. Canonicalizing here means the containment layer asks
+// gate 10 the question gate 10 can actually answer.
+//
+// That blind spot is in internal/dast/authz, which this packet does not write.
+// It is reported to the orchestrator rather than patched from here, and
+// TestGateTenHasAZoneBlindSpotThisPackageCanonicalizesAround pins the measured
+// behaviour so the report cannot rot into a claim nobody can check.
 func GateTenAgreesWith(addr netip.Addr) bool {
-	_, reserved := authz.AddressIsReserved(addr)
+	a := canonicalAddr(addr)
+	_, reserved := authz.AddressIsReserved(a)
 	if !reserved {
 		return true
 	}
-	return DeniedByRuleset(addr)
+	return DeniedByRuleset(a)
 }

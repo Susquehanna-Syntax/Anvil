@@ -27,6 +27,15 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "anvil-dast %s: bootstrap placeholder, no subcommands yet (see plan step O.16)\n", version)
+	// The first real subcommand: plan step D.17's supply-chain pinning job
+	// for the nuclei-templates corpus (pin-templates.go). It is here rather
+	// than under cmd/anvil because it links internal/dast/engines to reuse
+	// D.14's template loader, and S9-AMENDED forbids that in the core
+	// binary. TestSplit in ../anvil/split_test.go is what keeps that true.
+	if len(os.Args) > 1 && os.Args[1] == "pin-templates" {
+		os.Exit(dispatchPinTemplates(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	fmt.Fprintf(os.Stderr, "anvil-dast %s: the only wired subcommand is `pin-templates` (D.17); "+
+		"the general entrypoint is plan step O.16\n", version)
 	os.Exit(2)
 }

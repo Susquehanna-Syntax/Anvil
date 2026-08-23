@@ -113,6 +113,117 @@ jobs:
       - name: Lane A chain ledger (printed, not just passed)
         run: go test -count=1 -v -run TestLaneAChain ./test/conformance/lanea/
 
+  # THE NON-LINUX LANE, and it exists because the single most safety-relevant
+  # property in internal/dast/containment ran in ZERO CI lanes.
+  #
+  # SystemCommander refuses on any non-Linux GOOS. That refusal is what stops
+  # Anvil reporting a sandbox as contained on a platform where it cannot check
+  # anything -- the claim that authorizes firing DAST probes at all. Its only
+  # guard, TestSystemCommanderRefusesOffLinux, branches on runtime.GOOS: on
+  # Linux it asserts a Commander comes back, and every job above runs on
+  # ubuntu-latest. So the refusal branch was never executed anywhere, and
+  # deleting the `runtime.GOOS != "linux"` check would have left every lane
+  # green.
+  #
+  # A control that runs in zero CI lanes is not a control. This job runs the
+  # containment package on Windows, where the refusal is the branch taken.
+  #
+  # Scoped to the one package deliberately: the point is the platform branch,
+  # not Windows portability of the whole tree, and a broad Windows lane would
+  # fail for unrelated reasons and get switched off.
+  #
+  # No -race here: the detector needs a gcc toolchain on Windows and the
+  # ubuntu lane above already runs the whole tree under it.
+  containment-non-linux:
+    name: Containment refuses off Linux (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # -count=1 for the reason the artifact-split job spells out: this repo
+      # has been bitten by a replayed cached PASS twice.
+      - name: The whole containment package, on a platform with no netns
+        run: go test -count=1 ./internal/dast/containment/
+
+      # A `go test -run X` that matches NOTHING exits 0 and prints "no tests to
+      # run", which is exactly how this lane would rot. Assert the named test
+      # ran, passed, and was not replayed from cache.
+      - name: The platform refusal really ran, and passed
+        run: |
+          set +e
+          out=$(go test -count=1 -v -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            echo "::error::the platform refusal guard FAILED"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q -- '--- PASS: TestSystemCommanderRefusesOffLinux'; then
+            echo "::error::TestSystemCommanderRefusesOffLinux did not run. A -run pattern that matches nothing exits 0; this lane proves nothing until the test is actually executed."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "confirmed: the non-Linux refusal branch compiled, ran and passed"
+
+      # Negative control. Without it this lane proves only that a green test is
+      # green -- it would still pass if SystemCommander returned a working
+      # Commander on Windows AND the assertion had been softened. Delete the
+      # platform check, require the guard to go RED, and require it to go red
+      # for the RIGHT REASON: naming the platform it was handed a Commander on.
+      - name: Negative control -- the guard must be able to fail
+        run: |
+          set -e
+          f=internal/dast/containment/netns.go
+          grep -q 'if runtime.GOOS != "linux" {' "$f" || {
+            echo "::error::the platform check is not where this control expects it in $f. The negative control cannot inject its mutation, so it is not testing anything."
+            exit 1
+          }
+          sed -i 's/if runtime.GOOS != "linux" {/if false {/' "$f"
+          set +e
+          out=$(go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          git checkout -- "$f"
+          git diff --exit-code -- "$f" || {
+            echo "::error::the source was not restored byte-for-byte after the mutation"
+            exit 1
+          }
+          if [ $rc -eq 0 ]; then
+            echo "::error::TestSystemCommanderRefusesOffLinux PASSED with the platform refusal deleted. The guard is a no-op and containment could report success on a platform where nothing was checked."
+            exit 1
+          fi
+          if ! echo "$out" | grep -q 'SystemCommander returned a Commander'; then
+            echo "::error::the guard failed, but not by detecting that a Commander came back off Linux. It may be broken rather than working."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "guard correctly went red on the injected mutation, naming the returned Commander"
+
+      - name: The tree is clean again, and the guard is green again
+        run: |
+          set -e
+          git diff --exit-code
+          go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/
+
   # plan/00-SPINE.md S9-AMENDED splits Anvil into two distribution artifacts:
   # anvil (core, no network-probing capability compiled in) and anvil-dast.
   # plan/IMPLEMENTATION-PLAN.md 2.2 rules that a config flag inside a single
