@@ -804,9 +804,22 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConfirmFinding: %v", err)
 	}
-	if f.Outcome() != OutcomeConfirmed {
-		t.Fatalf("outcome = %q; the fixture is supposed to reproduce so that a CONFIRMED "+
-			"finding is the thing being walked", f.Outcome())
+	// THIS FIXTURE NO LONGER CONFIRMS, AND THAT IS RULING 14 RATHER THAN
+	// DRIFT. It used to assert OutcomeConfirmed here, on the reasoning that
+	// the walk is only worth doing on the value a consumer forwards. The
+	// match is 512 KiB against 16 spelled bytes, so it now lands unconfirmed
+	// with reason signature_match_quoted_more_than_it_spells.
+	//
+	// The premise stays honoured rather than dropped: a SECOND finding is
+	// built below from a narrow signature against a body of the same size,
+	// it IS confirmed, it carries a real span, and the walk runs over both.
+	// Deleting the confirmed half would have quietly narrowed the
+	// type-closure claim to unconfirmed findings only.
+	if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+		t.Fatalf("outcome = %q, want %q", got, want)
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Fatalf("reason = %q, want %q", got, want)
 	}
 	if f.Evidence().SpanOverBroadBytes() < bodyBytes {
 		t.Fatalf("SpanOverBroadBytes = %d; the match was supposed to be ~%d bytes, so this "+
@@ -826,11 +839,37 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 			len(got), printable(got, 64))
 	}
 
+	// THE CONFIRMED HALF. A narrow oracle against a body of the same size:
+	// sqliMarker is 60 spelled bytes and the match is exactly the marker, so
+	// the composition rule is satisfied and this one really is the value a
+	// consumer forwards.
+	confirmedBody := []byte(strings.Repeat("q", bodyBytes/2) + sqliMarker +
+		strings.Repeat("q", bodyBytes/2))
+	cg := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return confirmedBody }},
+		Attempts: 2,
+	})
+	confirmedHalf, err := cg.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+	if err != nil {
+		t.Fatalf("ConfirmFinding (confirmed half): %v", err)
+	}
+	if got, want := confirmedHalf.Outcome(), OutcomeConfirmed; got != want {
+		t.Fatalf("the confirmed half came out %q, want %q; without it this test walks no "+
+			"confirmed value and the type-closure claim is narrower than it reads",
+			got, want)
+	}
+	if confirmedHalf.Evidence().ExtractedSpan() == "" {
+		t.Fatal("the confirmed half carries an EMPTY span, so the walk below would not " +
+			"see a span at all and the assertion would be vacuous")
+	}
+
 	// The claim, over every string reachable from the value a consumer
-	// holds — unexported fields included.
-	if v := oversizedStrings("Finding", reflect.ValueOf(*f), MaxSpanBytes); len(v) != 0 {
-		t.Errorf("a Finding built from a %d-byte response body holds string(s) longer than "+
-			"MaxSpanBytes=%d:\n%s", bodyBytes, MaxSpanBytes, strings.Join(v, "\n"))
+	// holds — unexported fields included — for BOTH outcomes.
+	for _, walked := range []*Finding{f, confirmedHalf} {
+		if v := oversizedStrings("Finding", reflect.ValueOf(*walked), MaxSpanBytes); len(v) != 0 {
+			t.Errorf("a Finding built from a %d-byte response body holds string(s) longer "+
+				"than MaxSpanBytes=%d:\n%s", bodyBytes, MaxSpanBytes, strings.Join(v, "\n"))
+		}
 	}
 
 	// The walker must be able to see the damage.
@@ -899,7 +938,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				body := []byte("<v>" + strings.Repeat("q", tc.fill) + "</v>")
-				span, dropped, overBroad, matched := extractSpan(body, all)
+				span, dropped, overBroad, _, matched := extractSpan(body, all)
 				if !matched {
 					t.Fatal("the fixture did not match; nothing is being bounded. " +
 						"THE ORACLE STILL FIRED: an over-broad match is a match whose " +
@@ -957,7 +996,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 			body := []byte("<v>ok" + cl.s + "ok</v>")
 			// A malformed UTF-8 byte cannot be written as a Go string
 			// literal, so it is appended separately below.
-			span, dropped, _, matched := extractSpan(body, all)
+			span, dropped, _, _, matched := extractSpan(body, all)
 			if !matched {
 				t.Fatalf("%s: no match", cl.name)
 			}
@@ -981,14 +1020,14 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 
 		malformed := append([]byte("<v>ok"), 0xff, 0xfe)
 		malformed = append(malformed, []byte("ok</v>")...)
-		span, dropped, _, matched := extractSpan(malformed, all)
+		span, dropped, _, _, matched := extractSpan(malformed, all)
 		if !matched || dropped != 2 || !isPrintableASCII(span) || !strings.Contains(span, "okok") {
 			t.Errorf("malformed UTF-8: span=%q dropped=%d matched=%v", span, dropped, matched)
 		}
 	})
 
 	t.Run("no_match_no_span", func(t *testing.T) {
-		span, dropped, overBroad, matched := extractSpan([]byte("nothing here"), all)
+		span, dropped, overBroad, _, matched := extractSpan([]byte("nothing here"), all)
 		if matched || span != "" || dropped != 0 || overBroad != 0 {
 			t.Errorf("extractSpan on a non-matching body returned (%q,%d,%d,%v)",
 				span, dropped, overBroad, matched)
@@ -1154,7 +1193,7 @@ func TestDecideTablePrecedenceIsAsDocumented(t *testing.T) {
 		for _, dm := range DetectionMethodValues() {
 			for matches := 0; matches <= attempts; matches++ {
 				c := RawFinding{Class: class, DetectionMethod: dm}
-				got := decide(c, matches, 0 /* indecisive */, attempts)
+				got := decide(c, matches, 0 /* indecisive */, 0 /* overQuoted */, attempts)
 
 				var want Reason
 				switch {
@@ -4600,7 +4639,7 @@ func TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry(t *testing.T) {
 			}
 			// The greediest body this signature can be handed.
 			body := []byte(lit + strings.Repeat("q", 4096))
-			span, _, overBroad, matched := extractSpan(body, s)
+			span, _, overBroad, _, matched := extractSpan(body, s)
 			if !matched {
 				t.Fatalf("%q did not match its own greediest fixture", p)
 			}
@@ -4825,7 +4864,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"which is the same defect as understating it", err)
 	}
 	body := []byte("Z" + strings.Repeat("a,b;", worstPairs))
-	span, _, overBroad, matched := extractSpan(body, sig)
+	span, _, overBroad, _, matched := extractSpan(body, sig)
 	if !matched {
 		t.Fatalf("the residual fixture did not match its own body; the measurement below " +
 			"is vacuous")
@@ -4916,7 +4955,7 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 	attack := `<h1[0-9A-Za-z]{0,400}`
 	s := mustSignature(t, attack)
 	body := []byte("<h1" + strings.Repeat("a", 600))
-	span, _, overBroad, matched := extractSpan(body, s)
+	span, _, overBroad, _, matched := extractSpan(body, s)
 	if !matched {
 		t.Fatalf("%q did not match its own fixture", attack)
 	}
@@ -4944,7 +4983,7 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 			wantSpan bool
 		}{{footing, true}, {footing + 1, false}} {
 			b := []byte(lit + strings.Repeat("a", tc.extra))
-			span, _, over, ok := extractSpan(b, sig)
+			span, _, over, _, ok := extractSpan(b, sig)
 			if !ok {
 				t.Fatalf("footing %d: the fixture did not match", footing)
 			}
@@ -4965,7 +5004,7 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 	// whose whole job is to quote a token loses its span. It does NOT lose
 	// its verdict or its body hash, which is what makes the trade payable.
 	akia := mustSignature(t, `AKIA[0-9A-Z]{16}`)
-	span, _, over, ok := extractSpan([]byte("... AKIA1234567890ABCDEF ..."), akia)
+	span, _, over, _, ok := extractSpan([]byte("... AKIA1234567890ABCDEF ..."), akia)
 	if !ok {
 		t.Fatal("the AKIA fixture did not match")
 	}
@@ -4981,7 +5020,7 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 	// AND THE OTHER DIRECTION, so this is a rule and not a ban on classes:
 	// a signature that spells enough keeps its span.
 	nginx := mustSignature(t, `Server: nginx/1\.[0-9]+\.[0-9]+`)
-	span, _, _, ok = extractSpan([]byte("Server: nginx/1.24.0\r\n"), nginx)
+	span, _, _, _, ok = extractSpan([]byte("Server: nginx/1.24.0\r\n"), nginx)
 	if !ok || span != "Server: nginx/1.24.0" {
 		t.Errorf("the nginx banner span = %q (matched=%v); 17 spelled bytes comfortably "+
 			"pay for three unspelled ones, and a rule that refuses this is a ban on "+
@@ -5139,7 +5178,7 @@ func TestTheOpenPositionRuleUsesTheSpanExtractorsOwnCharset(t *testing.T) {
 		spelled: MaxSpanBytes, sealed: true}
 	agreed, kept := 0, 0
 	for b := 0; b < 256; b++ {
-		span, dropped, _, matched := extractSpan([]byte{'Z', byte(b), 'Z'}, all)
+		span, dropped, _, _, matched := extractSpan([]byte{'Z', byte(b), 'Z'}, all)
 		if !matched {
 			t.Fatalf("byte 0x%02x: the fixture did not match, so nothing is measured", b)
 		}
@@ -5266,6 +5305,12 @@ func BenchmarkRefuseOverBroadPattern(b *testing.B) {
 // it, and against a body that opens with its start marker and closes with its
 // end marker it matches the lot. The span bound is what catches that, and it
 // catches it by producing NOTHING rather than by producing a shorter prefix.
+//
+// RULING 14 ADDED THE HALF THIS TEST WAS MISSING. It asserted the span was
+// withheld and then asserted the finding was CONFIRMED, which is the shape of
+// the whole defect: the quote was withheld and the claim was granted. The same
+// comparison that withholds the span now decides the outcome, so this test
+// checks both halves of one rule. See matchQuotesMoreThanItSpells.
 func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarrow(t *testing.T) {
 	// Alphanumeric because spanBoundaryPattern's middle is a token-shaped
 	// class; a hyphen would end the run instead of being swallowed by it.
@@ -5281,12 +5326,43 @@ func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarro
 	if err != nil {
 		t.Fatalf("ConfirmFinding: %v", err)
 	}
-	// The oracle fired. That is a separate fact from whether its match can
+	// THE SENTENCE THAT USED TO BE HERE WAS THE DEFECT, and it is kept as a
+	// quotation because deleting it would hide what ruling 14 corrected:
+	// "The oracle fired. That is a separate fact from whether its match can
 	// be shown, and conflating the two would silently turn every over-broad
-	// match into a non-reproduction.
-	if f.Outcome() != OutcomeConfirmed {
-		t.Fatalf("outcome = %q; the signature matched every attempt and withholding the "+
-			"SPAN must not change the VERDICT", f.Outcome())
+	// match into a non-reproduction." The first half is true and is asserted
+	// below — matches stays 3. The conclusion drawn from it was wrong. The
+	// alternative to CONFIRMED is not "non-reproduction"; this gate has a
+	// third state, and an over-broad match is exactly what it is for.
+	//
+	// A confirmation is the claim "the oracle fired ON THIS RESPONSE". When
+	// the match runs past its own footing the thing it fired on IS the
+	// response, so there is no claim left to make — and there is no
+	// disproof either, which is why this is unconfirmed and not rejected.
+	if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+		t.Fatalf("outcome = %q, want %q: the match was %d bytes against %d spelled, so it "+
+			"quoted more of the response than the signature spells",
+			got, want, len(hostile), c.Signature.spelled)
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Errorf("reason = %q, want %q. An operator reading any other reason goes hunting "+
+			"for a flaky target instead of fixing the signature", got, want)
+	}
+	// THE ORACLE-FIRED FACT IS NOT LOST, only the claim built on it.
+	if got, want := f.SignatureMatches(), 3; got != want {
+		t.Errorf("SignatureMatches() = %d, want %d: the signature DID match every attempt "+
+			"and that measurement must survive the verdict", got, want)
+	}
+	if got, want := f.OverQuotedMatches(), 3; got != want {
+		t.Errorf("OverQuotedMatches() = %d, want %d", got, want)
+	}
+	// AND THERE IS NO CONFIDENCE. 3/3 printed beside "the signature quoted
+	// the page" is the strongest number this gate can print next to a reason
+	// saying it could not see.
+	if conf, known := f.Confidence(); known {
+		t.Errorf("Confidence() = (%.3f, true); a reproduction ratio whose numerator counts "+
+			"matches that were the response rather than evidence about it is not a "+
+			"reproduction ratio", conf)
 	}
 	if got := f.Evidence().ExtractedSpan(); got != "" {
 		t.Errorf("span = %q (%d bytes)", printable(got, 64), len(got))
@@ -5558,7 +5634,7 @@ func TestEverySpellingOfOneLanguageGetsTheSameVerdict(t *testing.T) {
 				"the literals' from 'the union bans literals'"},
 	} {
 		spellings := unboundedRunSpellings(family.alphabet)
-		if len(spellings) < 12 {
+		if len(spellings) < 20 {
 			t.Fatalf("%s: the generator produced %d spellings; a property over a "+
 				"handful of spellings is a list with extra steps",
 				family.name, len(spellings))
@@ -5698,6 +5774,14 @@ type spelling struct {
 // EVERY ENTRY IS CHECKED TO DENOTE THE SAME LANGUAGE by its only caller before
 // any verdict is compared, so a wrong entry here is a loud failure and not a
 // quietly weaker property.
+//
+// THE SHAPE COVERAGE IS PART OF THE MECHANISM, not a detail of the list. The
+// first seventeen entries all put the language under ONE OUTER REPEAT, so the
+// verdict compared was always read off a repeat node and a defect in the
+// concatenation arm was invisible to all of them at once — one shape wearing
+// seventeen spellings. The last six are rooted on a CONCATENATION. Any future
+// entry should ask which node the verdict is read off, not only which
+// operators appear.
 func unboundedRunSpellings(alphabet []rune) []spelling {
 	atoms := make([]string, len(alphabet)) // outside a class
 	hexes := make([]string, len(alphabet)) // inside or outside, escape-free
@@ -5745,6 +5829,27 @@ func unboundedRunSpellings(alphabet []rune) []spelling {
 		{"a PLUS made optional", "(?:" + class + "+)?"},
 		{"the class spelled with HEX ESCAPES outside a class",
 			"(?:" + strings.Join(hexes, "|") + ")*"},
+
+		// NOT REPEAT-ROOTED. Every spelling above puts the whole language
+		// under one outer repeat, so the property they proved was closed
+		// over ONE SHAPE rather than over the grammar: a defect living in
+		// shapeWalk's OpConcat arm could not be seen by any of them,
+		// because no verdict here was ever read off a concatenation node.
+		// That was measured — see
+		// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds, where a
+		// concatenation of unbounded runs is accepted and the repeat
+		// spelling of the SAME language is refused.
+		//
+		// These six put the root of the tree on an OpConcat. The language
+		// is unchanged — `L* L*` is `L*` — and part 1 of the caller
+		// proves that rather than trusting this sentence.
+		{"a BARE CONCATENATION of two unbounded runs, no outer repeat", class + "*" + class + "*"},
+		{"three unbounded runs concatenated", class + "*" + class + "*" + class + "*"},
+		{"a run concatenated with an optional PLUS", class + "*(?:" + class + "+)?"},
+		{"an alternation run concatenated with a class run", "(?:" + alt + ")*" + class + "*"},
+		{"two CAPTURED runs concatenated", "(" + class + "*)(" + class + "*)"},
+		{"an optional plus concatenated with an alternation run",
+			"(?:" + class + "+)?(?:" + alt + ")*"},
 	}
 }
 
@@ -6025,5 +6130,508 @@ func TestAnUndecidedPositionIsCountedWithoutARepetitionToCarryIt(t *testing.T) {
 		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
 			t.Errorf("refuseOverBroadPattern(%q) = %v. %s", tc.pattern, err, tc.why)
 		}
+	}
+}
+
+// ===========================================================================
+// RULING 14 — the guarantee moves onto the match
+// ===========================================================================
+
+// overBroadCandidate builds and confirms a candidate whose signature and body
+// the caller supplies, wired for the ordinary CONFIRMING path in every other
+// respect: an oracle-bearing class, a mechanical detection method, and a
+// target that answers 200 on every attempt.
+//
+// Everything about it is arranged to confirm. That is what makes the
+// assertions below worth making: the only thing standing between these
+// fixtures and outcome=confirmed at confidence 1.000 is the match check.
+func overBroadCandidate(t *testing.T, pattern string, body []byte, attempts int) (*Finding, RawFinding) {
+	t.Helper()
+	sig, err := NewSignature(pattern)
+	if err != nil {
+		t.Fatalf("NewSignature(%q) refused it: %v. This fixture needs an ACCEPTED "+
+			"signature; a refused one tests the early layer instead", pattern, err)
+	}
+	c := sqliCandidate(t, "/search")
+	c.Signature = sig
+	g := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return body }},
+		Attempts: attempts,
+	})
+	f, err := g.ConfirmFinding(context.Background(), c)
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	return f, c
+}
+
+// scaledConcatPattern is the 891-byte attack: a marker followed by 125
+// concatenated copies of an unbounded lowercase run. Every element is
+// letters-only after a spelled space, so no element is content-bearing on its
+// own and shapeWalk's OpConcat arm adds 125 zeroes.
+func scaledConcatPattern() string {
+	return "anvil-probe-4f2a" + strings.Repeat(" [a-z]*", 125)
+}
+
+// scaledConcatBody is the body it swallows: the marker, then 125 repetitions
+// of a space followed by 100,000 lowercase letters. 16 + 125*100001 =
+// 12,500,141.
+func scaledConcatBody() []byte {
+	return []byte("anvil-probe-4f2a" +
+		strings.Repeat(" "+strings.Repeat("a", 100000), 125))
+}
+
+// TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes is the MEDIUM
+// the OpConcat arm's justification carried, measured in both directions.
+//
+// The sentence that used to sit on that arm read: "What a concatenation of
+// narrow-but-differing classes can do is bounded by how many of them the
+// pattern spells out, and MaxPatternBytes bounds that." MaxPatternBytes bounds
+// the number of ELEMENTS. It bounds nothing about the bytes an element
+// consumes, and an element may be an unbounded repeat.
+//
+// BOTH HALVES ARE ASSERTED, because asserting only the false one would leave a
+// reader unable to tell which part of the old sentence was right. Fixed-width
+// elements really are bounded, and the disclosed 255 is that measurement
+// rather than a bound on the family.
+func TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes(t *testing.T) {
+	// THE FIXED-WIDTH HALF, where the old bound holds.
+	fixed := "Z" + strings.Repeat("[ab][,;]", 127)
+	if len(fixed) != 1017 {
+		t.Fatalf("the fixed-width fixture is %d bytes and this test says 1017", len(fixed))
+	}
+	if _, err := refuseOverBroadPattern(fixed); err != nil {
+		t.Fatalf("refuseOverBroadPattern(fixed-width, 1017 bytes) = %v; the disclosure "+
+			"says it is ACCEPTED and the measurement below depends on that", err)
+	}
+	fixedBody := "Z" + strings.Repeat("a,", 200)
+	loc := regexp.MustCompile(fixed).FindStringIndex(fixedBody)
+	if loc == nil || loc[1]-loc[0] != 255 {
+		t.Errorf("the fixed-width pattern matched %v of %d bytes; the disclosure says "+
+			"EXACTLY 255, and a drifted number makes the contrast below unreadable",
+			loc, len(fixedBody))
+	}
+	// 128 copies is 1025 bytes. The refusal is MaxPatternBytes' and belongs
+	// to NewSignature, so it is asserted there rather than on the structural
+	// walk, which never looks at a pattern's length.
+	if _, err := NewSignature("Z" + strings.Repeat("[ab][,;]", 128)); err == nil {
+		t.Error("128 copies is 1025 bytes and must not compile at all; if it does, " +
+			"MaxPatternBytes is not where this test thinks it is")
+	}
+
+	// THE UNBOUNDED HALF, where it does not. This is ruling 14's scaled
+	// acceptance case, measured on the pattern rather than through the gate.
+	scaled := scaledConcatPattern()
+	if len(scaled) != 891 {
+		t.Fatalf("the scaled fixture is %d bytes and this test says 891", len(scaled))
+	}
+	spelled, err := refuseOverBroadPattern(scaled)
+	if err != nil {
+		t.Fatalf("refuseOverBroadPattern(scaled) = %v. THIS TEST EXPECTS IT TO BE "+
+			"ACCEPTED: ruling 14 forbids tuning R1/R2/R3 to close this, and if the "+
+			"static layer has been tuned anyway, the match-layer assertions in "+
+			"TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled stop being "+
+			"exercised by this shape", err)
+	}
+	if spelled != 141 {
+		t.Errorf("spelled = %d, want 141", spelled)
+	}
+	body := scaledConcatBody()
+	if len(body) != 12500141 {
+		t.Fatalf("the scaled body is %d bytes and this test says 12,500,141", len(body))
+	}
+	loc = regexp.MustCompile(scaled).FindIndex(body)
+	if loc == nil || loc[1]-loc[0] != len(body) {
+		t.Fatalf("the scaled pattern matched %v of %d bytes; it is supposed to swallow "+
+			"the lot, and if it no longer does this fixture is not the attack",
+			loc, len(body))
+	}
+	// 891 pattern bytes bought 12,500,141 matched bytes. The old sentence
+	// says that cannot happen.
+	if len(body) <= len(scaled)*1000 {
+		t.Errorf("the match is %d bytes against a %d-byte pattern, which is inside "+
+			"MaxPatternBytes*1000; the fixture no longer demonstrates that bounding "+
+			"the element count bounds nothing", len(body), len(scaled))
+	}
+}
+
+// TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled is ruling 14's SCALED
+// acceptance case, driven end to end through the gate.
+//
+// MEASURED ON THE TREE AS IT WAS: this pattern is ACCEPTED at spelled=141, it
+// matched 12,500,141 bytes of an ordinary page, extractSpan inlined NOTHING
+// and reported all 12,500,141 as SpanOverBroadBytes — and the finding came out
+//
+//	outcome=confirmed reason=reproduced_on_every_attempt confidence=1.000
+//
+// The quote was withheld and the claim was granted. That is the defect, and it
+// is the worse half of the two: the span was never the assertion, the outcome
+// is.
+func TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled(t *testing.T) {
+	body := scaledConcatBody()
+	f, c := overBroadCandidate(t, scaledConcatPattern(), body, 3)
+
+	if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+		t.Fatalf("outcome = %q, want %q", got, want)
+	}
+
+	// THE OUTCOME VALUE IS RULING 14'S THIRD PARAGRAPH, asserted rather than
+	// commented. REJECTED would be wrong for a reason that costs something:
+	// Ledger.AssertNotSilentlyClean deliberately does NOT count rejections,
+	// because a ledger of nothing but rejections is an earned clean. Filing
+	// "the signature cannot see" as "the target is fine" is the silent clean
+	// arriving through a new door.
+	if f.Outcome() == OutcomeRejected {
+		t.Error("outcome = rejected. An over-broad match says nothing about whether the " +
+			"target is vulnerable, and rejections do not reach AssertNotSilentlyClean")
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Errorf("reason = %q, want %q; the reason must say what actually happened, "+
+			"which is that the match ran past its own footing", got, want)
+	}
+
+	// THE ARITHMETIC IS STILL REPORTED. Suppressing the measurement along
+	// with the claim would make an over-broad signature indistinguishable
+	// from a non-reproduction.
+	if got, want := f.SignatureMatches(), 3; got != want {
+		t.Errorf("SignatureMatches() = %d, want %d", got, want)
+	}
+	if got, want := f.OverQuotedMatches(), 3; got != want {
+		t.Errorf("OverQuotedMatches() = %d, want %d", got, want)
+	}
+	if got, want := f.Evidence().SpanOverBroadBytes(), len(body); got != want {
+		t.Errorf("SpanOverBroadBytes() = %d, want %d", got, want)
+	}
+
+	// AND THERE IS NO CONFIDENCE. 1.000 beside "the signature quoted the
+	// page" is the contradiction this gate already refuses for a model
+	// inference, reached by a different cause.
+	if conf, known := f.Confidence(); known {
+		t.Errorf("Confidence() = (%.3f, true); matches/attempts is a REPRODUCTION ratio "+
+			"and none of these matches reproduced anything", conf)
+	}
+	if got := f.Evidence().ExtractedSpan(); got != "" {
+		t.Errorf("span = %q (%d bytes)", printable(got, 64), len(got))
+	}
+
+	// THE INVARIANT IS ARITHMETIC AND THE FIXTURE MEETS IT. Stated on the
+	// numbers so a reader can check the verdict without running anything.
+	if !matchQuotesMoreThanItSpells(len(body), c.Signature.spelled) {
+		t.Fatalf("matchQuotesMoreThanItSpells(%d, %d) = false; the fixture no longer "+
+			"exercises the rule it is named for", len(body), c.Signature.spelled)
+	}
+
+	// NOT SILENTLY CLEAN. A finding that vanishes into an outcome nobody
+	// counts is the same failure in a new place, so this is asserted through
+	// the ledger a caller actually reads.
+	g := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return body }},
+		Attempts: 3,
+	})
+	l, err := g.ConfirmAll(context.Background(), []RawFinding{c})
+	if err != nil {
+		t.Fatalf("ConfirmAll: %v", err)
+	}
+	if got, want := l.UnconfirmedCount(), 1; got != want {
+		t.Errorf("UnconfirmedCount() = %d, want %d", got, want)
+	}
+	if l.FindingCountForStatus() != 0 {
+		t.Errorf("FindingCountForStatus() = %d; an over-broad match must not drive "+
+			"dast_status: findings", l.FindingCountForStatus())
+	}
+	if err := l.AssertNotSilentlyClean(); err == nil {
+		t.Error("AssertNotSilentlyClean() = nil over a ledger holding one over-broad " +
+			"candidate. Zero confirmed findings would then route to completed_clean, " +
+			"and the operator would be told Anvil looked and found nothing")
+	} else if !errors.Is(err, ErrSilentlyClean) {
+		t.Errorf("AssertNotSilentlyClean() = %v, which is not ErrSilentlyClean", err)
+	}
+}
+
+// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds is ruling 14's MINIMAL
+// acceptance case, and it states the new division of labour as a measurement
+// instead of as a paragraph.
+//
+// TWO SPELLINGS OF ONE LANGUAGE. `X [a-z]*` and `X(?: [a-z]*){1}` denote
+// exactly the same set of strings — a repeat with min=max=1 runs its unit
+// once. The early layer treats them differently and STILL DOES after ruling
+// 14:
+//
+//	X [a-z]*          ACCEPTED, spelled=2, quoted=0
+//	X(?: [a-z]*){1}   REFUSED (rule R3)
+//
+// THAT SPLIT IS REPORTED HERE RATHER THAN FIXED, and reporting it is the
+// point. Closing it would mean another arm in shapeWalk, which is the tenth
+// round of a game whose ninth round is in this file's history. R1/R2/R3 are a
+// best-effort early refusal now, and an incomplete refusal is allowed to
+// split.
+//
+// WHERE THE TWO MUST AGREE IS ON THE GUARANTEE, and they do. The refused
+// spelling never compiles, so it can confirm nothing. The accepted spelling
+// compiles, matches an ordinary page whole — and does not confirm, because the
+// check that decides reads the match. One language, one guarantee, arrived at
+// through two different layers.
+//
+// IF THIS TEST EVER FAILS AT ITS FIRST ACCEPTANCE, the early layer has been
+// tuned and the acceptance case it was measured on is gone. That is not a win:
+// read ruling 14's "WHAT YOU MUST NOT DO" before deciding it is.
+func TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds(t *testing.T) {
+	const concatSpelling = `X [a-z]*`
+	const repeatSpelling = `X(?: [a-z]*){1}`
+
+	// PART 1: they are one language. Measured over every string up to a
+	// length rather than asserted, the same way ruling 13's property does
+	// it, so a mis-transcribed fixture fails loudly here.
+	a := regexp.MustCompile(`^(?:` + concatSpelling + `)$`)
+	b := regexp.MustCompile(`^(?:` + repeatSpelling + `)$`)
+	words := stringsOverAlphabetUpTo([]rune{'X', ' ', 'a', 'z'}, 5)
+	words = append(words, "X abc", "X ", "X", "Xa", "X A", "X a;b")
+	if len(words) < 1000 {
+		t.Fatalf("the equivalence witness is %d strings, which is too small a sample to "+
+			"distinguish two spellings that differ", len(words))
+	}
+	for _, w := range words {
+		if got, want := a.MatchString(w), b.MatchString(w); got != want {
+			t.Fatalf("the two spellings disagree on %q: %v vs %v. They are not one "+
+				"language, so this test would be asserting something false", w, got, want)
+		}
+	}
+
+	// PART 2: the early layer splits, and the split is measured rather than
+	// remembered.
+	spelled, err := refuseOverBroadPattern(concatSpelling)
+	if err != nil {
+		t.Fatalf("refuseOverBroadPattern(%q) = %v. THIS TEST EXPECTS AN ACCEPTANCE: it "+
+			"is the case the match layer is here to catch, and closing it in the "+
+			"static layer is what ruling 14 forbids", concatSpelling, err)
+	}
+	if spelled != 2 {
+		t.Errorf("spelled = %d, want 2", spelled)
+	}
+	if _, err := refuseOverBroadPattern(repeatSpelling); err == nil {
+		t.Errorf("refuseOverBroadPattern(%q) ACCEPTED it; the disclosed split says it is "+
+			"refused, and a disclosure that has stopped being true is worse than no "+
+			"disclosure", repeatSpelling)
+	} else if !strings.Contains(err.Error(), "rule R3") {
+		t.Errorf("refuseOverBroadPattern(%q) refused it for %q, not rule R3; the split "+
+			"this test discloses is an R3 split", repeatSpelling, err)
+	}
+
+	// PART 3: THE GUARANTEE, where the two spellings agree. An ordinary
+	// response carrying one long lowercase token — a session id, a slug, a
+	// base32 blob — hands this two-byte signature a 302-byte match.
+	page := "prefix X " + strings.Repeat("abcdefghij", 30) + " and the rest of the page"
+	loc := regexp.MustCompile(concatSpelling).FindStringIndex(page)
+	if loc == nil || loc[1]-loc[0] != 302 {
+		t.Fatalf("the accepted spelling matched %v of the page; this test says 302 bytes, "+
+			"and a short match would make the assertions below vacuous", loc)
+	}
+	f, c := overBroadCandidate(t, concatSpelling, []byte(page), 3)
+	if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+		t.Errorf("outcome = %q, want %q: the match ran to %d bytes against %d spelled",
+			got, want, loc[1]-loc[0], c.Signature.spelled)
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+	if conf, known := f.Confidence(); known {
+		t.Errorf("Confidence() = (%.3f, true)", conf)
+	}
+
+	// NON-VACUITY. The same two-byte-footing signature against a body whose
+	// match STAYS INSIDE its footing confirms normally, so part 3 is not
+	// measuring a gate that refuses everything.
+	narrow, _ := overBroadCandidate(t, concatSpelling, []byte("...X ab..."), 3)
+	if got, want := narrow.Outcome(), OutcomeConfirmed; got != want {
+		t.Errorf("a match of `X ab` — 4 bytes against 2 spelled — came out %q, want %q. "+
+			"The rule is L-s <= s, not a ban on matching", got, want)
+	}
+	if got, want := narrow.Evidence().ExtractedSpan(), "X ab"; got != want {
+		t.Errorf("span = %q, want %q", got, want)
+	}
+}
+
+// TestAnOverBroadMatchOnOneAttemptTakesTheWholeCandidate is the interaction
+// ruling 14 asked to be decided, documented and tested: the gate runs several
+// attempts, and one of them can be over-broad while another is clean.
+//
+// THE DECISION IS FAIL-CLOSED: ANY over-broad match on ANY attempt takes the
+// candidate, however clean the others were.
+//
+// WHY, and the reasoning is worth more than the rule. A confirmation is the
+// claim that the oracle fired on EVERY attempt. An attempt whose "firing" was
+// the pattern swallowing the page produced no evidence, so the run cannot
+// support that claim — confirming on the strength of the other two is exactly
+// the arithmetic this gate exists to refuse. Nor is the mixed run merely
+// INTERMITTENT: intermittent says the target's behaviour varied, and what
+// varied here is whether the signature could see at all. Reporting a signature
+// defect as target flakiness sends an operator to re-run the scan instead of
+// to fix the pattern.
+func TestAnOverBroadMatchOnOneAttemptTakesTheWholeCandidate(t *testing.T) {
+	const pattern = `X [a-z]*`
+	narrow := []byte("...X ab...")
+	wide := []byte("prefix X " + strings.Repeat("abcdefghij", 30) + " and the rest")
+
+	sig, err := NewSignature(pattern)
+	if err != nil {
+		t.Fatalf("NewSignature(%q): %v", pattern, err)
+	}
+	c := sqliCandidate(t, "/search")
+	c.Signature = sig
+
+	for _, tc := range []struct {
+		name   string
+		overOn int // the attempt number that gets the wide body
+	}{
+		{"over-broad on the FIRST attempt, clean after", 1},
+		{"clean first, over-broad in the MIDDLE", 2},
+		{"clean first, over-broad on the LAST attempt", 3},
+	} {
+		g := mustGate(t, GateConfig{
+			Reprober: &scriptedReprober{body: func(_ RawFinding, attempt int) []byte {
+				if attempt == tc.overOn {
+					return wide
+				}
+				return narrow
+			}},
+			Attempts: 3,
+		})
+		f, err := g.ConfirmFinding(context.Background(), c)
+		if err != nil {
+			t.Fatalf("%s: ConfirmFinding: %v", tc.name, err)
+		}
+		if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+			t.Errorf("%s: outcome = %q, want %q. Two clean attempts do not rehabilitate "+
+				"a run in which the signature quoted the page once", tc.name, got, want)
+		}
+		if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+			t.Errorf("%s: reason = %q, want %q. reproduced_intermittently would send an "+
+				"operator to re-run the scan instead of to fix the signature",
+				tc.name, got, want)
+		}
+		if got, want := f.SignatureMatches(), 3; got != want {
+			t.Errorf("%s: SignatureMatches() = %d, want %d: the oracle fired on all three "+
+				"and that measurement must survive the verdict", tc.name, got, want)
+		}
+		if got, want := f.OverQuotedMatches(), 1; got != want {
+			t.Errorf("%s: OverQuotedMatches() = %d, want %d", tc.name, got, want)
+		}
+		if conf, known := f.Confidence(); known {
+			t.Errorf("%s: Confidence() = (%.3f, true); 3/3 printed beside a reason saying "+
+				"the signature could not see is the contradiction condition 4 exists "+
+				"to prevent", tc.name, conf)
+		}
+	}
+
+	// THE INTERACTION WITH THE INDECISIVE RULE, decided the same way and for
+	// the same reason: an over-broad match is something Anvil DID observe,
+	// and a rate limiter tripping on another attempt does not make it
+	// unobserved. Rule 2 outranks rule 3.
+	g := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{
+			body: func(RawFinding, int) []byte { return wide },
+			statusFn: func(_ RawFinding, attempt int) int {
+				if attempt == 1 {
+					return 429
+				}
+				return 200
+			},
+		},
+		Attempts: 3,
+	})
+	f, err := g.ConfirmFinding(context.Background(), c)
+	if err != nil {
+		t.Fatalf("ConfirmFinding (mixed indecisive): %v", err)
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+	if got, want := f.IndecisiveAttempts(), 1; got != want {
+		t.Errorf("IndecisiveAttempts() = %d, want %d: the fact stays reported even when "+
+			"another rule owns the reason", got, want)
+	}
+	if got, want := f.OverQuotedMatches(), 2; got != want {
+		t.Errorf("OverQuotedMatches() = %d, want %d", got, want)
+	}
+
+	// AND THE NON-VACUOUS DIRECTION. Three clean attempts confirm, so none
+	// of the above is a gate that refuses everything.
+	clean := mustGate(t, GateConfig{
+		Reprober: &scriptedReprober{body: func(RawFinding, int) []byte { return narrow }},
+		Attempts: 3,
+	})
+	cf, err := clean.ConfirmFinding(context.Background(), c)
+	if err != nil {
+		t.Fatalf("ConfirmFinding (all clean): %v", err)
+	}
+	if got, want := cf.Outcome(), OutcomeConfirmed; got != want {
+		t.Fatalf("three clean attempts came out %q, want %q", got, want)
+	}
+	if conf, known := cf.Confidence(); !known || conf != 1.0 {
+		t.Errorf("Confidence() = (%.3f, %v), want (1.000, true)", conf, known)
+	}
+}
+
+// TestTheDisclosedFixedWidthUnitSplitHasAWitness is the LOW from repeatedUnit's
+// disclosure, given the measurement it was missing.
+//
+// The section header discloses a REFUSAL-DIRECTION split: a repeat whose unit's
+// alphabet crosses letters into punctuation is refused when the unit's width
+// varies, and accepted when it does not.
+//
+//	Z(?:a,?)*     REFUSED — the unit's width varies, so the join between
+//	              traversals is a position two runes can reach
+//	Z(?:abc, )*   ACCEPTED — a fixed-width spelled unit has no seam to be
+//	              ambiguous at, and refusing it would make R3 a ban on repeats
+//
+// THE DISCLOSURE WAS TRUE AND UNWITNESSED. What it did not say is what the
+// accepted side is worth against a real body: `Z(?:abc, )*` spells ONE byte of
+// footing and matches 5001 bytes of a body made of its own unit. That is the
+// same residual the concatenation case has, reached by a different route.
+//
+// IT IS CLOSED WHERE ALL OF THEM ARE CLOSED NOW. The match runs past its
+// footing, so it does not confirm. The witness is the point: a disclosed
+// residual with a live measurement beside it can be checked, and one without
+// ages quietly.
+func TestTheDisclosedFixedWidthUnitSplitHasAWitness(t *testing.T) {
+	const varying = `Z(?:a,?)*`
+	const fixedWidth = `Z(?:abc, )*`
+
+	if _, err := refuseOverBroadPattern(varying); err == nil {
+		t.Errorf("refuseOverBroadPattern(%q) ACCEPTED it; the disclosed split says the "+
+			"varying-width unit is refused", varying)
+	} else if !strings.Contains(err.Error(), "rule R3") {
+		t.Errorf("refuseOverBroadPattern(%q) refused it for %q, not rule R3", varying, err)
+	}
+	spelled, err := refuseOverBroadPattern(fixedWidth)
+	if err != nil {
+		t.Fatalf("refuseOverBroadPattern(%q) = %v; the disclosure says the fixed-width "+
+			"spelled unit is ACCEPTED, and if that has changed R3 has become a ban on "+
+			"repeats", fixedWidth, err)
+	}
+	if spelled != 1 {
+		t.Errorf("spelled = %d, want 1", spelled)
+	}
+
+	// THE WITNESS. One byte of footing, 5001 bytes of match.
+	body := []byte("Z" + strings.Repeat("abc, ", 1000))
+	loc := regexp.MustCompile(fixedWidth).FindIndex(body)
+	if loc == nil || loc[1]-loc[0] != 5001 {
+		t.Fatalf("the fixed-width unit matched %v of %d bytes; this test says 5001, and "+
+			"a drifted number leaves the disclosure unwitnessed again", loc, len(body))
+	}
+	if !matchQuotesMoreThanItSpells(5001, spelled) {
+		t.Fatalf("matchQuotesMoreThanItSpells(5001, %d) = false", spelled)
+	}
+
+	f, _ := overBroadCandidate(t, fixedWidth, body, 3)
+	if got, want := f.Outcome(), OutcomeUnconfirmed; got != want {
+		t.Errorf("outcome = %q, want %q", got, want)
+	}
+	if got, want := f.Reason(), ReasonMatchQuotedTheResponse; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+	if got := f.Evidence().ExtractedSpan(); got != "" {
+		t.Errorf("span = %q", printable(got, 64))
 	}
 }

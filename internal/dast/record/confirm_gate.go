@@ -98,6 +98,14 @@
 //     S7 sanctions, so an over-long match yields NO span rather than a
 //     shorter one. See EvidenceRef.spanOverBroadBytes and extractSpan, which
 //     also states what that rule does NOT claim.
+//   - AND A MATCH THAT QUOTES MORE OF THE RESPONSE THAN THE SIGNATURE SPELLS
+//     DOES NOT CONFIRM A FINDING. Withholding the quote while granting the
+//     claim was the worse half of one defect: a pattern that swallowed
+//     12,500,141 bytes of an ordinary page inlined nothing and came out
+//     confirmed at confidence 1.000. The outcome is `unconfirmed` — not
+//     `rejected`, because an over-broad match is not evidence of absence
+//     either. See matchQuotesMoreThanItSpells, which is the whole rule, and
+//     decide()'s rule 2, which is where it is applied.
 //   - NewSignature refuses a pattern that fires against benignCorpus, a
 //     GENERATED corpus of ordinary responses, which is where the over-broad
 //     patterns come from in the first place.
@@ -598,6 +606,38 @@ const (
 	// the 88 phantom findings get.
 	ReasonDidNotReproduce Reason = "did_not_reproduce_on_any_attempt"
 
+	// ReasonMatchQuotedTheResponse: the signature matched, and at least one
+	// of those matches quoted more of the response than the signature
+	// spells. See matchQuotesMoreThanItSpells for the comparison and
+	// decide()'s rule 2 for the precedence.
+	//
+	// WHY THIS OUTCOME AND NOT ANOTHER, since the choice is the whole
+	// content of ruling 14's third paragraph:
+	//
+	// CONFIRMED is wrong. A confirmation is the claim "the oracle fired on
+	// this response". A match that runs past its own footing is not the
+	// oracle firing on the response, it IS the response — the span is the
+	// body rather than evidence about it, which is the same sentence R3
+	// refuses patterns with, said about a match instead of a pattern.
+	//
+	// REJECTED is wrong, and this is the more important half. A rejection
+	// is the claim that the oracle RAN AND DID NOT FIRE — the 88-phantom
+	// verdict, the one Ledger.AssertNotSilentlyClean deliberately does not
+	// count, because a ledger of nothing but rejections is an earned clean.
+	// An over-broad match says nothing whatever about whether the target is
+	// vulnerable. Routing it to `rejected` would take a signature that
+	// cannot see and file it as a target that is fine, which is the
+	// silent-clean failure this whole file exists to prevent, arriving
+	// through a new door.
+	//
+	// UNCONFIRMED is what is left, and it is not a shrug: it is the honest
+	// unknown this gate already mints for an oracle-less class and for a
+	// re-probe that never reached the application. AssertNotSilentlyClean
+	// COUNTS unconfirmed findings, so a candidate that lands here cannot
+	// become a clean scan — an operator gets an error naming it, and
+	// Finding.OverQuotedMatches() says how many attempts did it.
+	ReasonMatchQuotedTheResponse Reason = "signature_match_quoted_more_than_it_spells"
+
 	// ReasonReprobeIndecisive: the re-probe did not establish that the
 	// target answered AS THE APPLICATION, so the oracle never got to run.
 	//
@@ -631,6 +671,7 @@ func ReasonValues() []Reason {
 		ReasonReproduced, ReasonNoOracleForClass,
 		ReasonModelInferenceIsNotObservation, ReasonReproducedIntermittently,
 		ReasonDidNotReproduce, ReasonReprobeIndecisive,
+		ReasonMatchQuotedTheResponse,
 	}
 }
 
@@ -654,7 +695,8 @@ func outcomeForReason(r Reason) (Outcome, error) {
 	case ReasonReproduced:
 		return OutcomeConfirmed, nil
 	case ReasonNoOracleForClass, ReasonModelInferenceIsNotObservation,
-		ReasonReproducedIntermittently, ReasonReprobeIndecisive:
+		ReasonReproducedIntermittently, ReasonReprobeIndecisive,
+		ReasonMatchQuotedTheResponse:
 		return OutcomeUnconfirmed, nil
 	case ReasonDidNotReproduce:
 		return OutcomeRejected, nil
@@ -721,11 +763,52 @@ type Signature struct {
 }
 
 // ---------------------------------------------------------------------------
-// The syntactic over-broadness check — THIS IS THE CONTROL
+// The syntactic over-broadness check — A BEST-EFFORT EARLY REFUSAL
 // ---------------------------------------------------------------------------
 //
 // ===========================================================================
-// FOUR ROUNDS OF ENUMERATION, AND WHY DECIDING ON THE PATTERN ENDS IT
+// READ THIS BEFORE ANYTHING ELSE IN THIS SECTION
+// ===========================================================================
+//
+// THIS IS NOT WHERE THE OVER-BROADNESS GUARANTEE LIVES, and every claim below
+// that reads as though it were is a claim this paragraph withdraws.
+//
+// R1, R2 and R3 are a BEST-EFFORT EARLY REFUSAL. They run at NewSignature
+// time, they cost about 2.3 us, and they refuse obviously-bad signatures
+// before an operator ships one — which is worth having, is cheap, and is why
+// they stay. What they are NOT is complete. A SIGNATURE THAT PASSED
+// NewSignature HAS NOT BEEN PROVEN NARROW. Do not read an acceptance here as
+// a proof about what the pattern can match.
+//
+// WHY NOT, said once so nobody has to rediscover it: deciding what an
+// arbitrary regular expression can match against an arbitrary future response
+// is a static-analysis problem with no complete answer. Nine rounds of this
+// file's history are one closed spelling each, with the next spelling found by
+// the round after — a status list, an entity bound, a benign corpus, a
+// generator's alphabet, a depth-0 union, a class-union excluding literals, a
+// type-keyed dedup, an operator-tag test, and a concatenation of unbounded
+// runs. That is not nine careless rounds; it is the wrong question asked nine
+// times. The gap moves when it is patched.
+//
+// WHERE THE GUARANTEE ACTUALLY LIVES: matchQuotesMoreThanItSpells, consulted
+// by extractSpan for the span and by decide() for the OUTCOME. At confirmation
+// time the match is in hand, so R3's own sentence — "a signature may not quote
+// more of the response than it spells" — is one comparison between two
+// integers, exactly decidable, with no analysis, no alphabet, no corpus and no
+// budget. A new operator, a new spelling or a parser change cannot produce a
+// confirmation from an over-broad match, because that check reads the match
+// that happened rather than reasoning about the match that might.
+//
+// SO THE TWO LAYERS DIVIDE LIKE THIS. The rules below decide whether a
+// signature is WORTH SHIPPING and refuse early when it plainly is not; the
+// match check decides whether a particular match is EVIDENCE. Defence in
+// depth, with the guarantee on the layer that can carry one. Do not weaken the
+// rules below because the match check exists, and do not tune them to close
+// the next spelling either: the next spelling is expected now, and it is no
+// longer a defect provided the match layer catches it.
+//
+// ===========================================================================
+// FOUR ROUNDS OF ENUMERATION, AND WHAT DECIDING ON THE PATTERN BOUGHT
 // ===========================================================================
 //
 // "Is this regex an oracle, or does it say yes to anything?" was asked three
@@ -750,8 +833,19 @@ type Signature struct {
 // So the question is asked a different way, and it is asked OF THE PATTERN. A
 // parsed regex is a finite object. "What must every match path of this pattern
 // require, and what can every match path swallow?" is answered by walking it,
-// and the answer depends on no body, no vocabulary, no seed and no list. THERE
-// IS NOTHING HERE FOR AN ATTACKER TO STEP OUTSIDE, because nothing is sampled.
+// and the answer depends on no body, no vocabulary, no seed and no list.
+//
+// THE CLAIM THAT USED TO CLOSE THIS PARAGRAPH IS WITHDRAWN. It read: "THERE IS
+// NOTHING HERE FOR AN ATTACKER TO STEP OUTSIDE, because nothing is sampled."
+// Nothing is sampled, and that part is still true — but not sampling is not
+// the same as being complete. The walk APPROXIMATES: it is exact on the shapes
+// it has arms for and refuses-by-default on the rest, and an approximation
+// that must return an answer for every pattern has a side it gets wrong. Five
+// rounds after this paragraph was written, `anvil-probe-4f2a` followed by 125
+// copies of ` [a-z]*` was accepted with quoted=0 and matched 12,500,141 bytes.
+// The attacker did not step outside a sample; they stepped outside an ARM.
+// That is the same shape of gap wearing a different name, and it is why the
+// guarantee is now on the match. See the paragraph at the top of this section.
 //
 // ===========================================================================
 // THE THREE RULES, AND WHAT EACH ONE CLOSES
@@ -835,14 +929,21 @@ type Signature struct {
 // TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the inequality
 // over real matches rather than restating it.
 //
-// THE SAME INEQUALITY IS ENFORCED A SECOND TIME, ON THE ACTUAL MATCH, and
-// that is not redundancy. R3 reasons about CONTENT-BEARING positions and says
-// nothing about a class like `[0-9A-Za-z]`; rerunning this round's own attack
-// one class to the left found `<h1[0-9A-Za-z]{0,400}` accepted and inlining
-// 403 bytes. extractSpan's property 1b re-applies L - s <= s to the match
-// itself, where no class definition is involved at all, and that is what
-// makes the arithmetic above true of EVERY accepted signature rather than
-// only of the ones R3 looked at.
+// THE SAME INEQUALITY IS ENFORCED ON THE ACTUAL MATCH, AND THAT IS THE HALF
+// THAT CARRIES THE ARITHMETIC. R3 reasons about CONTENT-BEARING positions and
+// says nothing about a class like `[0-9A-Za-z]`; rerunning that round's own
+// attack one class to the left found `<h1[0-9A-Za-z]{0,400}` accepted and
+// inlining 403 bytes. matchQuotesMoreThanItSpells re-applies L - s <= s to the
+// match itself, where no class definition is involved at all.
+//
+// THE ORDER OF THAT SENTENCE MATTERS AND IT USED TO RUN THE OTHER WAY. The
+// paragraph above derives q <= L/2 <= 256 from R3, and R3 is a best-effort
+// analysis, so a derivation resting on it is only as good as the arms
+// shapeWalk happens to have. It does not rest on it. Every claim in this
+// section is true because the match check enforces L - s <= s on the match,
+// for every signature, including ones R3 waved through and ones written after
+// this comment. R3 is what refuses such a pattern EARLY; it is not what makes
+// the inequality hold.
 //
 // ===========================================================================
 // WHAT THIS DOES NOT DECIDE, STATED BECAUSE IT IS THE WHOLE RESIDUAL
@@ -973,17 +1074,35 @@ type Signature struct {
 // CONCATENATION of differing narrow classes. A concatenation is a sequence of
 // positions, each with one alphabet, so its union is not any position's
 // alphabet and R3 does not promote it. `Z[ab][,;][ab][,;]...` therefore quotes
-// positions R3 counts as zero. THE BOUND ON THAT IS ARITHMETIC, NOT A LIST:
+// positions R3 counts as zero. MEASURED at the ceiling: `Z` followed by 127
+// copies of `[ab][,;]` is 1017 bytes, is accepted, and matches 255 bytes of a
+// body it spells one byte of; 128 copies is 1025 bytes and does not compile at
+// all. extractSpan inlines ZERO bytes of that 255-byte match and reports all
+// 255 as SpanOverBroadBytes, because property 1b re-applies L - s <= s to the
+// match with no class definition involved.
+// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes drives both
+// halves.
+//
+// THE SENTENCE THAT USED TO BIND THAT RESIDUAL WAS FALSE, and 255 was never a
+// bound on the family. It read: "THE BOUND ON THAT IS ARITHMETIC, NOT A LIST:
 // every such position must be SPELLED OUT in the pattern, the cheapest
-// spelling of a two-rune class is four bytes, and MaxPatternBytes is 1024.
-// MEASURED at the ceiling: `Z` followed by 127 copies of `[ab][,;]` is 1017
-// bytes, is accepted, and matches 255 bytes of a body it spells one byte of;
-// 128 copies is 1025 bytes and does not compile at all. The consequence is
-// closed downstream and measured there too: extractSpan inlines ZERO bytes of
-// that 255-byte match and reports all 255 as SpanOverBroadBytes, because
-// property 1b re-applies L - s <= s to the match with no class definition
-// involved. TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes
-// drives both halves.
+// spelling of a two-rune class is four bytes, and MaxPatternBytes is 1024."
+// MaxPatternBytes bounds the number of ELEMENTS in the concatenation. It
+// bounds nothing about how many BYTES an element consumes, and an element may
+// be an unbounded repeat. MEASURED:
+//
+//	anvil-probe-4f2a( [a-z]*){125}   — written as 125 concatenated copies of
+//	                                   ` [a-z]*`, 891 pattern bytes — is
+//	                                   ACCEPTED at spelled=141, quoted=0,
+//	                                   and matched 12,500,141 BYTES.
+//
+// Every element is letters-only after a spelled space, so no element is
+// content-bearing on its own and shapeWalk's OpConcat arm adds 125 zeroes.
+// The union that would see it is exactly the union this arm deliberately does
+// not take — and taking it here would be the tenth round of the same mistake,
+// which is why the fix is not here. See shapeWalk's OpConcat arm for the
+// corrected justification and matchQuotesMoreThanItSpells for where the
+// guarantee moved.
 
 // printableASCIILo and printableASCIIHi are extractSpan's charset. R2 is about
 // exactly that set, and a second spelling of 0x20 and 0x7e would be a second
@@ -1581,12 +1700,38 @@ func shapeWalk(re *syntax.Regexp) patternShape {
 		// NO UNION PROMOTION HERE, and that is deliberate. A concatenation
 		// is a SEQUENCE of positions, each declared by its own class; it is
 		// not one position with several readings, so the union is not this
-		// node's alphabet. What a concatenation of narrow-but-differing
-		// classes can do is bounded by how many of them the pattern spells
-		// out, and MaxPatternBytes bounds that. A repeat is where the same
-		// unit's alphabet becomes a stream region's alphabet, and that is
-		// where the promotion happens. See the residual note in this
-		// section's header.
+		// node's alphabet. A repeat is where the same unit's alphabet
+		// becomes a stream region's alphabet, and that is where the
+		// promotion happens.
+		//
+		// THE JUSTIFICATION THAT USED TO FOLLOW WAS MEASURABLY FALSE and is
+		// corrected rather than softened. It said: "What a concatenation of
+		// narrow-but-differing classes can do is bounded by how many of
+		// them the pattern spells out, and MaxPatternBytes bounds that."
+		// That is true only while every ELEMENT has a fixed width. The
+		// count of elements is bounded; the bytes each element can consume
+		// are not. Both halves are measured:
+		//
+		//	FIXED WIDTH, and the bound holds. `Z` then 127 copies of
+		//	`[ab][,;]` is 1017 bytes of pattern, is accepted, and matches
+		//	EXACTLY 255 bytes — 254 positions plus the marker. 128 copies
+		//	is 1025 bytes and does not compile.
+		//
+		//	UNBOUNDED ELEMENTS, and the bound is gone. `anvil-probe-4f2a`
+		//	then 125 copies of ` [a-z]*` is 891 bytes of pattern, is
+		//	ACCEPTED at spelled=141 with quoted=0 — each element's own
+		//	class is letters-only and carries no separator, so no element
+		//	quotes anything, and this arm adds 125 zeroes — and it matched
+		//	12,500,141 BYTES of a body it spells 141 of.
+		//
+		// THE 255 IS THEREFORE NOT A DISCLOSED BOUND ON THIS ARM. It is one
+		// measurement of one shape. What bounds the arm is not in this
+		// function at all: matchQuotesMoreThanItSpells reads the match that
+		// actually happened, so neither of the two patterns above can
+		// confirm a finding from a match that ran past its footing,
+		// whatever this walk concluded about them.
+		// TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes
+		// drives both measurements.
 		return out
 
 	case syntax.OpAlternate:
@@ -1775,7 +1920,10 @@ func unboundedIfDeclaring(s patternShape) int {
 	return shapeUnbounded
 }
 
-// refuseOverBroadPattern is the control. See this section's header.
+// refuseOverBroadPattern is the BEST-EFFORT EARLY REFUSAL. See this section's
+// header, whose first paragraph is the one that matters: a pattern this
+// function accepts has NOT been proven narrow, and the over-broadness
+// guarantee is enforced on the match by matchQuotesMoreThanItSpells.
 //
 // It runs BEFORE the benign corpus in NewSignature, and the order is not only
 // about which check is the control. It is also what makes the corpus scan
@@ -1840,8 +1988,18 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // ---------------------------------------------------------------------------
 //
 // ===========================================================================
-// THIS IS THE BACKSTOP. refuseOverBroadPattern IS THE CONTROL.
+// THIS IS A BACKSTOP. SO, IT TURNS OUT, IS refuseOverBroadPattern.
 // ===========================================================================
+//
+// THIS HEADER USED TO SAY "refuseOverBroadPattern IS THE CONTROL", and ruling
+// 14 demoted it. Both layers here are best-effort early refusals with budgets:
+// this one's budget is its nine vocabularies, named below; the structural
+// rules' budget is the set of shapes shapeWalk has arms for, named in that
+// section's own header. Neither carries the over-broadness guarantee. That is
+// matchQuotesMoreThanItSpells, on the match, at confirmation time.
+//
+// The rest of this header is unchanged and still true. It is worth reading for
+// what a budget looks like when it is written down honestly.
 //
 // SAYING WHICH IS WHICH IS THE POINT OF THIS PARAGRAPH. For three rounds this
 // corpus was described as the check that decides whether a signature is an
@@ -1924,10 +2082,16 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // TestTheCorpusResidualIsAsWideAsItsVocabularies drives all of these, so the
 // disclosure fails when it stops being true rather than aging quietly.
 //
-// A BACKSTOP IS ALLOWED A BUDGET. A control is not, which is why the control
-// is somewhere else now — and why the honest statement of this one is "nine
-// vocabularies, the widest of which is the list of formats it can generate at
-// all" rather than "a word list".
+// A BACKSTOP IS ALLOWED A BUDGET, and the honest statement of this one is
+// "nine vocabularies, the widest of which is the list of formats it can
+// generate at all" rather than "a word list".
+//
+// WHAT A CONTROL IS NOT ALLOWED IS A BUDGET, and the sentence that used to end
+// this paragraph — "which is why the control is somewhere else now" — pointed
+// at refuseOverBroadPattern, which turned out to have one too. The control is
+// somewhere else again, and this time it is somewhere a budget cannot be
+// hidden: matchQuotesMoreThanItSpells compares two integers that are both in
+// hand. See that function.
 //
 // A Signature must fire on NONE of these bodies. What they are is "responses
 // with nothing wrong with them", and an oracle that cannot tell one of those
@@ -2328,9 +2492,11 @@ func NewSignature(pattern string) (Signature, error) {
 		return Signature{}, fmt.Errorf("%w: compiling the signature pattern: %s",
 			ErrRefused, printable(err.Error(), MaxFieldBytes))
 	}
-	// THE CONTROL. It decides on the pattern; nothing is sampled. Its
-	// minLiteral becomes the Signature's span budget: see Signature.spelled
-	// and extractSpan's composition rule.
+	// THE EARLY REFUSAL. It decides on the pattern; nothing is sampled, and
+	// it is INCOMPLETE — a pattern it accepts has not been proven narrow.
+	// See its section header. Its minLiteral becomes the Signature's span
+	// budget, which is the number the match check compares against: see
+	// Signature.spelled and matchQuotesMoreThanItSpells.
 	spelled, err := refuseOverBroadPattern(pattern)
 	if err != nil {
 		return Signature{}, err
@@ -2865,6 +3031,12 @@ type Finding struct {
 	// get to run that many times, which is a different fact from the oracle
 	// running and not firing.
 	indecisive int
+	// overQuoted is how many of the MATCHING attempts produced a match that
+	// quoted more of the response than the signature spells. Non-zero means
+	// the signature is not evidence about this target's responses, which is
+	// a third fact again: the oracle ran, it "fired", and what it fired on
+	// was the body. See matchQuotesMoreThanItSpells and decide's rule 2.
+	overQuoted int
 
 	// confidence is the reproduction ratio, matches/attempts. It is
 	// meaningful ONLY when confidenceKnown is true, which happens only for
@@ -2941,6 +3113,20 @@ func (f Finding) SignatureMatches() int { return f.matches }
 // target's rate limiter, WAF or identity proxy hid.
 func (f Finding) IndecisiveAttempts() int { return f.indecisive }
 
+// OverQuotedMatches returns how many of the matching attempts produced a match
+// that quoted more of the response than the signature spells.
+//
+// It is reported separately from SignatureMatches for the same reason
+// IndecisiveAttempts is: it is a different fact. matches=3, overQuoted=0 is an
+// oracle that fired three times on something it can describe. matches=3,
+// overQuoted=3 is a pattern that swallowed the page three times — the
+// arithmetic looks identical and the second one licenses nothing.
+//
+// It is reported on EVERY finding, including ones whose reason a
+// higher-precedence rule owns, so an over-broad signature against an
+// oracle-less class is still visible as an over-broad signature.
+func (f Finding) OverQuotedMatches() int { return f.overQuoted }
+
 // Confidence returns the contract's `confidence` in [0,1], and whether there
 // is one at all.
 //
@@ -2970,11 +3156,11 @@ func (f Finding) String() string {
 		conf = fmt.Sprintf("%.3f", f.confidence)
 	}
 	return fmt.Sprintf("%s %s %s class=%s detection=%s outcome=%s reason=%s "+
-		"matches=%d/%d indecisive=%d status=%d confidence=%s body_hash=%s span_bytes=%d "+
-		"span_over_broad_bytes=%d",
+		"matches=%d/%d indecisive=%d over_quoted=%d status=%d confidence=%s "+
+		"body_hash=%s span_bytes=%d span_over_broad_bytes=%d",
 		f.engine, f.method, f.path, f.class, f.detection, f.outcome, f.reason,
-		f.matches, f.attempts, f.indecisive, f.status, conf, f.evidence.bodyHash,
-		len(f.evidence.span), f.evidence.spanOverBroadBytes)
+		f.matches, f.attempts, f.indecisive, f.overQuoted, f.status, conf,
+		f.evidence.bodyHash, len(f.evidence.span), f.evidence.spanOverBroadBytes)
 }
 
 // ---------------------------------------------------------------------------
@@ -3305,6 +3491,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	var (
 		matches      int
 		indecisive   int
+		overQuoted   int  // attempts whose match quoted more than the signature spells
 		evidenceSeen bool // evidence came from an attempt the signature matched
 		evAnySeen    bool // evidence came from anything at all
 		evCleanSeen  bool // evidence came from an attempt that WAS the application
@@ -3347,9 +3534,18 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 			continue
 		}
 
-		span, dropped, overBroad, matched := extractSpan(obs.Body, candidate.Signature)
+		span, dropped, overBroad, matchLen, matched := extractSpan(obs.Body, candidate.Signature)
 		if matched {
 			matches++
+			// RULING 14'S CHECK, ON THE MATCH THAT ACTUALLY HAPPENED. It
+			// is counted here and decided in decide() rather than being
+			// short-circuited, because "how many attempts did this" is a
+			// fact worth reporting on the Finding even when a
+			// higher-precedence rule owns the reason. See
+			// matchQuotesMoreThanItSpells.
+			if matchQuotesMoreThanItSpells(matchLen, candidate.Signature.spelled) {
+				overQuoted++
+			}
 		}
 		// Evidence comes from the FIRST attempt whose signature matched;
 		// failing that, from the first attempt the application answered.
@@ -3373,7 +3569,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 		}
 	}
 
-	reason := decide(candidate, matches, indecisive, g.attempts)
+	reason := decide(candidate, matches, indecisive, overQuoted, g.attempts)
 	outcome, err := outcomeForReason(reason)
 	if err != nil {
 		return nil, err
@@ -3395,6 +3591,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 		attempts:       g.attempts,
 		matches:        matches,
 		indecisive:     indecisive,
+		overQuoted:     overQuoted,
 		sealed:         true,
 	}
 	// WHETHER THERE IS A CONFIDENCE AT ALL is three questions, not one, and
@@ -3416,7 +3613,17 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	//     whose denominator counts questions that were never asked, and
 	//     0.000 reads as "certainly not a vulnerability", which is the
 	//     opposite of what ReasonReprobeIndecisive means.
-	if !candidate.Class.OracleLess() && candidate.DetectionMethod.CanConfirm() && indecisive == 0 {
+	//  4. no attempt's match may have quoted more of the response than the
+	//     signature spells. matches/attempts is a REPRODUCTION ratio, and a
+	//     match that ran past its own footing did not reproduce anything —
+	//     it quoted the body. 3/3 such matches reported confidence 1.000,
+	//     which is rule 2's contradiction again with a different cause: the
+	//     record would carry the strongest number this gate can print
+	//     beside a reason saying the signature could not see. The 3/3 is not
+	//     lost; SignatureMatches(), OverQuotedMatches() and Attempts()
+	//     report it. What is withheld is the CLAIM.
+	if !candidate.Class.OracleLess() && candidate.DetectionMethod.CanConfirm() &&
+		indecisive == 0 && overQuoted == 0 {
 		f.confidence = float64(matches) / float64(g.attempts)
 		f.confidenceKnown = true
 	}
@@ -3442,7 +3649,38 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     The contract says these are "tagged unconfirmed rather than asserted or
 //     dropped" — a signature that did not match an authorization finding
 //     disproves nothing, so this class can never reach OutcomeRejected.
-//  2. INDECISIVE WITH NOTHING TO SHOW FOR IT. At least one attempt failed
+//
+//  2. A MATCH QUOTED MORE OF THE RESPONSE THAN THE SIGNATURE SPELLS. This is
+//     ruling 14, and it is where the over-broadness guarantee actually lives —
+//     on the match, where it is one comparison between two integers in hand,
+//     rather than on the pattern, where it is an incomplete static analysis
+//     that nine rounds of spellings walked past. See
+//     matchQuotesMoreThanItSpells.
+//
+//     IT OUTRANKS "MATCHED NOTHING" AND THAT ORDERING IS MANDATORY, for the
+//     same reason rule 3 outranks it. An over-broad match is not evidence
+//     about this response — but it is not evidence of ABSENCE either, and
+//     routing it to `rejected` would file "the signature cannot see" as "the
+//     target is fine". AssertNotSilentlyClean does not count rejections, so
+//     that is the silent clean arriving through a new door.
+//
+//     IT OUTRANKS THE INDECISIVE RULE TOO, and that is the answer to "one
+//     attempt over-broad, another clean". THE INTERACTION, DECIDED: ANY
+//     over-broad match on ANY attempt takes the whole candidate, however
+//     clean the other attempts were. A confirmation is the claim that the
+//     oracle fired on EVERY attempt; an attempt on which the "firing" was
+//     the pattern swallowing the page is an attempt that did not reproduce
+//     evidence, so the run cannot support that claim. Nor is the mixed run
+//     merely "intermittent" (rule 6): intermittent says the target's
+//     behaviour varied, and what actually varied here is whether the
+//     signature could see at all — reporting a signature defect as target
+//     flakiness sends an operator to re-run the scan instead of fixing the
+//     pattern. It ranks BELOW rule 1 only because an oracle-less class has
+//     no oracle for a match to be over-broad on; both are unconfirmed, and
+//     OverQuotedMatches() carries the count either way.
+//     TestAnOverBroadMatchOnOneAttemptTakesTheWholeCandidate drives it.
+//
+//  3. INDECISIVE WITH NOTHING TO SHOW FOR IT. At least one attempt failed
 //     to establish that the target answered as the application, and the
 //     oracle fired on none of the rest.
 //     THIS RULE OUTRANKS "MATCHED NOTHING" AND THAT ORDERING IS THE WHOLE
@@ -3455,26 +3693,33 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     responses and not by a list of defences; see
 //     applicationResponseStatuses for why that difference is the fix and not
 //     a spelling.
-//  3. MATCHED NOTHING. The oracle exists, it RAN, and it never fired. This
-//     is the 88 phantom findings, and after rule 2 it is only ever reached
-//     by a run in which EVERY attempt was an ordinary application response.
-//     assertRejectionIsDecisive re-states that as a refusal on the assembled
-//     value, because this ordering is the only thing holding it up.
-//  4. MODEL INFERENCE. The signature reproduced but the candidate came from a
+//
+//  4. MATCHED NOTHING. The oracle exists, it RAN, and it never fired. This
+//     is the 88 phantom findings, and after rules 2 and 3 it is only ever
+//     reached by a run in which EVERY attempt was an ordinary application
+//     response and no match ran past its own footing.
+//     assertRejectionIsDecisive re-states part of that as a refusal on the
+//     assembled value, because this ordering is the only thing holding it up.
+//
+//  5. MODEL INFERENCE. The signature reproduced but the candidate came from a
 //     model. Outranks the confirmed rule, so no model-detected candidate can
 //     be confirmed here regardless of how clean the reproduction was.
-//  5. INTERMITTENT. Matched sometimes. Not confirmed, not disproved. A run
+//
+//  6. INTERMITTENT. Matched sometimes. Not confirmed, not disproved. A run
 //     with any indecisive attempt and at least one match lands here by
 //     arithmetic — matches can be at most attempts-indecisive, which is
 //     strictly less than attempts — and that is the right answer: a mixed
 //     run is exactly "sometimes".
-//  6. REPRODUCED EVERY TIME, with an oracle, a mechanical detection method,
-//     and the application answering on every single attempt. The only route
-//     to OutcomeConfirmed.
-func decide(c RawFinding, matches, indecisive, attempts int) Reason {
+//
+//  7. REPRODUCED EVERY TIME, with an oracle, a mechanical detection method,
+//     the application answering on every single attempt, and every match
+//     inside its own footing. The only route to OutcomeConfirmed.
+func decide(c RawFinding, matches, indecisive, overQuoted, attempts int) Reason {
 	switch {
 	case c.Class.OracleLess():
 		return ReasonNoOracleForClass
+	case overQuoted > 0:
+		return ReasonMatchQuotedTheResponse
 	case indecisive > 0 && matches == 0:
 		return ReasonReprobeIndecisive
 	case matches == 0:
@@ -3757,6 +4002,16 @@ func hashBody(body []byte) string {
 //     is the right answer arrived at by the right rule.
 //     TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is the sweep.
 //
+//     RULING 14 MADE THIS COMPARISON DECIDE THE OUTCOME AS WELL AS THE SPAN,
+//     and that is why the arithmetic moved into matchQuotesMoreThanItSpells
+//     rather than staying inline here. For nine rounds this function was the
+//     only thing that asked it, and it asked it about INLINING only — so a
+//     pattern that swallowed 12,500,141 bytes of an ordinary page produced no
+//     span, reported all 12,500,141 as SpanOverBroadBytes, AND CAME OUT
+//     CONFIRMED AT CONFIDENCE 1.000. Withholding the quote while granting the
+//     claim is the worse half of the two: the span was never the assertion,
+//     the outcome is. See decide()'s rule 2.
+//
 //  2. THE OUTPUT IS PRINTABLE ASCII. Everything outside 0x20-0x7e is dropped
 //     and counted. That removes, without needing to enumerate them, every
 //     C0 and C1 control, every bidirectional override and isolate, every
@@ -3768,25 +4023,24 @@ func hashBody(body []byte) string {
 //  3. IT DROPS RATHER THAN SUBSTITUTES. A replacement character would be a
 //     byte Anvil invented appearing inside prose attributed to the target.
 //     The dropped count is how a reader learns something was removed.
-func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad int, matched bool) {
+func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, matchLen int, matched bool) {
 	if sig.re == nil {
-		return "", 0, 0, false
+		return "", 0, 0, 0, false
 	}
 	loc := sig.re.FindIndex(body)
 	if loc == nil {
-		return "", 0, 0, false
+		return "", 0, 0, 0, false
 	}
 	match := body[loc[0]:loc[1]]
 	if len(match) > MaxSpanBytes {
 		// Matched, and there is no span. See property 1.
-		return "", 0, len(match), true
+		return "", 0, len(match), len(match), true
 	}
-	// PROPERTY 1b, THE COMPOSITION RULE. len(match)-spelled is an upper
-	// bound on how many bytes of this match the pattern did not spell, and a
-	// span may not carry more of those than of the ones it did. See the
-	// rule's own paragraph in this function's doc.
-	if len(match)-sig.spelled > sig.spelled {
-		return "", 0, len(match), true
+	// PROPERTY 1b, THE COMPOSITION RULE. See matchQuotesMoreThanItSpells,
+	// which is the same comparison ConfirmFinding gates the OUTCOME on, so
+	// the span rule and the confirmation rule cannot drift apart.
+	if matchQuotesMoreThanItSpells(len(match), sig.spelled) {
+		return "", 0, len(match), len(match), true
 	}
 
 	var b strings.Builder
@@ -3798,7 +4052,54 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad in
 		}
 		b.WriteByte(c)
 	}
-	return b.String(), dropped, 0, true
+	return b.String(), dropped, 0, len(match), true
+}
+
+// matchQuotesMoreThanItSpells IS RULING 14'S INVARIANT, and it is one
+// comparison between two integers that are both in hand.
+//
+// ===========================================================================
+// WHY THE GUARANTEE LIVES HERE AND NOT IN THE PATTERN ANALYSIS
+// ===========================================================================
+//
+// R3 states the rule this function enforces: "a signature may not quote more
+// of the response than it spells: past that point the span is the response
+// rather than evidence about it." R3 tries to decide that FROM THE PATTERN,
+// before any response exists — and deciding what an arbitrary regular
+// expression can match against an arbitrary future response is a
+// static-analysis problem with no complete answer. Nine rounds of this
+// codebase's history are one closed spelling each, with the next spelling
+// found by the round after: a status list, an entity bound, a benign corpus, a
+// generator's alphabet, a depth-0 union, a class-union excluding literals, a
+// type-keyed dedup, an operator-tag test, and a concatenation of unbounded
+// runs whose quotation the concat arm never promoted.
+//
+// AT CONFIRMATION TIME THE MATCH IS IN HAND. matchLen and spelled are two
+// integers. The invariant is `matchLen - spelled <= spelled`: at most as many
+// bytes of the match are unaccounted-for by the pattern's own literal footing
+// as are accounted for by it. There is no analysis, no alphabet, no corpus,
+// no sample and therefore no budget.
+//
+// WHY THAT ENDS THE CLASS. A new regexp operator, a new spelling, a parser
+// change, a pattern nobody imagined — none of them can produce a confirmation
+// from an over-broad match, because this reads the match that actually
+// happened rather than reasoning about the match that might.
+//
+// spelled is a LOWER bound on the literal content every match path requires
+// (Signature.spelled, from refuseOverBroadPattern's minLiteral), so
+// matchLen-spelled is an UPPER bound on the unspelled bytes in this match.
+// Both directions are the safe ones: understating the footing or overstating
+// the quotation can only refuse a span and withhold a confirmation, never
+// grant one. On a Signature NewSignature did not build, spelled is 0 and every
+// non-empty match fails this — the fail-closed value.
+//
+// TWO CALLERS, ONE COMPARISON. extractSpan asks it about INLINING (property
+// 1b); ConfirmFinding asks it about the OUTCOME (decide's rule 2). They were
+// the same arithmetic written once and consulted for only one of the two
+// questions, which is why a pattern matching 12,500,141 bytes of an ordinary
+// page returned confirmed at confidence 1.000 while inlining nothing.
+func matchQuotesMoreThanItSpells(matchLen, spelled int) bool {
+	return matchLen-spelled > spelled
 }
 
 // assertRejectionIsDecisive refuses to emit a REJECTED finding that could not
