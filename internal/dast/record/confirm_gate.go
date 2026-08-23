@@ -170,6 +170,38 @@
 // Contract (lines 1142-1160); plan/00-SPINE.md S7; research/15-dast-tooling-
 // landscape.md (ZAP's 88 phantom SQL-injection findings);
 // research/23-dast-signal-sources.md Risk #2.
+//
+// ===========================================================================
+// GATE 3: regexp/syntax IS NOT ON inertImports, AND THIS FILE IMPORTS IT
+// ===========================================================================
+//
+// refuseOverBroadPattern decides over-broadness on the PARSED pattern, which
+// needs regexp/syntax. That path is not on gate 3's inert allowlist in
+// internal/dast/authz/egress_chokepoint_test.go, so
+// TestGate3NoSocketIsConstructedOutsideTheKernel FAILS on this file and on its
+// test — by design, because gate 3 is an allowlist and the failure mode of a
+// new import is a red build rather than a silent widening:
+//
+//	gate03 refused (gate03.socket_constructed_inside_dast_outside_kernel):
+//	2 socket construction(s) inside the DAST tree but outside .../dast/authz.
+//	  internal/dast/record/confirm_gate.go import "regexp/syntax"
+//	  internal/dast/record/confirm_gate_test.go import "regexp/syntax"
+//
+// (Line numbers are omitted on purpose: they move with every edit above, and a
+// citation that rots is worse than one a reader has to grep for.)
+//
+// THE EDIT IS ONE LINE AND IS NOT MADE HERE. Widening that allowlist is the
+// review gate 3 exists to force, and a packet that widens it in the same diff
+// that needs it has reviewed itself. It is reported to the orchestrator, the
+// same way encoding/base64 was in internal/dast/inventory/auth_helper.go.
+//
+// The justification a reviewer needs, stated so the decision can be made
+// without re-deriving it: regexp/syntax is the PARSER AND COMPILER behind
+// `regexp`, which is already on inertImports. It has no dialer, no listener,
+// no transport and no I/O of any kind — it turns a string into a tree and a
+// tree into a program. Every package in this repository that imports `regexp`
+// already links it transitively; gate 3 attributes by import line rather than
+// transitively, which is why the line is needed at all.
 package record
 
 import (
@@ -179,8 +211,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // ---------------------------------------------------------------------------
@@ -211,15 +246,24 @@ var (
 	// confirmation gate into a pass-through while continuing to report
 	// `confirmed`.
 	//
-	// FOUND BY MEASUREMENT TWICE, not by design. The predicate used to be
-	// re.MatchString("") alone, and against a benign homepage that predicate
-	// accepted ".", "(?s).{1,512}", `[\s\S]`, ".*." and "(?s)^" — five
-	// oracles that confirm a benign page at confidence 1.000. It then became
-	// seventeen hand-written probes, and `(?s)[\s\S]{721}` — one byte past
-	// their combined length — walked over those. The empty string is now one
-	// SAMPLE from a generated corpus rather than the whole test; see the
-	// corpus section header for why a generator and not a list, and why not a
-	// cleverer regex analysis either.
+	// FOUND BY MEASUREMENT THREE TIMES, not by design. The predicate used to
+	// be re.MatchString("") alone, and against a benign homepage that
+	// predicate accepted ".", "(?s).{1,512}", `[\s\S]`, ".*." and "(?s)^" —
+	// five oracles that confirm a benign page at confidence 1.000. It then
+	// became seventeen hand-written probes, and `(?s)[\s\S]{721}` — one byte
+	// past their combined length — walked over those. It then became a
+	// seeded generator over five vocabulary slices, and
+	// `(?s)<h1[\s\S]{0,400}` walked over THAT, because `h1` was not one of
+	// the tag names the generator was given.
+	//
+	// EACH OF THOSE PREDICATES WAS A SAMPLE OF BODIES, and the sentinel is
+	// now raised by two checks that are not the same kind of thing: a
+	// STRUCTURAL one that decides on the parsed pattern and samples nothing
+	// (refuseOverBroadPattern — the control), and the generated corpus
+	// (the backstop). An earlier version of this comment said the corpus
+	// section explained "why not a cleverer regex analysis either"; no such
+	// paragraph ever existed, and the analysis it was waving away is now the
+	// control. Both sections say which is which.
 	ErrSignatureMatchesEverything = errors.New("dastrecord: the signature fires against a body with no vulnerability in it and would confirm anything")
 
 	// ErrSilentlyClean is what AssertNotSilentlyClean returns when a ledger
@@ -655,22 +699,587 @@ const (
 // The zero value compiles nothing and matches nothing; Constructed() reports
 // false and RawFinding validation refuses it.
 type Signature struct {
-	re     *regexp.Regexp
-	src    string
+	re  *regexp.Regexp
+	src string
+
+	// spelled is minLiteral from refuseOverBroadPattern: a LOWER BOUND, in
+	// bytes, on the literal content every match path of this pattern
+	// requires. It is carried on the Signature rather than recomputed
+	// because extractSpan needs it on every re-probe, and parsing the
+	// pattern per attempt would make the composition rule something a
+	// caller works around.
+	//
+	// It is ZERO on any Signature NewSignature did not build, and zero is
+	// the fail-closed value: a match with no spelled bytes has no budget for
+	// unspelled ones, so extractSpan produces no span at all. Validate
+	// refuses an unconstructed Signature before that can matter in
+	// production; the zero is what makes an in-package test fixture fail
+	// closed too.
+	spelled int
+
 	sealed bool
 }
 
 // ---------------------------------------------------------------------------
-// The benign corpus — GENERATED, NEVER ENUMERATED
+// The syntactic over-broadness check — THIS IS THE CONTROL
 // ---------------------------------------------------------------------------
 //
 // ===========================================================================
-// WHY A GENERATOR AND NOT A LIST OF EXAMPLE BODIES
+// FOUR ROUNDS OF ENUMERATION, AND WHY DECIDING ON THE PATTERN ENDS IT
 // ===========================================================================
 //
-// A Signature must fire on NONE of these. What they are is "responses with
-// nothing wrong with them", and an oracle that cannot tell one of those from a
-// vulnerable response is an oracle that says yes.
+// "Is this regex an oracle, or does it say yes to anything?" was asked three
+// times by RUNNING the regex against bodies, and each answer was a set of
+// bodies: the empty string; then seventeen hand-written probes; then a seeded
+// generator over five hand-written vocabulary slices. Every one of those is a
+// CORPUS — a generator with a fixed seed and a written-down alphabet is a
+// corpus assembled by a loop — and a corpus is a sample. The attacker needs
+// one input outside the sample, and each round produced one:
+//
+//	re.MatchString("") alone     `.` walked over it
+//	seventeen probes, 720 bytes  `(?s)[\s\S]{721}` walked over it
+//	a generated corpus, 1 MiB    `(?s)<h1[\s\S]{0,400}` walks over it,
+//	                             because <h1 is not one of the thirteen tag
+//	                             names the generator was given
+//
+// The third is MEASURED: 17 of 20 bounded-prefix HTML anchors pass, and the
+// h1 spelling also INLINES 403 verbatim body bytes into ExtractedSpan, which
+// MaxSpanBytes cannot see because that bound only refuses matches LONGER than
+// 512.
+//
+// So the question is asked a different way, and it is asked OF THE PATTERN. A
+// parsed regex is a finite object. "What must every match path of this pattern
+// require, and what can every match path swallow?" is answered by walking it,
+// and the answer depends on no body, no vocabulary, no seed and no list. THERE
+// IS NOTHING HERE FOR AN ATTACKER TO STEP OUTSIDE, because nothing is sampled.
+//
+// ===========================================================================
+// THE THREE RULES, AND WHAT EACH ONE CLOSES
+// ===========================================================================
+//
+// A rune position in a match is one of three things: the pattern SPELLS it (a
+// literal, or a class naming exactly one rune), the pattern DECLARES it (a
+// class the pattern narrowed), or the pattern leaves it OPEN. The rules are
+// stated over that partition.
+//
+//	R1  FOOTING. Every match path must require at least one byte of literal
+//	    content. A pattern that can match while spelling nothing describes a
+//	    body's SHAPE, and a shape is not an oracle. This closes the whole
+//	    length-threshold family — `[\s\S]{721}`, eighty-five concatenated
+//	    `.{1000}`, `(?s)^`, `a?`, `x{0,3}` — BY CONSTRUCTION rather than by
+//	    owning a body longer than the pattern demands. There is no number in
+//	    it.
+//
+//	R2  NO OPEN POSITION. Every rune a match can consume must be spelled by
+//	    the pattern or drawn from a class confined to printable ASCII,
+//	    0x20-0x7e.
+//
+//	    THE CHARSET IS NOT CHOSEN HERE. It is extractSpan's own: the span
+//	    extractor DROPS every byte outside 0x20-0x7e and counts them into
+//	    SpanDroppedBytes. So R2 says only this — a signature may not match
+//	    through bytes its own evidence extractor throws away. A pattern that
+//	    does is one whose span is not what it matched, and it is, every
+//	    time, a pattern that declared nothing about what it would quote.
+//	    `[\s\S]`, `.`, `[^\n]`, `\s` and `[^\x00]` are all open, so this is
+//	    the rule that kills the bounded-prefix family — `(?s)<h1[\s\S]{0,400}`
+//	    and `(?s)<div[\s\S]{0,500}` alike — WITHOUT knowing what a div is.
+//	    There is no number in it either.
+//
+//	R3  QUOTATION. A class that admits an ASCII LETTER and also an ASCII
+//	    rune that is neither letter nor digit can run from one token into
+//	    the next, which is what it takes to carry the response's prose,
+//	    markup or structure. Positions drawn from such a class are the
+//	    pattern QUOTING THE BODY, and a match path may not quote more
+//	    positions than it spells bytes.
+//
+//	    This is the only rule with a relation in it, and the relation has no
+//	    knob: it is 1:1 against the pattern's own literal footing, not a
+//	    ceiling somebody picked. It closes the R2 evasion — rewrite
+//	    `(?s)<h1[\s\S]{0,400}` as `<h1[[:print:]]{0,400}` and the class is no
+//	    longer open, but 400 quoted positions against 3 spelled bytes is
+//	    refused all the same.
+//
+// ===========================================================================
+// WHAT R3 BUYS THE SPAN, AS ARITHMETIC
+// ===========================================================================
+//
+// Let L be the length of a match extractSpan actually inlines, so
+// L <= MaxSpanBytes = 512. Write q for the quoted (content-bearing, unspelled)
+// bytes in it and s for its literal bytes. R3 gives q <= minLiteral, and
+// minLiteral <= s because minLiteral is a lower bound on the literal every
+// path requires, so q <= s = L - q and therefore
+//
+//	q <= L/2 <= 256.
+//
+// AT MOST HALF OF ANY INLINED SPAN IS BODY THE PATTERN DID NOT SPELL, AND
+// NEVER MORE THAN 256 BYTES OF IT. The measured 403-byte h1 inlining is not
+// made smaller by this; it stops compiling.
+// TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the inequality
+// over real matches rather than restating it.
+//
+// THE SAME INEQUALITY IS ENFORCED A SECOND TIME, ON THE ACTUAL MATCH, and
+// that is not redundancy. R3 reasons about CONTENT-BEARING positions and says
+// nothing about a class like `[0-9A-Za-z]`; rerunning this round's own attack
+// one class to the left found `<h1[0-9A-Za-z]{0,400}` accepted and inlining
+// 403 bytes. extractSpan's property 1b re-applies L - s <= s to the match
+// itself, where no class definition is involved at all, and that is what
+// makes the arithmetic above true of EVERY accepted signature rather than
+// only of the ones R3 looked at.
+//
+// ===========================================================================
+// WHAT THIS DOES NOT DECIDE, STATED BECAUSE IT IS THE WHOLE RESIDUAL
+// ===========================================================================
+//
+// THE RULES DECIDE STRUCTURE. THEY DO NOT DECIDE WHETHER A LITERAL IS
+// TARGET-SPECIFIC, and nothing structural can. There is exactly one residual
+// and it wears three faces, all the same defect:
+//
+//	(?i)(error|warning|expired)   spells five to seven bytes on every path,
+//	                              quotes nothing, passes R1, R2 and R3 — and
+//	                              confirms a SQL-injection candidate at
+//	                              confidence 1.000 against an ordinary page
+//	                              carrying the word "expired". MEASURED.
+//	<h1[[:print:]]{0,3}           three spelled bytes, three quoted, R3
+//	                              satisfied 1:1. Confirms any page with an h1.
+//	<h1[0-9A-Za-z]{0,400}         an alnum class is not content-bearing, so
+//	                              R3 does not count it — see the note below.
+//	                              Confirms any page with an h1, and its
+//	                              403-byte INLINING is closed at extraction
+//	                              (extractSpan property 1b) rather than here.
+//
+// In every case the literal is real, required, and ordinary. THE RULES CANNOT
+// TELL AN ORDINARY LITERAL FROM A MARKER, because both are spelled bytes.
+//
+// THAT IS WHAT THE BENIGN CORPUS IS FOR, and it is why the corpus survives
+// this round as a BACKSTOP and not as the control. It answers the question the
+// pattern cannot: does this literal appear in an ordinary document? Its answer
+// is only as wide as its generated vocabulary. That IS a budget, it is named
+// in its own section header, and it is a backstop's budget rather than a
+// control's.
+//
+// R3'S CLASS CARVE-OUT IS THE OTHER THING TO KNOW, and it is deliberate rather
+// than an oversight. `[0-9A-Z]`, `[0-9]`, `[a-zA-Z]` are not content-bearing,
+// so a pattern may repeat them without a ceiling and R3 stays silent — which
+// is what lets `AKIA[0-9A-Z]{16}` and `Server: nginx/1\.[0-9]+\.[0-9]+` exist
+// at all. The price is that such a class can match a long token-shaped run of
+// the response. NOTHING IS QUOTED FROM IT: extractSpan's composition rule
+// bounds the actual match by the same inequality with no class involved, so
+// the residual is a confirmation residual and not an inlining one.
+
+// printableASCIILo and printableASCIIHi are extractSpan's charset. R2 is about
+// exactly that set, and a second spelling of 0x20 and 0x7e would be a second
+// thing to keep current.
+// TestTheOpenPositionRuleUsesTheSpanExtractorsOwnCharset asserts the two agree
+// by RUNNING the extractor over every byte rather than by reading it.
+const (
+	printableASCIILo = 0x20
+	printableASCIIHi = 0x7e
+)
+
+// patternShape is what one walk of a parsed pattern learned about it.
+//
+// Both numbers are worst-case over match paths, and they are taken
+// INDEPENDENTLY: minLiteral is the minimum over paths and quoted is the
+// maximum over paths, so a pattern whose thinnest path and whose greediest
+// path are different paths is judged against both at once. That is
+// conservative — it can only refuse a pattern a per-path analysis would
+// accept, never accept one a per-path analysis would refuse — and
+// conservative is the direction this gate fails in.
+type patternShape struct {
+	// minLiteral is a LOWER BOUND, in bytes, on the literal content every
+	// match path requires. R1 refuses zero.
+	minLiteral int
+	// quoted is an UPPER BOUND on the number of rune positions a match can
+	// draw from a content-bearing class. shapeUnbounded means a repeat with
+	// no ceiling. R3 compares it with minLiteral.
+	quoted int
+	// open reports that some path can consume a rune the pattern neither
+	// spells nor confines to printable ASCII. R2 refuses it outright, so
+	// this is a bool and not a count: one open position is enough.
+	open bool
+}
+
+// shapeUnbounded marks a count that no repeat ceiling bounds. It is negative
+// so that arithmetic on it cannot be mistaken for a large number.
+const shapeUnbounded = -1
+
+// shapeCeiling is where saturating arithmetic gives up and says unbounded.
+//
+// It is not a limit on what patterns may do: it is far above anything
+// MaxPatternBytes can express (Go caps a repeat's total expansion at 1000, so
+// a 1024-byte pattern cannot demand more than 1,024,000 of anything), and
+// saturating lands on shapeUnbounded, which R3 refuses. The only thing it
+// prevents is signed overflow turning a huge count negative and passing.
+const shapeCeiling = 1 << 30
+
+func addShape(a, b int) int {
+	if a == shapeUnbounded || b == shapeUnbounded {
+		return shapeUnbounded
+	}
+	if a > shapeCeiling-b {
+		return shapeUnbounded
+	}
+	return a + b
+}
+
+func mulShape(a, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	if a == shapeUnbounded {
+		return shapeUnbounded
+	}
+	if a == 0 {
+		return 0
+	}
+	if a > shapeCeiling/n {
+		return shapeUnbounded
+	}
+	return a * n
+}
+
+// literalRuneBytes is how many bytes of the response a spelled rune requires.
+//
+// UNDER (?i) IT IS THE SHORTEST MEMBER OF THE FOLD ORBIT, not the length of
+// the rune as written. `(?i)K` matches the Kelvin sign, three bytes, but it
+// also matches 'k', one byte — and minLiteral must be a LOWER bound or the
+// arithmetic in this section's header is not sound.
+func literalRuneBytes(r rune, fold bool) int {
+	n := utf8.RuneLen(r)
+	if n < 0 {
+		n = 1
+	}
+	if !fold {
+		return n
+	}
+	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+		if m := utf8.RuneLen(f); m > 0 && m < n {
+			n = m
+		}
+	}
+	return n
+}
+
+// runeInClass reports whether r is in a parsed class's rune-pair list.
+func runeInClass(runes []rune, r rune) bool {
+	for i := 0; i+1 < len(runes); i += 2 {
+		if r >= runes[i] && r <= runes[i+1] {
+			return true
+		}
+	}
+	return false
+}
+
+// openClass reports whether a class can match a rune outside printable ASCII.
+//
+// IT ALLOWS EXACTLY ONE KIND OF NON-ASCII MEMBER: a SINGLE rune that is the
+// case fold of a printable-ASCII rune the same class already admits. That is
+// not an exception carved for convenience, it is what the parser does to a
+// class under (?i): `(?i)[a-z]` becomes [A-Za-z] plus the two isolated runes
+// U+017F and U+212A, which fold to 's' and 'k'. Without this, every
+// case-insensitive class in existence would be refused as open, and the rule
+// would be one nobody could satisfy rather than one nobody can evade.
+//
+// A range wider than one rune above 0x7e is open, whatever it contains. Fold
+// artifacts are isolated single runes; a range is a request for a region of
+// Unicode.
+func openClass(runes []rune) bool {
+	for i := 0; i+1 < len(runes); i += 2 {
+		lo, hi := runes[i], runes[i+1]
+		if lo < printableASCIILo {
+			return true
+		}
+		if hi <= printableASCIIHi {
+			continue
+		}
+		if lo <= printableASCIIHi {
+			return true // straddles the top of printable ASCII
+		}
+		if lo != hi {
+			return true
+		}
+		folded := false
+		for f := unicode.SimpleFold(lo); f != lo; f = unicode.SimpleFold(f) {
+			if f >= printableASCIILo && f <= printableASCIIHi && runeInClass(runes, f) {
+				folded = true
+				break
+			}
+		}
+		if !folded {
+			return true
+		}
+	}
+	return false
+}
+
+// contentBearingClass reports whether a class can carry the response's own
+// text. See R3 in this section's header for the argument.
+//
+// THE TEST IS A PARTITION OF PRINTABLE ASCII, NOT A LIST OF CHARACTERS. Every
+// printable-ASCII rune is a letter, a digit, or neither. A class admitting a
+// letter AND something that is neither can run from one token into the next,
+// so a repeat of it swallows prose, markup and JSON alike. A class that cannot
+// — `[0-9A-Z]`, `[0-9]`, `[A-F]` — is confined to a single token shape THE
+// PATTERN DECLARED, and repeating it quotes that shape rather than the
+// document.
+//
+// `\w` is content-bearing, because `_` is neither letter nor digit. That is
+// the conservative direction and it is deliberate: an author who wants an
+// identifier bounds the repeat, and a bounded repeat is what R3 asks for.
+func contentBearingClass(runes []rune) bool {
+	letter, other := false, false
+	for i := 0; i+1 < len(runes); i += 2 {
+		lo, hi := runes[i], runes[i+1]
+		if lo < printableASCIILo {
+			lo = printableASCIILo
+		}
+		if hi > printableASCIIHi {
+			hi = printableASCIIHi
+		}
+		for r := lo; r <= hi; r++ {
+			switch {
+			case (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'):
+				letter = true
+			case r >= '0' && r <= '9':
+			default:
+				other = true
+			}
+			if letter && other {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// classShape is the per-class verdict: spelled, declared, or open.
+func classShape(runes []rune) patternShape {
+	// A class naming exactly one rune is a literal with brackets round it,
+	// and reading it as anything else would let `[<][h][1]` evade R1.
+	if len(runes) == 2 && runes[0] == runes[1] {
+		return patternShape{minLiteral: literalRuneBytes(runes[0], false)}
+	}
+	if openClass(runes) {
+		return patternShape{open: true}
+	}
+	if contentBearingClass(runes) {
+		return patternShape{quoted: 1}
+	}
+	return patternShape{}
+}
+
+// shapeOf walks a parsed pattern.
+//
+// THE DEFAULT ARM IS THE POINT. An operator this function has never heard of —
+// a future Go release's, or one added to regexp/syntax after this was written
+// — lands on `open`, which R2 refuses. The failure mode of not knowing is a
+// REFUSED SIGNATURE, never an accepted one, which is the same shape as
+// applicationResponseStatuses: an allowlist with no deny side to keep current.
+func shapeOf(re *syntax.Regexp) patternShape {
+	if re == nil {
+		return patternShape{open: true}
+	}
+	// The single-child operators below index Sub[0]. syntax.Parse never
+	// produces one without a child, so this guard is unreachable from
+	// NewSignature — but a panic inside a production admission check is a
+	// crash, and "unreachable" is a claim about today's parser.
+	switch re.Op {
+	case syntax.OpCapture, syntax.OpQuest, syntax.OpStar, syntax.OpPlus, syntax.OpRepeat:
+		if len(re.Sub) == 0 {
+			return patternShape{open: true}
+		}
+	}
+	switch re.Op {
+	case syntax.OpEmptyMatch, syntax.OpBeginLine, syntax.OpEndLine,
+		syntax.OpBeginText, syntax.OpEndText, syntax.OpWordBoundary,
+		syntax.OpNoWordBoundary:
+		// Zero width. It consumes nothing, so it spells nothing and
+		// quotes nothing, and R1 is what refuses a pattern made only of
+		// these.
+		return patternShape{}
+
+	case syntax.OpLiteral:
+		fold := re.Flags&syntax.FoldCase != 0
+		n := 0
+		for _, r := range re.Rune {
+			n = addShape(n, literalRuneBytes(r, fold))
+		}
+		return patternShape{minLiteral: n}
+
+	case syntax.OpCharClass:
+		return classShape(re.Rune)
+
+	case syntax.OpAnyChar, syntax.OpAnyCharNotNL:
+		return patternShape{open: true}
+
+	case syntax.OpCapture:
+		return shapeOf(re.Sub[0])
+
+	case syntax.OpConcat:
+		var out patternShape
+		for _, sub := range re.Sub {
+			s := shapeOf(sub)
+			out.minLiteral = addShape(out.minLiteral, s.minLiteral)
+			out.quoted = addShape(out.quoted, s.quoted)
+			out.open = out.open || s.open
+		}
+		return out
+
+	case syntax.OpAlternate:
+		if len(re.Sub) == 0 {
+			return patternShape{open: true}
+		}
+		out := shapeOf(re.Sub[0])
+		for _, sub := range re.Sub[1:] {
+			s := shapeOf(sub)
+			// The THINNEST branch decides the footing: a candidate can
+			// take whichever branch it likes.
+			if s.minLiteral < out.minLiteral {
+				out.minLiteral = s.minLiteral
+			}
+			// The GREEDIEST branch decides the quotation.
+			if s.quoted == shapeUnbounded || out.quoted == shapeUnbounded {
+				out.quoted = shapeUnbounded
+			} else if s.quoted > out.quoted {
+				out.quoted = s.quoted
+			}
+			out.open = out.open || s.open
+		}
+		return out
+
+	case syntax.OpQuest:
+		s := shapeOf(re.Sub[0])
+		return patternShape{minLiteral: 0, quoted: s.quoted, open: s.open}
+
+	case syntax.OpStar:
+		s := shapeOf(re.Sub[0])
+		return patternShape{minLiteral: 0, quoted: unboundedIfQuoting(s), open: s.open}
+
+	case syntax.OpPlus:
+		s := shapeOf(re.Sub[0])
+		return patternShape{minLiteral: s.minLiteral, quoted: unboundedIfQuoting(s), open: s.open}
+
+	case syntax.OpRepeat:
+		s := shapeOf(re.Sub[0])
+		out := patternShape{open: s.open}
+		out.minLiteral = mulShape(s.minLiteral, re.Min)
+		if re.Max < 0 {
+			out.quoted = unboundedIfQuoting(s)
+		} else {
+			out.quoted = mulShape(s.quoted, re.Max)
+		}
+		return out
+
+	default:
+		return patternShape{open: true}
+	}
+}
+
+// unboundedIfQuoting is the repeat rule for a ceiling-less repeat.
+//
+// Repeating something that quotes nothing quotes nothing however many times it
+// runs: `(abc)+` can be arbitrarily long and every byte of it is spelled.
+// Repeating something that quotes even one position quotes without limit.
+func unboundedIfQuoting(s patternShape) int {
+	if s.quoted == 0 {
+		return 0
+	}
+	return shapeUnbounded
+}
+
+// refuseOverBroadPattern is the control. See this section's header.
+//
+// It runs BEFORE the benign corpus in NewSignature, and the order is not only
+// about which check is the control. It is also what makes the corpus scan
+// affordable: the pathological patterns that cost seconds to run against a
+// megabyte — eighty-five concatenated `[\s\S]{1000}` is the worst expressible
+// under MaxPatternBytes — are open under R2 and are refused here, in
+// microseconds, without the corpus ever being touched.
+// It returns the pattern's minLiteral on success, which is what the accepted
+// Signature carries into extractSpan as its span budget. Returning it here
+// rather than recomputing it later is what keeps the two numbers the same
+// number.
+func refuseOverBroadPattern(pattern string) (spelled int, err error) {
+	parsed, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		// regexp.Compile parses with these same flags and has already
+		// succeeded by the time this runs, so this arm is unreachable
+		// today. It refuses rather than returning nil anyway: an
+		// unanalysable pattern is one this control cannot vouch for.
+		return 0, fmt.Errorf("%w: %q could not be parsed for structural analysis: %s",
+			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes),
+			printable(err.Error(), MaxFieldBytes))
+	}
+	shape := shapeOf(parsed)
+
+	if shape.minLiteral == 0 {
+		return 0, fmt.Errorf("%w: %q has a match path that requires no literal content at "+
+			"all (rule R1). A pattern that can match while spelling nothing describes "+
+			"the SHAPE of a response rather than anything wrong with one, so it fires "+
+			"on every response of that shape. This is decided on the pattern, not by "+
+			"running it against any body",
+			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes))
+	}
+	if shape.open {
+		return 0, fmt.Errorf("%w: %q can match a rune it neither spells nor confines to "+
+			"printable ASCII 0x%02x-0x%02x (rule R2). That is the charset extractSpan "+
+			"drops bytes outside of, so such a pattern matches through bytes its own "+
+			"evidence extractor throws away — and a class that open declares nothing "+
+			"about what the span will quote. Narrow the class, or spell the rune",
+			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes),
+			printableASCIILo, printableASCIIHi)
+	}
+	if shape.quoted == shapeUnbounded {
+		return 0, fmt.Errorf("%w: %q can quote unboundedly many positions from a class that "+
+			"carries ordinary text, against %d byte(s) of literal footing (rule R3). "+
+			"Give the repeat a ceiling",
+			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes),
+			shape.minLiteral)
+	}
+	if shape.quoted > shape.minLiteral {
+		return 0, fmt.Errorf("%w: %q quotes up to %d position(s) of ordinary text against %d "+
+			"byte(s) of literal footing (rule R3). A signature may not quote more of "+
+			"the response than it spells: past that point the span is the response "+
+			"rather than evidence about it",
+			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes),
+			shape.quoted, shape.minLiteral)
+	}
+	return shape.minLiteral, nil
+}
+
+// ---------------------------------------------------------------------------
+// The benign corpus — THE BACKSTOP, generated and never enumerated
+// ---------------------------------------------------------------------------
+//
+// ===========================================================================
+// THIS IS THE BACKSTOP. refuseOverBroadPattern IS THE CONTROL.
+// ===========================================================================
+//
+// SAYING WHICH IS WHICH IS THE POINT OF THIS PARAGRAPH. For three rounds this
+// corpus was described as the check that decides whether a signature is an
+// oracle, and it was never able to be that: every corpus is a sample, a
+// generator over a written-down alphabet is a corpus, and a sample has a
+// budget — one input outside it. The fourth round moved the decision onto the
+// PATTERN, where it is structural and samples nothing. See the section above.
+//
+// What survives here is the half a structural rule cannot do. R1, R2 and R3
+// decide what a pattern REQUIRES and what it can SWALLOW; they cannot decide
+// whether `<title>` is a marker or furniture, because both are seven spelled
+// bytes. This corpus decides that one question — does the literal appear in an
+// ordinary document? — by generating ordinary documents and looking.
+//
+// ITS ANSWER IS ONLY AS WIDE AS ITS VOCABULARY, AND THAT IS A BUDGET. The tag
+// list below has thirteen entries and `h1` is not one of them, which is the
+// measured miss: 17 of 20 bounded-prefix HTML anchors passed this check.
+// Those all fail R2 now, on the pattern, whatever tag they name. What is left
+// inside the budget is a pattern that spells ordinary text the generator's
+// vocabulary happens not to emit — `(?i)(error|warning|expired)` is the
+// measured one. A BACKSTOP IS ALLOWED A BUDGET. A control is not, which is why
+// the control is somewhere else now.
+//
+// A Signature must fire on NONE of these bodies. What they are is "responses
+// with nothing wrong with them", and an oracle that cannot tell one of those
+// from a vulnerable response is an oracle that says yes.
 //
 // This used to be seventeen hand-written probes totalling 720 bytes. MEASURED:
 // NewSignature accepted `(?s)[\s\S]{721}` — one byte past the longest probe —
@@ -685,9 +1294,14 @@ type Signature struct {
 // with lengths from 0 bytes upward, from a SEEDED deterministic generator, so
 // a failure reproduces byte-for-byte on the next run and in CI.
 //
-// THE LENGTH RACE IS CLOSED RATHER THAN OUTRUN, and it is closed by
-// arithmetic rather than by sampling harder. Sampling more lengths would still
-// leave a longest sample. Two bounds remove the ceiling instead:
+// THE LENGTH RACE IS CLOSED TWICE OVER NOW, and the two closures are
+// independent. R1 refuses `(?s)[\s\S]{721}` on the pattern — it spells nothing
+// — so the family never reaches this corpus at all. What follows is the older
+// argument, kept because it is what makes the corpus's own ceiling honest
+// rather than merely large, and because a backstop that rests on an unstated
+// ceiling is a backstop nobody can check. It is closed by arithmetic rather
+// than by sampling harder; sampling more lengths would still leave a longest
+// sample. Two bounds remove the ceiling instead:
 //
 //	WHAT A PATTERN CAN DEMAND IS BOUNDED. Go's regexp caps the total
 //	expansion of a repeat at 1000 — `{1001}` does not compile and neither
@@ -708,22 +1322,50 @@ type Signature struct {
 // asserts the ceiling against authz's own constant, so neither paragraph can
 // quietly become false.
 //
-// THE COST OF THAT CEILING IS A REAL SECOND, STATED. The check is linear in
-// pattern program size times corpus size. An ordinary signature costs about
-// half a millisecond; the most pathological pattern expressible under
-// MaxPatternBytes — eighty-five concatenated `[\s\S]{1000}` — costs about
-// fifteen seconds, once, at signature-compile time, and is then REFUSED. That
-// is the correct trade: the alternative to spending it is accepting the
-// pattern.
+// THE COST, MEASURED RATHER THAN ASSERTED. Two costs exist and they are
+// different things:
 //
-// THE COST IS STATED RATHER THAN HIDDEN, and the generator made it bigger. A
-// signature that fires on ordinary prose, ordinary markup or an ordinary JSON
-// document is refused and its author must make it more specific — and the
-// generated corpus refuses strictly more patterns than the seventeen probes
-// did. `(?s)A.*B` used to pass and now does not: generated prose capitalises
-// sentence openings, so a body with an 'A' before a 'B' is an ordinary body,
-// and a pattern matching every such body is not an oracle. That is the correct
-// direction to fail.
+//	BUILDING IT, once, at package initialisation: 3.3 ms, allocating the
+//	1 MiB ceiling body and about 200 KiB of shorter ones.
+//
+//	SCANNING IT, once per NewSignature call: 25 us for an ordinary oracle —
+//	one that matches nothing, so it pays for the whole corpus rather than
+//	stopping early. The structural control that runs before it costs 1.0 us
+//	of that, so the corpus is 96% of what a signature costs to compile.
+//
+// MEASURED ON THIS TREE, NOT ESTIMATED, by BenchmarkBenignCorpusBuild,
+// BenchmarkNewSignature and BenchmarkRefuseOverBroadPattern in
+// confirm_gate_test.go — go1.26.5, AMD Ryzen 5 9600X, windows/amd64:
+//
+//	go test -run XXX -bench 'BenignCorpus|NewSignature|RefuseOverBroad' -benchtime 200x ./internal/dast/record/
+//	BenchmarkBenignCorpusBuild-12          200    3317198 ns/op
+//	BenchmarkNewSignature-12               200      24971 ns/op
+//	BenchmarkRefuseOverBroadPattern-12     200        972 ns/op
+//
+// THE FIGURE THAT USED TO BE HERE WAS NOT A MEASUREMENT OF THIS PACKAGE. It
+// cited a cmd/anvil test run as evidence that the init cost was harmless, and
+// `go list -deps ./cmd/...` contains this package NOWHERE — no shipped binary
+// imports it yet, so that number described a program that does not run this
+// code. It is deleted rather than qualified. The consequence is worth stating
+// plainly rather than burying: the 3.3 ms is paid today by `go test` and by
+// whatever wires this gate next, and the day cmd/anvil-dast imports it, the
+// figure to re-measure is the one above and not a test run's total.
+//
+// THE PATHOLOGICAL CASE IS NO LONGER PAID FOR. The old note here claimed the
+// worst pattern expressible under MaxPatternBytes — eighty-five concatenated
+// `[\s\S]{1000}` — costs about fifteen seconds against this corpus. It no
+// longer costs anything: `[\s\S]` is open under R2, so the control refuses it
+// before the corpus is consulted. The claim is deleted rather than qualified.
+//
+// THE COST TO AN AUTHOR IS STATED TOO. A signature that fires on ordinary
+// prose, ordinary markup or an ordinary JSON document is refused and its
+// author must make it more specific. `(?s)A.*B` is the case a reader will
+// remember: it used to pass, and it is now refused twice over — by R2, because
+// `.` is open, and by this corpus, because generated prose capitalises
+// sentence openings so a body with an 'A' before a 'B' is an ordinary body.
+// TestTheBackstopRefusesWhatTheControlAccepts is where the corpus is shown
+// refusing something the control passes, so "backstop" is a demonstrated word
+// and not a hopeful one.
 
 // benignCorpusSeed is the generator's seed. It is fixed and written down so
 // that "a signature was refused" is a reproducible fact rather than a report
@@ -984,19 +1626,25 @@ func buildBenignCorpus() []string {
 
 // NewSignature compiles pattern.
 //
-// It refuses four things, each because the alternative is an oracle that
+// It refuses five things, each because the alternative is an oracle that
 // lies:
 //
 //	an empty pattern          nothing to match, nothing to extract
 //	an over-long pattern      MaxPatternBytes; the source is quotable
-//	a pattern matching ""     it reproduces against an empty body
+//	a pattern that does not   it cannot be analysed and cannot be run
+//	  compile
+//	an OVER-BROAD PATTERN     decided on the pattern's own structure by
+//	                          refuseOverBroadPattern: R1 footing, R2 open
+//	                          positions, R3 quotation. THIS IS THE CONTROL
 //	a pattern matching a      it reproduces against a body with nothing
-//	  benign body             wrong with it, so it confirms everything
+//	  benign body             wrong with it. THIS IS THE BACKSTOP
 //
-// The last two are one check over benignCorpus, which is GENERATED. See the
-// corpus section header for why the empty string alone was not enough, why a
-// list of example bodies was not enough either, and what each of the two let
-// through while it was all there was.
+// THE ORDER IS THE ARGUMENT. The structural check decides first, because it
+// decides on the pattern and therefore samples nothing; the corpus runs after
+// it, catches the one family structure cannot see (a literal that is ordinary
+// document furniture), and is described as a backstop everywhere it is
+// mentioned. Three rounds of this file described the corpus as the control and
+// three attackers stepped outside it.
 //
 // The engine is RE2, so a compiled Signature cannot backtrack catastrophically
 // however hostile the body it is later run against.
@@ -1014,6 +1662,14 @@ func NewSignature(pattern string) (Signature, error) {
 		return Signature{}, fmt.Errorf("%w: compiling the signature pattern: %s",
 			ErrRefused, printable(err.Error(), MaxFieldBytes))
 	}
+	// THE CONTROL. It decides on the pattern; nothing is sampled. Its
+	// minLiteral becomes the Signature's span budget: see Signature.spelled
+	// and extractSpan's composition rule.
+	spelled, err := refuseOverBroadPattern(pattern)
+	if err != nil {
+		return Signature{}, err
+	}
+	// THE BACKSTOP.
 	for i, body := range benignCorpus {
 		if !re.MatchString(body) {
 			continue
@@ -1025,7 +1681,7 @@ func NewSignature(pattern string) (Signature, error) {
 			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes), i,
 			len(benignCorpus), len(body), printable(body, 32), benignCorpusSeed)
 	}
-	return Signature{re: re, src: pattern, sealed: true}, nil
+	return Signature{re: re, src: pattern, spelled: spelled, sealed: true}, nil
 }
 
 // Constructed reports whether s came from NewSignature.
@@ -1056,8 +1712,15 @@ type EvidenceRef struct {
 	// matched region — worth surfacing, since this string is prompt-bound.
 	spanDroppedBytes int
 	// spanOverBroadBytes is the byte length of the regex match when the
-	// match was too long to inline AT ALL, 0 otherwise. Non-zero means
+	// match could not be inlined AT ALL, 0 otherwise. Non-zero means
 	// THERE IS NO SPAN even though the signature matched.
+	//
+	// TWO RULES SET IT, and extractSpan documents both: the match was
+	// longer than MaxSpanBytes, or it carried more bytes the pattern did
+	// not spell than bytes it did. They are recorded the same way on
+	// purpose — the fact a reader needs is "the oracle fired and its match
+	// is not shown, and it was this long", and which bound withheld it is
+	// a property of the signature rather than of the finding.
 	//
 	// This field replaced one called spanTruncatedFrom, and the rename is
 	// the fix rather than a tidy-up. Truncating an over-broad match to
@@ -1081,15 +1744,17 @@ func (e EvidenceRef) BodyHash() string { return e.bodyHash }
 //
 // It is empty in TWO different situations and SpanOverBroadBytes is what
 // tells them apart: the signature matched nothing (0), or the signature
-// matched something too long to inline (non-zero).
+// matched something extraction would not inline (non-zero) — because the
+// match was over MaxSpanBytes, or because more of it was body than the
+// pattern spelled.
 func (e EvidenceRef) ExtractedSpan() string { return e.span }
 
 // SpanDroppedBytes returns how many bytes extraction removed as
 // non-printable.
 func (e EvidenceRef) SpanDroppedBytes() int { return e.spanDroppedBytes }
 
-// SpanOverBroadBytes returns the match length when the match was too long to
-// inline at all, 0 otherwise. Non-zero always accompanies an empty span.
+// SpanOverBroadBytes returns the match length when the match could not be
+// inlined at all, 0 otherwise. Non-zero always accompanies an empty span.
 func (e EvidenceRef) SpanOverBroadBytes() int { return e.spanOverBroadBytes }
 
 // Constructed reports whether e came from newEvidenceRef. The zero value has
@@ -1158,32 +1823,69 @@ type Observation struct {
 // body the caller's defence signature recognises, any observation that cannot
 // say what it saw — is INDECISIVE. Not disproved. Indecisive.
 //
-// WHAT COUNTS AS THE APPLICATION ANSWERING, and why each:
+// THE MEMBERSHIP TEST, STATED BEFORE THE LIST, so the list can be checked
+// against it rather than read as a set of independent opinions:
 //
-//	200 201 202 204 206  the handler ran and returned its result. This is
-//	                     the family in which a signature's silence really is
-//	                     the application declining to emit the marker.
-//	404 405 410          the application DISPATCHED the request and its own
-//	                     routing answered: no such resource, no such method
-//	                     on it, or gone. A router that can say "not here" is
-//	                     a router that ran.
-//	422                  the application parsed the request and its own
-//	                     semantic validation rejected it. Parsing is the
-//	                     handler running.
-//	500                  the handler ran and threw. This one is load-bearing
-//	                     in the other direction: a 500 is frequently what an
-//	                     injection probe is TRYING to cause, and treating it
-//	                     as indecisive would make that class's own success
-//	                     condition undecidable.
+//	A STATUS IS ON THIS ALLOWLIST WHEN THE STATUS ITSELF ESTABLISHES THAT
+//	THE BODY IS A REPRESENTATION THE ORIGIN APPLICATION PRODUCED.
 //
-// WHAT IS DELIBERATELY ABSENT. Nothing below is "denied" — the allowlist has
-// no deny side. These are listed only because a reader will ask:
+// Not "the application probably answered". Not "an intermediary rarely emits
+// this". The question is whether the NUMBER settles it, because the number is
+// all this function has.
 //
+// WHAT COUNTS, and why each:
+//
+//	200 201 202 204 206  a success status is the answer to the request that
+//	                     was asked, and only the origin can produce one: a
+//	                     CDN serving a cached 200 is serving a COPY of the
+//	                     application's own bytes, which is still the
+//	                     application's output. This is the family in which a
+//	                     signature's silence really is the application
+//	                     declining to emit the marker.
+//
+// WHAT IS DELIBERATELY ABSENT. Nothing below is "denied" — the allowlist still
+// has no deny side, and a status not named simply falls to indecisive by
+// control flow. These are listed because a reader will ask, and the first
+// three are listed because they USED TO BE ON THE LIST and a round of review
+// asked for each to be decided explicitly:
+//
+//	404              REMOVED. The old entry said "the application DISPATCHED
+//	                 the request and its own routing answered". That is one
+//	                 of the things a 404 can mean. It is also what a CDN
+//	                 edge node answers for a path not in its origin rules,
+//	                 what nginx `try_files` answers without ever proxying,
+//	                 and what an object store answers for a missing key —
+//	                 none of which consulted the application at all.
+//	                 MEASURED: a CDN answering 404 on all three attempts
+//	                 yields outcome=rejected, which is a finding disproven
+//	                 by an edge node. The number cannot tell the two apart,
+//	                 so the honest answer is indecisive.
+//	405 410          REMOVED, for the same reason and by the same test.
+//	                 nginx answers 405 from `limit_except` and a CDN answers
+//	                 410 from a purge rule; both are the intermediary's own
+//	                 output. They are removed rather than left because a
+//	                 membership rule that does not cover its own list is the
+//	                 defect this file has now watched four times.
+//	422              REMOVED. "The application parsed the request" is the
+//	                 strongest case of the three, and it is still not
+//	                 settled by the number: an API gateway with request
+//	                 validation, and any WAF whose block status is
+//	                 configurable — which is all of them — can emit 422
+//	                 without an origin round trip.
+//	500              REMOVED, and this is the entry that costs something.
+//	                 The old text argued a 500 "is frequently what an
+//	                 injection probe is TRYING to cause, and treating it as
+//	                 indecisive would make that class's own success
+//	                 condition undecidable". THAT IS AN ARGUMENT FROM
+//	                 CONSEQUENCE, NOT FROM EVIDENCE, and it is the same
+//	                 shape of argument that kept 403 on the list for a
+//	                 round. A reverse proxy emits 500 for its own internal
+//	                 failures, and a WAF can be configured to. The number
+//	                 does not establish an origin answered.
 //	401 403 407 451  authentication, authorization, proxy-auth and legal
 //	                 blocks. Each is the exact shape a WAF, an API gateway
-//	                 and an identity proxy all emit, and no inspection of the
-//	                 NUMBER tells those apart from the application's own
-//	                 answer. 403 is the measured case.
+//	                 and an identity proxy all emit. 403 is the measured
+//	                 case from the previous round.
 //	400              a reverse proxy or WAF answers 400 for anything it
 //	                 dislikes about the request line or headers, before the
 //	                 application is consulted at all.
@@ -1198,11 +1900,24 @@ type Observation struct {
 //	                 are simply not on the allowlist, together with every
 //	                 status nobody thought of.
 //
-// THE COST, STATED RATHER THAN HIDDEN. A misconfiguration candidate whose
-// target answers 403 on every attempt is now UNCONFIRMED where it used to be
-// REJECTED, and an operator sees one more undecided row. That is the correct
-// direction to fail: Anvil did not observe the application, so Anvil did not
-// disprove anything.
+// THE COST, STATED RATHER THAN HIDDEN, AND IT IS BIGGER THIS ROUND. Two
+// separate prices:
+//
+//	A candidate whose target answers 403 — or now 404 — on every attempt is
+//	UNCONFIRMED where it used to be REJECTED, and an operator sees one more
+//	undecided row. That is the correct direction to fail: Anvil did not
+//	observe the application, so Anvil did not disprove anything.
+//
+//	AN ERROR-BASED INJECTION WHOSE ONLY REPRODUCTION IS A 500 CAN NO LONGER
+//	BE CONFIRMED BY THIS GATE. The re-probe is counted indecisive before the
+//	signature is run, so a stack trace in a 500 body is not read. That is a
+//	loss of true positives and it is not a small one. It is accepted because
+//	the alternative is a WAF's or a proxy's 500 counting as the application,
+//	and because the finding is not dropped — it lands unconfirmed, with the
+//	body hash, in front of a human. The route back is not re-adding the
+//	number: it is GateConfig.DefenceSignature's mirror image, a
+//	caller-supplied pattern that recognises the caller's OWN application
+//	error page. That does not exist yet and is not invented here.
 //
 // The comment this replaced claimed the opposite cost — that calling 403 a
 // non-answer "would make the oracle-less classes undecidable for a second,
@@ -1228,11 +1943,6 @@ func applicationResponseStatuses() map[int]string {
 		202: "accepted",
 		204: "no content",
 		206: "partial content",
-		404: "not found",
-		405: "method not allowed",
-		410: "gone",
-		422: "unprocessable content",
-		500: "internal server error",
 	}
 }
 
@@ -1899,7 +2609,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 			continue
 		}
 
-		span, dropped, overBroad, matched := extractSpan(obs.Body, candidate.Signature.re)
+		span, dropped, overBroad, matched := extractSpan(obs.Body, candidate.Signature)
 		if matched {
 			matches++
 		}
@@ -2256,17 +2966,58 @@ func hashBody(body []byte) string {
 //     is the second line, because a pattern can be narrow against the
 //     generated benign corpus and still swallow a hostile body.
 //
-//     WHAT THIS DOES NOT CLAIM, stated because the comment here used to claim
-//     it: NOT that "there is no length at which a prefix of an arbitrary body
-//     becomes evidence". The implemented rule is narrower and the wider one
-//     was false. `(?s)<div[\s\S]{0,500}` matches at most 504 bytes, so it is
-//     under the budget and its match IS inlined — 500 bytes of whatever
-//     followed the div. What answers that pattern is the corpus, not this
-//     bound: generated HTML contains divs, so NewSignature refuses it, and
-//     TestABoundedPrefixPatternIsRefusedByTheCorpusAndNotByTheSpanBound is
-//     where both halves of that sentence are driven. A bounded-prefix pattern
-//     anchored on something the corpus does not generate would still inline
-//     its match, and that is a real residual, not a rhetorical one.
+//     WHAT THIS BOUND DOES NOT CLAIM, stated because the comment here once
+//     claimed it: NOT that "there is no length at which a prefix of an
+//     arbitrary body becomes evidence". This bound only refuses matches
+//     LONGER than 512, so a 403-byte match walks straight through it. That
+//     was measured: `(?s)<h1[\s\S]{0,400}` inlined 403 verbatim body bytes,
+//     and the corpus could not see it either, because `h1` is not one of the
+//     thirteen tag names the generator was given.
+//
+//     WHAT ANSWERS THAT FAMILY IS refuseOverBroadPattern, ON THE PATTERN.
+//     `[\s\S]` is an open position under R2, so every spelling of the
+//     bounded-prefix shape is refused at compile time whatever tag it names
+//     — and rewriting the class as `[[:print:]]` to get past R2 meets R3,
+//     which refuses 400 quoted positions against three spelled bytes.
+//     TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure drives
+//     both spellings.
+//
+//     WHAT IS LEFT FOR THIS BOUND, and it is why the bound is still here:
+//     a pattern can satisfy all three rules and still swallow a hostile body
+//     whole. `ANVIL-SPAN-BEGIN[0-9A-Za-z]*ANVIL-SPAN-END` declares a
+//     token-shaped class, which is not content-bearing, so R3 lets it repeat
+//     without a ceiling — and a target that answers with a megabyte of
+//     alphanumerics between the two markers produces a megabyte-long match.
+//     That match yields NO SPAN here.
+//
+//     1b. A MATCH WITH MORE UNSPELLED BYTES THAN SPELLED ONES PRODUCES NO SPAN
+//     EITHER, and this is a SECOND bound rather than a restatement of the
+//     first. It was added because rerunning the round's own attack one class
+//     to the left found the defect alive:
+//
+//     `(?s)<h1[\s\S]{0,400}`   refused by R2 — an open class
+//     `<h1[[:print:]]{0,400}`  refused by R3 — 400 quoted against 3 spelled
+//     `<h1[0-9A-Za-z]{0,400}`  ACCEPTED, and it inlined a 403-byte span
+//
+//     The third one is accepted for a real reason: an alphanumeric class
+//     carries no separator, so R3 does not count it as quotation, and the
+//     same reasoning is what lets `AKIA[0-9A-Z]{16}` and
+//     `Server: nginx/1\.[0-9]+\.[0-9]+` compile at all. It is nevertheless
+//     400 bytes of the response — a bearer token, a JWT, a hash — reached
+//     from three spelled bytes.
+//
+//     So the inequality R3 argues for at COMPILE time is enforced again here
+//     at EXTRACTION time, over the actual match, for every class: with s the
+//     pattern's minLiteral and L the match length, a span exists only when
+//     L - s <= s. Nothing is exempt, there is no class list, and the
+//     arithmetic gives the same q <= L/2 <= 256 for a pattern R3 never
+//     looked at. The cost is stated rather than hidden: a 20-byte
+//     `AKIA[0-9A-Z]{16}` match against four spelled bytes now yields NO
+//     SPAN, so the key id itself is not inlined. The finding is still
+//     CONFIRMED and still carries the body hash — and a 16-character AWS key
+//     id is a credential, so declining to quote it into a prompt-bound field
+//     is the right answer arrived at by the right rule.
+//     TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is the sweep.
 //
 //  2. THE OUTPUT IS PRINTABLE ASCII. Everything outside 0x20-0x7e is dropped
 //     and counted. That removes, without needing to enumerate them, every
@@ -2279,17 +3030,24 @@ func hashBody(body []byte) string {
 //  3. IT DROPS RATHER THAN SUBSTITUTES. A replacement character would be a
 //     byte Anvil invented appearing inside prose attributed to the target.
 //     The dropped count is how a reader learns something was removed.
-func extractSpan(body []byte, re *regexp.Regexp) (span string, dropped, overBroad int, matched bool) {
-	if re == nil {
+func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad int, matched bool) {
+	if sig.re == nil {
 		return "", 0, 0, false
 	}
-	loc := re.FindIndex(body)
+	loc := sig.re.FindIndex(body)
 	if loc == nil {
 		return "", 0, 0, false
 	}
 	match := body[loc[0]:loc[1]]
 	if len(match) > MaxSpanBytes {
 		// Matched, and there is no span. See property 1.
+		return "", 0, len(match), true
+	}
+	// PROPERTY 1b, THE COMPOSITION RULE. len(match)-spelled is an upper
+	// bound on how many bytes of this match the pattern did not spell, and a
+	// span may not carry more of those than of the ones it did. See the
+	// rule's own paragraph in this function's doc.
+	if len(match)-sig.spelled > sig.spelled {
 		return "", 0, len(match), true
 	}
 

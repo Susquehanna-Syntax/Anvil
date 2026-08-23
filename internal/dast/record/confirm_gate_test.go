@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strings"
 	"testing"
@@ -60,11 +61,25 @@ const sqliPattern = `You have an error in your SQL syntax near '[a-z0-9-]{1,32}'
 // generated benign body matches it, and greedy enough to swallow everything
 // between its two markers.
 //
-// It replaced `(?s)A.*B`, which the generated benign corpus now refuses
-// because ordinary prose capitalises sentence openings and therefore contains
-// an 'A' before a 'B'. A real probe emits a nonce pair for exactly this
-// reason, so the fixture got more realistic rather than less.
-const spanBoundaryPattern = `(?s)ANVIL-SPAN-BEGIN.*ANVIL-SPAN-END`
+// IT HAS BEEN REWRITTEN TWICE AND BOTH REWRITES ARE THE CHECK GETTING
+// STRICTER, not the fixture getting weaker:
+//
+//	`(?s)A.*B`                     refused by the BACKSTOP: generated prose
+//	                               capitalises sentence openings, so a body
+//	                               with an 'A' before a 'B' is an ordinary
+//	                               body.
+//	`(?s)ANVIL-...BEGIN.*...END`   refused by the CONTROL, rule R2: `.` under
+//	                               (?s) is an open position, and a signature
+//	                               may not match through bytes extractSpan
+//	                               drops.
+//
+// What is left declares the shape of what it will quote: `[0-9A-Za-z]` is
+// printable ASCII (R2) and carries no separator, so it is not content-bearing
+// and R3 lets it repeat without a ceiling. THAT IS THE RESIDUAL THIS FIXTURE
+// EMBODIES — an unbounded token-shaped class can still swallow a whole body,
+// which is exactly why the span bound is still needed and why this fixture
+// still has a job.
+const spanBoundaryPattern = `ANVIL-SPAN-BEGIN[0-9A-Za-z]*ANVIL-SPAN-END`
 
 // scriptedReprober is the re-probe seam under test control.
 //
@@ -605,7 +620,10 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 	// gate that only truncated short matches would pass a test that never
 	// produced one.
 	const bodyBytes = 512 * 1024
-	hostile := []byte("ANVIL-SPAN-BEGIN" + strings.Repeat("A", bodyBytes/2) + sqliMarker +
+	// sqliMarker sits OUTSIDE the marker pair: spanBoundaryPattern's middle
+	// is a token-shaped class now (see there), and the marker's spaces and
+	// quotes would end the run rather than be swallowed by it.
+	hostile := []byte(sqliMarker + "ANVIL-SPAN-BEGIN" + strings.Repeat("A", bodyBytes/2) +
 		strings.Repeat("B", bodyBytes/2) + "ANVIL-SPAN-END")
 
 	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return hostile }}
@@ -670,8 +688,30 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 
 // TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes covers the
 // three properties extractSpan documents, each with an input that breaks it.
+//
+// IT COMPILES ITS FIXTURE DIRECTLY, BYPASSING NewSignature, and that is
+// deliberate rather than convenient. `(?s)<v>.*</v>` is refused by the control
+// now — `.` is an open position under R2 — and extractSpan is the SECOND line:
+// its job is to hold for whatever *regexp.Regexp it is handed, including one
+// no Signature could carry. A version of this test that could only feed it
+// vetted patterns would stop exercising the properties extractSpan documents.
+// The refusal is asserted below so the bypass stays visible.
 func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing.T) {
-	all := mustSignature(t, `(?s)<v>.*</v>`)
+	const allPattern = `(?s)<v>.*</v>`
+	if _, err := NewSignature(allPattern); !errors.Is(err, ErrSignatureMatchesEverything) {
+		t.Fatalf("NewSignature(%q) = %v; this fixture is compiled raw BECAUSE the control "+
+			"refuses it, and if it no longer does, the bypass below has become an "+
+			"unexplained shortcut", allPattern, err)
+	}
+	// spelled is set to MaxSpanBytes so that extractSpan's COMPOSITION rule
+	// (property 1b, "no more unspelled bytes than spelled ones") can never
+	// fire here. This test is about the LENGTH bound and the charset, one
+	// property at a time; the composition rule has its own sweep in
+	// TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells, and a fixture
+	// that tripped both at once could not tell a reader which one it was
+	// measuring.
+	all := Signature{re: regexp.MustCompile(allPattern), src: allPattern,
+		spelled: MaxSpanBytes, sealed: true}
 
 	// An over-broad match produces NO SPAN, and the boundary is exact.
 	//
@@ -693,7 +733,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				body := []byte("<v>" + strings.Repeat("q", tc.fill) + "</v>")
-				span, dropped, overBroad, matched := extractSpan(body, all.re)
+				span, dropped, overBroad, matched := extractSpan(body, all)
 				if !matched {
 					t.Fatal("the fixture did not match; nothing is being bounded. " +
 						"THE ORACLE STILL FIRED: an over-broad match is a match whose " +
@@ -751,7 +791,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 			body := []byte("<v>ok" + cl.s + "ok</v>")
 			// A malformed UTF-8 byte cannot be written as a Go string
 			// literal, so it is appended separately below.
-			span, dropped, _, matched := extractSpan(body, all.re)
+			span, dropped, _, matched := extractSpan(body, all)
 			if !matched {
 				t.Fatalf("%s: no match", cl.name)
 			}
@@ -775,14 +815,14 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 
 		malformed := append([]byte("<v>ok"), 0xff, 0xfe)
 		malformed = append(malformed, []byte("ok</v>")...)
-		span, dropped, _, matched := extractSpan(malformed, all.re)
+		span, dropped, _, matched := extractSpan(malformed, all)
 		if !matched || dropped != 2 || !isPrintableASCII(span) || !strings.Contains(span, "okok") {
 			t.Errorf("malformed UTF-8: span=%q dropped=%d matched=%v", span, dropped, matched)
 		}
 	})
 
 	t.Run("no_match_no_span", func(t *testing.T) {
-		span, dropped, overBroad, matched := extractSpan([]byte("nothing here"), all.re)
+		span, dropped, overBroad, matched := extractSpan([]byte("nothing here"), all)
 		if matched || span != "" || dropped != 0 || overBroad != 0 {
 			t.Errorf("extractSpan on a non-matching body returned (%q,%d,%d,%v)",
 				span, dropped, overBroad, matched)
@@ -1987,6 +2027,24 @@ func boundaryTypes() []boundaryType {
 			"the untrusted candidate, carrying a Signature"},
 		{"Gate", reflect.TypeOf(Gate{}), verdictInbound,
 			"the engine, not an output: it holds the Reprober interface by design"},
+
+		// --- the three the RESULT-POSITION derivation could not see -----
+		//
+		// None of these is ever returned by anything, so the old rule
+		// reached none of them and none was registered. All three are
+		// types a consumer BUILDS AND HOLDS, and a body field added to
+		// any of them is a body field that used to be walked by nothing.
+		{"GateConfig", reflect.TypeOf(GateConfig{}), verdictInbound,
+			"the caller's configuration travelling INTO NewGate: it holds the Reprober " +
+				"interface and the caller's DefenceSignature, so a clean closure here " +
+				"would mean the seam or the defence pattern is gone"},
+		{"Reprober", reflect.TypeOf((*Reprober)(nil)).Elem(), verdictInbound,
+			"the re-probe seam itself. It IS an interface, which is the capability gate 3 " +
+				"pushes to the far side of this package, and a version of it that " +
+				"walked clean would not be a seam"},
+		{"Inputs", reflect.TypeOf(Inputs{}), verdictInbound,
+			"coverage.go's INPUT struct: it holds pointers to the inventory tiers' own " +
+				"results, which is how the merge is checked, and it is never handed back"},
 	}
 }
 
@@ -2056,19 +2114,41 @@ func outputViolations(typ reflect.Type) []string {
 	return out
 }
 
-// exportedResultTypeNames DERIVES the membership rule from this package's own
-// source: every type declared here that appears in a RESULT position of an
-// exported function, of an exported method, or of an exported interface's
-// method.
+// exportedResultTypeNames derives two sets from this package's own source and
+// returns both, because the meta-guard needs one for MEMBERSHIP and the other
+// for NON-VACUITY, and conflating them is what let two types go unwalked.
 //
-// That is the definition of "a type this package hands back", and deriving it
-// is the fix for the defect this whole test had: a hand-written list of six
-// omitted two of the six types that satisfied its own stated rule.
+//	declared    every exported type declared in this package's non-test
+//	            files. THIS IS THE MEMBERSHIP RULE. A type that exists and is
+//	            not registered fails, whatever it is and wherever it appears.
+//	handedBack  the subset that appears in a RESULT position of an exported
+//	            function, an exported method, or an exported interface's
+//	            method.
+//
+// ===========================================================================
+// WHY MEMBERSHIP IS "DECLARED" AND NOT "HANDED BACK"
+// ===========================================================================
+//
+// It was "handed back", and MEASURED: that derivation reached 21 of this
+// package's 26 exported types, and deleting RawFinding and RefusalError from
+// boundaryTypes left the meta-guard GREEN. That is the Summary/ProvenanceRow
+// defect — a membership rule that does not enumerate its own members — still
+// live in the fix written to close it, one level further down. RawFinding
+// travels IN and is never returned, so no result position mentions it; it is
+// still a type a consumer builds and holds, and a body field added to it is
+// still a body field nobody would have walked.
+//
+// So the rule is now the widest thing the source can state: EVERY EXPORTED
+// TYPE. It has no exclusion list, deliberately, for the same reason
+// applicationResponseStatuses has no deny side — an exclusion list is a second
+// list to keep current, and forgetting to add to it is invisible. A type that
+// genuinely cannot be walked is registered with the verdict that says so and a
+// reason; registering is the human act, forgetting is not an option.
 //
 // It reads the source rather than using reflection because Go cannot enumerate
 // a package's declarations at runtime. The parse is of the NON-TEST files
 // only: a type declared in a test is not API.
-func exportedResultTypeNames(t *testing.T) map[string]bool {
+func exportedResultTypeNames(t *testing.T) (declaredOut, handedBack map[string]bool) {
 	t.Helper()
 
 	entries, err := os.ReadDir(".")
@@ -2170,7 +2250,71 @@ func exportedResultTypeNames(t *testing.T) map[string]bool {
 			return true
 		})
 	}
-	return out
+	return declared, out
+}
+
+// unregisteredBoundaryTypes is the membership rule, factored out so a test can
+// run it against a registry with something DELETED. A rule that only ever sees
+// the real registry is a rule whose failure nobody has watched.
+func unregisteredBoundaryTypes(declared map[string]bool, registry map[string]boundaryType) []string {
+	var missing []string
+	for name := range declared {
+		if _, ok := registry[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// TestTheMetaGuardFailsWhenARegistrationIsDeleted is the mutation the previous
+// derivation could not survive.
+//
+// MEASURED against the result-position rule: deleting RawFinding and
+// RefusalError from boundaryTypes left TestEveryExportedTypeThatCrossesTheBoundaryIsWalked
+// GREEN, because neither type appears in any result position. Both are still
+// types a consumer builds and holds. This test deletes each registration in
+// turn and asserts the membership rule reports it — so the guard's failure is
+// something this suite has watched happen, for every entry, rather than
+// something a reader is asked to believe.
+func TestTheMetaGuardFailsWhenARegistrationIsDeleted(t *testing.T) {
+	declared, _ := exportedResultTypeNames(t)
+	full := map[string]boundaryType{}
+	for _, bt := range boundaryTypes() {
+		full[bt.name] = bt
+	}
+	if got := unregisteredBoundaryTypes(declared, full); len(got) != 0 {
+		t.Fatalf("the intact registry already reports %v missing; the mutation below "+
+			"cannot be distinguished from the baseline", got)
+	}
+
+	for _, bt := range boundaryTypes() {
+		t.Run(bt.name, func(t *testing.T) {
+			mutated := map[string]boundaryType{}
+			for name, v := range full {
+				if name == bt.name {
+					continue
+				}
+				mutated[name] = v
+			}
+			got := unregisteredBoundaryTypes(declared, mutated)
+			if len(got) != 1 || got[0] != bt.name {
+				t.Errorf("with %s deleted from the registry, the membership rule reports "+
+					"%v. Forgetting this type is invisible, which is exactly the state "+
+					"RawFinding and RefusalError were in", bt.name, got)
+			}
+		})
+	}
+
+	// THE TWO MEASURED TYPES BY NAME, because a reader coming from the
+	// finding will look for them.
+	for _, name := range []string{"RawFinding", "RefusalError"} {
+		if !declared[name] {
+			t.Errorf("%s is not in the derived membership set. It was the type the "+
+				"result-position derivation could not see, and if the derivation has "+
+				"narrowed back, this whole guard has too", name)
+		}
+	}
 }
 
 // TestEveryExportedTypeThatCrossesTheBoundaryIsWalked is the meta-guard: it is
@@ -2189,12 +2333,17 @@ func exportedResultTypeNames(t *testing.T) map[string]bool {
 // ENUMERATE ITS OWN MEMBERS is exactly the failure the walker exists to catch,
 // moved up a level where nothing was watching.
 //
-// So the list is DERIVED. exportedResultTypeNames parses this package's own
-// source and returns every type declared here that appears in a result
-// position of anything a consumer can call. Registering a verdict for each is
-// still a human act — the verdicts are claims, and a claim needs a reason —
-// but FORGETTING one is no longer possible, because the derivation fails the
-// test rather than shrinking silently.
+// So the list is DERIVED, and this round the derivation got WIDER. It used to
+// be "every type in a result position", which reached 21 of 26 exported types
+// and left RawFinding and RefusalError registered by nothing — deleting both
+// from boundaryTypes left this test green, which is the same defect again, one
+// level down. The rule is now EVERY EXPORTED TYPE DECLARED IN THIS PACKAGE.
+// Registering a verdict for each is still a human act — the verdicts are
+// claims, and a claim needs a reason — but FORGETTING one is not possible,
+// because the derivation fails the test rather than shrinking silently.
+//
+// TestTheMetaGuardFailsWhenARegistrationIsDeleted is the mutation: it removes
+// a registration and checks that the membership rule reports it.
 func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
 	registry := map[string]boundaryType{}
 	for _, bt := range boundaryTypes() {
@@ -2209,37 +2358,59 @@ func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
 	}
 
 	// THE DERIVATION IS THE RULE, and the registry is measured against it.
-	derived := exportedResultTypeNames(t)
-	if len(derived) < 10 {
-		t.Fatalf("the derivation found %d handed-back types; it is not working and every "+
-			"assertion below is vacuous", len(derived))
+	declared, handedBack := exportedResultTypeNames(t)
+	if len(declared) < 20 {
+		t.Fatalf("the derivation found %d exported types declared in this package; it is "+
+			"not working and every assertion below is vacuous", len(declared))
 	}
-	var missing []string
-	for name := range derived {
-		if _, ok := registry[name]; !ok {
-			missing = append(missing, name)
-		}
+	if len(handedBack) < 10 {
+		t.Fatalf("the derivation found %d handed-back types; the result-position half has "+
+			"stopped working and the non-vacuity checks below are worthless",
+			len(handedBack))
 	}
-	sort.Strings(missing)
+	// The two must not have become the same query. If they had, the widening
+	// this round exists for would be undone and nothing would say so.
+	if len(handedBack) >= len(declared) {
+		t.Errorf("the derivation reports %d declared and %d handed back. Membership is "+
+			"supposed to be the WIDER of the two: it was 'handed back' before, that "+
+			"reached 21 of 26, and RawFinding and RefusalError could be deleted from "+
+			"the registry with a green build", len(declared), len(handedBack))
+	}
+
+	missing := unregisteredBoundaryTypes(declared, registry)
 	if len(missing) != 0 {
-		t.Errorf("%d exported type(s) are handed back by this package and are walked by "+
-			"nothing: %s. Add each to boundaryTypes with a verdict and a reason. This "+
-			"is the check that was missing when Summary and ProvenanceRow were absent "+
-			"from a list that claimed to cover every output type",
+		t.Errorf("%d exported type(s) are declared by this package and walked by nothing: "+
+			"%s. Add each to boundaryTypes with a verdict and a reason. There is no "+
+			"exclusion list on purpose: a type nobody can walk is registered with the "+
+			"verdict that says so, because an exclusion is a second list to keep "+
+			"current and forgetting to add to it is invisible",
 			len(missing), strings.Join(missing, ", "))
 	}
 
 	// AND THE OTHER DIRECTION: a registered name that is no longer declared
 	// here is a stale entry, and a stale entry is a walk that proves nothing
-	// about the current code.
-	declared := map[string]bool{}
-	for name := range derived {
-		declared[name] = true
+	// about the current code. This is derived too — the four names it used
+	// to check were themselves a hand-written list.
+	var stale []string
+	for name := range registry {
+		if !declared[name] {
+			stale = append(stale, name)
+		}
 	}
-	for _, extra := range []string{"Summary", "ProvenanceRow", "Ledger", "Finding"} {
-		if !declared[extra] {
+	sort.Strings(stale)
+	if len(stale) != 0 {
+		t.Errorf("%d registered name(s) are no longer declared in this package: %s. A "+
+			"stale registration walks a type the package does not have",
+			len(stale), strings.Join(stale, ", "))
+	}
+
+	// The named output types, still checked against the RESULT-position half,
+	// because "Summary is handed back" is the fact their verdicts rest on and
+	// membership no longer asserts it.
+	for _, out := range []string{"Summary", "ProvenanceRow", "Ledger", "Finding"} {
+		if !handedBack[out] {
 			t.Errorf("%s is registered but the derivation does not see it handed back; "+
-				"either it stopped being output or the derivation stopped working", extra)
+				"either it stopped being output or the derivation stopped working", out)
 		}
 	}
 
@@ -2881,22 +3052,135 @@ func TestEveryStatusOutsideTheApplicationAllowlistIsIndecisive(t *testing.T) {
 			sawIndecisive, len(statuses), wantIndecisiveRuns)
 	}
 
-	// AND THE MEASURED CASE BY NAME, so a reader can find it.
+	// AND THE MEASURED CASES BY NAME, so a reader can find them.
 	if IsApplicationResponseStatus(403) {
 		t.Error("403 is accepted as the application answering. That is the status a WAF " +
 			"block page arrives with, and accepting it reproduces the defect this " +
 			"whole inversion exists to close")
+	}
+	if IsApplicationResponseStatus(404) {
+		t.Error("404 is accepted as the application answering. MEASURED: a CDN edge node " +
+			"answering 404 on all three attempts yields outcome=rejected — a finding " +
+			"disproven by a machine that never reached the application")
 	}
 	for _, s := range []int{401, 403, 407, 451, 429, 502, 503, 504, 0, 302, 400} {
 		if IsApplicationResponseStatus(s) {
 			t.Errorf("status %d is accepted as the application answering", s)
 		}
 	}
-	for _, s := range []int{200, 404, 500} {
+	for _, s := range []int{200} {
 		if !IsApplicationResponseStatus(s) {
 			t.Errorf("status %d is not accepted as the application answering; without it "+
 				"an ordinary disproof is impossible and the gate never decides", s)
 		}
+	}
+}
+
+// TestTheApplicationAllowlistMatchesTheRuleItsCommentStates is the check that
+// was missing when 404, 405, 410, 422 and 500 sat on this list under a comment
+// that did not cover them.
+//
+// The stated rule is: A STATUS IS ON THIS ALLOWLIST WHEN THE STATUS ITSELF
+// ESTABLISHES THAT THE BODY IS A REPRESENTATION THE ORIGIN APPLICATION
+// PRODUCED. Exactly one family of status codes satisfies that — 2xx, where the
+// answer IS the requested representation and a cached copy is still the
+// application's own bytes. Every error status can be, and routinely is,
+// manufactured by an intermediary that never consulted the origin.
+//
+// So this test does not enumerate the allowlist. It derives the predicate from
+// the rule and asserts membership against it in both directions, which means
+// ADDING AN ENTRY THAT DOES NOT SATISFY THE RULE FAILS HERE — the failure mode
+// the previous shape of this list did not have.
+func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
+	originRepresentation := func(status int) bool { return status >= 200 && status <= 299 }
+
+	for status := -1; status <= 1000; status++ {
+		on := IsApplicationResponseStatus(status)
+		if on && !originRepresentation(status) {
+			t.Errorf("status %d is on the application allowlist and is not a 2xx. The "+
+				"stated rule is that the STATUS ITSELF establishes an origin "+
+				"representation, and no error status does: every one of them is "+
+				"something a CDN, a proxy, a gateway or a WAF emits without reaching "+
+				"the application. Either the entry goes or the comment does",
+				status)
+		}
+	}
+
+	// The rule alone would permit every 2xx; the list is narrower, because a
+	// status has to have a MEANING before it can have this one. That is a
+	// judgement and it is stated as one, so the assertion is only that the
+	// list is a subset of the rule and non-empty — not that it is all of it.
+	if len(applicationResponseStatuses()) == 0 {
+		t.Fatal("the allowlist is empty; the gate can never decide anything")
+	}
+
+	// AND THE FOUR REMOVALS BY NAME, each with the reason, so re-adding one
+	// is a deliberate act against a written argument rather than a one-line
+	// diff nobody reads.
+	for _, tc := range []struct {
+		status int
+		why    string
+	}{
+		{404, "a CDN edge node, nginx try_files and an object store all answer 404 " +
+			"without consulting the application; MEASURED as a rejection"},
+		{405, "nginx limit_except answers 405 in the proxy"},
+		{410, "a CDN purge rule answers 410 at the edge"},
+		{422, "an API gateway's request validation, and any WAF with a configurable " +
+			"block status, answer 422 with no origin round trip"},
+		{500, "a reverse proxy emits 500 for its own internal failures"},
+	} {
+		if IsApplicationResponseStatus(tc.status) {
+			t.Errorf("status %d is back on the application allowlist. It was removed "+
+				"because %s, and nothing about that has changed by adding it again",
+				tc.status, tc.why)
+		}
+	}
+}
+
+// TestRemoving500FromTheAllowlistCostsAConfirmationAndSaysSo prices the
+// removal instead of asserting it was free.
+//
+// An error-based injection whose reproduction is a 500 carrying a stack trace
+// used to come out CONFIRMED. It now comes out unconfirmed/reprobe_indecisive,
+// because the attempt is counted indecisive BEFORE the signature is run. That
+// is a loss of true positives, it is the price of not letting a proxy's 500
+// count as the application, and it is asserted here so it is a known cost
+// rather than a surprise in the field.
+func TestRemoving500FromTheAllowlistCostsAConfirmationAndSaysSo(t *testing.T) {
+	stackTrace := []byte(`<h1>500</h1><pre>` + sqliMarker + `</pre>`)
+	rp := &scriptedReprober{
+		body:   func(RawFinding, int) []byte { return stackTrace },
+		status: 500,
+	}
+	g := mustGate(t, GateConfig{Reprober: rp, Attempts: 3})
+	f, err := g.ConfirmFinding(context.Background(), sqliCandidate(t, "/search"))
+	if err != nil {
+		t.Fatalf("ConfirmFinding: %v", err)
+	}
+	if f.Outcome() == OutcomeConfirmed {
+		t.Fatalf("a 500 carrying the marker was CONFIRMED. 500 is off the allowlist "+
+			"precisely because a proxy can emit one, so this path must not reach a "+
+			"claim. %s", f)
+	}
+	if f.Outcome() == OutcomeRejected {
+		t.Fatalf("a 500 carrying the marker was REJECTED, which is worse than either "+
+			"honest answer: nothing was disproved. %s", f)
+	}
+	if f.Reason() != ReasonReprobeIndecisive {
+		t.Errorf("reason = %q, want %q", f.Reason(), ReasonReprobeIndecisive)
+	}
+	// The finding is NOT dropped, and the body hash is still there. That is
+	// the half that makes the cost acceptable.
+	if !f.Evidence().Constructed() || f.Evidence().BodyHash() == "" {
+		t.Error("the indecisive finding carries no body hash; the operator has been left " +
+			"with an undecided row and nothing to look at")
+	}
+	// And the signature was NOT run, which is why there is no span: a body
+	// the target may have produced instead of running the application must
+	// not be handed to the oracle at all.
+	if got := f.SignatureMatches(); got != 0 {
+		t.Errorf("SignatureMatches = %d over attempts that were never handed to the "+
+			"oracle; the application-answered test has stopped running first", got)
 	}
 }
 
@@ -2996,11 +3280,11 @@ func TestAnOracleLessClassIsUnaffectedByTheInversion(t *testing.T) {
 // D.29 HIGH 3 — an oracle that fires on a benign page
 // ===========================================================================
 
-// TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody is HIGH 3, and
-// the corpus it runs against is GENERATED rather than enumerated.
+// TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody is HIGH 3, end
+// to end through NewSignature.
 //
 // ===========================================================================
-// WHAT WAS MEASURED, TWICE
+// WHAT WAS MEASURED, THREE TIMES
 // ===========================================================================
 //
 // Round one: the predicate was re.MatchString("") alone, and ".",
@@ -3009,13 +3293,21 @@ func TestAnOracleLessClassIsUnaffectedByTheInversion(t *testing.T) {
 //
 // Round two: the predicate became seventeen hand-written probes totalling 720
 // bytes, and `(?s)[\s\S]{721}` passed — one byte past the longest thing the
-// check could produce. A fixed corpus is a denylist of examples and ITS SIZE
-// IS THE ATTACKER'S BUDGET.
+// check could produce.
 //
-// So the assertions below are written against the RULE and not against a list
-// of patterns somebody thought of: length thresholds are swept across three
-// orders of magnitude, and the ceiling is asserted against the kernel's own
-// body cap rather than against a number chosen here.
+// Round three: the probes became a seeded generator over five hand-written
+// vocabulary slices, and `(?s)<h1[\s\S]{0,400}` passed, because `h1` is not
+// one of the thirteen tag names the generator was given. A GENERATOR OVER A
+// WRITTEN-DOWN ALPHABET IS A CORPUS, and a corpus's size is the attacker's
+// budget however it is produced.
+//
+// WHICH CHECK REFUSES WHAT IS ASSERTED SOMEWHERE ELSE ON PURPOSE. This test
+// goes through NewSignature and only asks that each pattern be refused; the
+// division of labour between the structural control and the corpus backstop is
+// driven by TestTheControlDecidesOnTheStructureAndNotOnASampleOfBodies and
+// TestTheBackstopRefusesWhatTheControlAccepts. Keeping them apart is what
+// stops this test quietly becoming a test of whichever check happens to fire
+// first.
 func TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody(t *testing.T) {
 	// The two measured families, together, because the sentinel does not
 	// distinguish them and neither should a reader.
@@ -3069,7 +3361,6 @@ func TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody(t *testing.T) {
 	for _, p := range []string{
 		sqliPattern,
 		`"role":"admin"`,
-		`(?s)<v>.*</v>`,
 		spanBoundaryPattern,
 		`You have an error in your SQL syntax`,
 		`root:[x*]:0:0:`,
@@ -3078,23 +3369,40 @@ func TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody(t *testing.T) {
 		`<script>alert\(1\)</script>`,
 		`java\.lang\.NullPointerException`,
 		`blocked by policy reference [0-9]{4}-[A-Z]{2}`,
+		// The two shapes the structural rules could most plausibly have
+		// broken, and did not: a case-insensitive class, which the parser
+		// expands to include U+017F and U+212A, and a narrow class with
+		// no repeat ceiling.
+		`(?i)PHP Fatal error:  Uncaught [A-Za-z]{1,40}`,
+		`X-Debug-Token: [0-9a-f]+`,
 	} {
 		if _, err := NewSignature(p); err != nil {
-			t.Errorf("NewSignature(%q) = %v; the benign corpus is refusing a real oracle "+
-				"and the check is unusable", p, err)
+			t.Errorf("NewSignature(%q) = %v; a real oracle is being refused and the check "+
+				"is unusable", p, err)
 		}
 	}
 
-	// THE COST, ASSERTED RATHER THAN CLAIMED. The generated corpus refuses
-	// strictly more than the seventeen probes did, and `(?s)A.*B` — which
-	// used to be a positive control in this very test — is the case. Prose
-	// capitalises sentence openings, so "a body with an A before a B" is an
-	// ordinary body. Refusing it is the correct direction to fail, and it is
-	// written down here so nobody reads it as a regression.
-	if _, err := NewSignature(`(?s)A.*B`); !errors.Is(err, ErrSignatureMatchesEverything) {
-		t.Errorf("NewSignature(`(?s)A.*B`) = %v; the generated corpus no longer contains "+
-			"ordinary prose with a capital A before a capital B, and a whole family of "+
-			"delimiter-pair patterns has stopped being caught", err)
+	// THE COST, ASSERTED RATHER THAN CLAIMED, and it grew this round. Two
+	// patterns that used to be positive controls in this very test are now
+	// refused, each for a stated reason, and each is written down here so
+	// nobody reads it as a regression:
+	//
+	//	`(?s)A.*B`       by the BACKSTOP first (prose capitalises sentence
+	//	                 openings, so a body with an A before a B is an
+	//	                 ordinary body) and by the CONTROL now (`.` is an
+	//	                 open position under R2).
+	//	`(?s)<v>.*</v>`  by the CONTROL, same rule. A delimiter pair may
+	//	                 still be written; it must declare what it will
+	//	                 quote, which is what spanBoundaryPattern now does.
+	for _, tc := range []struct{ pattern, why string }{
+		{`(?s)A.*B`, "a delimiter pair over an open class"},
+		{`(?s)<v>.*</v>`, "a tag pair over an open class"},
+	} {
+		if _, err := NewSignature(tc.pattern); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v; %s used to be refused and no longer is, so a "+
+				"whole family of delimiter-pair patterns has stopped being caught",
+				tc.pattern, err, tc.why)
+		}
 	}
 }
 
@@ -3244,45 +3552,493 @@ func TestTheLengthThresholdFamilyIsClosedAndNotMerelyOutrun(t *testing.T) {
 	}
 }
 
-// TestABoundedPrefixPatternIsRefusedByTheCorpusAndNotByTheSpanBound drives
-// both halves of the sentence extractSpan's doc used to get wrong.
+// TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure is the
+// measured CRITICAL of this round, closed and then attacked from both sides.
 //
-// The doc asserted "there is no length at which a prefix of an arbitrary body
-// becomes evidence". The implemented rule is narrower: a match at or under
-// MaxSpanBytes IS inlined. `(?s)<div[\s\S]{0,500}` matches at most 504 bytes,
-// so the span bound never fires and 500 bytes of whatever followed the div
-// would be quoted. It passed the seventeen hand-written probes for no better
-// reason than that none of them contained a div.
+// ===========================================================================
+// THE MEASUREMENT
+// ===========================================================================
 //
-// So: the CORPUS refuses it, and the span bound demonstrably does not. Both
-// are asserted, because the doc now says exactly that.
-func TestABoundedPrefixPatternIsRefusedByTheCorpusAndNotByTheSpanBound(t *testing.T) {
-	const p = `(?s)<div[\s\S]{0,500}`
-	if _, err := NewSignature(p); !errors.Is(err, ErrSignatureMatchesEverything) {
-		t.Fatalf("NewSignature(%q) = %v, want ErrSignatureMatchesEverything. Generated "+
-			"HTML contains divs, and a pattern that quotes 500 bytes after any div is "+
-			"an oracle that says yes on every page with markup on it", p, err)
+// `(?s)<h1[\s\S]{0,400}` passed NewSignature, and it did two things at once:
+// it confirmed any page carrying an h1 at confidence 1.000, and it INLINED 403
+// verbatim body bytes into ExtractedSpan. MaxSpanBytes could not see the
+// second, because that bound only refuses matches LONGER than 512. The corpus
+// could not see the first, because `h1` was not one of the thirteen tag names
+// the generator was given — 17 of 20 bounded-prefix HTML anchors passed.
+//
+// So the family is decided on the PATTERN now, and this test attacks that
+// decision the way the last four rounds were attacked: by varying the thing
+// the previous fix depended on.
+func TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure(t *testing.T) {
+	// THE TAG NAME IS NOT LOAD-BEARING ANY MORE, and this is the sweep that
+	// says so. The corpus knew thirteen tags; the control knows none. Every
+	// anchor here is refused for the same structural reason, including the
+	// ones no vocabulary contains.
+	for _, tag := range []string{
+		"h1", "h2", "h6", "div", "span", "form", "main", "figure", "dialog",
+		"marquee", "blink", "anvil-widget", "x", "custom-element-nobody-wrote",
+	} {
+		p := `(?s)<` + tag + `[\s\S]{0,400}`
+		_, err := refuseOverBroadPattern(p)
+		if err == nil {
+			t.Errorf("refuseOverBroadPattern(%q) accepted it. The whole point of deciding "+
+				"on the pattern is that <%s> is no more special than <div>: a corpus "+
+				"knows the tags it was given and a structural rule knows none",
+				p, tag)
+		}
+		if _, nerr := NewSignature(p); !errors.Is(nerr, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v, want ErrSignatureMatchesEverything", p, nerr)
+		}
 	}
 
-	// THE OTHER HALF: the span bound does not catch this shape and the doc
-	// no longer claims it does. A pattern anchored on something the corpus
-	// does not generate passes NewSignature, and its bounded match IS
-	// inlined verbatim.
-	anchored := mustSignature(t, `(?s)ANVIL-ANCHOR-9F2A[\s\S]{0,400}`)
-	body := []byte("ANVIL-ANCHOR-9F2A" + strings.Repeat("q", 400) + "tail")
-	span, dropped, overBroad, matched := extractSpan(body, anchored.re)
+	// AND THE OBVIOUS EVASION: narrow the class until R2 stops objecting.
+	// `[[:print:]]`, `[ -~]` and `[!-~]` are all confined to printable
+	// ASCII, so R2 passes them — and R3 refuses every one, because 400
+	// quoted positions against three spelled bytes is the pattern quoting
+	// the response rather than identifying it.
+	for _, class := range []string{`[[:print:]]`, `[ -~]`, `[!-~]`, `[a-z ]`, `[\x20-\x7e]`} {
+		p := `<h1` + class + `{0,400}`
+		if _, err := refuseOverBroadPattern(p); err == nil {
+			t.Errorf("refuseOverBroadPattern(%q) accepted it: R2 is satisfied by a narrowed "+
+				"class and R3 did not catch the quotation, so the bounded-prefix family "+
+				"is open again one character away from where it was closed", p)
+		}
+	}
+
+	// THE THIRD SIDE: the same shape with a footing large enough to pay for
+	// what it quotes IS accepted, and that is the rule being a rule rather
+	// than a ban on a syntax. It is not a hole — the pattern had to spell
+	// 400 bytes the target must emit to get 400 bytes of quotation.
+	paid := `ANVIL-CANARY-1F4B-ANVIL-CANARY-1F4B[[:print:]]{0,35}`
+	if _, err := refuseOverBroadPattern(paid); err != nil {
+		t.Errorf("refuseOverBroadPattern(%q) = %v; 35 quoted positions against 35 spelled "+
+			"bytes satisfies R3 by construction, and a rule that refuses it is a ban on "+
+			"context rather than a bound on quotation", paid, err)
+	}
+}
+
+// TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the arithmetic
+// the control's header states, over real matches rather than on paper.
+//
+// The claim is: for any match extractSpan actually inlines, the quoted
+// (content-bearing, unspelled) bytes are at most half of it, so at most 256.
+// The way to break that claim is to find a pattern NewSignature accepts whose
+// inlined span is mostly body, so the sweep below tries to build one at every
+// footing length from 1 to 64.
+func TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry(t *testing.T) {
+	const filler = "ANVIL-CANARY-1F4B"
+	worst := 0
+	for footing := 1; footing <= 64; footing++ {
+		// The longest quotation this footing can buy, plus one, which must
+		// be refused.
+		lit := strings.Repeat("Z", footing)
+		for _, tc := range []struct {
+			quoted int
+			accept bool
+		}{{footing, true}, {footing + 1, false}} {
+			p := fmt.Sprintf(`%s[[:print:]]{0,%d}`, lit, tc.quoted)
+			s, err := NewSignature(p)
+			if tc.accept != (err == nil) {
+				t.Fatalf("NewSignature(%q): err=%v, want accepted=%v. R3 is 1:1 against "+
+					"the literal footing and the boundary must be exactly there",
+					p, err, tc.accept)
+			}
+			if !tc.accept {
+				continue
+			}
+			// The greediest body this signature can be handed.
+			body := []byte(lit + strings.Repeat("q", 4096))
+			span, _, overBroad, matched := extractSpan(body, s)
+			if !matched {
+				t.Fatalf("%q did not match its own greediest fixture", p)
+			}
+			if overBroad != 0 {
+				continue // no span at all; the bound already refused it
+			}
+			quoted := len(span) - footing
+			if quoted > footing {
+				t.Errorf("%q inlined a %d-byte span carrying %d quoted byte(s) against %d "+
+					"spelled: the header's q <= s is false", p, len(span), quoted, footing)
+			}
+			if 2*quoted > len(span) {
+				t.Errorf("%q inlined a span that is more than half body: %d of %d bytes",
+					p, quoted, len(span))
+			}
+			if quoted > worst {
+				worst = quoted
+			}
+		}
+	}
+	if worst == 0 {
+		t.Fatal("the sweep never produced an inlined span with a quoted byte in it; every " +
+			"assertion above is vacuous")
+	}
+	if worst > MaxSpanBytes/2 {
+		t.Errorf("the sweep inlined %d quoted bytes and the arithmetic bound is %d",
+			worst, MaxSpanBytes/2)
+	}
+	t.Logf("greediest inlined quotation over the sweep: %d bytes (bound %d)",
+		worst, MaxSpanBytes/2)
+}
+
+// TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is extractSpan's
+// property 1b, and it exists because RERUNNING THIS ROUND'S OWN ATTACK ONE
+// CLASS TO THE LEFT FOUND THE DEFECT ALIVE.
+//
+// MEASURED, after R1/R2/R3 were in place and all twenty `[\s\S]` anchors were
+// refused:
+//
+//	<h1[0-9A-Za-z]{0,400}   ACCEPTED, match=true span=403 overBroad=0
+//
+// An alphanumeric class carries no separator, so R3 does not count it as
+// quotation — and that reasoning is load-bearing, because it is the same
+// reasoning that lets AKIA[0-9A-Z]{16} and `nginx/1\.[0-9]+` compile. So the
+// answer was not to widen R3 until it caught this too; it was to enforce the
+// same inequality a second time, at extraction, over the actual match, where
+// no class definition is involved at all.
+func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
+	// THE MEASURED CASE, by name and with the same fixture.
+	attack := `<h1[0-9A-Za-z]{0,400}`
+	s := mustSignature(t, attack)
+	body := []byte("<h1" + strings.Repeat("a", 600))
+	span, _, overBroad, matched := extractSpan(body, s)
 	if !matched {
-		t.Fatal("the anchored pattern did not match its own fixture")
+		t.Fatalf("%q did not match its own fixture", attack)
 	}
-	if overBroad != 0 || span == "" {
-		t.Fatalf("extractSpan withheld the span (over_broad=%d): the residual this test "+
-			"documents has been closed by the bound, and extractSpan's doc must stop "+
-			"saying otherwise", overBroad)
+	if span != "" {
+		t.Errorf("%q inlined a %d-byte span from three spelled bytes: %q. That is the "+
+			"403-byte inlining this round was supposed to close, one character class "+
+			"to the left of where it was closed",
+			attack, len(span), printable(span, 48))
 	}
-	if !strings.Contains(span, strings.Repeat("q", 400)) {
-		t.Errorf("span = %q (%d bytes, %d dropped); the residual is that 400 bytes of "+
-			"body FOLLOW the anchor into the span, and if that is no longer true the "+
-			"doc paragraph naming it is stale", printable(span, 64), len(span), dropped)
+	if overBroad != len(body) && overBroad == 0 {
+		t.Errorf("the withheld span was not recorded: overBroad = %d. A span that "+
+			"vanishes without a number beside it is a match a reader cannot account "+
+			"for", overBroad)
+	}
+
+	// THE SWEEP. For every footing from 1 to 48, the longest match that
+	// satisfies L-s <= s keeps its span and the next byte loses it. The
+	// boundary is asserted on BOTH sides, because a rule that only ever
+	// refuses, or only ever allows, is not a boundary.
+	for footing := 1; footing <= 48; footing++ {
+		lit := strings.Repeat("Z", footing)
+		sig := mustSignature(t, lit+`[0-9A-Za-z]*`)
+		for _, tc := range []struct {
+			extra    int
+			wantSpan bool
+		}{{footing, true}, {footing + 1, false}} {
+			b := []byte(lit + strings.Repeat("a", tc.extra))
+			span, _, over, ok := extractSpan(b, sig)
+			if !ok {
+				t.Fatalf("footing %d: the fixture did not match", footing)
+			}
+			if (span != "") != tc.wantSpan {
+				t.Errorf("footing=%d match=%d bytes (%d unspelled): span=%q over=%d, "+
+					"want span=%v. The rule is L-s <= s and the boundary must be "+
+					"exactly there", footing, len(b), tc.extra, printable(span, 32),
+					over, tc.wantSpan)
+			}
+			if tc.wantSpan && len(span) != len(b) {
+				t.Errorf("footing=%d: a span inside the budget was %d bytes, want the "+
+					"whole %d-byte match", footing, len(span), len(b))
+			}
+		}
+	}
+
+	// THE COST, ASSERTED SO IT IS KNOWN RATHER THAN DISCOVERED. A signature
+	// whose whole job is to quote a token loses its span. It does NOT lose
+	// its verdict or its body hash, which is what makes the trade payable.
+	akia := mustSignature(t, `AKIA[0-9A-Z]{16}`)
+	span, _, over, ok := extractSpan([]byte("... AKIA1234567890ABCDEF ..."), akia)
+	if !ok {
+		t.Fatal("the AKIA fixture did not match")
+	}
+	if span != "" {
+		t.Errorf("AKIA[0-9A-Z]{16} inlined %q. Four spelled bytes do not buy sixteen "+
+			"unspelled ones, and a 16-character AWS key id is a credential", span)
+	}
+	if over != 20 {
+		t.Errorf("SpanOverBroadBytes = %d, want 20: the match length must be recorded "+
+			"even when the span is withheld", over)
+	}
+
+	// AND THE OTHER DIRECTION, so this is a rule and not a ban on classes:
+	// a signature that spells enough keeps its span.
+	nginx := mustSignature(t, `Server: nginx/1\.[0-9]+\.[0-9]+`)
+	span, _, _, ok = extractSpan([]byte("Server: nginx/1.24.0\r\n"), nginx)
+	if !ok || span != "Server: nginx/1.24.0" {
+		t.Errorf("the nginx banner span = %q (matched=%v); 17 spelled bytes comfortably "+
+			"pay for three unspelled ones, and a rule that refuses this is a ban on "+
+			"variable content rather than a bound on quotation", span, ok)
+	}
+}
+
+// withEmptyBenignCorpus runs f with the backstop switched off.
+//
+// It is the only way to tell the two checks apart from outside NewSignature,
+// and telling them apart is the whole subject of this round: for three rounds
+// the corpus was DESCRIBED as the control, and no test could have noticed the
+// difference. With the corpus emptied, every refusal NewSignature still
+// produces is the control's, and every refusal that disappears was the
+// backstop's.
+//
+// No test in this package calls t.Parallel(), so the swap is safe; the restore
+// is deferred so a failing assertion inside f cannot leave the package with no
+// backstop for the tests that follow.
+func withEmptyBenignCorpus(t *testing.T, f func()) {
+	t.Helper()
+	saved := benignCorpus
+	benignCorpus = nil
+	defer func() { benignCorpus = saved }()
+	f()
+}
+
+// TestTheControlDecidesOnTheStructureAndNotOnASampleOfBodies is the claim
+// ruling 9 asks for, made falsifiable.
+//
+// A check that samples inputs has a budget: the attacker needs one input
+// outside the sample, and four rounds of this file have produced one each
+// time. The control's claim is that it samples nothing — its verdict is a
+// function of the pattern alone. THIS TEST EMPTIES THE CORPUS AND CHECKS THAT
+// THE VERDICT DOES NOT MOVE. If any of these refusals came from a body, it
+// would vanish when the bodies do.
+func TestTheControlDecidesOnTheStructureAndNotOnASampleOfBodies(t *testing.T) {
+	// One representative per rule, plus the two families measured in
+	// rounds two and three.
+	refused := []struct{ pattern, rule string }{
+		{`(?s)[\s\S]{721}`, "R1: spells nothing"},
+		{`.`, "R1: spells nothing"},
+		{`x{0,3}`, "R1: a path that spells nothing"},
+		{`(?s)<h1[\s\S]{0,400}`, "R2: an open position"},
+		{`(?s)<div[\s\S]{0,500}`, "R2: an open position"},
+		{`ANVIL-CANARY-1F4B\s{0,9}`, "R2: whitespace is not printable ASCII"},
+		{`<h1[[:print:]]{0,400}`, "R3: quotes 400 against 3"},
+		{`ANVIL-CANARY-1F4B[[:print:]]*`, "R3: quotes without a ceiling"},
+	}
+	withEmptyBenignCorpus(t, func() {
+		if len(benignCorpus) != 0 {
+			t.Fatal("the corpus was not emptied; this test is about to prove nothing")
+		}
+		for _, tc := range refused {
+			if _, err := NewSignature(tc.pattern); !errors.Is(err, ErrSignatureMatchesEverything) {
+				t.Errorf("with NO benign bodies at all, NewSignature(%q) = %v. This "+
+					"refusal was supposed to be structural (%s); it came from a "+
+					"sample, and a sample has a budget", tc.pattern, err, tc.rule)
+			}
+		}
+	})
+	// And the same verdicts with the corpus back, so the swap itself is not
+	// what produced them.
+	for _, tc := range refused {
+		if _, err := NewSignature(tc.pattern); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v with the corpus restored", tc.pattern, err)
+		}
+	}
+
+	// EACH RULE IS LOAD-BEARING, shown by a pattern only that rule refuses.
+	// A rule the others already cover is a rule that could be deleted with
+	// a green build, which is how a guard becomes decoration.
+	for _, tc := range []struct {
+		name    string
+		pattern string
+		// what shapeOf must say, so the arm being exercised is named
+		// rather than inferred from the refusal text.
+		wantOpen     bool
+		wantNoLit    bool
+		wantOverQuot bool
+	}{
+		{"R1 alone", `[\s\S]{0,4}`, true, true, false},
+		{"R1 without R2", `(?:AB)?`, false, true, false},
+		{"R2 without R1", `ANVIL-CANARY-1F4B[\s\S]{1,4}`, true, false, false},
+		{"R3 without R1 or R2", `<h1[[:print:]]{0,400}`, false, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := syntax.Parse(tc.pattern, syntax.Perl)
+			if err != nil {
+				t.Fatalf("parsing %q: %v", tc.pattern, err)
+			}
+			s := shapeOf(parsed)
+			if s.open != tc.wantOpen {
+				t.Errorf("shapeOf(%q).open = %v, want %v", tc.pattern, s.open, tc.wantOpen)
+			}
+			if (s.minLiteral == 0) != tc.wantNoLit {
+				t.Errorf("shapeOf(%q).minLiteral = %d, want zero=%v",
+					tc.pattern, s.minLiteral, tc.wantNoLit)
+			}
+			overQuoted := s.quoted == shapeUnbounded || s.quoted > s.minLiteral
+			if overQuoted != tc.wantOverQuot {
+				t.Errorf("shapeOf(%q) quoted=%d minLiteral=%d, want over-quoted=%v",
+					tc.pattern, s.quoted, s.minLiteral, tc.wantOverQuot)
+			}
+			if _, err := refuseOverBroadPattern(tc.pattern); err == nil {
+				t.Errorf("refuseOverBroadPattern(%q) accepted it", tc.pattern)
+			}
+		})
+	}
+
+	// THE R1 BOUNDARY IS EXACTLY ZERO, not a length somebody picked. One
+	// spelled byte is enough, and it must be, or the rule would be a
+	// minimum-length threshold wearing a structural argument.
+	if _, err := refuseOverBroadPattern(`Z[0-9]{0,0}`); err != nil {
+		t.Errorf("refuseOverBroadPattern(`Z[0-9]{0,0}`) = %v; one spelled byte satisfies "+
+			"R1 by construction and anything stricter is a threshold", err)
+	}
+
+	// AN OPERATOR THIS WALKER HAS NEVER HEARD OF FAILS CLOSED. The default
+	// arm is the reason "a future regexp/syntax operator" is not on anyone's
+	// list of things to remember.
+	if s := shapeOf(&syntax.Regexp{Op: syntax.Op(200)}); !s.open {
+		t.Error("shapeOf reported a regexp operator it does not know as safe. The " +
+			"failure mode of not knowing must be a refused signature, or this walker " +
+			"is a denylist of the operators somebody thought of")
+	}
+	// AND A MALFORMED TREE DOES NOT PANIC. syntax.Parse cannot produce a
+	// childless Star, so these are unreachable from NewSignature — but a
+	// panic inside a production admission check is a crash, and the guard is
+	// cheaper than the claim that it can never happen.
+	if s := shapeOf(nil); !s.open {
+		t.Error("shapeOf(nil) reported a safe shape")
+	}
+	for _, op := range []syntax.Op{syntax.OpCapture, syntax.OpQuest, syntax.OpStar,
+		syntax.OpPlus, syntax.OpRepeat} {
+		if s := shapeOf(&syntax.Regexp{Op: op}); !s.open {
+			t.Errorf("shapeOf(childless %v) reported a safe shape", op)
+		}
+	}
+}
+
+// TestTheOpenPositionRuleUsesTheSpanExtractorsOwnCharset checks R2's premise
+// by RUNNING the extractor rather than by reading its constants.
+//
+// R2's argument is "a signature may not match through bytes its own evidence
+// extractor throws away". That argument is only worth anything if the two
+// charsets are the same set, and a second spelling of 0x20-0x7e in this file
+// would be a second thing to keep current. So the agreement is measured over
+// all 256 byte values, in both directions.
+func TestTheOpenPositionRuleUsesTheSpanExtractorsOwnCharset(t *testing.T) {
+	// A raw fixture, because a Signature that could match every byte is
+	// exactly what the rule under test forbids; spelled is large so the
+	// composition rule cannot fire on these three-byte matches.
+	all := Signature{re: regexp.MustCompile(`(?s)Z[\s\S]*Z`), src: "fixture",
+		spelled: MaxSpanBytes, sealed: true}
+	agreed, kept := 0, 0
+	for b := 0; b < 256; b++ {
+		span, dropped, _, matched := extractSpan([]byte{'Z', byte(b), 'Z'}, all)
+		if !matched {
+			t.Fatalf("byte 0x%02x: the fixture did not match, so nothing is measured", b)
+		}
+		extractorKeeps := dropped == 0 && len(span) == 3
+		if extractorKeeps {
+			kept++
+		}
+
+		// The same byte as a two-rune class, which is what the rule sees.
+		class := []rune{rune(b), rune(b), 'a', 'a'}
+		if rune(b) > 'a' {
+			class = []rune{'a', 'a', rune(b), rune(b)}
+		}
+		ruleOpen := openClass(class)
+		if ruleOpen == extractorKeeps {
+			t.Errorf("byte 0x%02x: extractSpan keeps it = %v, and openClass calls the "+
+				"class open = %v. R2's whole argument is that those are the same "+
+				"question, and they have stopped being", b, extractorKeeps, ruleOpen)
+			continue
+		}
+		agreed++
+	}
+	if agreed != 256 {
+		t.Errorf("the rule and the extractor agreed on %d of 256 bytes", agreed)
+	}
+	// The positive control on the sweep: if the extractor kept everything,
+	// or nothing, every agreement above would be an accident.
+	if kept != printableASCIIHi-printableASCIILo+1 {
+		t.Errorf("the extractor kept %d of 256 bytes, want %d; the sweep is not "+
+			"exercising both sides", kept, printableASCIIHi-printableASCIILo+1)
+	}
+}
+
+// TestTheBackstopRefusesWhatTheControlAccepts is what makes "backstop" a
+// demonstrated word.
+//
+// A backstop that never catches anything the control misses is not a backstop,
+// it is a second copy of the control paying a megabyte of scan per signature.
+// So: patterns the structural rules ACCEPT, that the corpus refuses, and the
+// same patterns accepted again once the corpus is taken away.
+//
+// Every fixture here is markup benignHTML emits UNCONDITIONALLY — the doctype,
+// the stylesheet link, the script tag — rather than a tag-and-class
+// combination the generator only reaches by chance. A backstop test that
+// depended on the RNG landing somewhere would be a flake, and a flake in a
+// guard is a guard that gets deleted.
+func TestTheBackstopRefusesWhatTheControlAccepts(t *testing.T) {
+	furniture := []string{
+		`<!doctype html>`,
+		`<link rel="stylesheet" href="/static/site\.css">`,
+		`<script src="/static/app\.js"></script>`,
+		`<meta charset="utf-8">`,
+	}
+	for _, p := range furniture {
+		if _, err := refuseOverBroadPattern(p); err != nil {
+			t.Errorf("refuseOverBroadPattern(%q) = %v; this fixture is supposed to be one "+
+				"the CONTROL accepts, so it no longer demonstrates anything about the "+
+				"backstop", p, err)
+			continue
+		}
+		if _, err := NewSignature(p); !errors.Is(err, ErrSignatureMatchesEverything) {
+			t.Errorf("NewSignature(%q) = %v; the backstop is not catching ordinary "+
+				"document furniture, which is the one job the structural rules cannot "+
+				"do — %q is seven or more spelled bytes either way, and only a body "+
+				"can say whether an ordinary page contains it", p, err, p)
+		}
+	}
+
+	// AND THE OTHER DIRECTION, which is what proves the refusals above came
+	// from the corpus rather than from a rule that happens to catch them:
+	// with no bodies, every one of them compiles.
+	withEmptyBenignCorpus(t, func() {
+		for _, p := range furniture {
+			if _, err := NewSignature(p); err != nil {
+				t.Errorf("with the corpus emptied, NewSignature(%q) = %v. The refusal "+
+					"was not the backstop's after all, and this test is measuring "+
+					"something other than what it claims", p, err)
+			}
+		}
+	})
+}
+
+// BenchmarkBenignCorpusBuild measures what package initialisation costs.
+//
+// It exists because the corpus section's cost paragraph used to state a figure
+// nothing had measured. Run it, and the number in that paragraph is checkable:
+//
+//	go test -run XXX -bench 'BenignCorpus|NewSignature' -benchtime 10x ./internal/dast/record/
+func BenchmarkBenignCorpusBuild(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		if got := len(buildBenignCorpus()); got == 0 {
+			b.Fatal("the corpus built empty")
+		}
+	}
+}
+
+// BenchmarkNewSignature measures the per-signature cost of the two checks
+// together, over a pattern that reaches the END of the corpus — an ordinary
+// oracle, refused by nothing, which is the case that pays for the whole scan.
+func BenchmarkNewSignature(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		if _, err := NewSignature(sqliPattern); err != nil {
+			b.Fatalf("NewSignature: %v", err)
+		}
+	}
+}
+
+// BenchmarkRefuseOverBroadPattern measures the CONTROL alone, which is what
+// decides whether putting it first is a saving or a tax.
+func BenchmarkRefuseOverBroadPattern(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		if _, err := refuseOverBroadPattern(sqliPattern); err != nil {
+			b.Fatalf("refuseOverBroadPattern: %v", err)
+		}
 	}
 }
 
@@ -3296,7 +4052,9 @@ func TestABoundedPrefixPatternIsRefusedByTheCorpusAndNotByTheSpanBound(t *testin
 // end marker it matches the lot. The span bound is what catches that, and it
 // catches it by producing NOTHING rather than by producing a shorter prefix.
 func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarrow(t *testing.T) {
-	const secret = "SENSITIVE-PREFIX-OF-THE-RESPONSE"
+	// Alphanumeric because spanBoundaryPattern's middle is a token-shaped
+	// class; a hyphen would end the run instead of being swallowed by it.
+	const secret = "SENSITIVEPREFIXOFTHERESPONSE"
 	hostile := []byte("ANVIL-SPAN-BEGIN" + secret + strings.Repeat("q", 4096) + "ANVIL-SPAN-END")
 
 	rp := &scriptedReprober{body: func(RawFinding, int) []byte { return hostile }}

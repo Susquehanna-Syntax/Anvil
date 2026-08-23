@@ -80,6 +80,18 @@
 //	table's length is the encoder's budget any more. What one wildcard cannot
 //	stand for is a name whose expansion is two runes.
 //
+//	A DEEPLY LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK. This
+//	bullet is here because its absence was itself a defect: the sweep re-ran
+//	its pipeline THREE TIMES and nothing said so, so percent-encoding applied
+//	four times was invisible and the residual list read as though it were
+//	complete. The pipeline now runs to a fixpoint under a bound on BYTES
+//	SCANNED rather than on layers — measured, it reaches 1546 layers of
+//	repeated url.QueryEscape, and no constant in this file names a depth. What
+//	remains is disclosed at codedSweepWorkBytes: an artifact that does not
+//	shrink as it is decoded gets codedSweepWorkBytes/N passes, which is four
+//	at the 4 MiB artifact cap, and below about 2 KiB there is no residual at
+//	all.
+//
 //	base64 or any other re-encoding of the credential inside an artifact. It
 //	is now the ONLY spelling in this list that a fixture can demonstrate, and
 //	TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl uses it as its
@@ -179,6 +191,7 @@ import (
 	"math/rand/v2"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/dast/authz"
 	"github.com/Susquehanna-Syntax/Anvil/internal/dast/engines"
@@ -2824,6 +2837,23 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 // searched for in each form, which is the same rule gate 8 and the crawler's
 // dot-segment handling reached: canonicalize before matching.
 //
+// # Where the haystack has more than one canonical form, all of them are searched
+//
+// Canonicalizing presumes there is one canonical form, and twice on this path
+// there is not. '+' is a space in a query string and a literal plus everywhere
+// else, and no byte settles it. A semicolon-less digit run has no byte that
+// says where the number ends, so `&#1153` is U+0481 or 's' followed by '3'
+// depending on what the encoder meant.
+//
+// AN AMBIGUOUS INPUT IS READ EVERY WAY AND ANY READING THAT CONTAINS THE SECRET
+// REFUSES. sweepForms runs the '+' ambiguity as two pipelines;
+// containsUnderEveryReading carries the digit-run ambiguity as alternatives at
+// the point of matching, which is cheaper than a pipeline per site and is the
+// only way the two ambiguities compose. Reading greedily instead was measured
+// to cost six of the twenty-five single-character re-spellings of this file's
+// credential in base 10 alone, and the credential left the package through
+// CoverageInstant.CarriageEvidence().
+//
 // # What it still does not see, stated rather than qualified away
 //
 //	A NAMED REFERENCE THAT EXPANDS TO MORE THAN ONE RUNE. What stood here was
@@ -2849,6 +2879,15 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //	no longer "a name outside a list" — it is a name whose expansion is not
 //	one rune, which one wildcard cannot stand for.
 //
+//	A LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK AS IT IS
+//	DECODED. This bullet was MISSING, and its absence was the defect: the
+//	pipeline re-ran exactly three times, so url.QueryEscape applied four times
+//	hid the credential and this list read as though nothing of the kind
+//	existed. There is no round count now — sweepForms runs to a fixpoint and
+//	spends bytes scanned — and what is left is stated at codedSweepWorkBytes:
+//	codedSweepWorkBytes/N passes on an artifact of N bytes that does not
+//	shrink, four at the artifact cap, and no residual at all below ~2 KiB.
+//
 //	base64 or any other re-encoding. Catching it needs encoding/base64, which
 //	is NOT on gate 3's inertImports; adding it is a one-line edit in
 //	internal/dast/authz/egress_chokepoint_test.go, is reported to the
@@ -2873,7 +2912,7 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 			if raw == "" {
 				continue
 			}
-			if containsAllowingUnresolved(hay, raw) {
+			if containsUnderEveryReading(hay, raw) {
 				return i, true
 			}
 		}
@@ -2881,23 +2920,71 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 	return 0, false
 }
 
-// codedSweepRounds bounds how many times the canonicalizer re-runs over its
-// own output.
+// codedSweepWorkBytes bounds the TOTAL BYTES one canonicalizer pipeline may
+// scan on its way to a fixpoint. It replaced a round count, and the difference
+// is the whole point of it.
 //
-// A layered encoding — a JSON escape inside an HTML entity inside a percent
-// escape — collapses one layer per round, and the pipeline peels one of each
-// per round. Three is more layers than any encoder on this path produces, and
-// a BOUND is what stops an artifact crafted to be its own decompression bomb
-// from spending the run's CPU on itself.
-const codedSweepRounds = 3
+// # A round count was a ceiling on encoding DEPTH, and its size was the budget
+//
+// What stood here was `codedSweepRounds = 3`, justified as "more layers than
+// any encoder on this path produces". Measured against this file's own
+// credential: url.QueryEscape applied one, two or three times was found and
+// FOUR, five and six were not — and the residual list in credentialIn's doc
+// did not name it, so a reader took its absence for completeness. An
+// undisclosed ceiling is worse than a disclosed one. An encoder picks the next
+// depth exactly as it picks the next pad width.
+//
+// # What replaced it, and why the number below is not the same ceiling
+//
+// NO CONSTANT IN THIS FILE NAMES A DEPTH ANY MORE. The loop in sweepForms runs
+// until the string stops changing; what it spends is BYTES SCANNED, one pass
+// costing the current length, and the descent continues while the running
+// total fits in codedSweepWorkBytes. Depth is therefore not a parameter of the
+// decoder at all — it is whatever the artifact's own shape pays for. Two
+// artifacts of the same size get different depths, which is exactly what a
+// fixed round count could not express.
+//
+// # What that buys, measured rather than reasoned about
+//
+// Applying url.QueryEscape repeatedly is the WORST shape for a byte budget: it
+// re-encodes only the percent signs, so the artifact grows about two bytes per
+// percent sign per layer and each pass shrinks it by the same trickle instead
+// of collapsing it. Even there, this file's own credential is found at 1546
+// layers, against three before. An encoding that covers the whole body —
+// backslash escaping at two bytes per byte, percent at three — collapses it
+// geometrically instead, and the whole descent then costs under 2N bytes for an
+// artifact of N bytes, which is inside the budget at every size an artifact can
+// have.
+//
+// # The residual, disclosed because an absent one reads as completeness
+//
+// The budget bites on an artifact that does NOT shrink as it is decoded: a
+// megabyte of plain filler with one deeply-nested credential at the end costs a
+// full pass per layer, so such an artifact gets codedSweepWorkBytes/N passes —
+// four at the 4 MiB artifact cap, four thousand at a kilobyte. Two consequences,
+// both stated rather than implied:
+//
+//	A 4 MiB artifact that is almost all filler with a five-deep encoding
+//	somewhere in it is decoded four layers and not five. That is a real
+//	residual, it is the provenance rule that covers it, and it is the one
+//	credentialIn's doc now names.
+//
+//	Below about 2 KiB the fixpoint is ALWAYS reached, whatever the artifact
+//	looks like — no residual at all. The measure 2·len+specials (specials being
+//	'&', '%', '\' and '+') strictly decreases on every pass that changes
+//	anything: a pass either shortens the string or, in the one case where it
+//	cannot (`&#0`, three bytes in and three bytes of U+FFFF out), consumes an
+//	'&' and produces no special. So a string of length L reaches its fixpoint
+//	within 3L passes costing at most 3L² bytes, and 3L² is inside
+//	codedSweepWorkBytes for every L below ~2360.
+const codedSweepWorkBytes = 4 * codedMaxArtifactBytes
 
 // sweepForms returns the canonical forms of s the sweep searches.
 //
 // It is FOUR PIPELINES re-run to a fixpoint, not a combinatorial expansion of
-// every decoder ordering: at most 4*codedSweepRounds+1 strings exist, and a
-// form identical to one already produced is dropped — which is the ordinary
-// case, because a string with no '+' and no unresolvable reference produces
-// the same four.
+// every decoder ordering, and a form identical to one already produced is
+// dropped — which is the ordinary case, because a string with no '+' and no
+// unresolvable reference produces the same four.
 //
 // The four are two AMBIGUITIES, each read both ways, and neither can be
 // settled by looking at the bytes:
@@ -2930,7 +3017,11 @@ func sweepForms(s string) []string {
 			unresolvedAsLiteral, unresolvedAsWildcard,
 		} {
 			cur := s
-			for r := 0; r < codedSweepRounds; r++ {
+			// The loop runs to the FIXPOINT. What stops it is either the
+			// string ceasing to change or the pipeline having scanned
+			// codedSweepWorkBytes — never a count of layers.
+			for budget := codedSweepWorkBytes; len(cur) <= budget; {
+				budget -= len(cur)
 				next := cur
 				if plusIsSpace {
 					next = plusToSpace(next)
@@ -2947,43 +3038,139 @@ func sweepForms(s string) []string {
 	return out
 }
 
-// containsAllowingUnresolved reports whether needle occurs in hay, where every
-// unresolvedReference rune in hay stands for ANY ONE rune.
+// containsUnderEveryReading reports whether needle occurs in hay under ANY
+// plausible reading of hay's character references, treating a rune whose
+// identity is undecided as standing for any one rune.
 //
-// That is the whole of what a character reference this decoder cannot resolve
-// tells us: one character was written here and its identity is undecided. An
-// undecided character is not a permission to conclude the credential is absent.
+// # An ambiguous input is read every way, and any reading that contains the
+// secret refuses
 //
-// A WILDCARD IS EXACTLY ONE RUNE, never more. A named reference whose expansion
-// is two runes therefore is not matched by one wildcard — the residual is
-// stated here rather than assumed away, and the test asserts the bound in both
-// directions so that this does not decay into a matcher that says yes to
+// `&#115` followed by a literal '3' is six bytes. Nothing in the artifact says
+// whether the encoder wrote a three-digit reference for 's' and then the
+// character '3', or a four-digit reference for U+0481. The decoder this
+// replaced consumed the digit run GREEDILY — it PICKED a reading — and picking
+// is what lost: six of the twenty-five single-character re-spellings of this
+// file's own credential were invisible to the sweep in base 10 alone, and the
+// credential shipped out through CarriageEvidence().
+//
+// sweepForms has run two pipelines over the '+' ambiguity from the day it was
+// written, for exactly this reason: url.QueryEscape applied twice writes a
+// space as "%2B", so '+' is a literal plus after one round and a space after
+// two, and no byte settles it. A semicolon-less digit run is the same shape.
+// The union is the fail-closed reading of an ambiguity, and it is the reading
+// used here.
+//
+// # What counts as a reading, which is the thing with no budget in it
+//
+// At every byte offset the alternatives are:
+//
+//	the LITERAL rune at that offset, always — so a body that is not a
+//	reference at all still matches byte for byte, and the '&' of a query
+//	string's "&next=" stays a '&';
+//
+//	every reading of a character reference starting there, from
+//	referenceReadingsAt — which is every PREFIX OF THE DIGIT RUN whose value is
+//	a Unicode scalar value, plus the greedy reading.
+//
+// That set is not a list anybody wrote down: it is generated from the bytes,
+// and its SIZE IS BOUNDED BY ARITHMETIC rather than by a cap. Prefix values are
+// non-decreasing and multiply by the base at each digit, so at most seven
+// decimal or six hexadecimal prefixes of any run can denote a character however
+// long the run is or how many leading zeros it carries — 10⁷ and 16⁶ are both
+// past U+10FFFF. A prefix that denotes no character contributes no reading,
+// because a reference that spells no character cannot be a spelling of a
+// character of the secret.
+//
+// # This is a matcher, not a decoder, and it says no to almost everything
+//
+// A wildcard is EXACTLY ONE RUNE. A named reference whose expansion is two
+// runes is still not matched by one — that residual is unchanged.
+// TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading asserts the bound in
+// the other direction so this does not decay into a matcher that says yes to
 // everything.
 //
-// Cost: the fast path is one strings.Contains. The scan below runs only when a
-// form actually carries an unresolvable reference, and is O(len(hay) ×
-// len(needle)) with len(hay) bounded by codedMaxArtifactBytes.
-func containsAllowingUnresolved(hay, needle string) bool {
+// # Cost
+//
+// The fast path is one strings.Contains; a form with no '&' and no undecided
+// rune returns immediately after it. Otherwise it is one forward pass over hay
+// carrying a frontier of partial matches. The frontier stays small BY
+// CONSTRUCTION, not by a cap: no character reference contains a '&', so the
+// spans of two references never overlap, so at any offset at most one reference
+// site and at most four literal-rune sites can still be pending — a dozen
+// offsets, each carrying at most one entry per rune of the needle.
+func containsUnderEveryReading(hay, needle string) bool {
 	if strings.Contains(hay, needle) {
 		return true
 	}
-	if needle == "" || !strings.ContainsRune(hay, unresolvedReference) {
-		return false
+	if needle == "" {
+		return true
 	}
-	h, n := []rune(hay), []rune(needle)
-	for i := 0; i+len(n) <= len(h); i++ {
-		ok := true
-		for j := range n {
-			if h[i+j] != n[j] && h[i+j] != unresolvedReference {
-				ok = false
-				break
+	if strings.IndexByte(hay, '&') < 0 && !strings.ContainsRune(hay, unresolvedReference) {
+		return false // no ambiguity to read a second way
+	}
+	n := []rune(needle)
+	var (
+		live   []readingState
+		expect []int
+		reads  []referenceReading
+	)
+	for i := 0; i < len(hay); i++ {
+		// A match may begin at any offset, so index 0 of the needle is always
+		// expected here; anything else expected here was left by an earlier
+		// reading. States pointing past i are carried, states at or before i
+		// are spent.
+		expect = append(expect[:0], 0)
+		keep := live[:0]
+		for _, st := range live {
+			switch {
+			case st.at == i:
+				expect = append(expect, st.next)
+			case st.at > i:
+				keep = append(keep, st)
 			}
 		}
-		if ok {
-			return true
+		live = keep
+
+		reads = reads[:0]
+		lr, lw := utf8.DecodeRuneInString(hay[i:])
+		reads = append(reads, referenceReading{
+			r: lr, span: lw, undecided: lr == unresolvedReference,
+		})
+		if hay[i] == '&' {
+			reads = referenceReadingsAt(reads, hay, i)
+		}
+
+		for _, rd := range reads {
+			for _, j := range expect {
+				if !rd.undecided && rd.r != n[j] {
+					continue
+				}
+				if j+1 == len(n) {
+					return true
+				}
+				live = addReadingState(live, readingState{at: i + rd.span, next: j + 1})
+			}
 		}
 	}
 	return false
+}
+
+// readingState is one partial match: the needle's rune at index next is
+// expected at byte offset at of the haystack.
+type readingState struct {
+	at   int
+	next int
+}
+
+// addReadingState adds st unless it is already live. The scan is linear over a
+// frontier whose size containsUnderEveryReading's doc bounds by construction.
+func addReadingState(live []readingState, st readingState) []readingState {
+	for _, have := range live {
+		if have == st {
+			return live
+		}
+	}
+	return append(live, st)
 }
 
 // plusToSpace reads every '+' as the space a query-string encoder writes.
@@ -3151,6 +3338,15 @@ const (
 
 // decodeEntities undoes HTML character references.
 //
+// # It takes the GREEDY reading, and that is not where the ambiguity is handled
+//
+// This is a decoder: it produces one string, so it must choose one reading of
+// `&#1153`, and it chooses the one a browser would. THE CHOICE IS SAFE ONLY
+// BECAUSE IT IS NOT THE WHOLE STORY — the union over readings is taken at the
+// point of matching instead, by containsUnderEveryReading, which needs no
+// choice because it never has to produce a string. Read that function's doc
+// before concluding from this one that the sweep reads a digit run one way.
+//
 // # A numeric reference has no digit ceiling here, because it has none in the
 // specification
 //
@@ -3159,7 +3355,8 @@ const (
 // the '&' for a ';' and refused a longer body, so a single '&' survived five
 // decimal leading zeros and four hexadecimal ones — and an encoder picks the
 // next pad width. A bound on the digit count is an enumeration with an edge;
-// the digits are consumed to their end and the VALUE saturates instead.
+// the digits are consumed to their end, and a value that has passed U+10FFFF
+// stops accumulating rather than wrapping into one that has a character.
 //
 // The work is still bounded, by the thing that is already bounded: no byte is
 // covered by more than one reference scan (a scan stops at the first byte that
@@ -3185,13 +3382,15 @@ func decodeEntities(s string, unresolved unresolvedPolicy) string {
 	}
 	var b strings.Builder
 	b.Grow(len(s))
+	var reads []referenceReading
 	for i := 0; i < len(s); {
 		if s[i] != '&' {
 			b.WriteByte(s[i])
 			i++
 			continue
 		}
-		r, n, ok := referenceAt(s, i, unresolved)
+		reads = referenceReadingsAt(reads[:0], s, i)
+		r, n, ok := greedyReading(reads, unresolved)
 		if !ok {
 			b.WriteByte(s[i])
 			i++
@@ -3203,10 +3402,57 @@ func decodeEntities(s string, unresolved unresolvedPolicy) string {
 	return b.String()
 }
 
-// referenceAt reads the character reference beginning at the '&' at off. It
-// returns the rune it denotes and how many bytes it spans, or ok=false when
-// those bytes are not a character reference at all.
-func referenceAt(s string, off int, unresolved unresolvedPolicy) (rune, int, bool) {
+// maxScalarValue is the largest Unicode scalar value there is. A numeric
+// reference above it denotes no character.
+const maxScalarValue = 0x10FFFF
+
+// referenceReading is one plausible reading of the bytes beginning at a '&':
+// the rune they denote, how many bytes they span, and whether that rune's
+// identity is actually known.
+type referenceReading struct {
+	r         rune
+	span      int
+	undecided bool
+}
+
+// referenceReadingsAt appends to dst EVERY plausible reading of the character
+// reference beginning at the '&' at off, in order of increasing span, and
+// returns the result. It appends nothing when those bytes are not a character
+// reference at all.
+//
+// # A digit run with no terminator is ambiguous and every prefix of it is a
+// reading
+//
+// A browser reads `&#1153` greedily, as U+0481. An ENCODER that wrote `&#115`
+// for 's' and then the character '3' produced the same six bytes, and the
+// artifact does not record which happened. Both are returned. The greedy
+// reading is last, which is what makes greedyReading a one-liner and keeps the
+// canonicalizing pipeline reading exactly what a browser would.
+//
+// # The number of readings is bounded by arithmetic, not by a cap
+//
+// Prefix values are non-decreasing and each further digit multiplies by the
+// base, so once a prefix is non-zero at most ⌈log_base(U+110000)⌉ further
+// prefixes can still denote a character — seven in decimal, six in
+// hexadecimal. Leading zeros extend the run without adding readings, because a
+// prefix worth zero denotes no character. So a run of a hundred thousand
+// digits yields at most eight readings, and the SCAN is linear in the run
+// because no reference contains a '&' and runs therefore never overlap.
+//
+// A prefix that denotes no character contributes no reading of its own. That is
+// not a shortcut: a reference spelling no character cannot be an encoder's
+// spelling of a character of the secret, and the undecided rune the greedy
+// reading already contributes is what covers the case where the whole run
+// spells nothing.
+//
+// # A name without a terminator is NOT read by shape
+//
+// `&commat;` is undecided and matches any one rune; `&commat` without the ';'
+// is ordinary text, resolved only by matching the table, or a query string's
+// "&next=" starts eating its neighbours. TestABareAmpersandIsNotAReference
+// holds that shut.
+func referenceReadingsAt(dst []referenceReading, s string, off int) []referenceReading {
+	mark := len(dst)
 	j := off + 1
 	if j < len(s) && s[j] == '#' {
 		j++
@@ -3214,65 +3460,79 @@ func referenceAt(s string, off int, unresolved unresolvedPolicy) (rune, int, boo
 		if j < len(s) && (s[j] == 'x' || s[j] == 'X') {
 			base, j = 16, j+1
 		}
-		start, v := j, 0
-		for j < len(s) {
+		start, v, over := j, 0, false
+		for ; j < len(s); j++ {
 			d := hexVal(s[j])
 			if d < 0 || d >= base {
 				break
 			}
-			// Saturate rather than stop: the remaining digits are still part
-			// of the reference and still have to be consumed, and an int that
-			// kept accumulating would wrap into a value that has a character.
-			if v <= 0x10FFFF {
+			if !over {
+				// v is at most maxScalarValue here, so this cannot wrap. Once
+				// it passes, it stops accumulating and no longer denotes
+				// anything -- but the remaining digits are still part of the
+				// run and are still consumed.
 				v = v*base + d
+				over = v > maxScalarValue
 			}
-			j++
+			if !over && v != 0 && (v < 0xD800 || v > 0xDFFF) {
+				dst = append(dst, referenceReading{r: rune(v), span: j + 1 - off})
+			}
 		}
 		if j == start {
-			return 0, 0, false // "&#" with no digits denotes nothing
+			return dst[:mark] // "&#" with no digits denotes nothing
 		}
-		if j < len(s) && s[j] == ';' {
-			j++
+		end := j
+		if end < len(s) && s[end] == ';' {
+			end++ // the terminator is optional, so it is consumed if it is there
 		}
-		// A value that is not a Unicode scalar value denotes no character. It
-		// is still a reference, so it is undecided rather than absent.
-		if v == 0 || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
-			return unresolvedRune(unresolved, j-off)
+		// The greedy reading spans the whole run. When the run as a whole
+		// denotes a character that reading is already the last one appended and
+		// only its span has to grow over the ';'; otherwise the run is a
+		// reference that spells no character, which is UNDECIDED rather than
+		// absent.
+		if len(dst) > mark && dst[len(dst)-1].span == j-off {
+			dst[len(dst)-1].span = end - off
+			return dst
 		}
-		return rune(v), j - off, true
+		return append(dst, referenceReading{
+			r: unresolvedReference, span: end - off, undecided: true,
+		})
 	}
 	start := j
 	for j < len(s) && isASCIIAlnum(s[j]) {
 		j++
 	}
 	if j == start {
-		return 0, 0, false // a bare '&' is a bare '&'
+		return dst[:mark] // a bare '&' is a bare '&'
 	}
 	name := s[start:j]
 	if j < len(s) && s[j] == ';' {
 		if r, ok := namedEntities[name]; ok {
-			return r, j + 1 - off, true
+			return append(dst, referenceReading{r: r, span: j + 1 - off})
 		}
-		return unresolvedRune(unresolved, j+1-off)
+		return append(dst, referenceReading{
+			r: unresolvedReference, span: j + 1 - off, undecided: true,
+		})
 	}
-	// No ';'. A name is resolved here only by longest match against the table;
-	// anything else is ordinary text and must stay ordinary text, or a query
-	// string's "&next=" starts eating its neighbours.
-	for n := len(name); n > 0; n-- {
+	for n := 1; n <= len(name); n++ {
 		if r, ok := namedEntities[name[:n]]; ok {
-			return r, (start + n) - off, true
+			dst = append(dst, referenceReading{r: r, span: (start + n) - off})
 		}
 	}
-	return 0, 0, false
+	return dst
 }
 
-// unresolvedRune applies the policy to a reference that was recognised by shape
-// and could not be resolved to a value.
-func unresolvedRune(unresolved unresolvedPolicy, span int) (rune, int, bool) {
-	if unresolved == unresolvedAsWildcard {
-		return unresolvedReference, span, true
+// greedyReading returns the reading a browser takes — the longest one — under
+// the policy for a reference whose value could not be determined.
+func greedyReading(reads []referenceReading, unresolved unresolvedPolicy) (rune, int, bool) {
+	if len(reads) == 0 {
+		return 0, 0, false
 	}
-	return 0, 0, false
+	g := reads[len(reads)-1]
+	if g.undecided && unresolved != unresolvedAsWildcard {
+		return 0, 0, false
+	}
+	return g.r, g.span, true
 }
 
 // isASCIIAlnum reports whether c can appear in a named character reference.

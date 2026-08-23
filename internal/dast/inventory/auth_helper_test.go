@@ -839,12 +839,19 @@ func TestAHugeNumericReferenceIsBoundedByTheInputAndNotByADigitCap(t *testing.T)
 // hexadecimal spelling, with an independently drawn pad width, case and
 // terminator.
 //
-// A semicolon-less reference followed by a LITERAL character is genuinely
-// ambiguous — `&#115` followed by a literal '3' is the single character
-// U+0483 by specification, not 's' then '3' — so the generator terminates a
-// reference whose successor is literal. That is not a concession to the
-// decoder: it is the same rule a browser applies, and an encoder that ignored
-// it would not be spelling the credential at all.
+// A semicolon-less reference followed by a LITERAL DIGIT is AMBIGUOUS, and
+// this generator used to resolve the ambiguity in the decoder's favour: it
+// forced a terminating semicolon whenever the next rune was literal, on the
+// stated ground that `&#115` followed by a literal '3' "is U+0483 by
+// specification, not 's' then '3'".
+//
+// That was the corpus defect relocated into the guard. The generator was shaped
+// around the one input that breaks the decoder, so the decoder never saw it —
+// and an encoder that writes `&#115` and then a literal '3' HAS SPELLED THE
+// CREDENTIAL whatever a renderer would do with the result, because the sweep's
+// question is "could these bytes carry the secret", not "what does a browser
+// paint". The forcing is gone: `semi` is now drawn freely, and the ambiguous
+// spellings are the ones this test most wants to produce.
 func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
 	secrets := d24Steps(t).secrets()
 	rng := rand.New(rand.NewPCG(0x24, 0x2718))
@@ -864,20 +871,166 @@ func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
 			if kinds[i] == 2 {
 				base = 16
 			}
-			semi := rng.IntN(2) == 0
-			if i+1 < len(kinds) && kinds[i+1] == 0 {
-				semi = true
-			}
-			if i+1 == len(kinds) {
-				semi = true // the closing quote below is not a digit, but say so anyway
-			}
-			b.WriteString(d24Reference(r, base, rng.IntN(30), semi, rng.IntN(2) == 0))
+			b.WriteString(d24Reference(r, base, rng.IntN(30), rng.IntN(2) == 0,
+				rng.IntN(2) == 0))
 		}
 		in := `{"pw":"` + b.String() + `"}`
 		if _, hit := credentialIn([]byte(in), secrets); !hit {
 			t.Fatalf("iteration %d: the sweep did not see the credential in the "+
 				"generated spelling %q", iter, in)
 		}
+	}
+}
+
+// TestASemicolonLessReferenceIsReadEveryWay walks EVERY position of the
+// credential and both bases, and asserts that a reference whose digit run runs
+// on into the credential's own next character is still read as the character it
+// spells.
+//
+// THE AMBIGUITY, EXACTLY. `&#115` followed by a literal '3' is five bytes plus
+// one. There is no byte in the artifact that says whether the encoder wrote a
+// three-digit reference for 's' and then the character '3', or a four-digit
+// reference for U+0481. A decoder that consumes the digit run GREEDILY has
+// picked one reading, and picking is what loses: the credential
+// `s3cr3t "Pa55w0rd" &<9xQz>` has six characters whose successor is a decimal
+// digit, so six of its twenty-five single-character re-spellings were invisible
+// to the sweep in base 10 alone, and the hexadecimal form adds every successor
+// in [a-fA-F] on top.
+//
+// The rule this pins is the one the '+' pipelines in sweepForms already follow:
+// an input with more than one plausible decoding is read EVERY way, and a
+// secret present in ANY of them is present.
+func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	runes := []rune(d24Password)
+	ambiguous, missed := 0, []string(nil)
+	for _, base := range []int{10, 16} {
+		for pad := 0; pad <= 8; pad++ {
+			for pos := range runes {
+				ref := d24Reference(runes[pos], base, pad, false, false)
+				tail := string(runes[pos+1:])
+				// Whether this spelling is ambiguous at all is decided by the
+				// CREDENTIAL, not by the test: the run continues only if the
+				// next literal character is a digit of the same base.
+				if tail != "" && hexVal(tail[0]) >= 0 && hexVal(tail[0]) < base {
+					ambiguous++
+				}
+				in := `value="` + string(runes[:pos]) + ref + tail + `"`
+				if _, hit := credentialIn([]byte(in), secrets); !hit {
+					missed = append(missed, in)
+				}
+			}
+		}
+	}
+	if ambiguous == 0 {
+		t.Fatal("no spelling this test generated was ambiguous, so it measures nothing")
+	}
+	if len(missed) > 0 {
+		t.Fatalf("the sweep did not see the credential in %d of the %d generated "+
+			"spellings (%d of which are ambiguous). First miss: %q. A greedy digit "+
+			"run picks one reading of an ambiguous input; the union is the "+
+			"fail-closed reading", len(missed), 2*9*len(runes), ambiguous, missed[0])
+	}
+}
+
+// TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading is the other direction,
+// or the test above is satisfied by a matcher that says yes to anything.
+//
+// A reading is a PREFIX OF THE DIGIT RUN whose value is a Unicode scalar value.
+// Nothing else is a reading: a run that spells no character contributes at most
+// the one undecided rune its greedy reading already contributed, and a rune that
+// is not the credential's is not the credential's however the run is split.
+func TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	runes := []rune(d24Password)
+	for _, miss := range []string{
+		// Every character of the credential as a semicolon-less reference —
+		// except that each value is one greater than it should be. Every
+		// prefix reading of every run is available and none of them spells the
+		// credential.
+		`value="` + func() string {
+			var b strings.Builder
+			for _, r := range runes {
+				b.WriteString(d24Reference(r+1, 10, 3, false, false))
+			}
+			return b.String()
+		}() + `"`,
+		// A run whose every prefix is out of range: no prefix denotes a
+		// character, so the run is one undecided rune and not twenty-five.
+		`value="&#` + strings.Repeat("9", 64) + `"`,
+		// The credential with its first character replaced by a bare "&#" that
+		// runs straight into the '3' behind it. The only reading of that run is
+		// U+0003, and U+0003 is not 's'.
+		`value="&#` + string(runes[1:]) + `"`,
+	} {
+		if _, hit := credentialIn([]byte(miss), secrets); hit {
+			t.Fatalf("the sweep read %q as the credential. If a digit run can stand "+
+				"for more than the characters its prefixes actually spell, every "+
+				"assertion in this file's reference tests is vacuous", miss)
+		}
+	}
+}
+
+// d24PercentLayers applies url.QueryEscape n times, which is the ordinary way a
+// value picks up encoding layers: a parameter carried through a redirect, into
+// a form post, back out in a Location header.
+func d24PercentLayers(s string, n int) string {
+	for i := 0; i < n; i++ {
+		s = url.QueryEscape(s)
+	}
+	return s
+}
+
+// TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount pins the ceiling
+// that codedSweepRounds used to be.
+//
+// A ROUND COUNT IS A BUDGET WHOSE SIZE IS ITS WEAKNESS. With three rounds,
+// percent-encoding applied one, two or three times was found and FOUR, five and
+// six were not — and the doc's list of residuals did not name it, so a reader
+// took its absence for completeness.
+//
+// No constant in the file names a depth any more. sweepForms runs to a fixpoint
+// and spends BYTES SCANNED, so the depth an artifact reaches is a property of
+// that artifact rather than a parameter of the decoder. Repeated QueryEscape is
+// the shape that pays worst — it re-encodes only the percent signs, so each
+// pass shrinks the string by a trickle rather than collapsing it — which is why
+// it is the fixture here rather than a friendlier one.
+//
+// The walk is CONTIGUOUS from one, so a decoder that acquired a gap anywhere in
+// the first sixty-four layers fails rather than being averaged out, and the
+// spot checks reach far past the point where three rounds, thirty rounds or
+// three hundred rounds would each have stopped.
+func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	for n := 1; n <= 64; n++ {
+		in := d24PercentLayers(d24Password, n)
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			t.Fatalf("the sweep did not see the credential under %d layer(s) of "+
+				"percent-encoding (%d bytes). A depth ceiling is a budget and the "+
+				"encoder picks the next depth", n, len(in))
+		}
+	}
+	for _, n := range []int{128, 256, 512, 1024} {
+		in := d24PercentLayers(d24Password, n)
+		if len(in) > codedMaxArtifactBytes {
+			t.Fatalf("the %d-layer fixture is %d bytes, past the artifact cap, so it "+
+				"is not an input any artifact could carry", n, len(in))
+		}
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			t.Fatalf("the sweep did not see the credential under %d layer(s) of "+
+				"percent-encoding (%d bytes)", n, len(in))
+		}
+	}
+	// AND THE WORK STAYS BOUNDED, which is the property the round count was
+	// there for and the one a fixpoint must not give up. This artifact is
+	// mostly filler, so it does not shrink and every pass costs the whole
+	// megabyte — the case codedSweepWorkBytes' doc names as its residual. The
+	// measurement is that this RETURNS, and that the shallow nesting the budget
+	// does still cover is found.
+	filler := strings.Repeat("z", 1<<20)
+	if _, hit := credentialIn([]byte(filler+d24PercentLayers(d24Password, 3)), secrets); !hit {
+		t.Fatal("a credential three layers deep at the end of a megabyte of filler " +
+			"was not found, so the byte budget is tighter than its doc claims")
 	}
 }
 
@@ -1646,6 +1799,28 @@ func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
 		t.Fatalf("the refusal changed the LABEL to %q: sweeping the mechanism must not "+
 			"silently drop the evidence, or a leaky caller loses coverage instead of "+
 			"losing the string", got)
+	}
+	// AND IN THE SPELLING THAT ACTUALLY SHIPPED IT. A semicolon-less numeric
+	// reference whose digit run runs on into the credential's next character
+	// was read ONE WAY by the decoder, so `&#1153cr3t "Pa55w0rd" &<9xQz>` was
+	// not recognised as the credential, and this channel rendered it as
+	// `cookie jar carried ??1153cr3t ?Pa55w0rd? ??9xQz?` — redact() folding the
+	// bytes it does not like and passing the rest straight out. Every position
+	// of the credential is spelled that way here, because the position that
+	// leaks is a property of the credential and not of a fixture's choice.
+	runes := []rune(d24Password)
+	for _, base := range []int{10, 16} {
+		for pos := range runes {
+			how := "cookie jar carried " + string(runes[:pos]) +
+				d24Reference(runes[pos], base, 0, false, false) + string(runes[pos+1:])
+			got := s.Carried(between, how).CarriageEvidence()
+			if got != refusedForCredential {
+				t.Fatalf("a mechanism naming the credential with character %d spelled as "+
+					"a semicolon-less base-%d reference rendered as %q, want %q. One "+
+					"reading of an ambiguous input is not every reading", pos, base, got,
+					refusedForCredential)
+			}
+		}
 	}
 
 	other, _ := d24AuthenticatedWindow(t)

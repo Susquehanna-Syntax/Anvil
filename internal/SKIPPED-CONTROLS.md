@@ -1796,13 +1796,13 @@ candidates**, not ask each candidate a question it cannot answer.
 ### What this is, and why it is not just another missing decoder
 
 The sweep canonicalises the haystack — percent, backslash and HTML character
-references, to a fixpoint, under both readings of `+` and both readings of an
-unresolvable reference — and searches for the credential's actual value in
-every form. On 2026-08-23 the character-reference half was rebuilt: numeric
-references have no digit ceiling, the semicolon-less form HTML5 permits is
-handled, and a named reference the six-entry table cannot resolve becomes one
-wildcard rune that matches any one character, so **the table's length is no
-longer the encoder's budget**.
+references, to a fixpoint, under both readings of `+`, both readings of an
+unresolvable reference and **every reading of an unterminated digit run** — and
+searches for the credential's actual value in every form. On 2026-08-23 the
+character-reference half was rebuilt: numeric references have no digit ceiling,
+the semicolon-less form HTML5 permits is handled, and a named reference the
+six-entry table cannot resolve becomes one wildcard rune that matches any one
+character, so **the table's length is no longer the encoder's budget**.
 
 That left base64 as the only spelling with nothing behind it. It is not a
 hypothetical: `AuthArtifactStorageState` is JSON by definition and base64 is how
@@ -1848,6 +1848,44 @@ with the reference decoder disabled,
 `TestAPaddedReferenceOnAnInnocentStepIsRefused` reports `the backstop refused 0
 of 3 artifact(s). Mix: map[stored:3]` — three artifacts carrying the
 credential, attached to a step the provenance rule permits, stored. That is closed, and the same test now refuses all three.
+
+Two more came off the list later the same day, and neither was ever written on
+it — which is the part worth reading.
+
+**A GREEDY READING OF AN UNTERMINATED DIGIT RUN.** `&#115` followed by a literal
+`3` is six bytes with two encoders behind it, and the decoder picked one. Six of
+the twenty-five single-character re-spellings of this file's credential were
+therefore invisible in base 10 alone, and the credential left the package
+through `CoverageInstant.CarriageEvidence()`, rendered as `cookie jar carried
+??1153cr3t ?Pa55w0rd? ??9xQz?`. The union of readings is now taken —
+`containsUnderEveryReading` carries every prefix of the run whose value is a
+Unicode scalar value, a set whose size is bounded by arithmetic (10⁷ and 16⁶ are
+both past U+10FFFF, so at most seven decimal or six hexadecimal prefixes of any
+run however long) rather than by a cap. The test that should have caught this
+**forced a terminating semicolon whenever the next rune was literal** — the
+generator shaped around the input that breaks it — and that forcing is gone.
+
+**A THREE-ROUND CEILING ON ENCODING DEPTH, WHICH NO DOCUMENT NAMED.** The
+canonicalizer re-ran its pipeline exactly three times, so `url.QueryEscape`
+applied one, two or three times was caught and **four, five and six were not**,
+and the residual list in `credentialIn`'s doc read as complete because it said
+nothing. There is no round count now: `sweepForms` runs to a fixpoint and spends
+`codedSweepWorkBytes` of *bytes scanned*. Measured, it reaches **1546** layers of
+repeated `QueryEscape`.
+
+### The residual that replaced it, which is stated rather than removed
+
+An artifact that does **not shrink as it is decoded** — a megabyte of filler with
+one deeply nested credential in it — costs a full pass per layer, so it gets
+`codedSweepWorkBytes/N` passes: four at the 4 MiB artifact cap. A 4 MiB artifact
+that is almost all filler with a five-deep encoding inside it is decoded four
+layers and not five. Below about 2 KiB there is **no residual at all**: the
+measure `2·len + specials` strictly decreases on every pass that changes
+anything, so such a string reaches its fixpoint within `3L` passes costing at
+most `3L²` bytes, which is inside the budget. The arithmetic is at
+`codedSweepWorkBytes` in `auth_helper.go`. This is not on the U-list because it
+needs no edit anyone is forbidden to make — it is a CPU bound with a stated
+consequence, and the provenance rule is what covers the consequence.
 
 ---
 
