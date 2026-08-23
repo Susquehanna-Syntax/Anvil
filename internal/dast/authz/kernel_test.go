@@ -1768,3 +1768,154 @@ func TestTargetStaysComparable(t *testing.T) {
 			"deep-equality helper that can be given a laxer definition later")
 	}
 }
+
+// TestAdjudicateReachesAnAllowThroughTheRealChain is the measurement the
+// orchestrator asked for: ADJUDICATE HAD NEVER RETURNED AN ALLOW IN THIS
+// REPOSITORY.
+//
+// It could not. Gate 11 sat in admissionChain with nothing registered for it,
+// and a missing gate is a refusal, so every admission refused at gate 11 and
+// no authz.Authorization could be minted outside this package at all. That was
+// fail-closed and therefore not wrong, but it meant the kernel could admit
+// nothing. Gate 11 turned out not to be an admission predicate: its row in
+// plan/50-dast.md is a SCOPE NARROWING, it is implemented as
+// NarrowScopeToRobots, and it was removed from the chain.
+//
+// This test uses the EXPORTED Adjudicate over the compiled-in registry — no
+// permitAll fixture, no substituted chain — and asserts the allow, the audit
+// rows behind it and the Authorization the allow mints. If gate 11 or anything
+// else is put back into the chain without an implementation, this test is what
+// fails.
+func TestAdjudicateReachesAnAllowThroughTheRealChain(t *testing.T) {
+	scope := mustScope(t, ModeExternal)
+	att := attestFor(t, scope)
+	en := mustEnablement(t, scope, att)
+	tgt := mustTarget(t, "target.example.com", 443, "93.184.216.34")
+	clk := mustClock(t)
+
+	if missing := firstUnregisteredAdmissionGate(); missing != GateUnspecified {
+		t.Fatalf("%s is in the admission chain with no implementation compiled in, so no "+
+			"allow is reachable and this test is not measuring what it claims", missing)
+	}
+
+	sink := &recordingSink{}
+	d := Adjudicate(sink, en, tgt, scope, att, clk)
+	if !d.Allowed() {
+		t.Fatalf("Adjudicate REFUSED a fully valid fixture through the complete admission "+
+			"chain: %s (%s) — %v", d.Gate(), string(d.Reason()), d.Err())
+	}
+	t.Logf("Adjudicate = ALLOW at %s (%s)", d.Gate(), string(d.Reason()))
+
+	// Gate 21: an immutable audit of EVERY gate decision, allow and deny
+	// alike. One row per gate consulted, in order, all allowing, all keyed.
+	if len(sink.rows) != len(admissionChain) {
+		t.Fatalf("%d audit rows for %d gates consulted", len(sink.rows), len(admissionChain))
+	}
+	for i, row := range sink.rows {
+		if err := row.Validate(); err != nil {
+			t.Fatalf("audit row %d (%s) does not validate: %v", i, row.Gate, err)
+		}
+		if row.Gate != admissionChain[i] {
+			t.Fatalf("audit row %d is attributed to %s; the chain consulted %s there",
+				i, row.Gate, admissionChain[i])
+		}
+		if row.Outcome != OutcomeAllow {
+			t.Fatalf("audit row %d records %q on an allowed decision", i, string(row.Outcome))
+		}
+		if row.AttestationID != att.ID() || row.ScopeHash != scope.Hash() {
+			t.Fatalf("audit row %d is keyed to (%q, %q); gate 21 requires (%q, %q)",
+				i, row.AttestationID, row.ScopeHash, att.ID(), scope.Hash())
+		}
+		t.Logf("  audit row %d: %s %s %s", i, row.Gate, row.Outcome, string(row.Reason))
+	}
+
+	seq, err := d.AuditSeq()
+	if err != nil || seq == 0 {
+		t.Fatalf("an allowed decision has no audit sequence: seq=%d err=%v", seq, err)
+	}
+	t.Logf("audit seq: %d", seq)
+
+	// And the allow mints the token gate 3 demands.
+	authz, err := d.Authorization()
+	if err != nil {
+		t.Fatalf("an allowed, audited decision minted no Authorization: %v", err)
+	}
+	if !authz.Valid() {
+		t.Fatal("the Authorization an allowed decision minted does not validate")
+	}
+	t.Logf("Authorization minted for %s:%d", tgt.Canonical(), tgt.Port())
+}
+
+// TestNarrowedScopeStillAdmits closes the loop between gate 11's narrowing and
+// the admission chain.
+//
+// The narrowing is applied at run initiation, BEFORE admission runs, so by the
+// time Adjudicate is called the scope simply IS narrower. Two things have to
+// hold and both are measured here: an origin robots.txt removed is refused by
+// gate 4 (the scope layer), and the hash the narrowed scope carries is still
+// the one the attestation is bound to — otherwise gate 5 would refuse every
+// target after any narrowing and the whole mechanism would be unusable.
+func TestNarrowedScopeStillAdmits(t *testing.T) {
+	scope := mustScopeOf(t, ModeExternal, []ScopeEntry{
+		{Host: "target.example.com", Ports: []uint16{443}},
+		{Host: "other.example.com", Ports: []uint16{443}},
+	}, nil)
+	att := attestFor(t, scope)
+	en := mustEnablement(t, scope, att)
+	clk := mustClock(t)
+
+	narrowed, res := NarrowScopeToRobots(scope, []RobotsDocument{
+		{Host: "target.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /admin\n")},
+		{Host: "other.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /\n")},
+	})
+	if !res.Passed() {
+		t.Fatalf("the narrowing refused: %v", res.Err())
+	}
+
+	// The attestation still covers the narrowed scope. A narrowing is the
+	// same authorization document, probed less; if the hash moved, gate 5
+	// would refuse everything after any narrowing.
+	if !att.CoversScope(narrowed) {
+		t.Fatal("the attestation no longer covers the scope after narrowing. Gate 5 " +
+			"binds an attestation to the scope HASH so that editing scope invalidates " +
+			"it; a narrowing is not an edit to the scope file")
+	}
+
+	// The origin robots.txt left alone still admits, through the real chain.
+	keep := mustTarget(t, "target.example.com", 443, "93.184.216.34")
+	d := Adjudicate(&recordingSink{}, en, keep, narrowed, att, clk)
+	if !d.Allowed() {
+		t.Fatalf("a narrowed scope refused an origin robots.txt did not touch: %s (%s)",
+			d.Gate(), string(d.Reason()))
+	}
+	t.Logf("kept origin: ALLOW at %s (%s)", d.Gate(), string(d.Reason()))
+
+	// The origin "Disallow: /" removed is refused, and refused BY GATE 4 —
+	// the scope layer — because the removal is a narrowing of the scope and
+	// not a new gate.
+	gone := mustTarget(t, "other.example.com", 443, "93.184.216.35")
+	sink := &recordingSink{}
+	d = Adjudicate(sink, en, gone, narrowed, att, clk)
+	if d.Allowed() {
+		t.Fatal("a narrowed scope admitted an origin whose robots.txt says Disallow: /")
+	}
+	if d.Gate() != Gate4ScopeFile {
+		t.Fatalf("the refusal is attributed to %s; a robots.txt that removes an origin "+
+			"removes it FROM SCOPE, so the gate that refuses is gate 4", d.Gate())
+	}
+	if len(sink.rows) == 0 {
+		t.Fatal("audit rows written: 0 for a refusal")
+	}
+	t.Logf("removed origin: DENY at %s (%s), %d audit rows",
+		d.Gate(), string(d.Reason()), len(sink.rows))
+
+	// And the un-narrowed scope admits it, so the refusal above is the
+	// narrowing's doing and not the fixture's.
+	if d := Adjudicate(&recordingSink{}, en, gone, scope, att, clk); !d.Allowed() {
+		t.Fatalf("the UN-narrowed scope also refused %s, so the previous assertion "+
+			"measured the fixture rather than the narrowing: %s (%s)",
+			gone.Canonical(), d.Gate(), string(d.Reason()))
+	}
+}

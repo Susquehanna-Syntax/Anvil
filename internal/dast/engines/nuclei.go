@@ -236,6 +236,104 @@ func scrub(raw string) (string, EvidenceStats) {
 	return b.String(), st
 }
 
+// scrubEngineResult bounds and strips every ENGINE-AUTHORED string on one
+// result, and reports what it removed.
+//
+// The identity pair is deliberately NOT scrubbed: Driver.Run only reaches this
+// function after TemplateSet.Lookup matched the pair against the admitted set
+// by identity, so at that point TemplateID and TemplateDigest are values this
+// driver loaded and hashed itself. Everything else on an EngineResult is prose
+// the engine wrote — Evidence most obviously, but Severity is documented
+// "unvalidated", and Method and Path are the engine's account of a request
+// this driver did not see.
+func scrubEngineResult(r EngineResult) (EngineResult, EvidenceStats) {
+	var total, one EvidenceStats
+	r.Evidence, one = scrub(r.Evidence)
+	total.Merge(one)
+	r.Severity, one = scrub(r.Severity)
+	total.Merge(one)
+	r.Method, one = scrub(r.Method)
+	total.Merge(one)
+	r.Path, one = scrub(r.Path)
+	total.Merge(one)
+	return r, total
+}
+
+// ---------------------------------------------------------------------------
+// redactIdentifier — the one channel from an external identifier to a message
+// ---------------------------------------------------------------------------
+
+// maxRedactedIdentifierBytes is how much of an untrusted identifier a refusal
+// message may quote. It matches the kernel's bound, and so does the charset in
+// redactIdentifier.
+const maxRedactedIdentifierBytes = 64
+
+// redactIdentifier renders an identifier that came from outside Anvil safely
+// enough to appear in an operator-facing refusal.
+//
+// Every caller below is a refusal path, and the value it is handed has just
+// FAILED an allowlist or a lookup — a template id the engine invented, a
+// digest that matches nothing admitted, an origin nobody enumerated. Those
+// strings reach an operator's terminal, the gate-21 audit and, downstream, a
+// prompt-bound agent (plan/00-SPINE.md S6, S7). Length is its own payload and
+// so is a bidi override, so neither reaches the message.
+//
+// # Why this is a copy of the kernel's redactUntrusted and not a call to it
+//
+// authz.redactUntrusted (phase1_run.go) is UNEXPORTED and there is no exported
+// wrapper. MEASURED, PowerShell, on the development host:
+//
+//	go doc -all .../internal/dast/authz | Select-String "^func .*[Rr]edact"
+//	COUNT: 0
+//
+// A package outside authz therefore cannot call it, and the choice is between
+// mirroring it and having no bound at all. Mirroring is how two copies come to
+// disagree, so the disagreement is made a TEST FAILURE rather than a hazard:
+// TestTheEnginesRedactionAgreesWithTheKernelByteForByte drives the same strings
+// through authz.NewRequestIntent — which redacts an unrecognised origin with
+// the kernel's own function — and compares the two renderings. If either
+// charset or bound moves on either side, that test fails.
+//
+// One consequence of the charset is worth stating because it reads as a bug the
+// first time it is seen: [A-Z] is NOT on the allowlist, so a legitimate
+// uppercase identifier such as `CVE-2021-44228` renders `???-2021-44228`. That
+// is the kernel's choice; widening it here is precisely the divergence the test
+// above exists to catch.
+func redactIdentifier(s string) string {
+	truncated := false
+	if len(s) > maxRedactedIdentifierBytes {
+		s = s[:maxRedactedIdentifierBytes]
+		truncated = true
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		ok := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '.' || c == '-' || c == '_' || c == '*' || c == '/'
+		if ok {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('?')
+	}
+	if truncated {
+		b.WriteString("...")
+	}
+	return b.String()
+}
+
+// redactedIdentity renders an id/digest pair the way identityKey joins one,
+// with each HALF redacted separately.
+//
+// Redacting the joined string would truncate at 64 bytes and throw the digest
+// away — a sha-256 hex digest is 64 bytes on its own — leaving a message that
+// names the half the operator already knows and drops the half that
+// distinguishes one file from another. It would also render identityKey's own
+// '@' as '?', since '@' is not on the kernel's allowlist.
+func redactedIdentity(id, digest string) string {
+	return redactIdentifier(id) + "@" + redactIdentifier(digest)
+}
+
 // ---------------------------------------------------------------------------
 // Sentinels and the absence contract
 // ---------------------------------------------------------------------------
@@ -361,8 +459,8 @@ type Engine interface {
 	// IT IS ON THIS INTERFACE PRECISELY SO THAT ITS ABSENCE FROM THE CALL
 	// GRAPH IS PROVABLE. A forbidden call that no type declares cannot be
 	// counted; a spy implementing this method can assert a count of zero,
-	// and TestPDCPUploadIsNeverCalledAnywhereInThisPackage reads this file's
-	// syntax tree and fails if the identifier ever appears in a call
+	// and TestPDCPUploadAppearsInNoCallExpressionInThisPackage reads this
+	// file's syntax tree and fails if the identifier ever appears in a call
 	// expression. Two independent guards, one runtime and one structural,
 	// because the runtime one only proves what a test happened to exercise.
 	WithPDCPUpload(scanID, teamID string) error
@@ -470,16 +568,27 @@ type EngineResult struct {
 	TemplateDigest string
 	// Matched is the engine's verdict.
 	Matched bool
-	// Severity is the template's declared severity, unvalidated.
+	// Severity is the template's declared severity as the engine reported
+	// it. Nothing validates it against a known set.
 	Severity string
 	// Method and Path are the request the engine says produced the result.
+	// This driver did not see that request; these are the engine's account
+	// of it.
 	Method string
 	Path   string
 	// Status is the HTTP status observed.
 	Status int
-	// Evidence is engine-authored prose. Sanitized before it is retained.
+	// Evidence is engine-authored prose.
 	Evidence string
 }
+
+// WHERE AN EngineResult IS SCRUBBED, stated on the type because the field
+// comments used to claim it and the claim was not true: Driver.Run is the only
+// route from an Engine to a caller, and it passes every result through
+// scrubEngineResult before the callback sees it — Evidence, Severity, Method
+// and Path — merging what was removed into Coverage.Evidence. A value built by
+// hand, or one an Engine implementation holds on its way in, has not been
+// through it.
 
 // ---------------------------------------------------------------------------
 // TargetSpec — the only route from an Authorization to an engine argument
@@ -1478,17 +1587,18 @@ func NewRequestProposal(f ProposalFacts) (RequestProposal, error) {
 			"requests of origin %q. Its three permitted origins correspond exactly to the "+
 			"protocols the template allowlist admits; the others need `headless:`, "+
 			"`websocket:` or interactsh, and none of those can be turned on here",
-			ErrRefused, string(f.Origin))
+			ErrRefused, redactIdentifier(string(f.Origin)))
 	}
 	if !f.Method.Recognised() {
 		return RequestProposal{}, fmt.Errorf("engines: %w: %q is not on the kernel's method "+
-			"allowlist. An unknown verb is not a safe verb", ErrRefused, string(f.Method))
+			"allowlist. An unknown verb is not a safe verb", ErrRefused,
+			redactIdentifier(string(f.Method)))
 	}
 	if !f.Technique.Classified() {
 		return RequestProposal{}, fmt.Errorf("engines: %w: technique %q is on neither of "+
 			"gate 15's compiled-in lists. A probe whose technique nobody classified is "+
 			"refused before the kernel is asked, and refused again by gate 15 if it were not",
-			ErrRefused, string(f.Technique))
+			ErrRefused, redactIdentifier(string(f.Technique)))
 	}
 	if f.TemplateID == "" || f.TemplateDigest == "" {
 		return RequestProposal{}, fmt.Errorf("engines: %w: the proposal names no template "+
@@ -1739,7 +1849,7 @@ func (d *Driver) Fire(ctx context.Context, p RequestProposal, now authz.Clock) (
 		return Finding{}, fmt.Errorf("engines: %w: no admitted template has identity %s. "+
 			"A template rejected at load time — every `code:` template, among others — "+
 			"cannot reach the kernel through this path, because the lookup is by identity "+
-			"and a rejected template has no entry", ErrRefused, identityKey(id, digest))
+			"and a rejected template has no entry", ErrRefused, redactedIdentity(id, digest))
 	}
 
 	if err := authz.RequireAuthorization(d.cfg.Authorization, p.spec.Target()); err != nil {
@@ -1841,6 +1951,14 @@ func (d *Driver) Fire(ctx context.Context, p RequestProposal, now authz.Clock) (
 // only way to a reportable clean result is for the engine's requests to have
 // come back through Fire — which is where the kernel is. An engine that
 // bypasses the Issuer does not get a quieter result; it gets a refusal.
+//
+// # What it DOES do to every result, which Fire's path also does
+//
+// It scrubs. The callback is handed a result whose Evidence, Severity, Method
+// and Path have been through scrubEngineResult, and Coverage.Evidence carries
+// the count of what came off. Run is the only route from an Engine to a
+// caller, so a result that skipped this would be engine-authored bytes
+// travelling to a record and an agent's context unbounded and unstripped.
 func (d *Driver) Run(ctx context.Context, cb func(EngineResult, Template) error) error {
 	if !d.Constructed() {
 		return fmt.Errorf("engines: %w: Run was called on a Driver NewDriver never built",
@@ -1865,15 +1983,26 @@ func (d *Driver) Run(ctx context.Context, cb func(EngineResult, Template) error)
 			// different file bearing an admitted id — and either way the
 			// finding would be filed under a template that did not produce
 			// it.
+			//
+			// Both halves of the identity came from the engine and neither
+			// has passed anything, so the message quotes them REDACTED.
 			return fmt.Errorf("engines: %w: the engine reported a result for template "+
 				"identity %s, which this driver did not admit. Results are attributed by "+
 				"identity and never by position, so there is no fallback to guess at",
-				ErrRefused, identityKey(r.TemplateID, r.TemplateDigest))
+				ErrRefused, redactedIdentity(r.TemplateID, r.TemplateDigest))
 		}
+		// SCRUB BEFORE THE CALLER SEES IT. This is the only route an
+		// EngineResult takes out of the driver, the prose on it was written
+		// by a process outside Anvil, and where it is heading is a record and
+		// eventually an agent's context (plan/00-SPINE.md S6, S7). It is
+		// scrubbed before the nil-callback check so that Coverage.Evidence
+		// records what the engine sent whether or not anybody was listening.
+		clean, stats := scrubEngineResult(r)
+		d.count(func(c *Coverage) { c.Evidence.Merge(stats) })
 		if cb == nil {
 			return nil
 		}
-		return cb(r, tpl)
+		return cb(clean, tpl)
 	})
 }
 

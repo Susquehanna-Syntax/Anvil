@@ -47,22 +47,72 @@
 // mid-scan redirect walked out of scope. An http.Client with a nil
 // CheckRedirect follows up to ten hops silently; ZAP's own client follows too.
 //
-// The proxy answer covers this without depending on a ZAP setting:
+// WHAT THE PROXY ENFORCES, WITHOUT DEPENDING ON A ZAP SETTING:
 //
 //   - Anvil's egress layer assigns authz.RefuseAllRedirects to its client's
 //     CheckRedirect. Anvil therefore NEVER follows a Location header
-//     automatically — not even a same-host one — so the 3xx is what comes
-//     back through the proxy.
+//     automatically — not even a same-host one — so the 3xx comes back
+//     through the proxy instead of being chased inside Anvil's own client.
 //   - ZAP, receiving the 3xx, may choose to follow it. Its follow-up is a NEW
-//     REQUEST TO THE PROXY, so it arrives at gate 13 as an ordinary request
-//     with OriginRedirect and Hop+1, and is re-validated against the scope
-//     and the attestation exactly like the first one. authz's maxRedirectHops
-//     bounds how many times that can happen.
+//     REQUEST TO THE PROXY, and gate 13 re-validates SCOPE on every request
+//     that arrives, whatever that request says it is. A follow-up to a host
+//     the scope and attestation do not cover is refused on its DESTINATION,
+//     so the out-of-scope half of #2546 does not rest on the follow-up being
+//     recognised as a redirect at all. Driven through a real authz.Governor by
+//     TestGate13JudgesTheDestinationWhateverTheRequestClaimsToBe.
 //   - If ZAP is ever run WITHOUT the proxy, none of the above applies and
 //     nothing in this file can make it apply. That is why the proxy is
 //     required at construction rather than defaulted, and why
 //     internal/SKIPPED-CONTROLS.md U5 records that no run on this host has
 //     ever demonstrated the proxied path end to end.
+//
+// # WHAT IS NOT ENFORCED — read this before relying on the hop bound
+//
+// NOTHING MAKES ZAP'S OWN REDIRECT FOLLOWING ARRIVE LABELLED AS A REDIRECT.
+//
+// An earlier version of this comment said the follow-up "arrives at gate 13 as
+// an ordinary request with OriginRedirect and Hop+1", bounded by authz's
+// maxRedirectHops. It does not, and the kernel is explicit about who has to
+// make it so: authz.NewRequestIntent REFUSES OriginRedirect at Hop 0
+// (phase3_enforcement.go:376) and REFUSES any other origin at a non-zero Hop
+// (:370), so the origin and the depth are neither inferred nor defaulted —
+// they are supplied by whoever fills a ZapProposalFacts, which is the
+// component that runs the proxy. RefuseAllRedirects' own doc names the same
+// owner: "the egress layer records the hop, and a same-host hop is re-issued
+// as a fresh request with OriginRedirect and Hop+1"
+// (phase3_enforcement.go:605). Neither this file nor the kernel implements
+// that component, and nothing either of them can see distinguishes a
+// truthfully-labelled hop from a mislabelled one.
+//
+// So for a proxy that labels every request `initial` at Hop 0:
+//
+//	scope, robots, method, technique, gate 14 caps
+//	                       STILL ENFORCED, per request, on the destination
+//	authz's maxRedirectHops NEVER REACHED. A hop that is not labelled as one
+//	                       carries no depth to bound, so a same-host redirect
+//	                       chain is bounded only by gate 14's rate and volume
+//	                       caps. MEASURED: at one instant the real Governor
+//	                       admitted 10 such requests before gate 14 refused
+//	                       the 11th, against a labelled-hop bound of 5. The
+//	                       test is named at the end of this section.
+//	the gate-21 audit row  CANNOT SHOW EITHER WAY. authz.GateRecord
+//	                       (kernel.go:708) has no origin field and no hop
+//	                       field, so no row distinguishes a first request
+//	                       from a hop whether the label was right or wrong,
+//	                       and the chain cannot be reconstructed from the log
+//	                       to check.
+//
+// Two tests demonstrate those rows rather than this comment asserting them:
+// TestNothingInThisPackageMakesARedirectArriveLabelledAsOne, and
+// TestAnUnlabelledRedirectChainIsBoundedByGate14AndNotByTheHopBound, which is
+// where the 10-against-5 measurement above comes from.
+//
+// The missing control is a redirect policy owned by the proxy — it is the only
+// component that holds the 3xx it just returned and can therefore say "this
+// request is the follow-up to that one" and fill Origin and Hop in
+// accordingly. That is a change to whoever builds the Issuer and the proxy; it
+// is outside this file, it is outside internal/dast/authz, and until it exists
+// the hop bound is not a control this driver may be described as having.
 //
 // This file references authz.RefuseAllRedirects by name and does not wrap it:
 // its signature is func(*http.Request, []*http.Request) error, and importing
@@ -1425,8 +1475,10 @@ func (i ZapInvocation) PlanYAML() string { return i.planYAML }
 //	OriginInitial            ZAP's first request to the target
 //	OriginRedirect           a hop ZAP chose to follow after Anvil's client
 //	                         refused to follow it automatically
-//	                         (authz.RefuseAllRedirects), re-issued through the
-//	                         proxy and therefore re-gated
+//	                         (authz.RefuseAllRedirects), and which the PROXY
+//	                         labelled as a hop. Nothing in this package can
+//	                         apply that label or check it — see this file's
+//	                         header, "WHAT IS NOT ENFORCED".
 //
 // and NOT:
 //
@@ -1437,6 +1489,24 @@ func (i ZapInvocation) PlanYAML() string { return i.planYAML }
 //	                         should be.
 //	OriginWebSocketUpgrade   no job in the generated plan makes one
 //	OriginOutOfBandCallback  no job in the generated plan makes one
+//
+// # Both entries are REACHABLE, and that is a test rather than a claim
+//
+// An origin in an allowlist that no caller can construct is a claim nothing
+// exercises. TestEveryOriginThisDriverAllowsIsConstructibleAllTheWayToAnIntent
+// iterates THIS FUNCTION — not a copy of its contents — and for each entry
+// builds a RequestProposal through NewZapRequestProposal and then a sealed
+// authz.RequestIntent from it. An entry added here that cannot make that trip
+// fails that test, which is the review that widening this list should be.
+//
+// The rule id is required for BOTH, OriginInitial included: zapRuleIdentity
+// refuses an empty RuleID under every origin, so a ZAP request that arrives at
+// the proxy with no X-ZAP-Scan-ID cannot be proposed at all. That is the
+// fail-closed direction and it is deliberate — injectPluginIdInHeader is on in
+// every plan this package generates so that "every request carries
+// X-ZAP-Scan-ID" (research/19-target-environment-and-sandboxing.md, the
+// attribution bullet), and a request that does not carry one is a request this
+// driver cannot attribute rather than one it attributes to nothing.
 func zapProposalOrigins() []authz.RequestOrigin {
 	return []authz.RequestOrigin{authz.OriginInitial, authz.OriginRedirect}
 }
@@ -1520,7 +1590,7 @@ func NewZapRequestProposal(f ZapProposalFacts) (RequestProposal, error) {
 			"there is no template, no headless browser, no WebSocket job and no "+
 			"out-of-band callback in it, so there is no request of those origins for it "+
 			"to propose. D.23's Client Spider is what widens this",
-			ErrRefused, string(f.Origin))
+			ErrRefused, redactIdentifier(string(f.Origin)))
 	}
 	id, err := zapRuleIdentity(f.RuleID)
 	if err != nil {
@@ -1692,16 +1762,20 @@ func (d *ZapDriver) Fire(ctx context.Context, p RequestProposal, now authz.Clock
 	id, digest := p.TemplateIdentity()
 	if digest != d.plan.Digest() {
 		d.count(func(c *ZapCoverage) { c.RequestsRefused++ })
+		// The proposal's digest is whatever the caller put on it and has
+		// matched nothing, so it is REDACTED. The driver's own is the digest
+		// it computed over the bytes it rendered, so it is not.
 		return Finding{}, fmt.Errorf("engines: %w: the proposal carries plan digest %s and "+
 			"this driver rendered %s. A request from a scan configuration this driver did "+
 			"not build has unknown caps and unknown scope, and the kernel would admit it "+
 			"anyway because the kernel gates destinations, not provenance",
-			ErrRefused, digest, d.plan.Digest())
+			ErrRefused, redactIdentifier(digest), d.plan.Digest())
 	}
 	if !strings.HasPrefix(id, "zap:rule:") {
 		d.count(func(c *ZapCoverage) { c.RequestsRefused++ })
 		return Finding{}, fmt.Errorf("engines: %w: the proposal's identity %q is not a ZAP "+
-			"rule identity. Only NewZapRequestProposal mints one", ErrRefused, id)
+			"rule identity. Only NewZapRequestProposal mints one", ErrRefused,
+			redactIdentifier(id))
 	}
 
 	if err := authz.RequireAuthorization(d.cfg.Authorization, p.Spec().Target()); err != nil {

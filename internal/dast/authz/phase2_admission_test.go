@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/netip"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -309,6 +310,10 @@ func TestPhase2ReasonTokensNameTheirOwnGate(t *testing.T) {
 		ReasonRobotsWrongOrigin:          Gate11RobotsDeny,
 		ReasonRobotsPathMalformed:        Gate11RobotsDeny,
 		ReasonRobotsDisallows:            Gate11RobotsDeny,
+		ReasonRobotsScopeUnconstructed:   Gate11RobotsDeny,
+		ReasonRobotsDocumentOrigin:       Gate11RobotsDeny,
+		ReasonRobotsDocumentInconsistent: Gate11RobotsDeny,
+		ReasonRobotsNarrowingFailed:      Gate11RobotsDeny,
 		ReasonSecurityTxtAbsent:          Gate12SecurityTxtReportingChannel,
 		ReasonSecurityTxtResolved:        Gate12SecurityTxtReportingChannel,
 		ReasonSecurityTxtExpired:         Gate12SecurityTxtReportingChannel,
@@ -1908,26 +1913,49 @@ func TestGate11RefusesEveryUndeterminedPolicy(t *testing.T) {
 		Gate11RobotsDeny, ReasonRobotsTargetUnbuilt)
 }
 
-// TestGate11IsNotRegisteredAndTheChainRefusesThere is the tripwire. If a later
-// packet registers a gate 11 that can never refuse, this fails and asks for the
-// ruling rather than letting a vacuous gate ship.
-func TestGate11IsNotRegisteredAndTheChainRefusesThere(t *testing.T) {
+// TestGate11IsNotRegisteredAndCannotBe is the tripwire. Gate 11 is a SCOPE
+// NARROWING plus a PER-REQUEST check; it is not an admission predicate and has
+// no gateFunc form. If a later packet registers one that can never refuse, this
+// fails and asks for the ruling rather than letting a vacuous gate ship.
+func TestGate11IsNotRegisteredAndCannotBe(t *testing.T) {
 	if fn, ok := registry[Gate11RobotsDeny]; ok && fn != nil {
 		t.Fatal("gate 11 has been registered as an admission gateFunc. robots.txt is a " +
 			"property of an origin AND A PATH, and a gateFunc receives neither a path nor " +
 			"a fetched document — so any gateFunc for it either reads ambient state or " +
 			"can never refuse. Get an orchestrator ruling before this test is changed")
 	}
-	found := false
-	for _, g := range admissionChain {
-		if g == Gate11RobotsDeny {
-			found = true
+	for _, ch := range map[string][]GateID{
+		"admission":    admissionChain,
+		"revalidation": revalidationChain,
+	} {
+		for _, g := range ch {
+			if g == Gate11RobotsDeny {
+				t.Fatalf("gate 11 is back in a chain (%v). It is a scope narrowing "+
+					"applied before admission runs (NarrowScopeToRobots) and a "+
+					"per-request check (CheckGate11RobotsDeny), not a chain position", ch)
+			}
 		}
 	}
-	if !found {
-		t.Fatal("gate 11 is not in the admission chain, so its absence from the registry " +
-			"is no longer a refusal")
+
+	// The refusal is the enforcement, not the absence of a line. registerInto
+	// must reject gate 11 the way it rejects gates 7 and 12.
+	m := map[GateID]gateFunc{}
+	err := registerInto(m, Gate11RobotsDeny,
+		func(Target, Scope, Attestation, Clock) Ruling {
+			return permit(Gate11RobotsDeny, ReasonRobotsDisallows, "")
+		})
+	if err == nil {
+		t.Fatal("registerInto ACCEPTED a gate 11 implementation. \"Just add it back to " +
+			"the chain\" must not survive the first run of the test suite")
 	}
+	if !errors.Is(err, ErrRefused) {
+		t.Fatalf("registerInto refused gate 11 with an error that does not unwrap to "+
+			"ErrRefused: %v", err)
+	}
+	if len(m) != 0 {
+		t.Fatalf("registerInto refused gate 11 and installed it anyway: %v", m)
+	}
+	t.Logf("registerInto refused gate 11: %v", err)
 }
 
 // ===========================================================================
@@ -2386,40 +2414,57 @@ func TestPhase2ChainRefusesEachGateIndividually(t *testing.T) {
 	}
 }
 
-// TestGate11StopsTheAdmissionChain records WHERE THE ADMISSION CHAIN ACTUALLY
-// STOPS TODAY, so the answer is measured rather than assumed.
+// TestTheRealAdmissionChainReachesAnAllow records WHERE THE ADMISSION CHAIN
+// ACTUALLY STOPS TODAY, so the answer is measured rather than assumed.
 //
-// Gate 7 used to stop it. The orchestrator ruled that gate 7 is a Phase 1
-// run-initiation gate and does not belong in the admission chain at all, so it
-// was removed and registerInto now refuses it. Gate 11 is the next gate with no
-// implementation compiled in — robots.txt is a property of an origin AND A
-// PATH, and a gateFunc receives no path — so gate 11 is where the chain stops,
-// and a gate with no implementation is a REFUSAL, never a skipped step.
-//
-// This test asks for a ruling on gate 11 the way its predecessor asked for one
-// on gate 7. When the robots policy gets a route into the kernel, this test is
-// the thing that has to change, and changing it is the moment somebody decides.
-func TestGate11StopsTheAdmissionChain(t *testing.T) {
+// Gate 7 stopped it, then gate 11 stopped it. Both were removed for the same
+// class of reason — neither is a function of (target, scope, attestation,
+// clock) — and with gate 11 gone the chain is {4, 5, 6, 8, 9, 10} and every one
+// of them has an implementation compiled in. Adjudicate had NEVER returned an
+// allow in this repository before this packet. This is the test that says it
+// does now, through the EXPORTED Decide over the REAL registry, with no
+// permitAll fixture anywhere in it.
+func TestTheRealAdmissionChainReachesAnAllow(t *testing.T) {
 	scope := p2ExternalScope(t)
 	att := attestFor(t, scope)
 	tgt := p2Target(t, "target.example.com", "target.example.com", 443, p2PublicAddr)
+
+	// Premise: nothing here is a fixture chain. If a gate loses its
+	// implementation, this test must fail rather than quietly measure a
+	// shorter chain.
+	for _, g := range admissionChain {
+		if fn, ok := registry[g]; !ok || fn == nil {
+			t.Fatalf("%s is in the admission chain with no implementation compiled in, "+
+				"so this test cannot reach an allow and is not measuring what it "+
+				"claims", g)
+		}
+	}
+
 	r := Decide(tgt, scope, att, mustClock(t))
-	if r.Permits() {
-		t.Fatal("Decide permitted with gate 11 unimplemented")
+	if !r.Permits() {
+		t.Fatalf("Decide REFUSED a fully valid fixture through the complete admission "+
+			"chain: %s (%s) — %v", r.Gate(), string(r.Reason()), r.Err())
 	}
-	// The reason token names GATE 11, not gate 21. A gate21.* token on a
-	// gate-11 ruling is what GateRecord.Validate rejects, and Adjudicate
-	// validates every row before writing any — so the mis-attribution used to
-	// throw away the audit trail of the very denial it was describing. See
-	// structuralRefusal and TestAdjudicateWritesAuditRowsForARealChainDenial.
-	wantReason := Reason(Gate11RobotsDeny.String() + "." + slugGateNotRegistered)
-	if r.Gate() != Gate11RobotsDeny || r.Reason() != wantReason {
-		t.Fatalf("the admission chain stopped at %s (%s); gates 4, 5, 6, 8, 9 and 10 are "+
-			"implemented and gate 11 is not, so gate 11 is where it must stop, with "+
-			"reason %q",
-			r.Gate(), string(r.Reason()), string(wantReason))
+	if want := admissionChain[len(admissionChain)-1]; r.Gate() != want {
+		t.Fatalf("the allow is attributed to %s; a permitting chain's ruling is its LAST "+
+			"gate's, which is %s", r.Gate(), want)
 	}
-	// Gate 7 must NOT be the answer any more, and must not be in the chain.
+	t.Logf("Decide = %s", r)
+
+	// The trace is one ruling per gate consulted, all six permitting.
+	trace := decideTracedWith(admissionRunner(), tgt, scope, att, mustClock(t))
+	if len(trace) != len(admissionChain) {
+		t.Fatalf("%d rulings for %d gates in the chain", len(trace), len(admissionChain))
+	}
+	for i, ruling := range trace {
+		if ruling.Gate() != admissionChain[i] || !ruling.Permits() {
+			t.Fatalf("ruling %d is %s; the chain consulted %s at that position and every "+
+				"one must permit", i, ruling, admissionChain[i])
+		}
+		t.Logf("  gate %-2d %s", i+1, ruling)
+	}
+
+	// Neither gate 7 nor gate 11 may be back in the chain.
 	for _, g := range admissionChain {
 		if g == Gate7TriggerProvenance {
 			t.Fatal("gate 7 is back in the admission chain. It is a Phase 1 run-initiation " +
@@ -2427,5 +2472,704 @@ func TestGate11StopsTheAdmissionChain(t *testing.T) {
 				"function of the trigger event and the actor rather than of (target, " +
 				"scope, attestation, clock)")
 		}
+		if g == Gate11RobotsDeny {
+			t.Fatal("gate 11 is back in the admission chain. It is a scope narrowing " +
+				"applied at run initiation (NarrowScopeToRobots) and a per-request check " +
+				"(CheckGate11RobotsDeny); a gateFunc receives no path and performs no fetch")
+		}
 	}
 }
+
+// ===========================================================================
+// GATE 11 AT RUN INITIATION — the scope narrowing
+// ===========================================================================
+
+// nsDocs is the fixture set of fetched robots.txt documents. It deliberately
+// covers all four outcomes and both parse verdicts, and it includes a document
+// for an origin that IS NOT IN THE SCOPE AT ALL — cdn.example.net — because
+// that is the triple a widening bug shows up on first: if removeOrigin ever
+// appended to allow instead of deny, cdn.example.net:443 would become
+// permitted by a file the TARGET served.
+func nsDocs() []RobotsDocument {
+	return []RobotsDocument{
+		{Host: "target.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\n" +
+				"Disallow: /admin\n" +
+				"Disallow: /private/*\n" +
+				"Allow: /admin/public\n" +
+				"Sitemap: https://target.example.com/sitemap.xml\n")},
+		// A group naming Anvil that removes the whole origin.
+		{Host: "app.lab.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: Anvil\nDisallow: /\n")},
+		// Present and empty: parsed, removes nothing.
+		{Host: "other.example.com", Port: 8443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("")},
+		// Fetched and 404: removes nothing.
+		{Host: "shop.lab.example.com", Port: 443, Outcome: RobotsFetchAbsent},
+		// Could not be parsed — a byte outside printable ASCII.
+		{Host: "api.lab.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /\x00\xffx\n")},
+		// Fetch failed, and the origin is not in scope in the first place.
+		{Host: "cdn.example.net", Port: 443, Outcome: RobotsFetchUnreachable},
+		// Nobody looked. The zero outcome must not mean "permitted".
+		{Host: "unlooked.lab.example.com", Port: 443},
+	}
+}
+
+// nsHosts, nsPorts and nsPaths are the sweep's generator.
+//
+// A GENERATOR THAT CANNOT PRODUCE THE BREAKING INPUT IS THE DEFECT — a
+// relation test in this repository once swept 393,226 addresses and stayed
+// green over a live bug because its generator emitted no zoned addresses. So
+// this one carries hosts that are outside the scope, hosts the deny list
+// covers, hosts the wildcard entry does NOT cover (the apex and a two-label
+// child), ports the scope does not list, and paths that appear in the fixture
+// robots.txt's Allow directives as well as its Disallow ones. The coverage
+// assertions in TestNarrowScopeToRobotsCannotWiden fail if any of those
+// buckets is empty.
+func nsHosts() []string {
+	return []string{
+		"target.example.com",
+		"app.lab.example.com",
+		"shop.lab.example.com",
+		"api.lab.example.com",
+		"unlooked.lab.example.com",
+		"admin.lab.example.com", // in the scope file's DENY list
+		"lab.example.com",       // the wildcard's apex: not covered
+		"a.b.lab.example.com",   // two labels under the wildcard: not covered
+		"other.example.com",
+		"cdn.example.net",  // out of scope, and has a robots document
+		"evil.example.net", // out of scope, and has none
+	}
+}
+
+func nsPorts() []uint16 { return []uint16{80, 443, 8443} }
+
+func nsPaths() []string {
+	return []string{
+		"/",
+		"/index.html",
+		"/admin",
+		"/admin/users",
+		"/admin/public",     // named in an Allow: directive
+		"/admin/public/img", // named in an Allow: directive, deeper
+		"/%61dmin/users",    // percent-encoded /admin/users
+		"/private/a",
+		"/private",
+		"/robots.txt",
+		"", // not a path at all
+		"no-leading-slash",
+		"/with space",
+	}
+}
+
+// TestNarrowScopeToRobotsCannotWiden is the sweep, and it is the test the
+// orchestrator's ruling is about: THE OUTPUT SCOPE CAN ONLY EVER BE NARROWER
+// THAN OR EQUAL TO THE INPUT.
+//
+// Gate 11 is asymmetric by design. A worker who implements robots.txt as an
+// ordinary allow/deny parser gets this backwards, and the result is a file
+// served by the TARGET widening the scope Anvil was authorized for. The
+// structural half of the defence is in types.go (narrowedCopy never writes
+// allow; deny and robots are append-only) and in
+// TestScopeNarrowingHasNoFieldItCanWiden. This is the behavioural half.
+func TestNarrowScopeToRobotsCannotWiden(t *testing.T) {
+	base := tnScope(t)
+	narrowed, res := NarrowScopeToRobots(base, nsDocs())
+	if !res.Passed() {
+		t.Fatalf("the narrowing refused a well-formed document set: %v", res.Err())
+	}
+	if res.Gate() != Gate11RobotsDeny {
+		t.Fatalf("the narrowing's result is attributed to %s; it is gate 11", res.Gate())
+	}
+
+	// PREMISE. A no-op narrowing satisfies "narrower or equal" vacuously, so
+	// the sweep below proves nothing unless the narrowing actually removed
+	// something. Three removals, three kinds.
+	if !base.Permits("app.lab.example.com", 443) ||
+		narrowed.Permits("app.lab.example.com", 443) {
+		t.Fatal("premise: \"User-agent: Anvil / Disallow: /\" must remove the whole origin")
+	}
+	if !base.Permits("api.lab.example.com", 443) ||
+		narrowed.Permits("api.lab.example.com", 443) {
+		t.Fatal("premise: a robots.txt that could not be parsed must remove the origin. " +
+			"An unreadable statement of a site's wishes is not an absent one")
+	}
+	if !base.Permits("unlooked.lab.example.com", 443) ||
+		narrowed.Permits("unlooked.lab.example.com", 443) {
+		t.Fatal("premise: a zero RobotsDocument means nobody looked, and a Go zero value " +
+			"must never mean \"permitted\"")
+	}
+	if narrowed.PermitsPath("target.example.com", 443, "/admin/users") {
+		t.Fatal("premise: Disallow: /admin must remove /admin/users")
+	}
+	if !narrowed.PermitsPath("target.example.com", 443, "/index.html") {
+		t.Fatal("premise: a path robots.txt never named must survive the narrowing")
+	}
+
+	// COVERAGE. Each bucket is a class of input the sweep must actually
+	// contain. An empty bucket means the sweep is not looking where the bug
+	// would be.
+	buckets := map[string]int{
+		"origin refused because no allow entry covers it":   0,
+		"origin refused because a deny entry covers it":     0,
+		"origin refused because the port is not in scope":   0,
+		"origin permitted by the scope file":                0,
+		"origin out of scope that HAS a robots document":    0,
+		"path named in a Disallow directive":                0,
+		"path named in an Allow directive":                  0,
+		"path robots.txt never named":                       0,
+		"path that is not a well-formed request path":       0,
+		"triple the narrowed scope permits at path level":   0,
+		"triple the narrowed scope refuses at origin level": 0,
+	}
+	denyCovers := func(h string, p uint16) bool {
+		for _, e := range base.DenyEntries() {
+			if e.Covers(h, p) {
+				return true
+			}
+		}
+		return false
+	}
+	allowCoversAnyPort := func(h string) bool {
+		for _, e := range base.AllowEntries() {
+			for _, p := range e.Ports {
+				if e.Covers(h, p) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	docOrigins := map[string]bool{}
+	for _, d := range nsDocs() {
+		docOrigins[d.Host+":"+strconv.Itoa(int(d.Port))] = true
+	}
+	allowNamed := map[string]bool{"/admin/public": true, "/admin/public/img": true}
+	disallowNamed := map[string]bool{
+		"/admin": true, "/admin/users": true, "/%61dmin/users": true, "/private/a": true,
+	}
+
+	swept := 0
+	for _, h := range nsHosts() {
+		for _, p := range nsPorts() {
+			basePermits := base.Permits(h, p)
+			switch {
+			case denyCovers(h, p):
+				buckets["origin refused because a deny entry covers it"]++
+			case !basePermits && allowCoversAnyPort(h):
+				buckets["origin refused because the port is not in scope"]++
+			case !basePermits:
+				buckets["origin refused because no allow entry covers it"]++
+			default:
+				buckets["origin permitted by the scope file"]++
+			}
+			if !basePermits && docOrigins[h+":"+strconv.Itoa(int(p))] {
+				buckets["origin out of scope that HAS a robots document"]++
+			}
+
+			// (A) The narrowed scope never permits an origin the input did
+			//     not. This is the property in its origin form.
+			if narrowed.Permits(h, p) && !basePermits {
+				t.Fatalf("WIDENING at origin level: the scope file refuses %s:%d and the "+
+					"scope narrowed by robots.txt PERMITS it. Gate 11 is asymmetric by "+
+					"design — a restrictive robots.txt removes reach and a permissive "+
+					"one grants none", h, p)
+			}
+			if !narrowed.Permits(h, p) {
+				buckets["triple the narrowed scope refuses at origin level"]++
+			}
+
+			for _, path := range nsPaths() {
+				swept++
+				switch {
+				case allowNamed[path]:
+					buckets["path named in an Allow directive"]++
+				case disallowNamed[path]:
+					buckets["path named in a Disallow directive"]++
+				case !validRequestPath(path):
+					buckets["path that is not a well-formed request path"]++
+				default:
+					buckets["path robots.txt never named"]++
+				}
+
+				np := narrowed.PermitsPath(h, p, path)
+				if np {
+					buckets["triple the narrowed scope permits at path level"]++
+				}
+
+				// (B) A path-level permit can never exceed the ORIGIN-level
+				//     authorization the operator granted.
+				if np && !basePermits {
+					t.Fatalf("WIDENING at path level: the scope file refuses the origin "+
+						"%s:%d and the narrowed scope permits the path %q on it",
+						h, p, path)
+				}
+				// (C) PermitsPath implies Permits, always.
+				if np && !narrowed.Permits(h, p) {
+					t.Fatalf("the narrowed scope permits path %q on %s:%d while refusing "+
+						"the origin itself; PermitsPath must imply Permits", path, h, p)
+				}
+				// (D) A scope nobody narrowed permits NO path. "We did not
+				//     look" and "robots.txt permitted it" produce the same
+				//     silence and opposite conclusions.
+				if base.PermitsPath(h, p, path) {
+					t.Fatalf("the UN-NARROWED scope permits path %q on %s:%d. No robots "+
+						"determination exists for that origin, and a determination "+
+						"nobody made must not read as permission", path, h, p)
+				}
+			}
+		}
+	}
+
+	for name, n := range buckets {
+		if n == 0 {
+			t.Errorf("the sweep contained no input in the bucket %q, so it could not have "+
+				"seen a bug of that shape. A generator that cannot produce the breaking "+
+				"input is the defect", name)
+		}
+	}
+	t.Logf("swept %d (host, port, path) triples over %d hosts, %d ports and %d paths",
+		swept, len(nsHosts()), len(nsPorts()), len(nsPaths()))
+	for name, n := range buckets {
+		t.Logf("  %4d  %s", n, name)
+	}
+}
+
+// TestNarrowScopeToRobotsIsMonotone drives narrowing TWICE and requires the
+// second pass to be able only to remove.
+//
+// Narrowing is append-only, so a second pass over the same scope must not
+// restore anything the first removed — including when the second pass's
+// documents are PERMISSIVE. A robots.txt saying "Allow: /" arriving after one
+// saying "Disallow: /admin" is exactly the sequence an attacker controls, and
+// it must add nothing.
+func TestNarrowScopeToRobotsIsMonotone(t *testing.T) {
+	base := tnScope(t)
+	once, res := NarrowScopeToRobots(base, nsDocs())
+	if !res.Passed() {
+		t.Fatalf("first narrowing: %v", res.Err())
+	}
+	twice, res := NarrowScopeToRobots(once, []RobotsDocument{
+		// The permissive follow-up: every one of these grants nothing.
+		{Host: "target.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nAllow: /\nDisallow:\n")},
+		{Host: "app.lab.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nAllow: /\n")},
+		{Host: "api.lab.example.com", Port: 443, Outcome: RobotsFetchAbsent},
+		{Host: "unlooked.lab.example.com", Port: 443, Outcome: RobotsFetchAbsent},
+		{Host: "cdn.example.net", Port: 443, Outcome: RobotsFetchAbsent},
+		// And one that removes more, so the pass is not a no-op.
+		{Host: "other.example.com", Port: 8443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /cart\n")},
+	})
+	if !res.Passed() {
+		t.Fatalf("second narrowing: %v", res.Err())
+	}
+
+	if !once.PermitsPath("other.example.com", 8443, "/cart/1") {
+		t.Fatal("premise: the first narrowing must still permit /cart/1")
+	}
+	if twice.PermitsPath("other.example.com", 8443, "/cart/1") {
+		t.Fatal("premise: the second pass must remove /cart/1, or it is a no-op and this " +
+			"test measures nothing")
+	}
+
+	// The sweep's path list plus the two the second pass actually names, so
+	// the "removed something" counter below is not looking past the change it
+	// is there to notice.
+	paths := append(nsPaths(), "/cart", "/cart/1")
+
+	restored := 0
+	for _, h := range nsHosts() {
+		for _, p := range nsPorts() {
+			if twice.Permits(h, p) && !once.Permits(h, p) {
+				t.Fatalf("a second narrowing RESTORED the origin %s:%d. Narrowing is "+
+					"append-only over deny; nothing a later robots.txt says can put an "+
+					"origin back", h, p)
+			}
+			for _, path := range paths {
+				if twice.PermitsPath(h, p, path) && !once.PermitsPath(h, p, path) {
+					t.Fatalf("a second, PERMISSIVE narrowing restored the path %q on "+
+						"%s:%d. \"Allow: /\" adds nothing, ever", path, h, p)
+				}
+				if once.PermitsPath(h, p, path) && !twice.PermitsPath(h, p, path) {
+					restored++
+				}
+			}
+		}
+	}
+	if restored == 0 {
+		t.Fatal("the second pass removed nothing at path level, so the monotonicity " +
+			"assertions above are vacuous")
+	}
+	if len(twice.Narrowings()) != len(once.Narrowings())+6 {
+		t.Fatalf("%d narrowing records after a second pass of 6 documents over %d",
+			len(twice.Narrowings()), len(once.Narrowings()))
+	}
+}
+
+// TestNarrowScopeToRobotsPermissiveFilesAddNothing drives the three files the
+// orchestrator named: one that says Allow: /, one that is empty, one that is
+// malformed.
+func TestNarrowScopeToRobotsPermissiveFilesAddNothing(t *testing.T) {
+	base := tnScope(t)
+	const host = "target.example.com"
+	const port uint16 = 443
+
+	// The set of origins the base scope permits, so "unchanged" can be
+	// asserted over the whole scope rather than over one host.
+	sameReach := func(t *testing.T, got Scope, when string) {
+		t.Helper()
+		for _, h := range nsHosts() {
+			for _, p := range nsPorts() {
+				if got.Permits(h, p) != base.Permits(h, p) {
+					t.Fatalf("%s: the scope's reach at %s:%d changed from %v to %v; a "+
+						"permissive robots.txt adds nothing AND removes nothing",
+						when, h, p, base.Permits(h, p), got.Permits(h, p))
+				}
+			}
+		}
+	}
+
+	t.Run("Allow: / adds nothing", func(t *testing.T) {
+		got, res := NarrowScopeToRobots(base, []RobotsDocument{{
+			Host: host, Port: port, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nAllow: /\n"),
+		}})
+		if !res.Passed() {
+			t.Fatalf("%v", res.Err())
+		}
+		sameReach(t, got, "after Allow: /")
+		for _, path := range nsPaths() {
+			if !validRequestPath(path) {
+				continue
+			}
+			if !got.PermitsPath(host, port, path) {
+				t.Fatalf("a file that removes nothing removed %q", path)
+			}
+		}
+		// The Allow was seen, ignored, and SAID to have been ignored.
+		rec := got.Narrowings()[0]
+		if rec.AllowDirectivesIgnored != 1 {
+			t.Fatalf("%d Allow directives recorded as ignored; the file has 1",
+				rec.AllowDirectivesIgnored)
+		}
+		if rec.PathPatternsApplied != 0 || rec.OriginRemoved {
+			t.Fatalf("a permissive file produced %+v", rec)
+		}
+		// And the origin gained nothing an out-of-scope host could use.
+		if got.PermitsPath("evil.example.net", 443, "/") {
+			t.Fatal("Allow: / on one origin reached another")
+		}
+	})
+
+	t.Run("an empty file adds nothing", func(t *testing.T) {
+		got, res := NarrowScopeToRobots(base, []RobotsDocument{{
+			Host: host, Port: port, Outcome: RobotsFetchRetrieved, Body: []byte{},
+		}})
+		if !res.Passed() {
+			t.Fatalf("%v", res.Err())
+		}
+		sameReach(t, got, "after an empty robots.txt")
+		if rec := got.Narrowings()[0]; rec.Determination != RobotsPresent ||
+			rec.OriginRemoved || rec.PathPatternsApplied != 0 {
+			t.Fatalf("an empty file produced %+v; it was fetched, it parsed, and it "+
+				"removed nothing", rec)
+		}
+		if !got.PermitsPath(host, port, "/admin/users") {
+			t.Fatal("an empty robots.txt removed /admin/users")
+		}
+	})
+
+	t.Run("a malformed file removes the origin", func(t *testing.T) {
+		got, res := NarrowScopeToRobots(base, []RobotsDocument{{
+			Host: host, Port: port, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /\xff\xfe\n"),
+		}})
+		if !res.Passed() {
+			t.Fatalf("%v", res.Err())
+		}
+		if got.Permits(host, port) {
+			t.Fatal("a robots.txt that could not be parsed left the origin in scope. An " +
+				"unreadable statement of a site's wishes is not an absent one")
+		}
+		rec := got.Narrowings()[0]
+		if rec.Determination != RobotsUnavailable || !rec.OriginRemoved {
+			t.Fatalf("a malformed file produced %+v", rec)
+		}
+		// Nothing ELSE moved.
+		for _, h := range nsHosts() {
+			for _, p := range nsPorts() {
+				if h == host && p == port {
+					continue
+				}
+				if got.Permits(h, p) != base.Permits(h, p) {
+					t.Fatalf("removing %s:%d changed the reach of %s:%d", host, port, h, p)
+				}
+			}
+		}
+	})
+
+	t.Run("a file with no Anvil-binding group removes nothing", func(t *testing.T) {
+		// RFC 9309 groups that name someone else do not bind Anvil, and this
+		// implementation does not read a non-binding Disallow as a deny.
+		got, res := NarrowScopeToRobots(base, []RobotsDocument{{
+			Host: host, Port: port, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: googlebot\nDisallow: /\n"),
+		}})
+		if !res.Passed() {
+			t.Fatalf("%v", res.Err())
+		}
+		sameReach(t, got, "after a file binding only googlebot")
+		if !got.PermitsPath(host, port, "/admin/users") {
+			t.Fatal("a group naming googlebot removed a path from Anvil's scope")
+		}
+	})
+}
+
+// TestNarrowScopeToRobotsRefuses drives every refusal, and checks that each one
+// returns a scope that permits NOTHING as well as a failed GateResult.
+//
+// Both, because a caller that drops the GateResult must still not end up
+// holding a usable scope. A narrowing that silently fails to apply a site's
+// restriction is the one failure this function exists to prevent.
+func TestNarrowScopeToRobotsRefuses(t *testing.T) {
+	base := tnScope(t)
+	cases := []struct {
+		name   string
+		scope  Scope
+		docs   []RobotsDocument
+		reason Reason
+	}{
+		{"a scope nobody constructed", Scope{},
+			[]RobotsDocument{{Host: "target.example.com", Port: 443, Outcome: RobotsFetchAbsent}},
+			ReasonRobotsScopeUnconstructed},
+		{"a host that is not canonical", base,
+			[]RobotsDocument{{Host: "TARGET.example.com", Port: 443, Outcome: RobotsFetchAbsent}},
+			ReasonRobotsDocumentOrigin},
+		{"a host with a trailing dot", base,
+			[]RobotsDocument{{Host: "target.example.com.", Port: 443, Outcome: RobotsFetchAbsent}},
+			ReasonRobotsDocumentOrigin},
+		{"an empty host", base,
+			[]RobotsDocument{{Host: "", Port: 443, Outcome: RobotsFetchAbsent}},
+			ReasonRobotsDocumentOrigin},
+		{"port zero", base,
+			[]RobotsDocument{{Host: "target.example.com", Port: 0, Outcome: RobotsFetchAbsent}},
+			ReasonRobotsDocumentOrigin},
+		{"a body with no fetch behind it", base,
+			[]RobotsDocument{{Host: "target.example.com", Port: 443,
+				Outcome: RobotsFetchAbsent, Body: []byte("User-agent: *\nAllow: /\n")}},
+			ReasonRobotsDocumentInconsistent},
+		{"a body on the zero outcome", base,
+			[]RobotsDocument{{Host: "target.example.com", Port: 443,
+				Body: []byte("User-agent: *\nAllow: /\n")}},
+			ReasonRobotsDocumentInconsistent},
+		// Canonicalize bounds a host well below the 512-byte raw cap, so an
+		// over-long name is refused at the origin check and never reaches the
+		// deny-entry write. Measured, not assumed: an earlier draft of this
+		// case expected ReasonRobotsNarrowingFailed and got this instead,
+		// which is what established that the narrowing-failed path is
+		// unreachable from here (see TestScopeNarrowingPrimitivesRefuse).
+		{"a host longer than canonicalization accepts", base,
+			[]RobotsDocument{{Host: nsLongHost(), Port: 443, Outcome: RobotsFetchUnreachable}},
+			ReasonRobotsDocumentOrigin},
+		{"a bad document after a good one", base,
+			[]RobotsDocument{
+				{Host: "target.example.com", Port: 443, Outcome: RobotsFetchAbsent},
+				{Host: "BAD.example.com", Port: 443, Outcome: RobotsFetchAbsent},
+			},
+			ReasonRobotsDocumentOrigin},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, res := NarrowScopeToRobots(c.scope, c.docs)
+			p2AssertRefused(t, res, Gate11RobotsDeny, c.reason)
+			if got.Constructed() {
+				t.Fatal("the refused narrowing returned a CONSTRUCTED scope. A caller " +
+					"that drops the GateResult must not end up holding a usable one")
+			}
+			for _, h := range nsHosts() {
+				for _, p := range nsPorts() {
+					if got.Permits(h, p) {
+						t.Fatalf("the scope returned alongside a refusal permits %s:%d", h, p)
+					}
+					if got.PermitsPath(h, p, "/") {
+						t.Fatalf("the scope returned alongside a refusal permits a path "+
+							"on %s:%d", h, p)
+					}
+				}
+			}
+			if got.Narrowings() != nil {
+				t.Fatalf("the refused narrowing carries records: %+v", got.Narrowings())
+			}
+		})
+	}
+
+	// An EMPTY document list is not a refusal — it is a narrowing that removes
+	// nothing, which is what "no origin was fetched" means. The "did anybody
+	// look?" line is held per request by CheckGate11RobotsDeny, not here,
+	// because a wildcard scope entry cannot be enumerated in the first place.
+	got, res := NarrowScopeToRobots(base, nil)
+	if !res.Passed() {
+		t.Fatalf("an empty document list refused: %v", res.Err())
+	}
+	for _, h := range nsHosts() {
+		for _, p := range nsPorts() {
+			if got.Permits(h, p) != base.Permits(h, p) {
+				t.Fatalf("narrowing by no documents changed the reach of %s:%d", h, p)
+			}
+			if got.PermitsPath(h, p, "/") {
+				t.Fatalf("a scope narrowed by NO documents permits a path on %s:%d; a "+
+					"determination nobody made is not permission", h, p)
+			}
+		}
+	}
+	if got.Narrowed() {
+		t.Fatal("a scope narrowed by no documents reports itself narrowed")
+	}
+}
+
+// TestNarrowScopeToRobotsAgreesWithThePerRequestGate is the "canonicalize
+// before matching, and reuse the kernel's canonicalization rather than writing
+// a second one that can disagree with it" rule, applied to path matching.
+//
+// Scope.PermitsPath and CheckGate11RobotsDeny are two callers of one
+// RobotsPolicy.PermitsPath. If they ever disagree, one of them has grown a
+// second matcher.
+func TestNarrowScopeToRobotsAgreesWithThePerRequestGate(t *testing.T) {
+	base := tnScope(t)
+	narrowed, res := NarrowScopeToRobots(base, nsDocs())
+	if !res.Passed() {
+		t.Fatalf("%v", res.Err())
+	}
+	compared, disagreed := 0, 0
+	for _, h := range nsHosts() {
+		for _, p := range nsPorts() {
+			if !narrowed.Permits(h, p) {
+				continue
+			}
+			policy := narrowed.RobotsPolicyFor(h, p)
+			tgt, err := NewTarget(SchemeHTTPS, h, h, p, p2Addr(t, p2PublicAddr))
+			if err != nil {
+				t.Fatalf("NewTarget(%q,%d): %v", h, p, err)
+			}
+			for _, path := range nsPaths() {
+				compared++
+				gate := CheckGate11RobotsDeny(policy, tgt, path).Passed()
+				scope := narrowed.PermitsPath(h, p, path)
+				if gate != scope {
+					disagreed++
+					t.Errorf("%s:%d %q — the per-request gate says %v and the narrowed "+
+						"scope says %v. Two answers to one question means one of them "+
+						"is a second implementation of RFC 9309 matching",
+						h, p, path, gate, scope)
+				}
+			}
+		}
+	}
+	if compared == 0 {
+		t.Fatal("no origin survived the narrowing, so nothing was compared")
+	}
+	t.Logf("compared %d (origin, path) pairs; %d disagreements", compared, disagreed)
+}
+
+// nsLongHost returns a canonical host longer than the DNS name limit of 253
+// bytes and shorter than Canonicalize's 512-byte bound, so it survives
+// canonicalization and cannot become a ScopeEntry.
+func nsLongHost() string {
+	labels := make([]string, 0, 61)
+	for i := 0; i < 61; i++ {
+		labels = append(labels, "aaaa")
+	}
+	return strings.Join(labels, ".")
+}
+
+// TestScopeNarrowingPrimitivesRefuse drives removeOrigin and removePaths
+// DIRECTLY, because NarrowScopeToRobots's own origin check makes their
+// refusals unreachable through it.
+//
+// Canonicalize turns out to be STRICTLY STRONGER than ScopeEntry.Validate for
+// hostnames — it rejects empty labels, leading and trailing "-", "*", and any
+// byte outside [a-z0-9_-], and it bounds the length below the DNS limit — so
+// every host that survives the round-trip check in NarrowScopeToRobots also
+// survives ScopeEntry.Validate, and ReasonRobotsNarrowingFailed cannot be
+// reached from there today. That was measured, not assumed: the refusal table
+// above records the case that established it.
+//
+// The error handling stays, because a guard whose only defence is "the caller
+// currently checks first" is one refactor from being no guard at all. But a
+// guard that has never failed has not been tested, so the primitives are
+// exercised here on their own terms.
+func TestScopeNarrowingPrimitivesRefuse(t *testing.T) {
+	base := tnScope(t)
+	rec := ScopeNarrowingRecord{Host: "target.example.com", Port: 443}
+
+	t.Run("removeOrigin on an unconstructed scope", func(t *testing.T) {
+		got, err := Scope{}.removeOrigin("target.example.com", 443, rec)
+		if err == nil {
+			t.Fatal("removeOrigin narrowed a scope that was never constructed")
+		}
+		if got.Constructed() {
+			t.Fatal("the refused primitive returned a constructed scope")
+		}
+	})
+
+	t.Run("removeOrigin on a host no deny entry can name", func(t *testing.T) {
+		// "*.example.com" is deliberately ABSENT: ScopeEntry.Validate
+		// accepts a single-label wildcard, and a wildcard DENY entry can
+		// only ever remove more than a literal one, so accepting it is
+		// still one-directional. Canonicalize rejects "*" anyway, so no
+		// robots document can produce one.
+		for _, h := range []string{"", "Target.example.com", "a..example.com", nsLongHost()} {
+			got, err := base.removeOrigin(h, 443, rec)
+			if err == nil {
+				t.Fatalf("removeOrigin(%q) succeeded. A removal written as an entry that "+
+					"can never match is a removal that silently did not happen", h)
+			}
+			if got.Constructed() {
+				t.Fatalf("removeOrigin(%q) returned a constructed scope alongside its error", h)
+			}
+		}
+	})
+
+	t.Run("removeOrigin on port zero", func(t *testing.T) {
+		if _, err := base.removeOrigin("target.example.com", 0, rec); err == nil {
+			t.Fatal("removeOrigin accepted port 0, which covers nothing and would remove " +
+				"nothing")
+		}
+	})
+
+	t.Run("removePaths with a policy for another origin", func(t *testing.T) {
+		other := ParseRobotsTxt("other.example.com", 8443,
+			[]byte(robotsFixtureAdmin))
+		if !other.Determined() {
+			t.Fatal("premise: the fixture policy did not parse")
+		}
+		got, err := base.removePaths("target.example.com", 443, other, rec)
+		if err == nil {
+			t.Fatal("removePaths applied one origin's robots policy to another. That is " +
+				"how a permissive origin's silence becomes a restrictive origin's " +
+				"permission")
+		}
+		if got.Constructed() {
+			t.Fatal("the refused primitive returned a constructed scope")
+		}
+	})
+
+	t.Run("removePaths with the zero policy", func(t *testing.T) {
+		if _, err := base.removePaths("target.example.com", 443, RobotsPolicy{}, rec); err == nil {
+			t.Fatal("removePaths accepted a policy that names no origin")
+		}
+	})
+
+	t.Run("removePaths on an unconstructed scope", func(t *testing.T) {
+		p := ParseRobotsTxt("target.example.com", 443, []byte(robotsFixtureAdmin))
+		if _, err := (Scope{}).removePaths("target.example.com", 443, p, rec); err == nil {
+			t.Fatal("removePaths narrowed a scope that was never constructed")
+		}
+	})
+}
+
+// robotsFixtureAdmin is a minimal binding robots.txt that removes /admin.
+const robotsFixtureAdmin = "User-agent: *\nDisallow: /admin\n"

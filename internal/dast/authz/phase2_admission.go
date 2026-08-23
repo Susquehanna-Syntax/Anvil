@@ -36,8 +36,9 @@
 // revalidationChain — gates 4, 5, 8, 9 and 10), so after this packet
 // Revalidate is fully implemented.
 //
-// GATE 11 IS NOT REGISTERED, for the same structural reason D.4 could not
-// register gate 7, and the accounting is repeated here rather than referred to:
+// GATE 11 IS NOT REGISTERED AND CANNOT BE, for the same structural reason D.4
+// could not register gate 7, and the accounting is repeated here rather than
+// referred to:
 //
 //   - robots.txt is a property of an ORIGIN and a PATH. A gateFunc receives no
 //     path (a Target is scheme, host, port and pinned address) and no fetched
@@ -50,18 +51,26 @@
 //     formed would be a gate that has never refused anything — the exact shape
 //     internal/SKIPPED-CONTROLS.md records this repository shipping twice.
 //
-// So gate 11 is CheckGate11RobotsDeny below: a real function that really
-// refuses, called per request by D.6 with the origin's determined policy and
-// the path being requested. The consequence is stated rather than hidden: gate
-// 11 appears in admissionChain with no implementation compiled in, so THE
-// ADMISSION CHAIN REFUSES EVERY TARGET AT GATE 11. That is kernel.go's "a
-// missing gate is a REFUSAL, never a skipped step".
+// GATE 11 IS ENFORCED IN TWO PLACES INSTEAD, and neither is a chain position.
 //
-// Gate 7 used to stop the chain earlier for the same class of reason. The
-// orchestrator has since ruled on gate 7 — it is a Phase 1 run-initiation gate
-// and was removed from admissionChain — and has NOT ruled on gate 11, so gate
-// 11 is where the chain stops today. TestGate11StopsTheAdmissionChain records
-// that, so the answer is measured rather than assumed.
+//	AT RUN INITIATION   NarrowScopeToRobots takes the sealed Scope and the
+//	                    fetched robots.txt BYTES — as data, the same shape
+//	                    FetchSecurityTxt takes — and returns a NARROWER Scope.
+//	                    plan/50-dast.md:1032's row says a restrictive
+//	                    robots.txt "REMOVES PATHS FROM SCOPE" and a permissive
+//	                    one "adds nothing", which is a scope transformation and
+//	                    is implemented as one. It cannot widen: see types.go's
+//	                    SCOPE NARROWING block.
+//	PER REQUEST         CheckGate11RobotsDeny, called by D.6's Governor on
+//	                    every request and every redirect hop with the origin's
+//	                    determined policy and the path about to be requested.
+//	                    This is where "we did not look" is refused.
+//
+// Gate 11 was previously a position in admissionChain with nothing registered,
+// which made the admission chain refuse every target — fail-closed, but it also
+// meant the kernel could admit nothing. kernel.go's registerInto now refuses to
+// register gate 11 at all, so putting it back is not a one-line edit somebody
+// can make without deciding to.
 //
 // GATE 12 IS NOT A GATE AND CANNOT BECOME ONE. security.txt resolves a
 // reporting channel and never grants permission (RFC 9116; plan/00-SPINE.md
@@ -152,6 +161,28 @@ const (
 	ReasonRobotsWrongOrigin   Reason = "gate11.robots_policy_is_for_another_origin"
 	ReasonRobotsPathMalformed Reason = "gate11.request_path_is_malformed"
 	ReasonRobotsDisallows     Reason = "gate11.robots_txt_disallows_this_path"
+
+	// The four refusals NarrowScopeToRobots mints at run initiation. They are
+	// refusals about the NARROWING rather than about a path: each one means
+	// gate 11 could not be applied, and a gate that could not be applied
+	// refuses.
+	ReasonRobotsScopeUnconstructed   Reason = "gate11.scope_was_never_constructed"
+	ReasonRobotsDocumentOrigin       Reason = "gate11.robots_document_origin_unusable"
+	ReasonRobotsDocumentInconsistent Reason = "gate11.robots_document_is_inconsistent"
+	// ReasonRobotsNarrowingFailed is NOT REACHABLE THROUGH NarrowScopeToRobots
+	// TODAY, and that is stated rather than left for a reader to discover.
+	// Canonicalize turns out to be strictly stronger than ScopeEntry.Validate
+	// for hostnames — it rejects empty labels, leading and trailing "-", "*"
+	// and every byte outside [a-z0-9_-], and bounds the length below the DNS
+	// limit — so every origin that survives the round-trip check above also
+	// survives the deny-entry write below it. That was measured (see the
+	// "a host longer than canonicalization accepts" row of
+	// TestNarrowScopeToRobotsRefuses, which was written expecting this token
+	// and got ReasonRobotsDocumentOrigin instead), not assumed. The branch
+	// stays because a guard whose only defence is "the caller checks first" is
+	// one refactor from being no guard; TestScopeNarrowingPrimitivesRefuse
+	// drives removeOrigin and removePaths directly so it is exercised.
+	ReasonRobotsNarrowingFailed Reason = "gate11.scope_narrowing_failed"
 )
 
 // Gate 12 reasons. They are AUDIT tokens, not rulings: gate 12 is in no chain
@@ -1484,6 +1515,22 @@ func ParseRobotsTxt(canonicalHost string, port uint16, body []byte) RobotsPolicy
 	return base
 }
 
+// clone deep-copies a policy, including the Disallow backing array.
+//
+// A RobotsPolicy owns a []string. Copying the struct copies the slice HEADER,
+// so a policy stored inside a sealed Scope would share its patterns with
+// whatever the caller still holds, and rewriting "/admin" to "/zzz" through
+// that alias would put the admin tree back in scope. That is the D.3 aliasing
+// escalation cloneScopeEntries exists for, in a different field.
+func (p RobotsPolicy) clone() RobotsPolicy {
+	out := p
+	out.disallow = nil
+	if p.disallow != nil {
+		out.disallow = append([]string(nil), p.disallow...)
+	}
+	return out
+}
+
 // Determination returns what happened when Anvil looked for robots.txt.
 func (p RobotsPolicy) Determination() RobotsDetermination {
 	if !p.sealed {
@@ -1656,6 +1703,211 @@ func CheckGate11RobotsDeny(policy RobotsPolicy, target Target, path string) Gate
 			"path: "+redactUntrusted(path))
 	}
 	return gatePassed(g)
+}
+
+// ---------------------------------------------------------------------------
+// GATE 11 AT RUN INITIATION — the scope narrowing
+// ---------------------------------------------------------------------------
+
+// RobotsFetchOutcome says what the fetch of one origin's robots.txt did.
+//
+// It is a four-valued enum and not a bool for the reason RobotsDetermination
+// is: "we did not look", "we looked and there was nothing", "we looked and
+// could not reach it" and "we looked and here are the bytes" are four facts,
+// and three of them are refusals. The zero value is RobotsFetchUnset, which
+// removes the origin — a Go zero value never means "permitted".
+type RobotsFetchOutcome string
+
+// The four outcomes.
+const (
+	// RobotsFetchUnset is the zero value: nobody looked, or a caller handed
+	// in a zero RobotsDocument. The origin is removed from scope.
+	RobotsFetchUnset RobotsFetchOutcome = ""
+	// RobotsFetchRetrieved means a fetch completed with a 2xx and Body holds
+	// what it returned.
+	RobotsFetchRetrieved RobotsFetchOutcome = "retrieved"
+	// RobotsFetchAbsent means the fetch completed and there is no robots.txt
+	// (a 404). Nothing is removed and nothing is added.
+	RobotsFetchAbsent RobotsFetchOutcome = "absent"
+	// RobotsFetchUnreachable means the fetch failed — a connection failure, a
+	// 5xx, a timeout, a redirect Anvil would not follow. The origin is
+	// removed: "we could not ask" is not "they did not object".
+	RobotsFetchUnreachable RobotsFetchOutcome = "unreachable"
+)
+
+// RobotsDocument is one origin's fetched robots.txt, AS DATA.
+//
+// This is deliberately the same shape D.5 gave gate 12's SecurityTxtDocument:
+// the fetch happens OUTSIDE the kernel, through the egress chokepoint, and the
+// bytes arrive here as an inert value. The kernel performs no I/O, so gate 11
+// does not need a widened signature, a context, an http.Client or a package
+// -level cache to exist — the three routes that were rejected when gate 11 was
+// last considered as a gateFunc.
+//
+// Body is `anvil/trust: untrusted` (plan/00-SPINE.md S6). Nothing parsed out of
+// it is interpolated into a Detail string except through redactUntrusted.
+type RobotsDocument struct {
+	// Host is the origin's canonical host, as Canonicalize produces it.
+	Host string
+	// Port is the origin's port. Zero is not a port and is refused.
+	Port uint16
+	// Outcome says what the fetch did. The zero value removes the origin.
+	Outcome RobotsFetchOutcome
+	// Body is the retrieved bytes, and is meaningful only when Outcome is
+	// RobotsFetchRetrieved. A body on any other outcome is a caller
+	// inconsistency and refuses the whole narrowing.
+	Body []byte
+}
+
+// NarrowScopeToRobots is GATE 11: it applies the targets' own robots.txt to a
+// SEALED scope and returns a NARROWER ONE.
+//
+// # Why this is not a gateFunc, and is not in admissionChain
+//
+// plan/50-dast.md:1032's gate 11 row says a restrictive robots.txt "REMOVES
+// PATHS FROM SCOPE" and a permissive one "adds nothing". That is a description
+// of a scope transformation, not of an admission predicate, and the three
+// things that made gate 11 unimplementable as a gateFunc all dissolve when it
+// is written as one: a gateFunc receives no path (this takes the whole scope,
+// which is where paths live), a gateFunc performs no I/O (this takes fetched
+// bytes as data), and a gateFunc runs per target (this runs ONCE, at run
+// initiation, after the scope is sealed). By the time the admission chain
+// runs, the narrowing has already happened and the scope simply IS narrower —
+// so Gate11RobotsDeny is no longer a position in kernel.go's admissionChain,
+// and kernel.go's registerInto refuses to let anyone put it back.
+//
+// # The asymmetry is the gate
+//
+// THIS FUNCTION CANNOT RETURN A SCOPE THAT PERMITS ANYTHING THE INPUT DID NOT.
+// It does not parse robots.txt into allows and denies and recompute a scope
+// from them — that is the implementation that gets gate 11 exactly backwards
+// and lets a file served by the target widen the scope Anvil was authorized
+// for. It calls Scope.removeOrigin and Scope.removePaths, the only two
+// narrowing primitives, and both are append-only over deny and robots and
+// never write allow. See types.go's SCOPE NARROWING block for the field-level
+// accounting and the reflection guard on it.
+//
+// `Allow:` directives are parsed by ParseRobotsTxt so a group's rules can be
+// delimited, then DISCARDED. A robots.txt consisting of "Allow: /" therefore
+// returns a scope that permits exactly what it permitted, and so does an empty
+// one; a malformed one removes the origin. All three are driven by
+// TestNarrowScopeToRobotsCannotWiden.
+//
+// # What it refuses outright
+//
+// A document whose origin cannot be named, or that carries a body on an
+// outcome that had no fetch, refuses the WHOLE narrowing and returns the ZERO
+// Scope — which permits nothing — alongside the failed GateResult. Both,
+// because a caller that drops the GateResult must still not end up holding a
+// usable scope. A narrowing that silently fails to apply a site's restriction
+// is the one failure mode this function exists to prevent.
+//
+// # What it deliberately does NOT check
+//
+// It does not require a document for every origin in scope. An origin nobody
+// fetched is left exactly as the operator scoped it here — and is then refused
+// per request by CheckGate11RobotsDeny, which returns
+// gate11.robots_txt_was_never_determined against an unset policy. The "did you
+// look?" line is held there, per request, rather than duplicated here where a
+// wildcard scope entry cannot be enumerated in the first place.
+//
+// # WHAT IS NOT WIRED YET, stated rather than implied
+//
+// NOTHING IN THE SHIPPING PATH CALLS THIS FUNCTION. InitiateRun
+// (phase1_run.go) builds the sealed Scope and returns it; the narrowing is the
+// caller's step between InitiateRun and Adjudicate, and no caller performs it
+// today. The same is true of Scope.PermitsPath and Scope.RobotsPolicyFor: both
+// are exercised by tests and by nothing else. So gate 11's run-initiation half
+// is implemented and tested but NOT YET ENFORCED IN PRODUCTION, and the only
+// thing enforcing robots.txt on a live run remains D.6's per-request
+// CheckGate11RobotsDeny.
+//
+// That is a real gap and not a stylistic one — a control that runs in zero
+// production paths is not a control. Closing it needs two edits outside this
+// file: a robots.txt fetch through the egress chokepoint, and a call to this
+// function in whatever drives a run from InitiateRun to Adjudicate.
+func NarrowScopeToRobots(scope Scope, docs []RobotsDocument) (Scope, GateResult) {
+	const g = Gate11RobotsDeny
+
+	if !scope.Constructed() {
+		return Scope{}, gateFailed(g, ReasonRobotsScopeUnconstructed,
+			"gate 11 narrows a SEALED scope, and it was handed one that NewScope never "+
+				"built. There is nothing to narrow, and the zero Scope permits nothing.")
+	}
+
+	out := scope
+	for i, doc := range docs {
+		canon, err := Canonicalize(doc.Host)
+		if err != nil || canon != doc.Host || doc.Port == 0 {
+			return Scope{}, gateFailed(g, ReasonRobotsDocumentOrigin,
+				"a robots.txt document names an origin gate 11 cannot match against the "+
+					"scope: the host is not in the canonical form gate 8 produces, or "+
+					"the port is zero. A narrowing that cannot name its origin does not "+
+					"narrow anything, and a site's restriction that silently fails to "+
+					"apply is worse than one that was never fetched.",
+				"document index: "+strconv.Itoa(i),
+				"host: "+redactUntrusted(doc.Host))
+		}
+		if doc.Outcome != RobotsFetchRetrieved && len(doc.Body) > 0 {
+			return Scope{}, gateFailed(g, ReasonRobotsDocumentInconsistent,
+				"a robots.txt document carries a body on an outcome that records no "+
+					"completed fetch. Bytes that arrived without a fetch are bytes "+
+					"nobody can account for, and gate 11 will not narrow a scope by "+
+					"them.",
+				"document index: "+strconv.Itoa(i),
+				"outcome: "+redactUntrusted(string(doc.Outcome)))
+		}
+
+		policy := robotsPolicyFromDocument(doc)
+		rec := ScopeNarrowingRecord{
+			Host:                   canon,
+			Port:                   doc.Port,
+			Determination:          policy.Determination(),
+			AllowDirectivesIgnored: policy.AllowDirectivesIgnored(),
+		}
+
+		// An undetermined policy — nobody looked, the fetch failed, or the
+		// document could not be parsed — removes the origin. It is the same
+		// answer CheckGate11RobotsDeny gives per path, applied to the whole
+		// origin at once, and it is a removal, so it narrows.
+		if !policy.Determined() || policy.HostFullyDenied() {
+			out, err = out.removeOrigin(canon, doc.Port, rec)
+			if err != nil {
+				return Scope{}, gateFailed(g, ReasonRobotsNarrowingFailed,
+					"gate 11 could not remove an origin from the scope: "+err.Error())
+			}
+			continue
+		}
+
+		rec.PathPatternsApplied = len(policy.DisallowedPatterns())
+		out, err = out.removePaths(canon, doc.Port, policy, rec)
+		if err != nil {
+			return Scope{}, gateFailed(g, ReasonRobotsNarrowingFailed,
+				"gate 11 could not apply a robots policy to the scope: "+err.Error())
+		}
+	}
+	return out, gatePassed(g)
+}
+
+// robotsPolicyFromDocument turns one fetched document into a policy, reusing
+// the three constructors that already exist rather than adding a fourth.
+//
+// There is no branch here that produces a MORE permissive policy than the
+// document justifies: RobotsFetchUnset and RobotsFetchUnreachable both land on
+// RobotsFetchFailed, whose determination is RobotsUnavailable, which refuses
+// every path.
+func robotsPolicyFromDocument(doc RobotsDocument) RobotsPolicy {
+	switch doc.Outcome {
+	case RobotsFetchRetrieved:
+		return ParseRobotsTxt(doc.Host, doc.Port, doc.Body)
+	case RobotsFetchAbsent:
+		return RobotsNotFound(doc.Host, doc.Port)
+	default:
+		// RobotsFetchUnset, RobotsFetchUnreachable, and any value a future
+		// edit adds without updating this switch. The default is the strict
+		// one on purpose.
+		return RobotsFetchFailed(doc.Host, doc.Port)
+	}
 }
 
 // ---------------------------------------------------------------------------

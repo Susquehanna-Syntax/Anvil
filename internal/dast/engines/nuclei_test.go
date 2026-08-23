@@ -11,25 +11,30 @@
 // by recorded shapes, and SystemEngine refuses on every host rather than
 // returning a no-op that would let a scan come back clean.
 //
-// There is a SECOND, larger gap and it is not about this host at all.
-// authz.Adjudicate is the only mint for an authz.Authorization, and
-// authz.admissionChain contains Gate11RobotsDeny, which HAS NO IMPLEMENTATION
-// REGISTERED (kernel.go's admissionChain comment says so explicitly and calls
-// it a refusal rather than a skipped step). So from outside package authz
-// there is at present NO WAY TO OBTAIN AN Authorization AT ALL, and therefore
-// no way to build a TargetSpec, a Driver, or a RequestProposal that carries a
-// real destination.
+// There USED to be a second, larger gap, and it is now closed. Gate 11 sat in
+// authz.admissionChain with no implementation, so the chain refused every
+// target there, so authz.Adjudicate — the only mint for an
+// authz.Authorization — could never mint one, so NewTargetSpec, NewDriver,
+// Driver.Fire and Driver.Run could not be exercised on their success path from
+// outside package authz at all. Every test that would have needed a real
+// destination asserted a refusal instead.
 //
-// That is measured here, not assumed:
-// TestNoAuthorizationCanBeMintedUntilGate11IsRegistered runs the real Phase 1
-// gates and the real admission chain and pins WHERE the chain stops. When the
-// orchestrator rules on gate 11 and an implementation is registered, that
-// test fails — loudly, with the list of the tests that must then be written.
-// It is the only guard that can see this particular damage, because
-// everything downstream of it currently refuses for the right reason and a
-// suite that only checked refusals would look complete.
+// TestNoAuthorizationCanBeMintedUntilGate11IsRegistered was the tripwire for
+// exactly that condition, and it FIRED: gate 11 is now a SCOPE NARROWING
+// (authz.NarrowScopeToRobots, applied once at run initiation) rather than an
+// admission predicate, admissionChain is {4,5,6,8,9,10}, every gate in it has
+// an implementation, and THE KERNEL ADMITS. The five tests the tripwire's
+// failure message named are written below, under "THE KERNEL ADMITS", and the
+// tripwire is deleted rather than quietened.
 //
-// internal/SKIPPED-CONTROLS.md entry U4 is the standing record.
+// What that changes about this suite is not a detail. Everything before it
+// proved the kernel REFUSES. TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate
+// is the first proof anywhere in this repository that it also PERMITS — and a
+// gate stack only ever shown to refuse could be refusing for the wrong reason,
+// so the positive control is what makes the negative ones mean anything.
+//
+// internal/SKIPPED-CONTROLS.md entry U4 is the standing record of what is
+// still open: the engine, which is (a) and is about this host.
 //
 // ===========================================================================
 // THERE IS NO t.Skip IN THIS FILE
@@ -1376,25 +1381,87 @@ func initiateRun(t *testing.T) authz.RunInitiation {
 	return init
 }
 
-// TestNoAuthorizationCanBeMintedUntilGate11IsRegistered is the single most
-// important test in this file, and it is a test about what is NOT possible.
+// ===========================================================================
+// THE KERNEL ADMITS
+// ===========================================================================
 //
-// authz.Adjudicate is the only mint for an authz.Authorization. The admission
-// chain contains Gate11RobotsDeny and nothing is registered for it, so the
-// chain refuses every target there — kernel.go's own comment says "A missing
-// gate is a REFUSAL, never a skipped step" and leaves the decision on where
-// the robots policy enters the kernel to the orchestrator.
+// TestNoAuthorizationCanBeMintedUntilGate11IsRegistered stood here. It asserted
+// that authz.Adjudicate could not mint an authz.Authorization, because
+// Gate11RobotsDeny sat in the admission chain with nothing registered for it
+// and a missing gate is a refusal. It was written to FAIL on the day that
+// stopped being true, and to name its own replacement when it did.
 //
-// The consequence for D.14 is exact and it is recorded here rather than in a
-// comment nobody runs: THE DRIVER'S ADMIT-AND-ISSUE PATH CANNOT BE EXERCISED
-// FROM OUTSIDE PACKAGE authz TODAY. Every test in this file that would need a
-// TargetSpec built by NewTargetSpec instead asserts a refusal.
+// It failed. Gate 11 is now authz.NarrowScopeToRobots — a scope transformation
+// applied once at run initiation, taking fetched bytes as inert data — and it
+// is no longer a position in the admission chain. The chain is {4,5,6,8,9,10},
+// every gate in it has an implementation, and the fixture below is admitted.
 //
-// When gate 11 is registered this test FAILS, and its message lists what must
-// then be written. That is deliberate: everything downstream currently refuses
-// for the right reason, so a suite without this test would look complete on
-// the day the gap closed.
-func TestNoAuthorizationCanBeMintedUntilGate11IsRegistered(t *testing.T) {
+// The five tests it named are the five that follow, in its order. Each one
+// needed an authz.Authorization and could not have one before now.
+
+// fixtureLiteral is the fixture host AS AN OPERATOR WOULD TYPE IT: uppercase,
+// with the trailing dot a resolver accepts. Gate 8 folds it to fixtureHost.
+//
+// It exists as a SEPARATE CONSTANT because canonical-and-pinned is the pair of
+// facts TargetSpec carries, and a fixture whose literal already equals its
+// canonical form cannot tell gate 8's output from gate 8's input. A
+// NewTargetSpec that shipped target.Literal() into the request line would pass
+// against such a fixture and fail against this one.
+const fixtureLiteral = "TARGET.EXAMPLE.COM."
+
+// fixturePinned is the address gate 9 pins. It is a DIFFERENT FACT from the
+// canonical host, produced by a different gate, and TargetSpec keeps both
+// because collapsing them is how DNS rebinding gets back in: an engine handed
+// only a name re-resolves, and a re-resolution between check and connect is
+// the TOCTOU gate 9 closes.
+const fixturePinned = "93.184.216.34"
+
+// fixtureRebindPinned is fixturePinned's rebinding twin: the same scheme, the
+// same canonical host and the same port, pinned somewhere else. It is what a
+// second resolution of the same name returns to an attacker who controls the
+// zone, and authz.RequireAuthorization refuses it.
+const fixtureRebindPinned = "198.51.100.9"
+
+// mustCanonicalTarget builds the fixture target with a literal that is NOT its
+// canonical form, so that every assertion about which of the two reaches the
+// engine is a real one.
+func mustCanonicalTarget(t *testing.T) authz.Target {
+	t.Helper()
+	if fixtureLiteral == fixtureHost {
+		t.Fatal("the fixture literal and the fixture canonical host are the same string. " +
+			"Every assertion below that distinguishes gate 8's output from its input is " +
+			"vacuous while that is true — a generator that cannot produce the breaking " +
+			"input is the defect")
+	}
+	tgt, err := authz.NewTarget(authz.SchemeHTTPS, fixtureLiteral, fixtureHost, 443,
+		mustAddr(t, fixturePinned))
+	if err != nil {
+		t.Fatalf("authz.NewTarget: %v", err)
+	}
+	return tgt
+}
+
+// admission is one run driven all the way through the real kernel: Phase 1
+// initiation, the real admission chain, and the token it minted.
+type admission struct {
+	init   authz.RunInitiation
+	scope  authz.Scope
+	att    authz.Attestation
+	target authz.Target
+	auth   authz.Authorization
+	rows   int
+}
+
+// admitTarget drives InitiateRun and Adjudicate for real and returns the
+// minted Authorization. NOTHING here is a double: gates 4, 5, 6 and 7 run in
+// Phase 1, gates 4, 5, 6, 8, 9 and 10 run in the admission chain, and gate 21
+// writes a row for each.
+//
+// A refusal is a FATAL here rather than a skipped test. If the kernel stops
+// admitting this fixture, every test below stops proving what it says it
+// proves, and the failure must be the loud one.
+func admitTarget(t *testing.T, tgt authz.Target) admission {
+	t.Helper()
 	init := initiateRun(t)
 	scope, err := init.Scope()
 	if err != nil {
@@ -1410,44 +1477,726 @@ func TestNoAuthorizationCanBeMintedUntilGate11IsRegistered(t *testing.T) {
 	}
 
 	sink := &countingSink{}
-	dec := authz.Adjudicate(sink, en, mustBareTarget(t), scope, att, mustClock(t))
+	dec := authz.Adjudicate(sink, en, tgt, scope, att, mustClock(t))
+	if !dec.Allowed() {
+		t.Fatalf(`the kernel REFUSED the fixture target at %s (%s): %v
 
-	if dec.Allowed() {
-		t.Fatalf(`the kernel ADMITTED a target, so an authz.Authorization can now be minted
-from outside package authz. This test is the tripwire for exactly that, and it
-is now the thing standing between this packet and its stop condition. Write:
-
-  1. NewTargetSpec against the real Authorization, asserting URL() carries the
-     CANONICAL host and PinnedAddr() carries gate 9's pinned address.
-  2. Fire's happy path end to end: proposal -> NewRequestIntent ->
-     GateAudit.AuditedAdmit -> Issuer, asserting one audit row per gate in
-     authz.GovernorGateOrder() and that Coverage.RequestsIssued moved.
-  3. Fire's refusal path with a REAL kernel refusal (an out-of-scope
-     redirect target), asserting nothing reached the Issuer.
-  4. Driver.Run's unattributable-result refusal, which needs a Driver, which
-     needs an Authorization.
-  5. NewTargetSpec refusing an Authorization minted for a DIFFERENT target,
-     which is the cross-target token reuse RequireAuthorization exists for.
-
-Then delete this test and update internal/SKIPPED-CONTROLS.md U4.`)
+Every test below needs an authz.Authorization, and Adjudicate is the only mint
+for one. This harness drives the real Phase 1 gates and the real admission
+chain, so a refusal here means the fixture no longer satisfies them — not that
+the driver is wrong.`, dec.Gate(), dec.Reason(), dec.Err())
 	}
-	if dec.Gate() != authz.Gate11RobotsDeny {
-		t.Fatalf(`the admission chain stopped at %s (%s), not at gate 11.
-
-This test pins WHERE the chain stops so that the reason D.14's driver cannot be
-exercised end to end stays measured rather than assumed. A stop at a different
-gate means the fixture harness above no longer satisfies gates 4-10, and the
-gate-11 conclusion recorded in internal/SKIPPED-CONTROLS.md U4 would be wrong.
-Refusal detail: %v`, dec.Gate(), dec.Reason(), dec.Err())
+	auth, err := dec.Authorization()
+	if err != nil {
+		t.Fatalf("an allowing Decision would not hand out its Authorization: %v", err)
 	}
-	if _, err := dec.Authorization(); err == nil {
-		t.Fatal("a refused Decision handed out an Authorization")
+	if !auth.Valid() {
+		t.Fatal("Adjudicate allowed and handed back an Authorization that reports itself " +
+			"invalid")
 	}
 	if sink.n == 0 {
-		t.Fatal("the refused adjudication wrote zero audit rows. Gate 21 logs every " +
-			"allow AND every deny; a denial whose rows all vanish is the same control " +
-			"failing in the direction nobody looks at")
+		t.Fatal("the adjudication wrote zero audit rows. Gate 21 logs every allow AND " +
+			"every deny, and an allow whose rows all vanish is the same control failing " +
+			"in the direction nobody looks at")
 	}
+	return admission{init: init, scope: scope, att: att, target: tgt, auth: auth, rows: sink.n}
+}
+
+// recordingSink keeps the rows, not just the count. Gate 21 asks for one row
+// per gate decision, and a sink that only counts cannot tell six rows for six
+// gates from six rows for one gate written six times.
+type recordingSink struct {
+	rows []authz.GateRecord
+	n    int
+}
+
+func (s *recordingSink) WriteGateDecision(r authz.GateRecord) (authz.AuditSeq, error) {
+	s.n++
+	s.rows = append(s.rows, r)
+	return authz.AuditSeq(s.n), nil
+}
+
+func (s *recordingSink) gates() []authz.GateID {
+	out := make([]authz.GateID, len(s.rows))
+	for i, r := range s.rows {
+		out[i] = r.Gate
+	}
+	return out
+}
+
+// mustGateAudit binds a sink to the run's audit key and the run's clock.
+//
+// It is a SEPARATE sink from the one admitTarget handed Adjudicate, and
+// deliberately: this one's rows are the per-request rows and nothing else, so
+// "one row per gate in GovernorGateOrder" can be asserted as an exact count
+// rather than as a count minus however many the admission wrote.
+func mustGateAudit(t *testing.T, a admission, sink authz.AuditSink) *authz.GateAudit {
+	t.Helper()
+	key, res := authz.NewAuditKey(a.att, a.scope)
+	if !res.Passed() {
+		t.Fatalf("authz.NewAuditKey refused at %s: %v", res.Gate(), res.Err())
+	}
+	run, err := a.init.RunClock()
+	if err != nil {
+		t.Fatalf("init.RunClock: %v", err)
+	}
+	audit, res := authz.NewGateAudit(sink, key, run)
+	if !res.Passed() {
+		t.Fatalf("authz.NewGateAudit refused at %s: %v", res.Gate(), res.Err())
+	}
+	return audit
+}
+
+// mustGovernor builds the real per-request interceptor: the coded caps, the
+// coded health thresholds, an EMPTY endpoint allowance (which permits no
+// state-changing probe anywhere, the correct default), and the scope the
+// caller chose — which is how the out-of-scope test below gets a real kernel
+// refusal rather than a hand-built one.
+func mustGovernor(t *testing.T, a admission, scope authz.Scope, robots authz.RobotsPolicy) *authz.Governor {
+	t.Helper()
+	gov, res := authz.NewGovernor(authz.GovernorConfig{
+		Target:      a.target,
+		Scope:       scope,
+		Attestation: a.att,
+		Caps:        authz.CodedCaps(),
+		Thresholds:  authz.CodedHealthThresholds(),
+		Robots:      robots,
+		Allowance:   authz.EndpointAllowance{},
+		Start:       mustClock(t),
+	})
+	if !res.Passed() {
+		t.Fatalf("authz.NewGovernor refused at %s: %v", res.Gate(), res.Err())
+	}
+	return gov
+}
+
+// spyIssuer is the egress seam. Gate 3 forbids this package from constructing
+// a socket, so the Issuer is where one WOULD be, and counting its calls is how
+// "nothing left the process" is asserted.
+type spyIssuer struct {
+	calls []AdmittedRequest
+	out   ProbeResult
+	err   error
+}
+
+func (s *spyIssuer) Issue(_ context.Context, req AdmittedRequest) (ProbeResult, error) {
+	s.calls = append(s.calls, req)
+	return s.out, s.err
+}
+
+// mustDriver assembles a Driver against the real kernel.
+func mustDriver(t *testing.T, cfg Config) *Driver {
+	t.Helper()
+	d, err := NewDriver(cfg)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	return d
+}
+
+// mustTemplateSet loads the one good fixture template and seals it.
+func mustTemplateSet(t *testing.T) ([]Template, []RejectedTemplate, TemplateSet) {
+	t.Helper()
+	tpls, rej := loadOK(t, map[string]string{"ok.yaml": goodTemplate})
+	set, err := NewTemplateSet(tpls)
+	if err != nil {
+		t.Fatalf("NewTemplateSet: %v", err)
+	}
+	return tpls, rej, set
+}
+
+// ---------------------------------------------------------------------------
+// (1) the tripwire's first item
+// ---------------------------------------------------------------------------
+
+// TestNewTargetSpecCarriesTheCanonicalHostAndThePinnedAddress.
+//
+// TargetSpec exists to carry TWO facts produced by TWO gates: URL() is gate
+// 8's canonical host, and PinnedAddr() is gate 9's pinned address. They are
+// asserted separately because conflating them is how DNS rebinding gets back
+// in — an engine handed a name resolves it again, and the second resolution is
+// free to disagree with the one the kernel matched against scope.
+func TestNewTargetSpecCarriesTheCanonicalHostAndThePinnedAddress(t *testing.T) {
+	a := admitTarget(t, mustCanonicalTarget(t))
+
+	spec, err := NewTargetSpec(a.auth, a.target)
+	if err != nil {
+		t.Fatalf("NewTargetSpec against a real Authorization: %v", err)
+	}
+	if !spec.Constructed() {
+		t.Fatal("NewTargetSpec returned no error and an unconstructed spec")
+	}
+
+	// URL is the CANONICAL host. The fixture's literal differs from it by case
+	// and a trailing dot, so a spec built from Literal() fails here.
+	wantURL := "https://" + fixtureHost + ":443"
+	if spec.URL() != wantURL {
+		t.Fatalf(`TargetSpec.URL() = %q; want %q.
+
+The literal the operator typed is %q. If URL() carries that, the engine sends a
+Host header and a request line naming a form gate 8 never matched against
+scope.`, spec.URL(), wantURL, fixtureLiteral)
+	}
+	if got := a.target.Literal(); strings.Contains(spec.URL(), got) {
+		t.Fatalf("TargetSpec.URL() = %q contains the raw literal %q", spec.URL(), got)
+	}
+
+	// PinnedAddr is gate 9's address and a PORT, and it contains no name at
+	// all. That is the property that makes re-resolution impossible rather
+	// than discouraged.
+	wantPinned := fixturePinned + ":443"
+	if spec.PinnedAddr() != wantPinned {
+		t.Fatalf(`TargetSpec.PinnedAddr() = %q; want %q.
+
+authz.PinnedDialAddress returns a netip.AddrPort precisely so that there is no
+hostname for a dialer to hand back to a resolver.`, spec.PinnedAddr(), wantPinned)
+	}
+	if strings.Contains(spec.PinnedAddr(), fixtureHost) {
+		t.Fatalf(`TargetSpec.PinnedAddr() = %q carries a HOSTNAME.
+
+A dial address containing a name is a dial address something can re-resolve,
+and the whole of gate 9 is that the connect and the check use the same
+address.`, spec.PinnedAddr())
+	}
+	if spec.URL() == spec.PinnedAddr() {
+		t.Fatal("URL() and PinnedAddr() returned the same string, so this test cannot " +
+			"tell gate 8's fact from gate 9's")
+	}
+	if spec.Target() != a.target {
+		t.Fatal("TargetSpec.Target() is not the Target the Authorization covers")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (2) the tripwire's second item — THE POSITIVE CONTROL
+// ---------------------------------------------------------------------------
+
+// TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate is the first evidence
+// in this repository that the gate stack PERMITS anything.
+//
+// Everything else in this file, and everything D.14 wrote before this, proves
+// the kernel refuses. A stack that has only ever been shown to refuse could be
+// refusing for the wrong reason — an unconstructed value, a typo in a gate
+// name, a chain that returns short — and every negative result would look
+// identical. This is the control that makes the negatives mean something.
+//
+// It asserts the WHOLE path: proposal -> NewRequestIntent -> AuditedAdmit ->
+// Issuer, ONE AUDIT ROW PER GATE in authz.GovernorGateOrder() (gate 21 asks
+// for every gate decision, and asserting only that rows exist would pass with
+// one gate recorded six times), and that Coverage.RequestsIssued MOVED.
+func TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate(t *testing.T) {
+	a := admitTarget(t, mustCanonicalTarget(t))
+	tpls, rej, set := mustTemplateSet(t)
+
+	sink := &recordingSink{}
+	iss := &spyIssuer{out: ProbeResult{
+		Status:    200,
+		Matched:   true,
+		BodyBytes: 512,
+		Evidence:  "the response carried the fixture marker",
+	}}
+	d := mustDriver(t, Config{
+		Governor:      mustGovernor(t, a, a.scope, authz.RobotsNotFound(fixtureHost, 443)),
+		Audit:         mustGateAudit(t, a, sink),
+		Authorization: a.auth,
+		Target:        a.target,
+		Templates:     set,
+		Rejected:      rej,
+		Issuer:        iss,
+	})
+
+	if before := d.Result().Coverage.RequestsIssued; before != 0 {
+		t.Fatalf("Coverage.RequestsIssued = %d before anything fired; want 0. A counter "+
+			"that starts non-zero cannot be shown to have MOVED", before)
+	}
+
+	id, digest := tpls[0].ID(), tpls[0].Digest()
+	p, err := NewRequestProposal(ProposalFacts{
+		Spec:           d.Spec(),
+		Origin:         authz.OriginInitial,
+		Method:         authz.MethodGet,
+		Path:           "/",
+		Technique:      authz.TechniquePassiveObservation,
+		TemplateID:     id,
+		TemplateDigest: digest,
+	})
+	if err != nil {
+		t.Fatalf("NewRequestProposal against an admitted destination: %v", err)
+	}
+
+	f, err := d.Fire(context.Background(), p, mustClock(t))
+	if err != nil {
+		t.Fatalf(`Fire REFUSED a request the kernel should admit: %v
+
+This is the positive control. Every other assertion in this file is about a
+refusal, and a stack that only ever refuses is indistinguishable from a stack
+that is broken.`, err)
+	}
+
+	// The Issuer saw it, exactly once, sealed.
+	if len(iss.calls) != 1 {
+		t.Fatalf("the Issuer was called %d time(s); want exactly 1", len(iss.calls))
+	}
+	req := iss.calls[0]
+	if !req.Constructed() {
+		t.Fatal("the Issuer was handed an AdmittedRequest that reports itself unconstructed")
+	}
+	if err := authz.RequireAuthorization(req.Authorization(), req.Proposal().Spec().Target()); err != nil {
+		t.Fatalf(`the AdmittedRequest handed to the Issuer does not carry an authorization
+for its own destination: %v
+
+The Issuer's contract is that it re-checks this immediately before the socket.
+If the value it is handed cannot pass that check, gate 3's runtime half refuses
+every request that ever reaches a real egress layer.`, err)
+	}
+
+	// ONE ROW PER GATE, in the interceptor's order.
+	want := authz.GovernorGateOrder()
+	got := sink.gates()
+	if len(got) != len(want) {
+		t.Fatalf(`the admission wrote %d audit row(s) and authz.GovernorGateOrder() has %d gates.
+
+wrote: %v
+want:  %v
+
+Gate 21 is "an immutable audit of every gate decision". A count that does not
+match the gate list means a gate was consulted and not recorded, or recorded
+and not consulted.`, len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf(`audit row %d names %s and the interceptor's gate at that position is %s.
+
+wrote: %v
+want:  %v
+
+The rows are asserted BY POSITION AND IDENTITY against a list written down
+separately from the chain that runs it, so a reordering or a substitution is a
+failure rather than a coincidence.`, i, got[i], want[i], got, want)
+		}
+	}
+	for i, r := range sink.rows {
+		if r.Outcome != authz.OutcomeAllow {
+			t.Fatalf("audit row %d (%s) records outcome %q on an ADMITTED request",
+				i, r.Gate, string(r.Outcome))
+		}
+		if r.Target == "" || r.AttestationID == "" || r.ScopeHash == "" {
+			t.Fatalf("audit row %d (%s) is missing a key field: target=%q attestation=%q "+
+				"scope=%q. A row that cannot be keyed cannot be joined back to who "+
+				"authorised what", i, r.Gate, r.Target, string(r.AttestationID),
+				string(r.ScopeHash))
+		}
+	}
+
+	// The counters MOVED, and the finding joins back to the audit.
+	cov := d.Result().Coverage
+	if cov.RequestsIssued != 1 {
+		t.Fatalf("Coverage.RequestsIssued = %d after one issued request; want 1. It is the "+
+			"number AssertNotSilentlyEmpty rests on", cov.RequestsIssued)
+	}
+	if cov.RequestsAdmitted != 1 {
+		t.Fatalf("Coverage.RequestsAdmitted = %d; want 1", cov.RequestsAdmitted)
+	}
+	if cov.RequestsRefused != 0 {
+		t.Fatalf("Coverage.RequestsRefused = %d on a request that was admitted and issued; "+
+			"want 0", cov.RequestsRefused)
+	}
+	if cov.Matches != 1 {
+		t.Fatalf("Coverage.Matches = %d; want 1", cov.Matches)
+	}
+	if f.AuditSeq == 0 || f.AuditSeq != req.AuditSeq() {
+		t.Fatalf("the Finding's AuditSeq (%d) and the AdmittedRequest's (%d) disagree, or "+
+			"are zero. A finding that cannot be joined back to an audited admission is "+
+			"not a finding this driver produced", f.AuditSeq, req.AuditSeq())
+	}
+	if f.TemplateID != id || f.TemplateDigest != digest {
+		t.Fatalf("the Finding is attributed to %s@%s; want %s@%s",
+			f.TemplateID, f.TemplateDigest, id, digest)
+	}
+	if f.Status != 200 || !f.Matched || f.BodyBytes != 512 {
+		t.Fatalf("the Finding did not carry the Issuer's observation: %+v", f)
+	}
+
+	// And the whole point of Coverage: this result may now be read as a real
+	// probe rather than as an absence. No other test in this repository has
+	// ever been able to assert that.
+	if err := d.Result().AssertNotSilentlyEmpty(); err != nil {
+		t.Fatalf(`AssertNotSilentlyEmpty refused a run that issued a request and got a
+finding: %v`, err)
+	}
+	if d.Result().Coverage.ProbedNothing() {
+		t.Fatal("Coverage.ProbedNothing() is true after a request was issued")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (3) the tripwire's third item
+// ---------------------------------------------------------------------------
+
+// TestFireRefusesAnOutOfScopeRedirectAndIssuesNothing.
+//
+// The refusal is a REAL kernel refusal, produced by the real gate 13 against a
+// real narrowed scope — not a hand-built GateResult and not an unconstructed
+// value tripping a precondition.
+//
+// # Where the out-of-scope destination comes from, and why it is not contrived
+//
+// Gate 11 is now authz.NarrowScopeToRobots: the site's own robots.txt is
+// fetched OUTSIDE the kernel and applied to the sealed scope ONCE, at run
+// initiation, producing a NARROWER scope. A robots.txt of "Disallow: /"
+// removes the whole origin.
+//
+// That is exactly the production shape in which a destination the kernel
+// admitted stops being in scope: the Authorization was minted against the
+// operator's scope, and the Governor re-validates every request against the
+// narrowed one. Gate 13 re-runs gates 4, 5, 8, 9 and 10 for every request and
+// every hop precisely because scope is a property of a request and not of a
+// job — the reading ZAP issue #2546 got wrong.
+//
+// The request is a REDIRECT HOP (OriginRedirect, hop 1), so what is refused is
+// a redirect to a destination outside scope. The only assertion that matters
+// in the end is the last one: NOTHING REACHED THE ISSUER.
+func TestFireRefusesAnOutOfScopeRedirectAndIssuesNothing(t *testing.T) {
+	a := admitTarget(t, mustCanonicalTarget(t))
+	tpls, rej, set := mustTemplateSet(t)
+
+	// Gate 11, in its new form, over bytes the target served.
+	narrowed, res := authz.NarrowScopeToRobots(a.scope, []authz.RobotsDocument{{
+		Host:    fixtureHost,
+		Port:    443,
+		Outcome: authz.RobotsFetchRetrieved,
+		Body:    []byte("User-agent: *\nDisallow: /\n"),
+	}})
+	if !res.Passed() {
+		t.Fatalf("authz.NarrowScopeToRobots refused at %s: %v", res.Gate(), res.Err())
+	}
+	if !narrowed.Constructed() {
+		t.Fatal("the narrowed scope is unconstructed, so the refusal below would be about " +
+			"a missing scope rather than about an out-of-scope destination")
+	}
+
+	sink := &recordingSink{}
+	iss := &spyIssuer{out: ProbeResult{Status: 200, Matched: true}}
+	d := mustDriver(t, Config{
+		Governor:      mustGovernor(t, a, narrowed, authz.RobotsNotFound(fixtureHost, 443)),
+		Audit:         mustGateAudit(t, a, sink),
+		Authorization: a.auth,
+		Target:        a.target,
+		Templates:     set,
+		Rejected:      rej,
+		Issuer:        iss,
+	})
+
+	id, digest := tpls[0].ID(), tpls[0].Digest()
+	p, err := NewRequestProposal(ProposalFacts{
+		Spec:           d.Spec(),
+		Origin:         authz.OriginRedirect,
+		Method:         authz.MethodGet,
+		Path:           "/",
+		Technique:      authz.TechniquePassiveObservation,
+		TemplateID:     id,
+		TemplateDigest: digest,
+		Hop:            1,
+	})
+	if err != nil {
+		t.Fatalf("NewRequestProposal for a redirect hop: %v", err)
+	}
+
+	_, err = d.Fire(context.Background(), p, mustClock(t))
+	if err == nil {
+		t.Fatal("Fire ADMITTED a redirect to a destination the scope layer no longer " +
+			"permits. Gate 13 re-validates every request against the CURRENT scope, and " +
+			"a request admitted once is not admitted forever")
+	}
+	if !errors.Is(err, ErrRefused) {
+		t.Fatalf("the refusal does not unwrap to ErrRefused: %v", err)
+	}
+	if !strings.Contains(err.Error(), authz.Gate13RevalidateEveryRequest.String()) {
+		t.Fatalf(`Fire refused, but NOT at gate 13: %v
+
+This test exists to show a REAL kernel refusal reaching the driver. A refusal
+from one of the driver's own preconditions — an unconstructed proposal, an
+unknown template — would pass an assertion that only checked for an error, and
+would prove nothing about the gate stack.`, err)
+	}
+
+	// THE ASSERTION THIS TEST EXISTS FOR.
+	if len(iss.calls) != 0 {
+		t.Fatalf(`the Issuer was called %d time(s) on a REFUSED request.
+
+A refusal that still issues the request is the only failure that matters here:
+it is a scope bypass with an audit row saying it did not happen.`, len(iss.calls))
+	}
+	cov := d.Result().Coverage
+	if cov.RequestsIssued != 0 {
+		t.Fatalf("Coverage.RequestsIssued = %d after a refusal; want 0", cov.RequestsIssued)
+	}
+	if cov.RequestsRefused != 1 {
+		t.Fatalf("Coverage.RequestsRefused = %d after one refusal; want 1. A refusal that "+
+			"does not move the counter is invisible to AssertNotSilentlyEmpty",
+			cov.RequestsRefused)
+	}
+	if err := d.Result().AssertNotSilentlyEmpty(); err == nil {
+		t.Fatal("a run that issued nothing reported itself readable as clean")
+	}
+
+	// Gate 21 logs the DENY as well as the allow, and the rows stop where the
+	// chain stopped.
+	if sink.n == 0 {
+		t.Fatal("the refused admission wrote zero audit rows. Gate 21 logs every allow " +
+			"AND every deny; a denial whose rows all vanish is the same control failing " +
+			"in the direction nobody looks at")
+	}
+	last := sink.rows[len(sink.rows)-1]
+	if last.Outcome != authz.OutcomeDeny {
+		t.Fatalf("the last audit row (%s) records outcome %q on a refused request",
+			last.Gate, string(last.Outcome))
+	}
+	if last.Gate != authz.Gate13RevalidateEveryRequest {
+		t.Fatalf("the refusing audit row names %s; want %s",
+			last.Gate, authz.Gate13RevalidateEveryRequest)
+	}
+	// The chain stops at the first refusal, so it must NOT have reached the
+	// gates after 13 — including gate 14, the only one that spends budget.
+	want := authz.GovernorGateOrder()
+	if len(sink.rows) >= len(want) {
+		t.Fatalf(`%d audit rows were written for a chain that refused at %s, and the full
+chain has %d gates: %v
+
+A refused request that still consulted every gate has spent gate 14's rate
+budget on a request that was never issued.`, len(sink.rows),
+			authz.Gate13RevalidateEveryRequest, len(want), sink.gates())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (4) the tripwire's fourth item
+// ---------------------------------------------------------------------------
+
+// TestDriverRunRefusesAnUnattributableResultFromARealDriver.
+//
+// TestDriverRunScrubsEveryEngineAuthoredStringBeforeTheCallerSeesIt builds its
+// Driver by hand, because when it was written a real one could not exist. This
+// one drives NewDriver — which means an Authorization, which means the whole
+// kernel — and asserts the drop.
+//
+// Attribution is BY IDENTITY (id AND digest) and never by position. The engine
+// is outside Anvil; a result it attributes to a template this driver did not
+// admit would file a finding under a template that did not produce it.
+func TestDriverRunRefusesAnUnattributableResultFromARealDriver(t *testing.T) {
+	a := admitTarget(t, mustCanonicalTarget(t))
+	tpls, rej, set := mustTemplateSet(t)
+
+	sum := sha256.Sum256([]byte(codeTemplate))
+	rogueDigest := hex.EncodeToString(sum[:])
+
+	cases := []struct {
+		name   string
+		result EngineResult
+	}{
+		{
+			name: "an id this driver never admitted",
+			result: EngineResult{
+				TemplateID:     "anvil-fixture-code",
+				TemplateDigest: rogueDigest,
+				Matched:        true,
+			},
+		},
+		{
+			// The half that a position-based or id-only lookup would let
+			// through: the RIGHT id carrying DIFFERENT BYTES.
+			name: "an admitted id carrying a different digest",
+			result: EngineResult{
+				TemplateID:     tpls[0].ID(),
+				TemplateDigest: rogueDigest,
+				Matched:        true,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &recordingSink{}
+			spy := &spyEngine{results: []EngineResult{tc.result}}
+			d := mustDriver(t, Config{
+				Governor:      mustGovernor(t, a, a.scope, authz.RobotsNotFound(fixtureHost, 443)),
+				Audit:         mustGateAudit(t, a, sink),
+				Authorization: a.auth,
+				Target:        a.target,
+				Templates:     set,
+				Rejected:      rej,
+				Engine:        spy,
+			})
+
+			seen := 0
+			err := d.Run(context.Background(), func(EngineResult, Template) error {
+				seen++
+				return nil
+			})
+			if err == nil {
+				t.Fatal("Run accepted a result the driver cannot attribute to an admitted " +
+					"template. Results are attributed by identity and never by position, " +
+					"so there is no fallback to guess at")
+			}
+			if !errors.Is(err, ErrRefused) {
+				t.Fatalf("the refusal does not unwrap to ErrRefused: %v", err)
+			}
+			if seen != 0 {
+				t.Fatalf("the callback ran %d time(s) for an unattributable result", seen)
+			}
+			// The identity in the message came from the engine and has passed
+			// nothing, so it is quoted REDACTED.
+			assertMessageIsSafe(t, "Driver.Run", tc.result.TemplateID, err.Error())
+
+			// The drop is LOUD, not silent: the run does not come back clean.
+			if rerr := d.Result().AssertNotSilentlyEmpty(); rerr == nil {
+				t.Fatal("a run whose only result was dropped reported itself readable as " +
+					"clean")
+			}
+		})
+	}
+
+	// ANTI-VACUITY. A Run that refused everything would pass every assertion
+	// above, so an ATTRIBUTABLE result must still reach the callback through
+	// the very same real driver.
+	t.Run("an admitted identity still reaches the callback", func(t *testing.T) {
+		sink := &recordingSink{}
+		spy := &spyEngine{results: []EngineResult{{
+			TemplateID:     tpls[0].ID(),
+			TemplateDigest: tpls[0].Digest(),
+			Matched:        true,
+			Status:         200,
+		}}}
+		d := mustDriver(t, Config{
+			Governor:      mustGovernor(t, a, a.scope, authz.RobotsNotFound(fixtureHost, 443)),
+			Audit:         mustGateAudit(t, a, sink),
+			Authorization: a.auth,
+			Target:        a.target,
+			Templates:     set,
+			Rejected:      rej,
+			Engine:        spy,
+		})
+		seen := 0
+		if err := d.Run(context.Background(), func(_ EngineResult, tpl Template) error {
+			seen++
+			if tpl.ID() != tpls[0].ID() {
+				t.Fatalf("the callback was handed template %q; want %q", tpl.ID(), tpls[0].ID())
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("Run over an attributable result from a real driver: %v", err)
+		}
+		if seen != 1 {
+			t.Fatalf("the callback ran %d time(s); want 1", seen)
+		}
+		// And Run still does NOT invent RequestsIssued — a scan driven only
+		// through Run comes back unreadable as clean, on purpose.
+		if got := d.Result().Coverage.RequestsIssued; got != 0 {
+			t.Fatalf("Coverage.RequestsIssued = %d after a Run-only scan; want 0. Run "+
+				"does not observe what the engine put on the wire and must not count it",
+				got)
+		}
+		if err := d.Result().AssertNotSilentlyEmpty(); err == nil {
+			t.Fatal("a scan driven only through Run reported itself readable as clean")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// (5) the tripwire's fifth item
+// ---------------------------------------------------------------------------
+
+// TestNewTargetSpecRefusesAnAuthorizationMintedForADifferentTarget is the
+// cross-target token reuse authz.RequireAuthorization exists to stop, and it
+// has never been exercised in this package because no Authorization could be
+// minted at all.
+//
+// The second case is the one worth the trouble: SAME scheme, SAME canonical
+// host, SAME port, DIFFERENT PINNED ADDRESS. A check that compared the target
+// by name would admit it, and that is DNS rebinding — the name matched, the
+// destination changed. RequireAuthorization compares the whole Target, pinned
+// address included.
+func TestNewTargetSpecRefusesAnAuthorizationMintedForADifferentTarget(t *testing.T) {
+	a := admitTarget(t, mustCanonicalTarget(t))
+
+	otherHost, err := authz.NewTarget(authz.SchemeHTTPS, "other.example.net",
+		"other.example.net", 443, mustAddr(t, "203.0.113.7"))
+	if err != nil {
+		t.Fatalf("authz.NewTarget for the second host: %v", err)
+	}
+	rebound, err := authz.NewTarget(authz.SchemeHTTPS, fixtureLiteral, fixtureHost, 443,
+		mustAddr(t, fixtureRebindPinned))
+	if err != nil {
+		t.Fatalf("authz.NewTarget for the rebinding twin: %v", err)
+	}
+	otherPort, err := authz.NewTarget(authz.SchemeHTTPS, fixtureLiteral, fixtureHost, 8443,
+		mustAddr(t, fixturePinned))
+	if err != nil {
+		t.Fatalf("authz.NewTarget for the second port: %v", err)
+	}
+
+	// The fixture must actually differ from the authorized target, or every
+	// row below is vacuous.
+	for _, tc := range []struct {
+		name   string
+		target authz.Target
+	}{
+		{"a different host entirely", otherHost},
+		{"the same host, pinned somewhere else (DNS rebinding)", rebound},
+		{"the same host and pin, a different port", otherPort},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.target == a.target {
+				t.Fatal("the fixture target is identical to the authorized one, so this " +
+					"row cannot show a cross-target reuse being refused")
+			}
+			spec, err := NewTargetSpec(a.auth, tc.target)
+			if err == nil {
+				t.Fatalf(`NewTargetSpec built a spec for %s from an Authorization minted for %s.
+
+That is cross-target token reuse: one admitted destination's token opening a
+socket to another. It is how a redirect escapes scope, and in the rebinding row
+it is how a name that passed gates 8-10 reaches an address that never did.`,
+					tc.target, a.target)
+			}
+			if !errors.Is(err, ErrRefused) {
+				t.Fatalf("the refusal does not unwrap to ErrRefused: %v", err)
+			}
+			if spec.Constructed() {
+				t.Fatal("a refused NewTargetSpec still returned a constructed spec")
+			}
+		})
+	}
+
+	// ANTI-VACUITY: the SAME Authorization against its OWN target succeeds, so
+	// the refusals above are about the target and not about the token.
+	t.Run("the authorized target is still admitted", func(t *testing.T) {
+		if _, err := NewTargetSpec(a.auth, a.target); err != nil {
+			t.Fatalf("NewTargetSpec refused the target its Authorization was minted for: "+
+				"%v. Every refusal above would then prove nothing", err)
+		}
+	})
+
+	// And the driver refuses the same reuse at assembly, which is where it
+	// would actually be attempted.
+	t.Run("NewDriver refuses it too", func(t *testing.T) {
+		_, _, set := mustTemplateSet(t)
+		sink := &recordingSink{}
+		_, err := NewDriver(Config{
+			Governor:      mustGovernor(t, a, a.scope, authz.RobotsNotFound(fixtureHost, 443)),
+			Audit:         mustGateAudit(t, a, sink),
+			Authorization: a.auth,
+			Target:        rebound,
+			Templates:     set,
+		})
+		if err == nil {
+			t.Fatal("NewDriver assembled a driver whose Authorization covers a different " +
+				"pinned address than its Target")
+		}
+		if !errors.Is(err, ErrRefused) {
+			t.Fatalf("the refusal does not unwrap to ErrRefused: %v", err)
+		}
+	})
 }
 
 // TestTargetSpecRefusesEveryUnauthorizedRoute. This is the fail-closed half of
@@ -1859,5 +2608,388 @@ func repoRoot(t *testing.T) string {
 				"measure", thisPackageDir(t))
 		}
 		dir = parent
+	}
+}
+
+// ---------------------------------------------------------------------------
+// What leaves this package: scrubbing on the Run path, redaction in refusals
+// ---------------------------------------------------------------------------
+
+// hostileIdentifiers is the generator the three tests below share.
+//
+// A generator that cannot produce the breaking input is the defect, so this
+// one carries every class that has to be neutralised BEFORE a string from an
+// external engine reaches an operator's terminal, the gate-21 audit or, one
+// hop later, a prompt-bound agent (plan/00-SPINE.md S6, S7): the invisible
+// smuggling channels, the renders-differently-than-it-compares channels, the
+// log-injection channel, malformed UTF-8, and length used as a payload.
+//
+// Every value is written with escapes rather than as a literal character, so
+// that a reviewer reading this file sees what is in it.
+func hostileIdentifiers() []struct{ name, value string } {
+	return []struct{ name, value string }{
+		{"a bidi override", "cve-2021\u202e-44228"},
+		{"a bidi isolate", "\u2066cve-2021-44228\u2069"},
+		{"zero-width joiners", "cve\u200b-2021\u200d-44228"},
+		{"unicode tag characters", "cve-2021-44228\U000e0041\U000e0042"},
+		{"a NUL", "cve-2021\x00-44228"},
+		{"an ANSI escape", "cve-\x1b[2J\x1b[H2021"},
+		{"DEL and a C1 control", "cve\x7f-2021\u009b-44228"},
+		{"CR LF, which is log injection", "cve-2021\r\nlevel=info msg=\"all clear\""},
+		{"malformed UTF-8", "cve-\xff\xfe-2021"},
+		{"length as the payload", strings.Repeat("a", 100_000)},
+		{"an ordinary lowercase identity, which must survive", "cve-2021-44228"},
+	}
+}
+
+// forbiddenInAMessage is what must never reach an operator-facing string.
+func forbiddenInAMessage() []string {
+	return []string{
+		"\u202e", "\u2066", "\u2069", "\u200b", "\u200d",
+		"\U000e0041", "\U000e0042", "\x00", "\x1b", "\x7f", "\u009b", "\r", "\n",
+	}
+}
+
+// assertMessageIsSafe is the shared assertion: nothing invisible, nothing that
+// re-renders, nothing that forges a log line, and a bound on length.
+func assertMessageIsSafe(t *testing.T, site, input, msg string) {
+	t.Helper()
+	for _, bad := range forbiddenInAMessage() {
+		if strings.Contains(msg, bad) {
+			t.Fatalf("%s put %+q into an operator-facing message. That message reaches a "+
+				"terminal, the gate-21 audit and an agent's context, and this byte class is "+
+				"exactly what redactIdentifier exists to remove.\nmessage: %+q",
+				site, bad, msg)
+		}
+	}
+	const bound = 2048
+	if len(msg) > bound {
+		t.Fatalf("%s produced a %d-byte message from a %d-byte input; the bound is %d. "+
+			"Length is its own payload", site, len(msg), len(input), bound)
+	}
+	if len(input) > maxRedactedIdentifierBytes && strings.Contains(msg, input) {
+		t.Fatalf("%s quoted a %d-byte identifier in full", site, len(input))
+	}
+}
+
+// TestTheEnginesRedactionAgreesWithTheKernelByteForByte.
+//
+// redactIdentifier is a COPY of authz.redactUntrusted, which is unexported and
+// therefore uncallable from here. A copy is how two renderings come to
+// disagree, so the disagreement is made a test failure: every string below is
+// driven through authz.NewRequestIntent — whose unrecognised-origin refusal
+// quotes the value through the KERNEL'S OWN function — and the kernel's
+// rendering is compared with this package's.
+//
+// If either charset or bound moves on either side, this fails.
+func TestTheEnginesRedactionAgreesWithTheKernelByteForByte(t *testing.T) {
+	changed := 0
+	for _, tc := range hostileIdentifiers() {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := authz.NewRequestIntent(authz.RequestFacts{
+				Origin:   authz.RequestOrigin(tc.value),
+				Admitted: mustBareTarget(t),
+				Next:     mustBareTarget(t),
+				Method:   authz.MethodGet,
+				Path:     "/",
+			})
+			if err == nil {
+				t.Fatal("the kernel accepted an unenumerated origin, so this test has no " +
+					"refusal message to read the kernel's redaction out of")
+			}
+			mine := redactIdentifier(tc.value)
+			if !strings.Contains(err.Error(), fmt.Sprintf("%q", mine)) {
+				t.Fatalf(`this package's redaction DISAGREES with the kernel's.
+
+engines.redactIdentifier rendered: %q
+the kernel's message was:          %s
+
+These are two copies of one allowlist, and the only reason the copy is
+tolerable is that this test fails when they drift. Move engines' charset or
+bound back to the kernel's, or export the kernel's and call it.`, mine, err)
+			}
+			if mine != tc.value {
+				changed++
+				if strings.Contains(err.Error(), fmt.Sprintf("%q", tc.value)) {
+					t.Fatalf("the kernel's message quotes the RAW value as well: %v", err)
+				}
+			}
+		})
+	}
+	// Anti-vacuity. Two identity functions agree perfectly, and this whole
+	// test would pass over a redactIdentifier that returned its argument.
+	if changed == 0 {
+		t.Fatal("no fixture was altered by redaction, so this test compared two functions " +
+			"that were never asked to do anything")
+	}
+	// And the bound, stated rather than inferred.
+	long := redactIdentifier(strings.Repeat("a", 100_000))
+	if len(long) != maxRedactedIdentifierBytes+len("...") {
+		t.Fatalf("a 100,000-byte identifier redacted to %d bytes; want %d",
+			len(long), maxRedactedIdentifierBytes+3)
+	}
+}
+
+// TestNoRefusalInThisPackageQuotesAnUntrustedIdentifierRaw sweeps every refusal
+// that echoes an identifier this package did not mint.
+//
+// The ones the D.16 critic found were `%s` interpolations of
+// identityKey(TemplateID, TemplateDigest) and of a proposal's plan digest —
+// both of which come straight from an external engine or from a caller. Fixing
+// only the named sites would be a denylist of the ones somebody happened to
+// look at, so this drives every such site in BOTH drivers from one generator.
+// A new refusal that quotes an external identifier belongs in this table.
+func TestNoRefusalInThisPackageQuotesAnUntrustedIdentifierRaw(t *testing.T) {
+	tpls, _ := loadOK(t, map[string]string{"ok.yaml": goodTemplate})
+	set, err := NewTemplateSet(tpls)
+	if err != nil {
+		t.Fatalf("NewTemplateSet: %v", err)
+	}
+	spec := TargetSpec{
+		url:    "https://" + fixtureHost + ":443",
+		pinned: "203.0.113.7:443",
+		target: mustBareTarget(t),
+		sealed: true,
+	}
+	sum := sha256.Sum256([]byte(goodTemplate))
+	goodDigest := hex.EncodeToString(sum[:])
+
+	sites := []struct {
+		name string
+		run  func(t *testing.T, hostile string) error
+	}{
+		{"NewRequestProposal, unenumerated origin", func(t *testing.T, h string) error {
+			_, err := NewRequestProposal(ProposalFacts{
+				Spec: spec, Origin: authz.RequestOrigin(h), Method: authz.MethodGet, Path: "/",
+				Technique:  authz.TechniquePassiveObservation,
+				TemplateID: "anvil-fixture-ok", TemplateDigest: goodDigest,
+			})
+			return err
+		}},
+		{"NewRequestProposal, unrecognised method", func(t *testing.T, h string) error {
+			_, err := NewRequestProposal(ProposalFacts{
+				Spec: spec, Origin: authz.OriginInitial, Method: authz.Method(h), Path: "/",
+				Technique:  authz.TechniquePassiveObservation,
+				TemplateID: "anvil-fixture-ok", TemplateDigest: goodDigest,
+			})
+			return err
+		}},
+		{"NewRequestProposal, unclassified technique", func(t *testing.T, h string) error {
+			_, err := NewRequestProposal(ProposalFacts{
+				Spec: spec, Origin: authz.OriginInitial, Method: authz.MethodGet, Path: "/",
+				Technique:  authz.Technique(h),
+				TemplateID: "anvil-fixture-ok", TemplateDigest: goodDigest,
+			})
+			return err
+		}},
+		{"Driver.Fire, unadmitted template identity", func(t *testing.T, h string) error {
+			d := &Driver{sealed: true, cfg: Config{Templates: set}}
+			p := RequestProposal{
+				sealed: true, spec: spec, origin: authz.OriginInitial, method: authz.MethodGet,
+				path: "/", technique: authz.TechniquePassiveObservation,
+				tplID: h, tplDigest: h,
+			}
+			_, err := d.Fire(context.Background(), p, mustClock(t))
+			return err
+		}},
+		{"Driver.Run, unattributable engine result", func(t *testing.T, h string) error {
+			spy := &spyEngine{results: []EngineResult{{TemplateID: h, TemplateDigest: h}}}
+			d := &Driver{sealed: true, spec: spec, cfg: Config{Templates: set, Engine: spy}}
+			return d.Run(context.Background(), func(EngineResult, Template) error { return nil })
+		}},
+		{"ZapDriver.Fire, foreign plan digest", func(t *testing.T, h string) error {
+			d := &ZapDriver{cfg: ZapConfig{}, spec: zapSpec(t), plan: zapPlan(t), sealed: true}
+			p := RequestProposal{
+				sealed: true, spec: zapSpec(t), origin: authz.OriginInitial,
+				method: authz.MethodGet, path: "/",
+				technique: authz.TechniqueProofOfExistence,
+				tplID:     "zap:rule:40018", tplDigest: h,
+			}
+			_, err := d.Fire(context.Background(), p, mustClock(t))
+			return err
+		}},
+		{"ZapDriver.Fire, foreign rule identity", func(t *testing.T, h string) error {
+			plan := zapPlan(t)
+			d := &ZapDriver{cfg: ZapConfig{}, spec: zapSpec(t), plan: plan, sealed: true}
+			p := RequestProposal{
+				sealed: true, spec: zapSpec(t), origin: authz.OriginInitial,
+				method: authz.MethodGet, path: "/",
+				technique: authz.TechniqueProofOfExistence,
+				tplID:     h, tplDigest: plan.Digest(),
+			}
+			_, err := d.Fire(context.Background(), p, mustClock(t))
+			return err
+		}},
+		{"NewZapRequestProposal, unenumerated origin", func(t *testing.T, h string) error {
+			_, err := NewZapRequestProposal(ZapProposalFacts{
+				Plan: zapPlan(t), Spec: zapSpec(t), RuleID: "40018",
+				Origin: authz.RequestOrigin(h), Method: authz.MethodGet, Path: "/",
+				Technique: authz.TechniqueProofOfExistence,
+			})
+			return err
+		}},
+	}
+
+	exercised := 0
+	for _, site := range sites {
+		for _, tc := range hostileIdentifiers() {
+			t.Run(site.name+"/"+tc.name, func(t *testing.T) {
+				err := site.run(t, tc.value)
+				if err == nil {
+					// The benign fixture is a legal value at some sites. A
+					// message that does not exist carries nothing.
+					return
+				}
+				exercised++
+				assertMessageIsSafe(t, site.name, tc.value, err.Error())
+			})
+		}
+	}
+	// Anti-vacuity: a table whose every row returned nil would pass in
+	// silence.
+	if exercised < len(sites) {
+		t.Fatalf("only %d refusal message(s) were produced across %d site(s). A site that "+
+			"never refuses is a row measuring nothing", exercised, len(sites))
+	}
+}
+
+// TestDriverRunScrubsEveryEngineAuthoredStringBeforeTheCallerSeesIt.
+//
+// EngineResult.Evidence's own doc used to say "Sanitized before it is
+// retained" while Driver.Run — the only route from an Engine to a caller —
+// handed the callback the result untouched. scrub had four call sites and none
+// of them was on this path.
+//
+// This drives a spy engine that reports every hostile class at once and
+// asserts, per field, that what the callback received is not what the engine
+// sent.
+func TestDriverRunScrubsEveryEngineAuthoredStringBeforeTheCallerSeesIt(t *testing.T) {
+	tpls, _ := loadOK(t, map[string]string{"ok.yaml": goodTemplate})
+	set, err := NewTemplateSet(tpls)
+	if err != nil {
+		t.Fatalf("NewTemplateSet: %v", err)
+	}
+	spec := TargetSpec{
+		url:    "https://" + fixtureHost + ":443",
+		pinned: "203.0.113.7:443",
+		target: mustBareTarget(t),
+		sealed: true,
+	}
+
+	// One string carrying every class, plus a body longer than the retained
+	// bound so truncation is exercised too.
+	var b strings.Builder
+	for _, tc := range hostileIdentifiers() {
+		if len(tc.value) > 1000 {
+			continue
+		}
+		b.WriteString(tc.value)
+	}
+	hostile := b.String()
+	longEvidence := hostile + strings.Repeat("z", MaxEvidenceBytes)
+
+	// Anti-vacuity on the FIXTURE, before anything is asserted about the
+	// driver: a generator that emits nothing dangerous proves nothing.
+	for _, bad := range forbiddenInAMessage() {
+		if bad == "\r" || bad == "\n" {
+			continue
+		}
+		if !strings.Contains(hostile, bad) {
+			t.Fatalf("the fixture does not contain %+q, so this test cannot show it being "+
+				"removed", bad)
+		}
+	}
+
+	spy := &spyEngine{results: []EngineResult{{
+		TemplateID:     tpls[0].ID(),
+		TemplateDigest: tpls[0].Digest(),
+		Matched:        true,
+		Severity:       hostile,
+		Method:         hostile,
+		Path:           hostile,
+		Evidence:       longEvidence,
+		Status:         200,
+	}}}
+	d := &Driver{sealed: true, spec: spec, cfg: Config{Templates: set, Engine: spy}}
+
+	seen := 0
+	var got EngineResult
+	var gotTpl Template
+	if err := d.Run(context.Background(), func(r EngineResult, tpl Template) error {
+		seen++
+		got, gotTpl = r, tpl
+		return nil
+	}); err != nil {
+		t.Fatalf("Run over an attributable result: %v", err)
+	}
+	if seen != 1 {
+		t.Fatalf("the callback ran %d time(s); want 1", seen)
+	}
+	if gotTpl.ID() != tpls[0].ID() {
+		t.Fatalf("the callback was handed template %q; want %q", gotTpl.ID(), tpls[0].ID())
+	}
+
+	for _, f := range []struct{ name, value, sent string }{
+		{"Evidence", got.Evidence, longEvidence},
+		{"Severity", got.Severity, hostile},
+		{"Method", got.Method, hostile},
+		{"Path", got.Path, hostile},
+	} {
+		if f.value == f.sent {
+			t.Fatalf(`EngineResult.%s reached the callback BYTE-FOR-BYTE AS THE ENGINE SENT IT.
+
+Driver.Run is the only route an EngineResult takes to a caller, and this field
+is engine-authored prose heading for a record and, downstream, an agent's
+context. Scrub it in Run, next to the identity lookup.`, f.name)
+		}
+		for _, bad := range forbiddenInAMessage() {
+			if bad == "\r" || bad == "\n" {
+				continue // scrub keeps \n and \t by design; it removes what re-renders.
+			}
+			if strings.Contains(f.value, bad) {
+				t.Fatalf("EngineResult.%s still contains %+q after Run", f.name, bad)
+			}
+		}
+	}
+	if len(got.Evidence) > MaxEvidenceBytes {
+		t.Fatalf("Evidence reached the callback at %d bytes; MaxEvidenceBytes is %d",
+			len(got.Evidence), MaxEvidenceBytes)
+	}
+	// The identity pair is NOT scrubbed, and must not be: it matched the
+	// admitted set by identity, so by then it is this driver's own value.
+	if got.TemplateID != tpls[0].ID() || got.TemplateDigest != tpls[0].Digest() {
+		t.Fatalf("the identity pair was altered on the way through: %q@%q",
+			got.TemplateID, got.TemplateDigest)
+	}
+
+	// And what came off is COUNTED. A check that cannot see the damage is not
+	// a check: without this, a scrub that silently deleted half the evidence
+	// would look identical to a clean result.
+	cov := d.Result().Coverage
+	if !cov.Evidence.Modified() {
+		t.Fatalf("Coverage.Evidence reports nothing was removed (%s), from a result that "+
+			"carried every class at once", cov.Evidence)
+	}
+	if cov.Evidence.Bidi == 0 || cov.Evidence.ZeroWidth == 0 || cov.Evidence.Tag == 0 ||
+		cov.Evidence.Controls == 0 || cov.Evidence.InvalidUTF8 == 0 ||
+		cov.Evidence.TruncatedFrom == 0 {
+		t.Fatalf(`Coverage.Evidence is missing a class the fixture contained: %s
+
+Every counter above must move, or a class is passing through uncounted.`, cov.Evidence)
+	}
+
+	// A nil callback must still count what the engine sent — otherwise the
+	// coverage a report rests on would depend on whether anybody was
+	// listening.
+	spy2 := &spyEngine{results: []EngineResult{{
+		TemplateID: tpls[0].ID(), TemplateDigest: tpls[0].Digest(), Evidence: hostile,
+	}}}
+	d2 := &Driver{sealed: true, spec: spec, cfg: Config{Templates: set, Engine: spy2}}
+	if err := d2.Run(context.Background(), nil); err != nil {
+		t.Fatalf("Run with a nil callback: %v", err)
+	}
+	if !d2.Result().Coverage.Evidence.Modified() {
+		t.Fatal("a run with no callback recorded no scrubbing, so the coverage depends on " +
+			"whether a caller was listening")
 	}
 }

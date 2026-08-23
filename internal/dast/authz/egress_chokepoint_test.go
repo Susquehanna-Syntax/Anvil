@@ -132,21 +132,28 @@ import (
 // netip in particular is what the kernel uses to hold a PINNED address, which
 // is the opposite of a capability.
 var inertImports = map[string]string{
-	"archive/tar":          "byte-stream archive format",
-	"archive/zip":          "byte-stream archive format",
-	"bufio":                "buffering over an io.Reader/Writer it is handed",
-	"bytes":                "in-memory buffers",
-	"cmp":                  "ordering helpers",
-	"compress/gzip":        "byte-stream codec",
-	"context":              "cancellation and deadlines; carries no connection",
-	"crypto/sha256":        "hashing",
-	"database/sql":         "SQL over a driver; the only driver in this module is file-backed",
-	"database/sql/driver":  "the driver interface types",
-	"embed":                "compile-time file embedding",
-	"encoding/binary":      "byte encoding",
-	"encoding/csv":         "byte encoding",
-	"encoding/hex":         "byte encoding",
-	"encoding/json":        "byte encoding",
+	"archive/tar":         "byte-stream archive format",
+	"archive/zip":         "byte-stream archive format",
+	"bufio":               "buffering over an io.Reader/Writer it is handed",
+	"bytes":               "in-memory buffers",
+	"cmp":                 "ordering helpers",
+	"compress/gzip":       "byte-stream codec",
+	"context":             "cancellation and deadlines; carries no connection",
+	"crypto/sha256":       "hashing",
+	"database/sql":        "SQL over a driver; the only driver in this module is file-backed",
+	"database/sql/driver": "the driver interface types",
+	"embed":               "compile-time file embedding",
+	"encoding/binary":     "byte encoding",
+	"encoding/csv":        "byte encoding",
+	"encoding/hex":        "byte encoding",
+	"encoding/json":       "byte encoding",
+	// Go's XML decoder does NOT resolve external entities and does not fetch
+	// DTDs -- it has no XXE, which is why D.19 can point it at a spec file
+	// harvested from an untrusted repository at all. The one route to a socket
+	// is Decoder.CharsetReader, which is CALLER-SUPPLIED: a caller that set it
+	// to something fetching would have that fetch in its OWN code, where this
+	// scanner sees it. Verified: nothing under internal/ sets CharsetReader.
+	"encoding/xml":         "byte encoding; no external-entity resolution",
 	"errors":               "error values",
 	"flag":                 "command-line parsing",
 	"fmt":                  "formatting",

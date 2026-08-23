@@ -52,10 +52,18 @@
 // not run reported success, and names the shape precisely: "a guard that
 // vanishes silently when it cannot run is worse than no guard, because the
 // green tick is read as an answer." A gate stack that is half-built must
-// therefore deny everything, and today it does: gates 4, 5, 6, 8, 9 and 10 are
-// compiled in and GATE 11 IS NOT, so Decide refuses every target at gate 11.
-// TestGate11StopsTheAdmissionChain records where the chain actually stops, so
-// that fact is measured rather than assumed.
+// therefore deny everything.
+//
+// EVERY GATE IN admissionChain NOW HAS AN IMPLEMENTATION COMPILED IN — gates
+// 4, 5, 6, 8, 9 and 10 — so Decide can reach an allow. Gate 11 is no longer in
+// the list: it is a scope narrowing applied before admission runs, not an
+// admission predicate (see admissionChain's comment). The refusal path is not
+// dead code and is not untested: TestChainRefusesEveryMissingGateIndividually
+// removes each gate in turn and asserts the refusal names it.
+// TestGate11StopsTheAdmissionChain, which used to pin where the chain stopped,
+// was replaced by TestTheRealAdmissionChainReachesAnAllow, which pins that it
+// no longer stops, and by TestAdjudicateReachesAnAllowThroughTheRealChain,
+// which pins the audit rows behind the allow.
 //
 // ===========================================================================
 // GATE 12 IS NOT IN ANY CHAIN, AND CANNOT BE PUT IN ONE
@@ -303,6 +311,21 @@ func registerInto(m map[GateID]gateFunc, g GateID, fn gateFunc) error {
 			"precondition of the Attestation the admission chain consumes",
 			ErrRefused, g)
 	}
+	if g == Gate11RobotsDeny {
+		return fmt.Errorf("authz: %w: %s (robots.txt) cannot be registered as a gate "+
+			"implementation. plan/50-dast.md:1032's own row for it — \"Restrictive "+
+			"robots.txt/no-scan statement REMOVES PATHS FROM SCOPE; permissive adds "+
+			"nothing\" — describes a SCOPE TRANSFORMATION, not an admission predicate, "+
+			"and it is implemented as one: NarrowScopeToRobots runs ONCE at run "+
+			"initiation, after the scope is sealed, and returns a narrower Scope. Its "+
+			"per-request half is CheckGate11RobotsDeny, which the Governor runs on every "+
+			"request and every redirect hop. Neither is expressible as a gateFunc: "+
+			"robots.txt is a property of an origin AND A PATH, a gateFunc receives no "+
+			"path, and determining the policy requires a fetch that the kernel does not "+
+			"perform. A gate 11 registered here could only permit whenever the four "+
+			"inputs are well formed, which is a gate that has never refused anything",
+			ErrRefused, g)
+	}
 	if g.Phase() == 3 {
 		return fmt.Errorf("authz: %w: %s is a Phase 3 PER-REQUEST enforcement gate and has "+
 			"its own chain type. A gateFunc's world is one target; gates 13–17 are about "+
@@ -364,15 +387,32 @@ func register(g GateID, fn gateFunc) {
 // Gates 18–21 are about output and disclosure, and gate 21 wraps this whole
 // chain rather than sitting inside it.
 //
-// GATE 11 IS STILL HERE AND STILL HAS NO IMPLEMENTATION, and that is stated
-// rather than hidden. robots.txt is a property of an ORIGIN AND A PATH, and a
-// gateFunc receives no path, so D.5 implemented it as CheckGate11RobotsDeny and
-// the Governor calls it per request. Its presence in this list with nothing
-// registered means THE ADMISSION CHAIN REFUSES EVERY TARGET AT GATE 11 — a
-// missing gate is a REFUSAL, never a skipped step.
-// TestGate11StopsTheAdmissionChain records where the chain actually stops, so
-// the fact is measured rather than assumed, and the orchestrator rules on where
-// the robots policy should enter the kernel.
+// GATE 11 IS A SCOPE NARROWING, NOT AN ADMISSION PREDICATE, and it was removed
+// from this list once that was settled.
+//
+// It used to sit here with nothing registered for it, which — since a missing
+// gate is a refusal — meant the chain refused EVERY target and no Authorization
+// could be minted outside this package at all. That was fail-closed and
+// therefore not wrong, but it also meant the kernel could admit nothing, and
+// the reason it could not be fixed in place was structural: gateFunc is
+// (Target, Scope, Attestation, Clock), it receives NO PATH, and robots.txt
+// requires a fetch.
+//
+// plan/50-dast.md:1032's own gate 11 row is not the language of an admission
+// predicate: "Restrictive robots.txt/no-scan statement REMOVES PATHS FROM
+// SCOPE; permissive adds nothing." That is a SCOPE TRANSFORMATION, and it is
+// implemented as one — NarrowScopeToRobots in phase2_admission.go, run once at
+// run initiation after the scope is sealed, taking the fetched bytes as DATA
+// exactly the way FetchSecurityTxt does, so the fetch stays outside the kernel
+// and the kernel stays free of I/O. By the time this chain runs, the narrowing
+// has already happened and the scope simply IS narrower.
+//
+// Gate 11's per-request half is unchanged: CheckGate11RobotsDeny is what the
+// Governor runs on every request and every redirect hop, and it is what holds
+// the "did anybody actually look?" line. So gate 11 is enforced in two places
+// and registered as a gateFunc in neither — registerInto refuses it, the same
+// way it refuses gates 7 and 12, so "just add it back to the chain" does not
+// survive the first run of the test suite.
 var admissionChain = []GateID{
 	Gate4ScopeFile,
 	Gate5Attestation,
@@ -380,7 +420,6 @@ var admissionChain = []GateID{
 	Gate8Canonicalize,
 	Gate9ResolveAndPin,
 	Gate10ReservedRanges,
-	Gate11RobotsDeny,
 }
 
 // revalidationChain is what gate 13 re-runs on EVERY request and EVERY redirect

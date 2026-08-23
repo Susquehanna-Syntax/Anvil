@@ -796,12 +796,22 @@ func (e ScopeEntry) Covers(canonicalHost string, port uint16) bool {
 // DenyEntries). TestScopeSealsEveryFieldOfEveryEntry mutates every field of an
 // allow entry and of a deny entry, before and after construction, and asserts
 // that what the scope permits does not move.
+// A Scope can also be NARROWED after it is sealed — see the SCOPE NARROWING
+// block below. Narrowing never touches `hash`, `mode` or `allow`; it only ever
+// appends to `deny` and to `robots`, which is what makes it structurally
+// incapable of widening.
 type Scope struct {
-	hash   ScopeHash
-	mode   ModeDeclaration
-	allow  []ScopeEntry
-	deny   []ScopeEntry
-	sealed bool
+	hash  ScopeHash
+	mode  ModeDeclaration
+	allow []ScopeEntry
+	deny  []ScopeEntry
+	// robots holds the robots.txt policies that have narrowed this scope, one
+	// per (origin, narrowing step). APPEND-ONLY: see narrowedCopy.
+	robots []originRobots
+	// narrowing is the audit trail of every narrowing step applied.
+	// APPEND-ONLY.
+	narrowing []ScopeNarrowingRecord
+	sealed    bool
 }
 
 // cloneScopeEntries deep-copies a slice of entries, including the Ports backing
@@ -960,6 +970,277 @@ func (s Scope) DenyEntries() []ScopeEntry {
 		return nil
 	}
 	return cloneScopeEntries(s.deny)
+}
+
+// ---------------------------------------------------------------------------
+// SCOPE NARROWING — gate 11's actual shape
+// ---------------------------------------------------------------------------
+//
+// # Why this exists at all
+//
+// plan/50-dast.md:1032's gate 11 row is not the language of an admission
+// predicate: "Restrictive robots.txt/no-scan statement REMOVES PATHS FROM
+// SCOPE; permissive adds nothing." That describes a TRANSFORMATION OF THE
+// SCOPE, applied once at run initiation after the scope is sealed, and it is
+// implemented here as one. Gate 11 was previously a position in
+// kernel.go's admissionChain with nothing registered for it, which meant the
+// chain refused every target and no Authorization could be minted at all —
+// fail-closed and therefore not WRONG, but it also meant the kernel could
+// admit nothing. The orchestrator ruled the row is a narrowing; this is the
+// narrowing.
+//
+// # The property, and why it is structural rather than merely tested
+//
+// THE OUTPUT SCOPE IS ALWAYS NARROWER THAN OR EQUAL TO THE INPUT. Gate 11 is
+// asymmetric by design: a restrictive robots.txt removes reach and a
+// permissive one grants none. research/20 gives the reason — Van Buren fn.8
+// left the legal weight of non-code limits open, so a site's "you may" is
+// worth nothing to Anvil and its "you may not" is worth everything. A worker
+// who implements robots.txt as an ordinary allow/deny parser gets this exactly
+// backwards, and the result is A FILE SERVED BY THE TARGET WIDENING THE SCOPE
+// ANVIL WAS AUTHORIZED FOR.
+//
+// So narrowing is not "recompute the scope from the file". Every narrowing
+// primitive here is built on narrowedCopy, and narrowedCopy classifies every
+// field of Scope into exactly three kinds:
+//
+//	CARRIED VERBATIM   hash, mode, sealed — a narrowing is the same
+//	                   authorization document, so the hash gate 5 bound the
+//	                   attestation to and gate 21 keys the audit on does not
+//	                   move. The narrowed scope is a SUBSET of what that
+//	                   document authorized, so the binding still holds.
+//	NEVER WRITTEN      allow — no primitive in this file writes it. There is
+//	                   no code path that adds an allow entry, widens an
+//	                   entry's ports, or replaces the slice.
+//	APPEND-ONLY        deny, robots, narrowing — every primitive appends and
+//	                   none removes or rewrites.
+//
+// Given Permits = (no deny covers) AND (some allow covers), appending to deny
+// can only turn a true into a false. Given PermitsPath = Permits AND (every
+// robots policy for the origin permits the path), appending to robots can only
+// turn a true into a false. Widening therefore has no expression, not merely
+// no caller.
+//
+// TestScopeNarrowingHasNoFieldItCanWiden is the reflection guard: it fails
+// when a field is added to Scope without being classified here, so a future
+// contributor cannot add a widenable field and have the sweep below stay
+// green over it.
+
+// originRobots binds one origin to one robots.txt policy that narrowed it.
+//
+// It is a slice rather than a map keyed by origin because two narrowing steps
+// may both speak about one origin, and the correct combination is AND — the
+// strictest wins. A map would make the second step overwrite the first, which
+// is a widening with a data structure in front of it.
+type originRobots struct {
+	host   string
+	port   uint16
+	policy RobotsPolicy
+}
+
+// ScopeNarrowingRecord is the audit row for one narrowing step.
+//
+// Its fields are exported because they are inert facts a caller writes to an
+// audit log; nothing is probed because a record exists. It deliberately holds
+// NO reference field — no slice, map or pointer — so that copying it is a
+// value copy and cannot alias. TestScopeNarrowingRecordHoldsNoReference is the
+// guard that keeps it that way.
+type ScopeNarrowingRecord struct {
+	// Host and Port name the origin this step is about.
+	Host string
+	Port uint16
+	// Determination is what happened when Anvil looked for robots.txt.
+	Determination RobotsDetermination
+	// OriginRemoved records that the whole origin was removed from scope.
+	OriginRemoved bool
+	// PathPatternsApplied is how many Disallow patterns now subtract from
+	// this origin's reach.
+	PathPatternsApplied int
+	// AllowDirectivesIgnored is how many `Allow:` directives in a binding
+	// group were parsed and DISCARDED. It is recorded so the audit can say
+	// they were ignored rather than leaving the reader to assume it.
+	AllowDirectivesIgnored int
+}
+
+// Origin renders the record's origin as host:port, for an audit line.
+func (r ScopeNarrowingRecord) Origin() string {
+	return r.Host + ":" + strconv.FormatUint(uint64(r.Port), 10)
+}
+
+// Narrowings returns a copy of the audit trail of narrowing steps applied to
+// this scope, oldest first.
+func (s Scope) Narrowings() []ScopeNarrowingRecord {
+	if !s.Constructed() {
+		return nil
+	}
+	return append([]ScopeNarrowingRecord(nil), s.narrowing...)
+}
+
+// Narrowed reports whether any narrowing step has been applied.
+func (s Scope) Narrowed() bool { return s.Constructed() && len(s.narrowing) > 0 }
+
+// narrowedCopy deep-copies s so a narrowing primitive can append to the copy.
+//
+// EVERY FIELD OF Scope IS NAMED HERE, deliberately and without a struct-copy
+// shortcut (`out := s`), because the whole point is that a reader can see
+// which fields a narrowing may touch. See the block comment above for the
+// three-way classification, and TestScopeNarrowingHasNoFieldItCanWiden for the
+// guard that fails when a new field appears.
+func (s Scope) narrowedCopy() Scope {
+	return Scope{
+		hash:      s.hash, // carried verbatim
+		mode:      s.mode, // carried verbatim
+		allow:     cloneScopeEntries(s.allow),
+		deny:      cloneScopeEntries(s.deny),
+		robots:    cloneOriginRobots(s.robots),
+		narrowing: append([]ScopeNarrowingRecord(nil), s.narrowing...),
+		sealed:    s.sealed, // carried verbatim
+	}
+}
+
+// cloneOriginRobots deep-copies the robots bindings, including the Disallow
+// backing array inside every policy.
+//
+// `append([]originRobots(nil), in...)` is NOT enough, for the same reason
+// cloneScopeEntries exists: a RobotsPolicy owns a []string, and copying the
+// struct copies the slice HEADER, so a "copy" and its source share patterns.
+// Rewriting "/admin" to "/zzz" through such a share puts the admin tree back
+// in scope, which is the D.3 aliasing escalation in a new field.
+//
+// HONEST ACCOUNTING OF WHAT THIS PARTICULAR COPY CLOSES TODAY. Three call
+// sites clone, and only ONE of them is reachable by an attack the test suite
+// can currently express: RobotsPolicyFor's clone on the way out. Removing
+// that one turns TestScopeNarrowingSealsThePolicyItStores red; removing this
+// one or removePaths's does not, because every policy that reaches a Scope is
+// minted inside NarrowScopeToRobots from bytes and the caller never holds the
+// value. These two are therefore DEFENCE IN DEPTH against a future call site
+// that hands in a policy it kept — and because a guard that has never failed
+// has not been tested, TestOriginRobotsCopiesAreDeep exercises this function
+// and RobotsPolicy.clone directly rather than through the narrowing.
+func cloneOriginRobots(in []originRobots) []originRobots {
+	if in == nil {
+		return nil
+	}
+	out := make([]originRobots, len(in))
+	for i, r := range in {
+		out[i] = originRobots{host: r.host, port: r.port, policy: r.policy.clone()}
+	}
+	return out
+}
+
+// removeOrigin returns a copy of s in which (host, port) is REMOVED from what
+// the scope permits, by appending a deny entry.
+//
+// It appends to deny rather than editing allow because deny beats allow
+// unconditionally in Permits, so the removal cannot be undone by an allow
+// entry, and because appending is the only edit that is provably one-
+// directional. The entry is validated first: an entry ScopeEntry.Validate
+// rejects would never match anything and the removal would silently not
+// happen, which is the failure mode this whole file exists to prevent.
+func (s Scope) removeOrigin(host string, port uint16, rec ScopeNarrowingRecord) (Scope, error) {
+	if !s.Constructed() {
+		return Scope{}, fmt.Errorf("scope: %w: cannot narrow a scope that was never "+
+			"constructed", ErrUnconstructed)
+	}
+	e := ScopeEntry{Host: host, Ports: []uint16{port}}
+	if err := e.Validate(); err != nil {
+		return Scope{}, fmt.Errorf("scope: narrowing cannot remove an origin it cannot "+
+			"name: %w", err)
+	}
+	out := s.narrowedCopy()
+	out.deny = append(out.deny, e)
+	rec.OriginRemoved = true
+	out.narrowing = append(out.narrowing, rec)
+	return out, nil
+}
+
+// removePaths returns a copy of s in which the policy's Disallow rules
+// subtract from (host, port)'s reach.
+//
+// The policy is stored, not flattened into patterns, so that PermitsPath can
+// delegate to RobotsPolicy.PermitsPath. That is the "reuse the kernel's
+// canonicalization rather than writing a second one that can disagree with it"
+// rule applied to path matching: there is exactly one implementation of RFC
+// 9309 matching in this package and this is not a second one.
+func (s Scope) removePaths(host string, port uint16, policy RobotsPolicy, rec ScopeNarrowingRecord) (Scope, error) {
+	if !s.Constructed() {
+		return Scope{}, fmt.Errorf("scope: %w: cannot narrow a scope that was never "+
+			"constructed", ErrUnconstructed)
+	}
+	ph, pp := policy.Origin()
+	if ph != host || pp != port || host == "" || port == 0 {
+		return Scope{}, fmt.Errorf("scope: %w: a robots policy for %q:%d cannot narrow "+
+			"origin %q:%d; applying one origin's policy to another is how a permissive "+
+			"origin's silence becomes a restrictive origin's permission",
+			ErrRefused, ph, pp, host, port)
+	}
+	out := s.narrowedCopy()
+	out.robots = append(out.robots, originRobots{host: host, port: port, policy: policy.clone()})
+	rec.OriginRemoved = false
+	out.narrowing = append(out.narrowing, rec)
+	return out, nil
+}
+
+// PermitsPath reports whether the NARROWED scope leaves one path in scope.
+//
+// It is strictly stronger than Permits, in both directions that matter:
+//
+//   - PermitsPath implies Permits. Everything Permits refuses, this refuses.
+//   - A SCOPE THAT WAS NEVER NARROWED PERMITS NO PATH. "Nobody determined this
+//     origin's robots.txt" and "robots.txt permitted this path" produce the
+//     same silence and opposite conclusions, and internal/SKIPPED-CONTROLS.md
+//     records two incidents in this repository where the first was read as the
+//     second. So a path needs a determination that COVERS ITS ORIGIN before it
+//     can be permitted here, and the zero Scope permits nothing at all.
+//
+// Every policy bound to the origin must permit the path. Two determinations
+// for one origin AND together, strictest first; that is why originRobots is a
+// slice and not a map.
+//
+// THIS IS NOT A SUBSTITUTE FOR CheckGate11RobotsDeny. That function is the
+// per-request gate the Governor runs on every request and every redirect hop,
+// and it produces an attributed GateResult for the audit log. This method is
+// the scope's own answer, and the two agree because both delegate to
+// RobotsPolicy.PermitsPath.
+func (s Scope) PermitsPath(canonicalHost string, port uint16, path string) bool {
+	if !s.Constructed() || !s.Permits(canonicalHost, port) {
+		return false
+	}
+	covered := false
+	for _, r := range s.robots {
+		if r.host != canonicalHost || r.port != port {
+			continue
+		}
+		covered = true
+		if !r.policy.PermitsPath(path) {
+			return false
+		}
+	}
+	return covered
+}
+
+// RobotsPolicyFor returns the robots policy narrowing one origin, or the zero
+// RobotsPolicy if none does.
+//
+// The zero RobotsPolicy reports RobotsUnset, and CheckGate11RobotsDeny refuses
+// every path against one of those, so a caller that reads a missing policy
+// gets the fail-closed answer rather than a permissive one.
+//
+// Where two narrowing steps bound policies to one origin, the returned policy
+// is the FIRST — a caller wanting the combined answer must use
+// Scope.PermitsPath, which ANDs them. This returns a single policy because
+// CheckGate11RobotsDeny takes one, and combining policies into a synthetic
+// third would be minting a RobotsPolicy nobody fetched.
+func (s Scope) RobotsPolicyFor(canonicalHost string, port uint16) RobotsPolicy {
+	if !s.Constructed() {
+		return RobotsPolicy{}
+	}
+	for _, r := range s.robots {
+		if r.host == canonicalHost && r.port == port {
+			return r.policy.clone()
+		}
+	}
+	return RobotsPolicy{}
 }
 
 // ---------------------------------------------------------------------------

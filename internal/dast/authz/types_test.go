@@ -1040,3 +1040,310 @@ func typeExportedFields(typ reflect.Type) []string {
 	}
 	return out
 }
+
+// ===========================================================================
+// SCOPE NARROWING — gate 11's actual shape
+// ===========================================================================
+
+// tnScope builds the fixture scope the narrowing tests share.
+func tnScope(t *testing.T) Scope {
+	t.Helper()
+	return mustScopeOf(t, ModeExternal,
+		[]ScopeEntry{
+			{Host: "target.example.com", Ports: []uint16{443}},
+			{Host: "*.lab.example.com", Ports: []uint16{443}},
+			{Host: "other.example.com", Ports: []uint16{8443}},
+		},
+		[]ScopeEntry{
+			{Host: "admin.lab.example.com", Ports: []uint16{443}},
+		})
+}
+
+// TestScopeNarrowingHasNoFieldItCanWiden is the reflection guard that keeps
+// the one-directional property STRUCTURAL rather than merely tested.
+//
+// The sweep in TestNarrowScopeToRobotsCannotWiden can only see widening
+// through the fields it knows about. If a contributor adds a field to Scope
+// that Permits or PermitsPath consults, and a narrowing primitive writes it,
+// the sweep can stay green over the hole — which is the "a check that cannot
+// see the damage is not a check" failure. So every field of Scope must be
+// classified here, and a new one fails this test until somebody classifies it.
+func TestScopeNarrowingHasNoFieldItCanWiden(t *testing.T) {
+	const (
+		carried    = "carried verbatim by narrowedCopy"
+		never      = "never written by any narrowing primitive"
+		appendOnly = "append-only"
+	)
+	classified := map[string]string{
+		"hash":      carried,
+		"mode":      carried,
+		"sealed":    carried,
+		"allow":     never,
+		"deny":      appendOnly,
+		"robots":    appendOnly,
+		"narrowing": appendOnly,
+	}
+
+	typ := reflect.TypeOf(Scope{})
+	if typ.NumField() == 0 {
+		t.Fatal("Scope has no fields, so this guard measured nothing")
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		name := typ.Field(i).Name
+		if _, ok := classified[name]; !ok {
+			t.Fatalf("Scope.%s is a field types.go's SCOPE NARROWING block does not "+
+				"classify. Every field must be CARRIED VERBATIM, NEVER WRITTEN, or "+
+				"APPEND-ONLY; a field outside those three is a field a narrowing can "+
+				"widen through, and the sweep in TestNarrowScopeToRobotsCannotWiden "+
+				"would stay green over it", name)
+		}
+	}
+	for name := range classified {
+		if _, ok := typ.FieldByName(name); !ok {
+			t.Fatalf("the classification names Scope.%s, which no longer exists. A stale "+
+				"classification is a claim that cannot be demonstrated", name)
+		}
+	}
+
+	// The classification is not just a list: narrowing must actually behave
+	// this way. Apply a narrowing that does BOTH kinds of step and check every
+	// field against its class.
+	before := tnScope(t)
+	after, res := NarrowScopeToRobots(before, []RobotsDocument{
+		{Host: "target.example.com", Port: 443, Outcome: RobotsFetchRetrieved,
+			Body: []byte("User-agent: *\nDisallow: /admin\nAllow: /\n")},
+		{Host: "other.example.com", Port: 8443, Outcome: RobotsFetchUnreachable},
+	})
+	if !res.Passed() {
+		t.Fatalf("premise: the narrowing refused: %v", res.Err())
+	}
+
+	if after.hash != before.hash {
+		t.Errorf("Scope.hash moved under narrowing (%q -> %q). Gate 5 bound the "+
+			"attestation to this hash and gate 21 keys the audit on it; a narrowing is "+
+			"the SAME authorization document, probed less",
+			string(before.hash), string(after.hash))
+	}
+	if after.mode != before.mode {
+		t.Error("Scope.mode moved under narrowing; gate 6's declaration is irreversible " +
+			"for the run")
+	}
+	if after.sealed != before.sealed {
+		t.Error("Scope.sealed moved under narrowing")
+	}
+	if !reflect.DeepEqual(after.allow, before.allow) {
+		t.Errorf("Scope.allow CHANGED under narrowing:\n before %+v\n after  %+v\n"+
+			"A narrowing that writes the allow list is a file served by the TARGET "+
+			"editing the scope Anvil was authorized for", before.allow, after.allow)
+	}
+	if len(after.deny) < len(before.deny) ||
+		!reflect.DeepEqual(after.deny[:len(before.deny)], before.deny) {
+		t.Errorf("Scope.deny is not append-only under narrowing:\n before %+v\n after  %+v",
+			before.deny, after.deny)
+	}
+	if len(after.robots) < len(before.robots) || len(after.narrowing) < len(before.narrowing) {
+		t.Error("Scope.robots or Scope.narrowing shrank under narrowing")
+	}
+	if len(after.narrowing) != 2 {
+		t.Errorf("%d narrowing records for two documents", len(after.narrowing))
+	}
+
+	// POSITIVE CONTROL for the field walk: it must be able to find a field
+	// that is not in the classification, or the loop above proves nothing.
+	type unclassified struct {
+		hash  ScopeHash
+		extra bool
+	}
+	seen := map[string]bool{}
+	ut := reflect.TypeOf(unclassified{})
+	for i := 0; i < ut.NumField(); i++ {
+		seen[ut.Field(i).Name] = true
+	}
+	if !seen["extra"] {
+		t.Fatal("the field walk cannot see an unclassified field, so the guard above " +
+			"cannot fail and proves nothing")
+	}
+}
+
+// TestScopeNarrowingRecordHoldsNoReference keeps ScopeNarrowingRecord a value.
+//
+// A record with a slice, map or pointer field would be copied by header out of
+// Narrowings(), and the audit trail of what was removed would be editable by
+// whoever read it. The type is copied with a plain append precisely because it
+// has no reference field; this is the guard that keeps that true.
+func TestScopeNarrowingRecordHoldsNoReference(t *testing.T) {
+	typ := reflect.TypeOf(ScopeNarrowingRecord{})
+	if typ.NumField() == 0 {
+		t.Fatal("ScopeNarrowingRecord has no fields, so this guard measured nothing")
+	}
+	bad := map[reflect.Kind]bool{
+		reflect.Slice: true, reflect.Map: true, reflect.Pointer: true,
+		reflect.Chan: true, reflect.Func: true, reflect.UnsafePointer: true,
+		reflect.Interface: true, reflect.Array: true,
+	}
+	found := 0
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		found++
+		if bad[f.Type.Kind()] {
+			t.Errorf("ScopeNarrowingRecord.%s is a %s. Narrowings() copies records with a "+
+				"plain append, so a reference field hands every reader a live alias into "+
+				"the scope's own audit trail", f.Name, f.Type.Kind())
+		}
+	}
+	if found == 0 {
+		t.Fatal("the walk examined no field")
+	}
+	// POSITIVE CONTROL: the kind table must actually reject something.
+	type withSlice struct{ Xs []string }
+	st := reflect.TypeOf(withSlice{})
+	if !bad[st.Field(0).Type.Kind()] {
+		t.Fatal("the kind table does not classify a slice field as a reference, so the " +
+			"assertions above cannot fail")
+	}
+}
+
+// TestScopeNarrowingSealsThePolicyItStores is the D.3 aliasing attack, moved
+// to the field this packet added.
+//
+// A RobotsPolicy owns a []string of Disallow patterns. If the scope stores the
+// slice header the caller handed it, rewriting "/admin" through that alias
+// puts the admin tree back in scope — a widening performed after the narrowing
+// was sealed.
+func TestScopeNarrowingSealsThePolicyItStores(t *testing.T) {
+	base := tnScope(t)
+	body := []byte("User-agent: *\nDisallow: /admin\n")
+	narrowed, res := NarrowScopeToRobots(base, []RobotsDocument{
+		{Host: "target.example.com", Port: 443, Outcome: RobotsFetchRetrieved, Body: body},
+	})
+	if !res.Passed() {
+		t.Fatalf("premise: %v", res.Err())
+	}
+	assert := func(when string) {
+		t.Helper()
+		if narrowed.PermitsPath("target.example.com", 443, "/admin/users") {
+			t.Fatalf("%s: robots.txt removed /admin and the scope permits /admin/users", when)
+		}
+		if !narrowed.PermitsPath("target.example.com", 443, "/index.html") {
+			t.Fatalf("%s: the scope stopped permitting a path robots.txt never named", when)
+		}
+	}
+	assert("before any mutation")
+
+	// Through the bytes the caller still holds.
+	for i := range body {
+		body[i] = 'z'
+	}
+	assert("after overwriting the caller's robots.txt bytes")
+
+	// Through the policy the scope hands back.
+	got := narrowed.RobotsPolicyFor("target.example.com", 443)
+	pats := got.DisallowedPatterns()
+	if len(pats) != 1 || pats[0] != "/admin" {
+		t.Fatalf("premise: RobotsPolicyFor returned patterns %v", pats)
+	}
+	pats[0] = "/zzz"
+	assert("after mutating the patterns DisallowedPatterns returned")
+
+	// Through the policy value itself, whose disallow header a shallow copy
+	// would share with the sealed one.
+	got.disallow[0] = "/zzz"
+	assert("after mutating the disallow array inside the returned policy")
+
+	if again := narrowed.RobotsPolicyFor("target.example.com", 443); again.DisallowedPatterns()[0] != "/admin" {
+		t.Fatalf("one reader's mutation changed what a later reader sees: %v",
+			again.DisallowedPatterns())
+	}
+
+	// And the audit trail a reader is handed is a copy too.
+	recs := narrowed.Narrowings()
+	if len(recs) != 1 {
+		t.Fatalf("%d narrowing records", len(recs))
+	}
+	recs[0].OriginRemoved = true
+	recs[0].Host = "evil.example.net"
+	if again := narrowed.Narrowings(); again[0].OriginRemoved || again[0].Host != "target.example.com" {
+		t.Fatalf("a reader edited the scope's own audit trail: %+v", again[0])
+	}
+}
+
+// TestOriginRobotsCopiesAreDeep exercises RobotsPolicy.clone and
+// cloneOriginRobots DIRECTLY.
+//
+// It exists because breaking either of them left
+// TestScopeNarrowingSealsThePolicyItStores green: every policy that reaches a
+// Scope today is minted inside NarrowScopeToRobots from bytes, so no caller
+// holds the value to mutate, and only RobotsPolicyFor's clone on the way out
+// is reachable by an attack that test can express. A guard that has never
+// failed has not been tested, so this reaches the two functions directly. If a
+// future call site hands a Scope a policy it kept — which is the whole reason
+// the copies are there — these are the assertions that will already exist.
+func TestOriginRobotsCopiesAreDeep(t *testing.T) {
+	src := ParseRobotsTxt("target.example.com", 443,
+		[]byte("User-agent: *\nDisallow: /admin\nDisallow: /private\n"))
+	if pats := src.DisallowedPatterns(); len(pats) != 2 {
+		t.Fatalf("premise: the fixture policy carries %d patterns", len(pats))
+	}
+
+	t.Run("RobotsPolicy.clone", func(t *testing.T) {
+		cp := src.clone()
+		src.disallow[0] = "/zzz"
+		if got := cp.disallow[0]; got != "/admin" {
+			t.Fatalf("clone().disallow[0] became %q after the SOURCE was rewritten. "+
+				"Copying a RobotsPolicy struct copies the slice header; a policy sealed "+
+				"into a scope must not share patterns with anything", got)
+		}
+		src.disallow[0] = "/admin"
+		if cp.PermitsPath("/admin/users") {
+			t.Fatal("the cloned policy permits a path its Disallow rule removes")
+		}
+	})
+
+	t.Run("cloneOriginRobots", func(t *testing.T) {
+		in := []originRobots{{host: "target.example.com", port: 443, policy: src}}
+		out := cloneOriginRobots(in)
+		if len(out) != 1 {
+			t.Fatalf("cloneOriginRobots returned %d bindings", len(out))
+		}
+		// Rewrite every reachable part of the input.
+		in[0].host = "evil.example.net"
+		in[0].port = 22
+		in[0].policy.disallow[0] = "/zzz"
+		in[0].policy.disallow[1] = "/zzz"
+		in = append(in, originRobots{host: "evil.example.net", port: 443})
+
+		if out[0].host != "target.example.com" || out[0].port != 443 {
+			t.Fatalf("the copied binding's origin moved to %s:%d", out[0].host, out[0].port)
+		}
+		if len(out) != 1 {
+			t.Fatalf("appending to the caller's slice reached the copy: %d bindings", len(out))
+		}
+		if out[0].policy.PermitsPath("/admin/users") {
+			t.Fatal("A PATH ROBOTS.TXT REMOVED BECAME PERMITTED by rewriting the pattern " +
+				"through the slice the copy was made from")
+		}
+		if out[0].policy.PermitsPath("/private/x") {
+			t.Fatal("the second Disallow pattern was aliased; a copy that is deep in its " +
+				"first element only is the \"test that mutates only the field where the " +
+				"copy is real\" failure")
+		}
+		if !out[0].policy.PermitsPath("/index.html") {
+			t.Fatal("the copy stopped permitting a path robots.txt never named")
+		}
+		// Restore, so a later reader of src sees the fixture.
+		in[0].policy.disallow[0] = "/admin"
+		in[0].policy.disallow[1] = "/private"
+	})
+
+	t.Run("nil in, nil out", func(t *testing.T) {
+		if got := cloneOriginRobots(nil); got != nil {
+			t.Fatalf("cloneOriginRobots(nil) = %v; a nil slice must stay nil so an "+
+				"un-narrowed scope is distinguishable from one narrowed by nothing", got)
+		}
+		var zero RobotsPolicy
+		if cp := zero.clone(); cp.disallow != nil || cp.Determination() != RobotsUnset {
+			t.Fatalf("cloning the zero policy produced %+v; it must stay the policy that "+
+				"refuses every path", cp)
+		}
+	})
+}

@@ -1032,17 +1032,17 @@ container engine**, and this entry is the standing record of that.
 
 ---
 
-## U4 — the Nuclei driver (D.14) has never executed an engine, and cannot yet fire a single request through the kernel
+## U4 — the Nuclei driver (D.14) has never executed an engine. It CAN now fire a request through the kernel, and does.
 
 | | |
 |---|---|
 | **File** | `internal/dast/engines/nuclei.go`, `internal/dast/engines/nuclei_test.go` |
 | **`t.Skip` sites** | **Zero.** `TestThisFileSkipsNothing` parses the test file and fails if one appears |
-| **Skipped here?** | N/A — nothing skips. Two separate things are missing: the engine, and a route to an `authz.Authorization` |
+| **Skipped here?** | N/A — nothing skips. **One** thing is missing now: the engine |
 | **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no probe engine |
-| **Property unverified** | (a) That a real Nuclei engine, handed a `RunPlan`, honours `TargetSpec.PinnedAddr` instead of re-resolving `TargetSpec.URL`. (b) That `Driver.Fire` admits and issues a request end to end — the admit-and-issue path has **never executed**, because no `Authorization` can be minted from outside package `authz` today |
+| **Property unverified** | (a) That a real Nuclei engine, handed a `RunPlan`, honours `TargetSpec.PinnedAddr` instead of re-resolving `TargetSpec.URL`. ~~(b) That `Driver.Fire` admits and issues a request end to end~~ — **(b) IS NOW VERIFIED. See below.** |
 | **Security control?** | **Yes, and it is the whole packet.** The driver exists to make it structurally impossible to point Nuclei anywhere the kernel has not admitted |
-| **Verdict** | **OPEN. (a) unexecuted and unenforceable from here; (b) BLOCKED on a kernel decision, not on this host.** |
+| **Verdict** | **PARTIALLY CLOSED. (a) OPEN — unexecuted and unenforceable from here. (b) CLOSED 2026-08-23: the admit-and-issue path executes end to end against the real kernel.** |
 
 ### (a) nuclei is not installed, and no adapter exists
 
@@ -1061,22 +1061,91 @@ returns a `netip.AddrPort` with no hostname in it, so a dialer built on it
 *cannot* re-resolve — but an external engine is a process this package does not
 control. **Nothing in `internal/dast/engines` enforces it.**
 
-### (b) The blocker is gate 11, and it is measured rather than assumed
+### (b) CLOSED — the gate-11 blocker is gone, the tripwire fired, and the five tests it named are written
 
-`authz.Adjudicate` is the only mint for an `authz.Authorization`.
-`authz.admissionChain` contains `Gate11RobotsDeny`, and **nothing is
-registered for it** — `kernel.go`'s own comment says robots.txt is a property
-of an origin *and a path*, that a `gateFunc` receives no path, and that "a
-missing gate is a REFUSAL, never a skipped step", leaving the decision on where
-the robots policy enters the kernel to the orchestrator.
+**What this entry used to say**, kept because the correction is the point:
+`authz.Adjudicate` is the only mint for an `authz.Authorization`;
+`authz.admissionChain` contained `Gate11RobotsDeny` with **nothing registered
+for it**; a missing gate is a refusal; therefore `NewTargetSpec`, `NewDriver`,
+`Driver.Fire` and `Driver.Run` **could not be exercised on their success path
+from outside package `authz`**, and every test that needed one asserted a
+refusal instead.
 
-The consequence for D.14 is exact: **`NewTargetSpec`, `NewDriver`,
-`Driver.Fire` and `Driver.Run` cannot be exercised on their success path from
-outside package `authz`.** Every test that would need one instead asserts the
-refusal, and `TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` runs the
-real Phase 1 gates and the real admission chain and pins **where** the chain
-stops. When gate 11 is registered, that test fails and its message lists the
-five tests that must then be written.
+`TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` was the tripwire
+planted against exactly that condition, with the five replacement tests named
+in its failure message.
+
+**MEASURED 2026-08-23, PowerShell, `go1.26.5 windows/amd64`: it fired.**
+
+```
+--- FAIL: TestNoAuthorizationCanBeMintedUntilGate11IsRegistered (0.00s)
+    nuclei_test.go:1416: the kernel ADMITTED a target, so an authz.Authorization can now be minted
+        from outside package authz. [...] Write:
+          1. NewTargetSpec against the real Authorization [...]
+```
+
+Gate 11 is now **a scope narrowing, not an admission predicate**:
+`authz.NarrowScopeToRobots` takes fetched `robots.txt` bytes as inert data and
+returns a **narrower** sealed scope, applied once at run initiation;
+`CheckGate11RobotsDeny` remains in the Governor's per-request chain, where it
+has the request PATH it always needed. `admissionChain` is now `{4,5,6,8,9,10}`
+and every gate in it has an implementation. `registerInto` refuses to put gate
+11 back.
+
+**The tripwire is deleted rather than quietened, and its five tests are
+written** (`internal/dast/engines/nuclei_test.go`, section "THE KERNEL
+ADMITS"):
+
+1. `TestNewTargetSpecCarriesTheCanonicalHostAndThePinnedAddress` — `URL()`
+   carries gate 8's **canonical** host and `PinnedAddr()` carries gate 9's
+   **pinned address**, asserted separately. The fixture's literal
+   (`TARGET.EXAMPLE.COM.`) differs from its canonical form (`target.example.com`)
+   so the distinction is real, and a `t.Fatal` fires if the two constants are
+   ever made equal.
+2. `TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate` — **the first proof
+   in this repository that the gate stack PERMITS anything.** proposal →
+   `NewRequestIntent` → `GateAudit.AuditedAdmit` → `Issuer`, with **one audit
+   row per gate in `authz.GovernorGateOrder()`**, asserted by position and
+   identity against the written-down list, and `Coverage.RequestsIssued`
+   moving 0 → 1. `AssertNotSilentlyEmpty` returns nil — also a first.
+3. `TestFireRefusesAnOutOfScopeRedirectAndIssuesNothing` — a **real** kernel
+   refusal. `NarrowScopeToRobots` applies a `Disallow: /` document to the
+   sealed scope, the Governor re-validates against the narrowed one, gate 13
+   refuses the redirect hop at `ReasonHopOutsideScope`, and **the `Issuer` is
+   called zero times**. The chain also stops before gate 14, so no rate budget
+   was spent on a request that never left.
+4. `TestDriverRunRefusesAnUnattributableResultFromARealDriver` — `Run`'s drop,
+   from a driver `NewDriver` actually built, over both an unknown id and an
+   **admitted id carrying a different digest**, with an anti-vacuity row
+   proving an attributable result still reaches the callback.
+5. `TestNewTargetSpecRefusesAnAuthorizationMintedForADifferentTarget` — the
+   cross-target token reuse `RequireAuthorization` exists for, over a different
+   host, a **different pinned address on the same host (DNS rebinding)**, and a
+   different port, plus an anti-vacuity row and the same refusal at `NewDriver`.
+
+**Break-and-restore, PowerShell, `nuclei.go` SHA-256
+`A2A465B896B7393D81EAA853956B9AC9B54C128C103241473432AB53C3798D81` before and
+after every one:**
+
+| break | result |
+|---|---|
+| `URL()` built from `target.Literal()` | RED — `URL() = "https://TARGET.EXAMPLE.COM.:443"` |
+| `pinned` set to `canonical:port` | RED — `PinnedAddr() = "target.example.com:443"` carries a hostname |
+| `Governor.Admit` instead of `Audit.AuditedAdmit` | RED — 0 rows for 6 gates |
+| `Audit.Record` of the LAST result only | RED — `wrote: [gate14] want: [gate16 gate17 gate13 gate11 gate15 gate14]` |
+| refusal reported but request still issued | RED — "the Issuer was called 1 time(s) on a REFUSED request" |
+| `RequestsIssued++` removed | RED — counter never moves |
+| `Run` falls back to `Templates()[0]` | RED — both unattributable rows |
+| `NewTargetSpec` ignores the authz error for a valid token | RED — all four cross-target rows |
+
+**A finding from that sweep, recorded because it is the reason these tests are
+not redundant:** the pre-existing `TestTargetSpecRefusesEveryUnauthorizedRoute`
+stayed **GREEN** through the last break. It only ever tries a **zero**
+`Authorization`, so it cannot see a *real* token being accepted for the wrong
+target — it is a check that cannot see the damage. Test (5) is what sees it.
+
+Making the two fixture constants equal turns test (1) red with the
+anti-vacuity message, so the generator can produce the breaking input.
 
 ### What the suite does prove, on any host
 
@@ -1116,10 +1185,10 @@ five tests that must then be written.
 
 ### What it does not prove, and exactly what would settle it
 
-1. **Register gate 11 (or rule it out of the admission chain).** This is the
-   orchestrator's decision and it is not D.14's to make. It is the single
-   change that turns five refusal-only tests into end-to-end ones. **This is
-   the one that closes half (b), and it is a kernel edit, not a host problem.**
+1. ~~**Register gate 11 (or rule it out of the admission chain).**~~ **DONE
+   2026-08-23.** Gate 11 was ruled out of the admission chain and rewritten as
+   `authz.NarrowScopeToRobots`. Half (b) is closed; see above. What remains
+   below is (a), and it **is** a host problem.
 2. **A CI lane with the pinned Nuclei engine, and an `Engine` adapter.** It
    must run, **positively**: load the pinned `nuclei-templates` snapshot
    (D.17), execute against a fixture target, and assert
@@ -1151,8 +1220,10 @@ five tests that must then be written.
    edit, which is D.9's write scope — or moving the shared scrub into
    `internal/record`, which is already on the list.
 
-Until (1) exists, **the Nuclei driver's admit-and-issue path runs in zero CI
-lanes and zero local ones**, and this entry is the standing record of that.
+**The Nuclei driver's admit-and-issue path now runs locally and in every CI
+lane that runs `go test ./...`** — it needs no engine, no network and no
+Docker, because the `Issuer` is the seam and the kernel is real. What still
+runs in zero lanes is the **engine**: (a) above, and item 2 below.
 
 ---
 
@@ -1164,9 +1235,9 @@ lanes and zero local ones**, and this entry is the standing record of that.
 | **`t.Skip` sites** | **Zero.** `nuclei_test.go`'s `TestThisFileSkipsNothing` walks every `.go` file in the package, so it covers `zap_test.go` and would fail if one appeared |
 | **Skipped here?** | N/A — nothing skips. Three separate things are missing: ZAP, a route to an `authz.Authorization`, and any measurement of the JVM |
 | **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no ZAP and no ZAP add-ons |
-| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. (c) `ZapDriver.Fire`'s admit-and-issue path, blocked on gate 11 exactly as U4(b) is. (d) **ZAP's JVM memory footprint, which plan/50-dast.md:1253 asks for by name and which this packet deliberately did not guess at.** |
+| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. ~~(c) `ZapDriver.Fire`'s admit-and-issue path~~ — **(c) IS NOW VERIFIED, closed with U4(b).** (d) **ZAP's JVM memory footprint, which plan/50-dast.md:1253 asks for by name and which this packet deliberately did not guess at.** |
 | **Security control?** | **Yes.** The proxy requirement is the only thing that puts Anvil's kernel in front of a request ZAP makes, and the four caps are the only thing between a scheduled scan and ZAP's unlimited defaults |
-| **Verdict** | **OPEN. (a) and (b) unexecuted on this host; (c) BLOCKED on the same kernel decision as U4; (d) UNMEASURED and recorded as unmeasured.** |
+| **Verdict** | **PARTIALLY CLOSED. (a) and (b) OPEN, unexecuted on this host; (c) CLOSED 2026-08-23 with U4(b); (d) OPEN, UNMEASURED and recorded as unmeasured.** |
 
 ### (d) first, because it is the one the plan asked for
 
@@ -1261,15 +1332,37 @@ lane that closes this must include the negative control: a fixture target
 reachable ONLY through the proxy, plus a second address reachable only
 directly, and an assertion that the second one was never contacted.**
 
-### (c) the same gate-11 blocker as U4
+### (c) CLOSED — the gate-11 blocker was shared with U4, and closing it closed this too
 
-`NewZapDriver` builds its `TargetSpec` through `NewTargetSpec`, so it cannot be
-constructed without an `authz.Authorization` — and none can be minted from
-outside package `authz` today. `TestNewZapDriverRefusesEveryUnauthorizedRoute`
-asserts the refusal; `nuclei_test.go`'s
-`TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` is the tripwire that
-pins **where** the chain stops, and it covers this file too rather than being
-duplicated. Registering gate 11 unblocks both drivers at once.
+**What this said:** `NewZapDriver` builds its `TargetSpec` through
+`NewTargetSpec`, so it cannot be constructed without an `authz.Authorization` —
+and none could be minted from outside package `authz`. Only the refusal half
+(`TestNewZapDriverRefusesEveryUnauthorizedRoute`) was testable.
+
+**MEASURED 2026-08-23, PowerShell.** Gate 11 is a scope narrowing (see U4(b)),
+the kernel admits, and D.15's admit-and-issue path is now exercised for real:
+
+- `TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate` — `NewZapDriver`
+  against a real `authz.Authorization`, a `TargetSpec` that came from
+  `NewTargetSpec` rather than a composite literal (so `URL()` is the canonical
+  host and `PinnedAddr()` is the pinned address), `Fire` through to the
+  `Issuer`, **one audit row per gate in `authz.GovernorGateOrder()`**, and
+  `ZapCoverage.RequestsIssued` moving 0 → 1.
+- `TestZapFireRefusesAnOutOfScopeRedirectAndIssuesNothing` — the same
+  `NarrowScopeToRobots` refusal as U4(3), asserting the `Issuer` saw **zero**
+  calls and that the chain stopped before gate 14.
+
+**Break-and-restore, PowerShell, `zap.go` SHA-256
+`F17EB4E1FD416865E86B91936B56B784568BA1655EAB18F148252B6CEDB2DD4C` before and
+after:** replacing `Audit.AuditedAdmit` with `Governor.Admit` and issuing on
+the refusal path turned both tests RED — "the admission wrote 0 audit row(s)
+and `authz.GovernorGateOrder()` has 6 gates" and "the Issuer was called 1
+time(s) on a REFUSED request".
+
+The forging helpers `zapSpec` and `zapDriverWithRunner` are **kept**, and their
+comments now say why: everything below the authorization boundary — plan
+rendering, invocation shape, the runner seam, report checking — does not need a
+kernel and should not pay for one.
 
 ### The scheduled-only rule is enforced NOWHERE in this package, by instruction
 
@@ -1323,8 +1416,8 @@ until it does.
 
 ### What it does not prove, and exactly what would settle it
 
-1. **Register gate 11 (or rule it out of the admission chain).** Same item as
-   U4(1), same owner, and it unblocks both drivers.
+1. ~~**Register gate 11 (or rule it out of the admission chain).**~~ **DONE
+   2026-08-23**, same item as U4(1), and it unblocked both drivers as predicted.
 2. **A CI lane with ZAP and the pinned add-ons.** Positively: render the plan,
    run `zap.sh -cmd -autorun`, assert exit 0, both report files non-empty, and
    `AssertNotSilentlyEmpty` returning nil. Negatively, without which it proves
@@ -1347,6 +1440,143 @@ process read**, and this entry is the standing record of that.
 
 These stay. Each is a case that genuinely cannot exist where it skips, and each
 is covered elsewhere.
+
+## U6 — Tier 0 of the inventory (D.18) has never fetched a spec over a socket, and cannot read a YAML one
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier0_runtime.go`, `internal/dast/inventory/tier0_runtime_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. Four things are absent: any `SpecFetcher` implementation, any running target, a YAML parser, and any route to gRPC server reflection |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` starts no target application |
+| **Property unverified** | (a) That a spec fetch works against a real HTTP server. (b) That real-world YAML OpenAPI documents parse — they cannot, and are refused by name. (c) That gRPC server reflection contributes anything — it cannot reach this seam at all. (d) That `$ref`-bearing parameters can be resolved — they are refused per-operation. |
+| **Security control?** | **Partly.** Gate 11's asymmetry — a document served by the target may add candidates and may never widen scope, grant authorization, or mark anything confirmed — IS a security control and IS fully exercised by tests. The parsers and the coverage arithmetic are correctness, not containment. |
+| **Verdict** | **OPEN on (a)–(d), each recorded below with what would settle it. The security half is closed.** |
+
+### (a) No `SpecFetcher` exists anywhere in this repository
+
+`inventory.SpecFetcher` is the egress seam. D.9's gate 3 tier 1 fails the build
+if any package under `internal/dast` outside `internal/dast/authz` imports
+something that can construct a connection, so this package cannot dial and the
+implementation has to be handed in from outside that boundary.
+
+**MEASURED 2026-08-22, PowerShell, on the development host.** A scan of every
+`.go` file in the module for `func .*\) FetchSpec\(` and `func .*\) Issue\(`
+returns exactly one file:
+
+```
+internal/dast/inventory/tier0_runtime_test.go     (recordedFetcher, a test double)
+```
+
+There is no production implementation of `inventory.SpecFetcher` and none of
+`engines.Issuer` either. Every spec fetch that has ever happened in this
+repository was driven by recorded response shapes.
+
+That is the correct shape for now — the seam is exercised, the kernel path in
+front of it is exercised, the tool-absent path refuses loudly and is counted —
+but it means one specific claim is untested: **that a real HTTP response,
+with real chunked framing, real headers and a real `Content-Type`, produces
+the same `Result` a recorded one does.**
+
+**What would settle it.** An `httptest.Server` in the package that owns the
+`SpecFetcher` implementation — NOT in this package, which cannot import
+`net/http` without failing gate 3 — serving `/openapi.json` and asserting the
+same route list this file's fixtures produce. The implementing packet is the
+one that writes it.
+
+### (b) A YAML spec cannot be read, and says so
+
+`go.mod`'s only requirement is `modernc.org/sqlite`. There is no YAML parser in
+the module and adding one is a dependency decision, not a local edit.
+
+So `DetectFormat` RECOGNISES YAML — by its top-level `openapi:`, `swagger:` or
+`paths:` key — and `ParseSpec` returns a single `RefusalYAMLUnsupported` row
+naming it. It does not return an empty route list, because "we could not read
+it" and "the target serves no spec" must not produce the same output.
+
+This matters more than it looks: **YAML is the more common on-disk spelling of
+OpenAPI**, and a target that serves `/openapi.yaml` rather than `/openapi.json`
+contributes zero routes to Tier 0 today. `Result.Answered()` still moves, so
+`AssertNotSilentlyEmpty` passes and the refusal row is what tells an operator
+why the inventory is thin.
+
+**What would settle it.** A YAML parser in `go.mod` — an orchestrator licence
+and supply-chain decision, not this packet's — after which `parseOpenAPI` needs
+no change: only `DetectFormat`'s YAML branch and one decode call.
+
+### (c) gRPC server reflection cannot reach this seam at all
+
+plan/50-dast.md:598 names gRPC reflection as a Tier 0 source. It is not one,
+and the reason is structural rather than a missing tool: **server reflection is
+a bidirectional HTTP/2 stream (`grpc.reflection.v1.ServerReflection/
+ServerReflectionInfo`), not a document a GET returns.** `SpecFetcher` issues one
+request and reads one body, and no amount of configuration makes that a
+streaming RPC.
+
+It is therefore refused by name — `RefusalGRPCReflectionUnsupported`, keyed off
+an `application/grpc*` content type — rather than absent.
+
+**What would settle it.** A separate seam with its own kernel path, because a
+streaming RPC needs per-message admission rather than per-request admission.
+That is a packet, not a fix, and the plan does not currently have one.
+
+### (d) `$ref` parameters are refused, and stay in the denominator
+
+This tier resolves no JSON references. A parameter that arrives as
+`{"$ref": "#/components/parameters/Page"}` has no name and no type after
+unmarshalling, and inventing either would be worse than refusing.
+
+So the OPERATION is refused — `RefusalParamUnusable` — and, because that reason
+is on `perOperationReasons`, it still counts toward
+`Result.DenominatorFloor()`. That direction is deliberate: dropping a refused
+operation would SHRINK the denominator of `endpoint_coverage`
+(plan/50-dast.md:1152) and make coverage look better than it is.
+`TestARefusedOperationStaysInTheCoverageDenominator` is the guard, and it was
+demonstrated red by replacing `DenominatorFloor` with `len(r.routes)`.
+
+**What would settle it.** A `$ref` resolver over `components/parameters` and
+`definitions`, bounded against reference cycles. It is a bounded piece of work
+and it belongs in this package; it was left out of D.18 to keep the packet's
+surface to the two axes and the kernel path.
+
+### A note on U4, recorded because it changes what U4 says
+
+U4 records that "`authz.Gate11RobotsDeny` has no implementation registered, so
+the admission chain refuses every target there and **no `authz.Authorization`
+can be minted from outside package `authz` at all**."
+
+**MEASURED 2026-08-22, PowerShell, in the working tree D.18 was written
+against:** that is no longer true. `Gate11RobotsDeny` has been removed from
+`kernel.go`'s `admissionChain` and moved into the Governor's per-request chain
+(`phase3_enforcement.go`'s `governorGateOrder`), where it has the request PATH
+that `CheckGate11RobotsDeny` needs; `registerInto` now refuses to put it back.
+`authz.Adjudicate` admits the fixture target and mints a real
+`authz.Authorization`.
+
+Two consequences, neither of them D.18's to act on:
+
+1. **D.18's fetch half is fully exercised.** `Probe` is tested end to end
+   against a recorded `SpecFetcher`, including a real kernel refusal (a
+   `robots.txt` disallowing the spec path) with the fetcher asserting it saw
+   zero calls.
+2. **`internal/dast/engines` is RED.** Its
+   `TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` is the tripwire that
+   was supposed to fire on exactly this day, and it has fired. Its message
+   lists the five tests D.14 now owes. That failure predates D.18 and is
+   untouched by it.
+
+U4's own text is left as written rather than edited here, because the change
+that invalidated it was not this packet's and the packet that made it owns the
+correction.
+
+**FOLLOW-UP, 2026-08-23:** the correction has been made. The tripwire was
+honoured by wiring, not by quietening: the five tests it named are written, it
+is deleted, and **U4(b) and U5(c) above are rewritten and marked CLOSED**. This
+note is left standing because it is the record of the hand-off working as
+intended — D.18 measured a change it did not own, refused to edit another
+packet's entry, and named who did.
+
+---
 
 ## L1 — `TestCollectAgainstTheRealHost`
 
@@ -1518,7 +1748,10 @@ Skips still firing on this host, all classified LEGITIMATE above:
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
 
 Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
-G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4, U5.
+G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**.
+
+U4(b) and U5(c) — the admit-and-issue paths of both DAST drivers — were closed
+on 2026-08-23 and are no longer on that list.
 
 U5 carries the one open question plan/50-dast.md asked a worker to answer and
 that this host cannot: **ZAP's JVM memory footprint (plan/50-dast.md:1253),
@@ -1527,14 +1760,22 @@ measuring it takes and a test fails if a figure appears in `zap.go`. U5 also
 records the rule that is enforced nowhere today — ZAP is **scheduled-scans
 only**, and the caller that would carry that check does not exist yet.
 
-U4 is the one to read next after U1c, and its blocker is **not** this host.
-`authz.Gate11RobotsDeny` has no implementation registered, so the admission
-chain refuses every target there and **no `authz.Authorization` can be minted
-from outside package `authz` at all**. That makes D.14's driver — and every
-later packet that needs to issue a request — testable only on its refusal
-paths. Registering gate 11, or ruling it out of the admission chain, is an
-orchestrator decision and is the single change that unblocks the whole
-admit-and-issue path.
+**U4's blocker is gone.** It used to read: `authz.Gate11RobotsDeny` has no
+implementation registered, so the admission chain refuses every target there
+and no `authz.Authorization` can be minted from outside package `authz` at all
+— which made D.14's driver, and every later packet that needs to issue a
+request, testable only on its refusal paths.
+
+On 2026-08-23 gate 11 was ruled out of the admission chain and rewritten as
+`authz.NarrowScopeToRobots`, a scope narrowing over inert fetched bytes.
+**The kernel admits, and both DAST drivers now issue an authorized request end
+to end** — with one gate-21 row per gate in `authz.GovernorGateOrder()`, and
+with a real kernel refusal reaching the `Issuer` zero times. The tripwire that
+was planted to fire on that day fired, was honoured by writing the five tests
+it named, and was deleted. See U4(b) and U5(c).
+
+What remains open in U4 and U5 is the **tooling**: no Nuclei engine and no ZAP
+on any host or CI lane here, and ZAP's JVM footprint still unmeasured.
 
 U1 (`internal/dast/containment`, D.11 network containment) is the
 highest-stakes of them: the package is green on Windows and has never run
