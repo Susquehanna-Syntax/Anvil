@@ -25,13 +25,20 @@
 //	OutcomeRejected     Anvil re-probed and the oracle did not reproduce
 //
 // AND OutcomeRejected IS THE NARROWEST OF THE THREE, deliberately. It means
-// the oracle RAN and did not fire. A re-probe the target answered with a rate
-// limit, a gateway error or a WAF block page is unconfirmed
-// (ReasonReprobeDefended), never rejected: nothing was disproved, because
-// nothing was asked. That distinction was absent from the first version of
-// this file and its absence was measured — a vulnerable target whose limiter
-// tripped came out `rejected` at confidence 0.000, indistinguishable from a
-// phantom, and the ledger then derived completed_clean over a live finding.
+// the oracle RAN and did not fire, and the ONLY way to establish that it ran
+// is that the target answered AS THE APPLICATION. Every other re-probe — any
+// status outside applicationResponseStatuses, a body the configured defence
+// signature matched, an observation that cannot say what it saw — is
+// unconfirmed (ReasonReprobeIndecisive), never rejected: nothing was
+// disproved, because nothing was asked. That distinction was absent from the
+// first version of this file and its absence was measured — a vulnerable
+// target whose limiter tripped came out `rejected` at confidence 0.000,
+// indistinguishable from a phantom, and the ledger then derived
+// completed_clean over a live finding. It was measured AGAIN one layer down
+// when the distinction was implemented as a four-entry list of defensive
+// statuses and a target answering 403 reproduced the whole defect; see
+// applicationResponseStatuses for why the question is now asked the other way
+// round.
 //
 // A low `confidence` would not have been enough. A consumer that sorts by
 // confidence puts an undecidable authorization finding next to a disproved
@@ -88,10 +95,12 @@
 //   - The evidence span is withheld ENTIRELY when the regex match runs past
 //     MaxSpanBytes, rather than truncated to it. A 512-byte prefix of an
 //     arbitrary response body is a raw body arriving through the one channel
-//     S7 sanctions; there is no length at which a prefix becomes evidence.
-//     See EvidenceRef.spanOverBroadBytes and extractSpan.
-//   - NewSignature refuses a pattern that fires against benignProbes, which
-//     is where the over-broad patterns come from in the first place.
+//     S7 sanctions, so an over-long match yields NO span rather than a
+//     shorter one. See EvidenceRef.spanOverBroadBytes and extractSpan, which
+//     also states what that rule does NOT claim.
+//   - NewSignature refuses a pattern that fires against benignCorpus, a
+//     GENERATED corpus of ordinary responses, which is where the over-broad
+//     patterns come from in the first place.
 //
 // ===========================================================================
 // 3. A FINDING'S detection_method IS PART OF ITS TRUTH
@@ -202,17 +211,20 @@ var (
 	// confirmation gate into a pass-through while continuing to report
 	// `confirmed`.
 	//
-	// FOUND BY MEASUREMENT, not by design. The predicate used to be
+	// FOUND BY MEASUREMENT TWICE, not by design. The predicate used to be
 	// re.MatchString("") alone, and against a benign homepage that predicate
 	// accepted ".", "(?s).{1,512}", `[\s\S]`, ".*." and "(?s)^" — five
-	// oracles that confirm a benign page at confidence 1.000. The empty
-	// string is now one probe in benignProbes and not the whole test; see
-	// there for why a corpus and not a cleverer regex analysis.
+	// oracles that confirm a benign page at confidence 1.000. It then became
+	// seventeen hand-written probes, and `(?s)[\s\S]{721}` — one byte past
+	// their combined length — walked over those. The empty string is now one
+	// SAMPLE from a generated corpus rather than the whole test; see the
+	// corpus section header for why a generator and not a list, and why not a
+	// cleverer regex analysis either.
 	ErrSignatureMatchesEverything = errors.New("dastrecord: the signature fires against a body with no vulnerability in it and would confirm anything")
 
 	// ErrSilentlyClean is what AssertNotSilentlyClean returns when a ledger
-	// with zero confirmed findings also holds unconfirmed findings, refused
-	// candidates, or rejections that were not decisive.
+	// with zero confirmed findings also holds unconfirmed findings or
+	// refused candidates.
 	ErrSilentlyClean = errors.New("dastrecord: zero confirmed findings is not the same fact as a clean scan")
 )
 
@@ -542,9 +554,8 @@ const (
 	// the 88 phantom findings get.
 	ReasonDidNotReproduce Reason = "did_not_reproduce_on_any_attempt"
 
-	// ReasonReprobeDefended: the target answered the confirmation pass with
-	// a defence rather than with the application — a rate limit, a gateway
-	// error, a WAF block page — so the oracle never got to run.
+	// ReasonReprobeIndecisive: the re-probe did not establish that the
+	// target answered AS THE APPLICATION, so the oracle never got to run.
 	//
 	// THIS IS THE FAILURE THIS PROJECT EXISTS TO AVOID, and it was
 	// unmitigated until it was measured. Observation.Status was captured,
@@ -554,14 +565,20 @@ const (
 	// there is no application response to match against; and the candidate
 	// came out outcome=rejected, reason=did_not_reproduce_on_any_attempt,
 	// confidence 0.000 — byte-for-byte indistinguishable from a phantom.
-	// A real vulnerability, reported clean, because the target defended
-	// itself.
+	// A real vulnerability, reported clean.
+	//
+	// The first fix named the condition "defended" and enumerated four
+	// statuses that meant it. THAT WAS THE SAME DEFECT IN A SMALLER ROOM:
+	// a target answering 403 with a block page walked straight past it. The
+	// condition is now the NEGATION of a positive test — see
+	// applicationResponseStatuses — so every status, body and transport
+	// outcome nobody enumerated lands here instead of in `rejected`.
 	//
 	// It is UNCONFIRMED and never REJECTED: nothing was disproved, because
 	// nothing was asked. It is also not a refusal — the request did leave
 	// the process and Anvil did observe something, which is more than
 	// ErrNotReprobed describes.
-	ReasonReprobeDefended Reason = "target_defended_the_reprobe_inconclusive"
+	ReasonReprobeIndecisive Reason = "reprobe_did_not_reach_the_application"
 )
 
 // ReasonValues returns every legal reason, excluding the zero value.
@@ -569,7 +586,7 @@ func ReasonValues() []Reason {
 	return []Reason{
 		ReasonReproduced, ReasonNoOracleForClass,
 		ReasonModelInferenceIsNotObservation, ReasonReproducedIntermittently,
-		ReasonDidNotReproduce, ReasonReprobeDefended,
+		ReasonDidNotReproduce, ReasonReprobeIndecisive,
 	}
 }
 
@@ -593,7 +610,7 @@ func outcomeForReason(r Reason) (Outcome, error) {
 	case ReasonReproduced:
 		return OutcomeConfirmed, nil
 	case ReasonNoOracleForClass, ReasonModelInferenceIsNotObservation,
-		ReasonReproducedIntermittently, ReasonReprobeDefended:
+		ReasonReproducedIntermittently, ReasonReprobeIndecisive:
 		return OutcomeUnconfirmed, nil
 	case ReasonDidNotReproduce:
 		return OutcomeRejected, nil
@@ -643,38 +660,326 @@ type Signature struct {
 	sealed bool
 }
 
-// benignProbes is the corpus a Signature must match NONE of.
+// ---------------------------------------------------------------------------
+// The benign corpus — GENERATED, NEVER ENUMERATED
+// ---------------------------------------------------------------------------
 //
-// AN ENUMERATION OF ENCODINGS IS A DENYLIST AND WILL LOSE, and the same is
-// true of an enumeration of over-broad regex SYNTAX. There is no finite list
-// of "patterns that match everything": ".", "(?s).{1,512}", `[\s\S]`, ".*."
-// and "(?s)^" are five spellings of one idea and a sixth is always one
-// character away. What can be decided mechanically is the only thing that
-// actually matters — DOES THIS ORACLE FIRE ON A RESPONSE WITH NOTHING WRONG
-// WITH IT — so the check is a corpus and not a parser.
+// ===========================================================================
+// WHY A GENERATOR AND NOT A LIST OF EXAMPLE BODIES
+// ===========================================================================
 //
-// The corpus is deliberately ordinary: the empty body, single characters of
-// each broad class, the two empty JSON documents, an ordinary API 200, an
-// ordinary homepage, a status line, and half a kilobyte of prose. A pattern
-// that fires on any of these is an oracle that confirms a benign page at
-// confidence 1.000, which is the ZAP failure mode with Anvil's name on it.
+// A Signature must fire on NONE of these. What they are is "responses with
+// nothing wrong with them", and an oracle that cannot tell one of those from a
+// vulnerable response is an oracle that says yes.
 //
-// THE COST IS STATED RATHER THAN HIDDEN: a legitimate signature that happens
-// to appear in ordinary prose or in an empty JSON document is refused here
-// and its author must make it more specific. That is the correct direction to
-// fail. An oracle indistinguishable from a benign response is not an oracle.
-func benignProbes() []string {
-	return []string{
-		"",
-		" ", "\n", "\t", "0", "a", "Z", "{", "}",
-		"{}", "[]", "null",
-		`{"ok":true,"items":[]}`,
-		`{"status":"ok","count":0}`,
-		"HTTP/1.1 200 OK",
-		"<!doctype html>\n<html><head><title>Welcome</title></head>" +
-			"<body><h1>Welcome</h1><p>There is nothing interesting here.</p></body></html>",
-		strings.Repeat("the quick brown fox jumps over the lazy dog. ", 16),
+// This used to be seventeen hand-written probes totalling 720 bytes. MEASURED:
+// NewSignature accepted `(?s)[\s\S]{721}` — one byte past the longest probe —
+// and that pattern confirms an ordinary 3 KiB product page at confidence
+// 1.000. The five originally-enumerated over-broad patterns were correctly
+// refused; the CORPUS was the ceiling, and the ceiling was the whole defence.
+//
+// A FIXED CORPUS IS A DENYLIST OF EXAMPLES AND ITS SIZE IS THE ATTACKER'S
+// BUDGET: they need one input outside it, and here the input is just "a bit
+// longer". Enlarging the list moves the ceiling; it does not remove one. So
+// the corpus is SAMPLED FROM A SPACE instead — four structural shapes crossed
+// with lengths from 0 bytes upward, from a SEEDED deterministic generator, so
+// a failure reproduces byte-for-byte on the next run and in CI.
+//
+// THE LENGTH RACE IS CLOSED RATHER THAN OUTRUN, and it is closed by
+// arithmetic rather than by sampling harder. Sampling more lengths would still
+// leave a longest sample. Two bounds remove the ceiling instead:
+//
+//	WHAT A PATTERN CAN DEMAND IS BOUNDED. Go's regexp caps the total
+//	expansion of a repeat at 1000 — `{1001}` does not compile and neither
+//	does `(X{1000}){2}`, because the PRODUCT is checked. A repeat construct
+//	costs at least one byte of pattern and a pattern is bounded at
+//	MaxPatternBytes, so no signature this gate can compile demands more than
+//	MaxPatternBytes*1000 = 1,024,000 bytes. The corpus ceiling is larger.
+//
+//	WHAT A BODY CAN CARRY IS BOUNDED. Gate 14's coded floor caps a response
+//	body at 1 MiB (internal/dast/authz, CodedMaxBodyBytes) and the plan
+//	permits that cap to be lowered and never raised, so an Observation
+//	longer than the ceiling cannot exist either.
+//
+// So the corpus carries ONE body at exactly that cap, and every length
+// threshold that can be written down meets a generated body at least that
+// long. TestTheLengthThresholdFamilyIsClosedAndNotMerelyOutrun asserts all
+// three facts, and TestTheBenignCorpusIsGeneratedAndReachesTheKernelsCodedBodyCap
+// asserts the ceiling against authz's own constant, so neither paragraph can
+// quietly become false.
+//
+// THE COST OF THAT CEILING IS A REAL SECOND, STATED. The check is linear in
+// pattern program size times corpus size. An ordinary signature costs about
+// half a millisecond; the most pathological pattern expressible under
+// MaxPatternBytes — eighty-five concatenated `[\s\S]{1000}` — costs about
+// fifteen seconds, once, at signature-compile time, and is then REFUSED. That
+// is the correct trade: the alternative to spending it is accepting the
+// pattern.
+//
+// THE COST IS STATED RATHER THAN HIDDEN, and the generator made it bigger. A
+// signature that fires on ordinary prose, ordinary markup or an ordinary JSON
+// document is refused and its author must make it more specific — and the
+// generated corpus refuses strictly more patterns than the seventeen probes
+// did. `(?s)A.*B` used to pass and now does not: generated prose capitalises
+// sentence openings, so a body with an 'A' before a 'B' is an ordinary body,
+// and a pattern matching every such body is not an oracle. That is the correct
+// direction to fail.
+
+// benignCorpusSeed is the generator's seed. It is fixed and written down so
+// that "a signature was refused" is a reproducible fact rather than a report
+// about one run. Changing it changes which bodies exist and is a deliberate
+// act, not a tuning knob.
+const benignCorpusSeed uint64 = 0x416e76696c2d4432 // "Anvil-D2"
+
+// maxBenignBodyBytes is the longest generated body, and it is not a taste
+// decision: it is gate 14's coded body cap, internal/dast/authz's
+// CodedMaxBodyBytes. See the section header for why the corpus needs exactly
+// this number to close the length race rather than merely postpone it.
+const maxBenignBodyBytes = 1 << 20
+
+// benignRNG is splitmix64: a deterministic, seekable, dependency-free
+// generator.
+//
+// It is written out rather than taken from math/rand/v2 because this runs in
+// PRODUCTION — NewSignature calls it — and a corpus whose contents depend on a
+// stdlib generator's algorithm is a corpus that can change under a toolchain
+// upgrade. The refusals this decides must be reproducible across Go versions,
+// not merely across runs.
+type benignRNG struct{ state uint64 }
+
+func newBenignRNG(seed uint64) *benignRNG { return &benignRNG{state: seed} }
+
+func (r *benignRNG) next() uint64 {
+	r.state += 0x9e3779b97f4a7c15
+	z := r.state
+	z ^= z >> 30
+	z *= 0xbf58476d1ce4e5b9
+	z ^= z >> 27
+	z *= 0x94d049bb133111eb
+	z ^= z >> 31
+	return z
+}
+
+// intn returns a value in [0,n). It returns 0 for a non-positive n rather than
+// panicking: this runs on every NewSignature call, and a corpus generator that
+// can take the process down is worse than one that repeats a token.
+func (r *benignRNG) intn(n int) int {
+	if n <= 0 {
+		return 0
 	}
+	return int(r.next() % uint64(n))
+}
+
+func (r *benignRNG) pick(xs []string) string { return xs[r.intn(len(xs))] }
+
+// benignWords is the generator's alphabet at the word level.
+//
+// Every word is unremarkable catalogue and documentation vocabulary. None of
+// them, in any order, spells a credential, a stack trace, a version banner, a
+// SQL error or any other thing a real oracle looks for — which is what makes a
+// signature that fires on this text over-broad BY CONSTRUCTION rather than by
+// coincidence.
+func benignWords() []string {
+	return []string{
+		"account", "basket", "catalogue", "dashboard", "delivery", "estimate",
+		"feature", "gallery", "history", "invoice", "journal", "listing",
+		"member", "notice", "option", "package", "quantity", "receipt",
+		"schedule", "template", "update", "vendor", "warehouse", "yield",
+		"the", "and", "for", "with", "from", "into", "over", "under", "between",
+	}
+}
+
+// benignPhrase returns n words separated by single spaces, with no punctuation
+// and no newlines. It is what goes inside a JSON string or an HTML attribute,
+// where a newline would be a lie about the document's shape.
+func benignPhrase(r *benignRNG, words int) string {
+	var b strings.Builder
+	for i := 0; i < words; i++ {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(r.pick(benignWords()))
+	}
+	return b.String()
+}
+
+// benignProse generates at least n bytes of ordinary sentences.
+//
+// Sentence openings are CAPITALISED on purpose. A corpus of lower-case filler
+// cannot refuse a pattern anchored on a capital letter, and "an upper-case
+// letter appears in a response" is not an oracle.
+func benignProse(r *benignRNG, n int) string {
+	var b strings.Builder
+	b.Grow(n + 64)
+	for b.Len() < n {
+		words := 3 + r.intn(12)
+		for i := 0; i < words; i++ {
+			w := r.pick(benignWords())
+			if i == 0 {
+				w = strings.ToUpper(w[:1]) + w[1:]
+			}
+			b.WriteString(w)
+			if i < words-1 {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(r.pick([]string{". ", ".\n", "? ", "!\n", ", ", "; "}))
+	}
+	return b.String()
+}
+
+// benignHTML generates at least n bytes of an ordinary HTML document.
+//
+// It carries a doctype, a head, a stylesheet link, an ordinary script tag and
+// a body of nested elements WITH class attributes. Every one of those is a
+// thing a template author might anchor a signature on, and every one of them
+// appears on pages with nothing wrong with them — which is exactly why the
+// corpus has to contain them. `(?s)<div[\s\S]{0,500}` passed the seventeen
+// hand-written probes for no better reason than that none of them contained a
+// div.
+func benignHTML(r *benignRNG, n int) string {
+	tags := []string{"div", "section", "article", "p", "span", "li", "td",
+		"h2", "h3", "aside", "nav", "header", "footer"}
+	classes := []string{"row", "card", "panel", "list", "item", "grid",
+		"content", "summary", "meta"}
+	var b strings.Builder
+	b.Grow(n + 512)
+	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n")
+	b.WriteString("<meta charset=\"utf-8\">\n")
+	b.WriteString("<title>" + benignPhrase(r, 3) + "</title>\n")
+	b.WriteString("<link rel=\"stylesheet\" href=\"/static/site.css\">\n")
+	b.WriteString("<script src=\"/static/app.js\"></script>\n")
+	b.WriteString("</head>\n<body>\n")
+	for b.Len() < n {
+		t := r.pick(tags)
+		b.WriteString("<" + t + " class=\"" + r.pick(classes) + "\">")
+		b.WriteString(benignProse(r, 8+r.intn(120)))
+		b.WriteString("</" + t + ">\n")
+	}
+	b.WriteString("</body>\n</html>\n")
+	return b.String()
+}
+
+// benignJSON generates at least n bytes of an ordinary JSON document: nested
+// objects and arrays, every scalar kind, and the empty containers a pattern
+// like a bare brace class fires on.
+func benignJSON(r *benignRNG, n int) string {
+	keys := []string{"id", "name", "status", "count", "items", "total", "page",
+		"created_at", "updated_at", "tags", "links", "meta", "next", "ok"}
+	var b strings.Builder
+	b.Grow(n + 64)
+	b.WriteByte('{')
+	for first := true; b.Len() < n; first = false {
+		if !first {
+			b.WriteByte(',')
+		}
+		b.WriteString("\"" + r.pick(keys) + "\":")
+		switch r.intn(6) {
+		case 0:
+			b.WriteString("null")
+		case 1:
+			b.WriteString(r.pick([]string{"true", "false"}))
+		case 2:
+			b.WriteString(fmt.Sprintf("%d", r.intn(100000)))
+		case 3:
+			b.WriteString("\"" + benignPhrase(r, 1+r.intn(8)) + "\"")
+		case 4:
+			b.WriteString("[")
+			for i, m := 0, r.intn(5); i < m; i++ {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteString(fmt.Sprintf("%d", r.intn(1000)))
+			}
+			b.WriteString("]")
+		default:
+			b.WriteString("{\"" + r.pick(keys) + "\":{}}")
+		}
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+// benignStructural generates at least n bytes of the punctuation, whitespace
+// and protocol furniture that appears in every response ever served.
+//
+// This is the shape that catches the family whose defect is that it fires on a
+// document's SKELETON — whitespace classes, brace classes, comment markers. At
+// small lengths it is also where the single-character and empty-document cases
+// come from: they are SAMPLED, not listed.
+func benignStructural(r *benignRNG, n int) string {
+	toks := []string{
+		"{}", "[]", "null", "true", "false", "0", "1", "-1", "\"\"", "{ }", "[ ]",
+		" ", "\n", "\t", "\r\n", "  ", "\n\n",
+		"HTTP/1.1 200 OK\r\n", "Content-Type: application/json\r\n",
+		"Content-Length: 0\r\n", "Cache-Control: no-store\r\n",
+		"---", "===", "...", "<!-- -->", "/* */", "//", "#", "|", "::", ";", ",",
+		"<>", "()", "$", "%", "&", "*", "+", "@", "^", "~", "`", "'", "\\",
+	}
+	var b strings.Builder
+	b.Grow(n + 32)
+	for b.Len() < n {
+		b.WriteString(r.pick(toks))
+	}
+	return b.String()
+}
+
+// benignBodyLengths is the length axis the shapes are crossed with.
+//
+// It is dense at the bottom — 0, 1, 2, 3 bytes are where the empty body and
+// the single-character cases live — and then spreads, straddling MaxSpanBytes
+// (511/512/513) and THE OLD CORPUS'S TOTAL SIZE (719/720/721), which is the
+// exact ceiling `(?s)[\s\S]{721}` was measured stepping over. The top of the
+// axis is not here: see maxBenignBodyBytes.
+func benignBodyLengths() []int {
+	return []int{
+		0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377,
+		511, 512, 513, 719, 720, 721, 1024, 1536, 2047, 4096, 8192, 12289, 16384,
+	}
+}
+
+// benignCorpus is built once, at package initialisation, from the seed.
+//
+// It is a package-level value rather than a function call because NewSignature
+// consults it on every call and regenerating a megabyte per signature would
+// make the check something a caller works around. It is unexported and never
+// handed out, so there is nothing to copy defensively.
+var benignCorpus = buildBenignCorpus()
+
+// buildBenignCorpus crosses every shape with every length, then appends the
+// one body at the kernel's cap.
+//
+// THE ORDER IS SHORTEST FIRST, and that is not cosmetic: NewSignature stops at
+// the first match, so a pattern that fires on everything dies against the
+// zero-byte body and never touches the megabyte. Only a signature that is
+// genuinely specific pays the full scan.
+func buildBenignCorpus() []string {
+	r := newBenignRNG(benignCorpusSeed)
+	shapes := []func(*benignRNG, int) string{
+		benignStructural, benignJSON, benignHTML, benignProse,
+	}
+	out := make([]string, 0, len(benignBodyLengths())*len(shapes)+1)
+	for _, n := range benignBodyLengths() {
+		for _, shape := range shapes {
+			body := shape(r, n)
+			if len(body) > n {
+				body = body[:n]
+			}
+			out = append(out, body)
+		}
+	}
+
+	// The ceiling body. It is a MIXTURE of all four shapes rather than a
+	// megabyte of one of them: a length-threshold pattern is caught by any
+	// filler, but a pattern that needs markup, or braces at some depth, is
+	// only caught if the long body actually contains them.
+	var b strings.Builder
+	b.Grow(maxBenignBodyBytes + 8192)
+	for i := 0; b.Len() < maxBenignBodyBytes; i++ {
+		b.WriteString(shapes[i%len(shapes)](r, 4096))
+	}
+	out = append(out, b.String()[:maxBenignBodyBytes])
+	return out
 }
 
 // NewSignature compiles pattern.
@@ -688,9 +993,10 @@ func benignProbes() []string {
 //	a pattern matching a      it reproduces against a body with nothing
 //	  benign body             wrong with it, so it confirms everything
 //
-// The last two are one check over benignProbes; see there for why the empty
-// string alone was not enough, and what it let through when it was all there
-// was.
+// The last two are one check over benignCorpus, which is GENERATED. See the
+// corpus section header for why the empty string alone was not enough, why a
+// list of example bodies was not enough either, and what each of the two let
+// through while it was all there was.
 //
 // The engine is RE2, so a compiled Signature cannot backtrack catastrophically
 // however hostile the body it is later run against.
@@ -708,15 +1014,16 @@ func NewSignature(pattern string) (Signature, error) {
 		return Signature{}, fmt.Errorf("%w: compiling the signature pattern: %s",
 			ErrRefused, printable(err.Error(), MaxFieldBytes))
 	}
-	for i, probe := range benignProbes() {
-		if !re.MatchString(probe) {
+	for i, body := range benignCorpus {
+		if !re.MatchString(body) {
 			continue
 		}
-		return Signature{}, fmt.Errorf("%w: %q fires against benign probe %d "+
+		return Signature{}, fmt.Errorf("%w: %q fires against generated benign body %d of %d "+
 			"(%d bytes, %q...). An oracle that cannot tell a vulnerable response from an "+
-			"ordinary one confirms ordinary ones",
+			"ordinary one confirms ordinary ones. The corpus is generated from seed "+
+			"%#x, so this is reproducible",
 			ErrSignatureMatchesEverything, printable(pattern, MaxFieldBytes), i,
-			len(probe), printable(probe, 32))
+			len(benignCorpus), len(body), printable(body, 32), benignCorpusSeed)
 	}
 	return Signature{re: re, src: pattern, sealed: true}, nil
 }
@@ -810,55 +1117,133 @@ type Observation struct {
 	Issued bool
 	// Status is the HTTP status observed, 0 if none was.
 	//
-	// IT IS READ. It used to be captured, stamped onto the Finding and
-	// consulted by nothing, which is how a 429 on every attempt became
-	// "did_not_reproduce_on_any_attempt". See defended and
-	// ReasonReprobeDefended.
+	// IT IS READ, AND IT IS READ AGAINST AN ALLOWLIST. It used to be
+	// captured, stamped onto the Finding and consulted by nothing, which is
+	// how a 429 on every attempt became "did_not_reproduce_on_any_attempt".
+	// It was then read against a list of four statuses that meant "defence",
+	// which is how a 403 did the same thing. See
+	// applicationResponseStatuses and ReasonReprobeIndecisive.
 	Status int
 	// Body is the response body, already bounded by the kernel's gate-14
 	// cap on the far side of the Reprober interface.
 	Body []byte
 }
 
-// defensiveStatuses is every HTTP status that means "the target answered the
-// confirmation pass with a defence rather than with the application".
+// applicationResponseStatuses is the ALLOWLIST of HTTP statuses that
+// establish the target answered the confirmation pass AS THE APPLICATION.
 //
-// It is a map keyed by the status itself, for the reason classOracles is:
-// a positional list silently changes meaning when someone inserts a value.
+// ===========================================================================
+// THIS IS AN INVERSION, AND THE INVERSION IS THE CONTROL
+// ===========================================================================
 //
-// WHAT IS ON IT, and why each:
+// It used to be defensiveStatuses: {429, 502, 503, 504}, four ways a target
+// can defend itself, with EVERYTHING ELSE falling through to "the application
+// answered, so the oracle's silence disproves the candidate". MEASURED: a
+// Reprober answering 403 with a WAF page on all three attempts reproduced the
+// original defect exactly — 12 vulnerable candidates, outcome=rejected,
+// reason=did_not_reproduce_on_any_attempt, and the ledger reads
+// completed_clean over live findings.
 //
-//	429  rate limited. The measured case: a vulnerable target whose limiter
-//	     trips mid-confirmation.
-//	502  the proxy in front of the application answered instead of it.
-//	503  unavailable / shedding load. The neighbour of 429.
-//	504  the proxy gave up waiting for the application.
+// The set of ways a target can decline to run the application is UNBOUNDED
+// and vendor-specific: 403, 401, 407, 451, 418, a captive portal's 302, a
+// connection reset, a TLS alert, and a status nobody has shipped yet.
+// Enumerating that set is a denylist, and a denylist's SIZE IS THE ATTACKER'S
+// BUDGET — one input outside it wins, and here "the attacker" is any appliance
+// vendor who picked a different number.
 //
-// WHAT IS DELIBERATELY NOT ON IT:
+// So the question is asked the other way round. A re-probe is evidence of
+// ABSENCE only when the response is an ORDINARY APPLICATION RESPONSE: one the
+// target produced by dispatching the request to its own handling and returning
+// that handling's outcome. Anything else — any status not named below, any
+// body the caller's defence signature recognises, any observation that cannot
+// say what it saw — is INDECISIVE. Not disproved. Indecisive.
 //
-//	403, 401  these are APPLICATION answers and are frequently the very
-//	          thing an authorization or IDOR candidate is about. Calling a
-//	          403 a defence would make the oracle-less classes undecidable
-//	          for a second, wrong reason and would hide real behaviour.
-//	404, 500  ordinary application outcomes. A 500 in particular is often
-//	          what an injection probe is trying to cause.
+// WHAT COUNTS AS THE APPLICATION ANSWERING, and why each:
 //
-// A status of 0 on an Issued observation is treated as defended too — see
-// attemptWasDefended. FAIL CLOSED: an observation that cannot say what it
-// saw has not disproved anything.
-func defensiveStatuses() map[int]string {
+//	200 201 202 204 206  the handler ran and returned its result. This is
+//	                     the family in which a signature's silence really is
+//	                     the application declining to emit the marker.
+//	404 405 410          the application DISPATCHED the request and its own
+//	                     routing answered: no such resource, no such method
+//	                     on it, or gone. A router that can say "not here" is
+//	                     a router that ran.
+//	422                  the application parsed the request and its own
+//	                     semantic validation rejected it. Parsing is the
+//	                     handler running.
+//	500                  the handler ran and threw. This one is load-bearing
+//	                     in the other direction: a 500 is frequently what an
+//	                     injection probe is TRYING to cause, and treating it
+//	                     as indecisive would make that class's own success
+//	                     condition undecidable.
+//
+// WHAT IS DELIBERATELY ABSENT. Nothing below is "denied" — the allowlist has
+// no deny side. These are listed only because a reader will ask:
+//
+//	401 403 407 451  authentication, authorization, proxy-auth and legal
+//	                 blocks. Each is the exact shape a WAF, an API gateway
+//	                 and an identity proxy all emit, and no inspection of the
+//	                 NUMBER tells those apart from the application's own
+//	                 answer. 403 is the measured case.
+//	400              a reverse proxy or WAF answers 400 for anything it
+//	                 dislikes about the request line or headers, before the
+//	                 application is consulted at all.
+//	3xx              a redirect to a login page or an interstitial is the
+//	                 standard "you may not have this" shape. A redirect body
+//	                 is also usually empty, and a signature that failed to
+//	                 match an empty body has disproved nothing whatever
+//	                 produced it.
+//	406 415          configurable WAF block statuses (ModSecurity ships
+//	                 both), indistinguishable from content negotiation.
+//	429 502 503 504  the original four. They are not special any more. They
+//	                 are simply not on the allowlist, together with every
+//	                 status nobody thought of.
+//
+// THE COST, STATED RATHER THAN HIDDEN. A misconfiguration candidate whose
+// target answers 403 on every attempt is now UNCONFIRMED where it used to be
+// REJECTED, and an operator sees one more undecided row. That is the correct
+// direction to fail: Anvil did not observe the application, so Anvil did not
+// disprove anything.
+//
+// The comment this replaced claimed the opposite cost — that calling 403 a
+// non-answer "would make the oracle-less classes undecidable for a second,
+// wrong reason". THAT CLAIM WAS FALSE and is deleted rather than qualified:
+// decide()'s rule 1 routes an oracle-less class to ReasonNoOracleForClass
+// before indecisiveness is ever consulted, so an authorization candidate's 403
+// reaches exactly the outcome and reason it always did.
+// TestAnOracleLessClassIsUnaffectedByTheInversion drives that.
+//
+// THE RESIDUAL CASE NO STATUS CHECK CAN SETTLE is a WAF serving its block page
+// with 200. That response IS on this allowlist and no number distinguishes it
+// from the application's own 200. GateConfig.DefenceSignature is the only
+// thing that can, it is caller-supplied because nothing in this package can
+// recognise an arbitrary vendor's block page, and WITH NO DefenceSignature
+// WIRED A 200 BLOCK PAGE IS INDISTINGUISHABLE FROM AN APPLICATION RESPONSE.
+//
+// It is a map keyed by the status itself, for the reason classOracles is: a
+// positional list silently changes meaning when someone inserts a value.
+func applicationResponseStatuses() map[int]string {
 	return map[int]string{
-		429: "rate limited",
-		502: "bad gateway",
-		503: "service unavailable",
-		504: "gateway timeout",
+		200: "ok",
+		201: "created",
+		202: "accepted",
+		204: "no content",
+		206: "partial content",
+		404: "not found",
+		405: "method not allowed",
+		410: "gone",
+		422: "unprocessable content",
+		500: "internal server error",
 	}
 }
 
-// IsDefensiveStatus reports whether status means the target defended the
-// re-probe instead of answering it.
-func IsDefensiveStatus(status int) bool {
-	_, ok := defensiveStatuses()[status]
+// IsApplicationResponseStatus reports whether status is one this gate accepts
+// as the target answering as the application.
+//
+// FALSE IS THE ANSWER FOR EVERY STATUS NOT NAMED, 0 included, and that is the
+// fail-closed direction: a status this gate does not recognise has not
+// established that the oracle ran.
+func IsApplicationResponseStatus(status int) bool {
+	_, ok := applicationResponseStatuses()[status]
 	return ok
 }
 
@@ -1027,11 +1412,11 @@ type Finding struct {
 	// them the signature matched.
 	attempts int
 	matches  int
-	// defended is how many of those attempts the target answered with a
-	// defence rather than with the application. Non-zero means the oracle
-	// did not get to run that many times, which is a different fact from
-	// the oracle running and not firing.
-	defended int
+	// indecisive is how many of those attempts failed to establish that the
+	// target answered as the application. Non-zero means the oracle did not
+	// get to run that many times, which is a different fact from the oracle
+	// running and not firing.
+	indecisive int
 
 	// confidence is the reproduction ratio, matches/attempts. It is
 	// meaningful ONLY when confidenceKnown is true, which happens only for
@@ -1096,16 +1481,17 @@ func (f Finding) Attempts() int { return f.attempts }
 // response was stable, not that the access control is broken.
 func (f Finding) SignatureMatches() int { return f.matches }
 
-// DefendedAttempts returns how many re-probes the target answered with a
-// defence — a rate limit, a gateway error, or a body the configured
-// DefenceSignature matched — rather than with the application.
+// IndecisiveAttempts returns how many re-probes failed to establish that the
+// target answered as the application — a status outside
+// applicationResponseStatuses, a body the configured DefenceSignature
+// matched, or an observation that could not say what it saw.
 //
 // It is reported separately from SignatureMatches because the two are
-// different facts. matches=0, defended=0 is an oracle that ran and did not
-// fire. matches=0, defended=3 is an oracle that never ran. The first is a
+// different facts. matches=0, indecisive=0 is an oracle that ran and did not
+// fire. matches=0, indecisive=3 is an oracle that never ran. The first is a
 // phantom; the second could be anything, including a real vulnerability the
-// target's rate limiter hid.
-func (f Finding) DefendedAttempts() int { return f.defended }
+// target's rate limiter, WAF or identity proxy hid.
+func (f Finding) IndecisiveAttempts() int { return f.indecisive }
 
 // Confidence returns the contract's `confidence` in [0,1], and whether there
 // is one at all.
@@ -1136,10 +1522,10 @@ func (f Finding) String() string {
 		conf = fmt.Sprintf("%.3f", f.confidence)
 	}
 	return fmt.Sprintf("%s %s %s class=%s detection=%s outcome=%s reason=%s "+
-		"matches=%d/%d defended=%d status=%d confidence=%s body_hash=%s span_bytes=%d "+
+		"matches=%d/%d indecisive=%d status=%d confidence=%s body_hash=%s span_bytes=%d "+
 		"span_over_broad_bytes=%d",
 		f.engine, f.method, f.path, f.class, f.detection, f.outcome, f.reason,
-		f.matches, f.attempts, f.defended, f.status, conf, f.evidence.bodyHash,
+		f.matches, f.attempts, f.indecisive, f.status, conf, f.evidence.bodyHash,
 		len(f.evidence.span), f.evidence.spanOverBroadBytes)
 }
 
@@ -1334,14 +1720,14 @@ type GateConfig struct {
 
 	// DefenceSignature is an OPTIONAL pattern that identifies the target's
 	// block page. When it matches a re-probe body, that attempt counts as
-	// defended whatever its status was.
+	// indecisive whatever its status was.
 	//
 	// It exists because the status code is not the whole story. A WAF that
-	// returns its block page with 200 is the case defensiveStatuses cannot
-	// see: the re-probe got an ordinary status, the signature did not match
-	// because the application never ran, and the candidate would come out
-	// REJECTED — the same silent false negative as the 429, wearing a
-	// different number.
+	// returns its block page with 200 is the RESIDUAL CASE no status check
+	// can settle: 200 is on applicationResponseStatuses and must be, the
+	// signature did not match because the application never ran, and the
+	// candidate would come out REJECTED — the same silent false negative as
+	// the 429, wearing a number that is genuinely indistinguishable.
 	//
 	// It is caller-supplied because nothing in this package can recognise
 	// an arbitrary vendor's block page, and a built-in guess would be a
@@ -1382,23 +1768,37 @@ func NewGate(cfg GateConfig) (*Gate, error) {
 	}, nil
 }
 
-// attemptWasDefended reports whether one observation is the target defending
-// itself rather than answering, and names which rule fired.
+// attemptAnsweredAsApplication reports whether one observation establishes
+// that the target answered as the application, and names why not when it does
+// not.
 //
-// FAIL CLOSED on status 0: an Issued observation that reports no status is an
-// observation that cannot say what it saw, and "we could not tell" must never
-// take the route that ends in `rejected`.
-func (g *Gate) attemptWasDefended(obs Observation) (bool, string) {
-	if obs.Status == 0 {
-		return true, "the re-probe reported no HTTP status"
+// EVERY RETURN PATH BUT ONE IS false. That is the shape the inversion buys:
+// the function has to find positive evidence, and the absence of evidence is
+// never mistaken for evidence of absence. A status nobody enumerated, a
+// transport that returned nothing legible, a Go zero value — all of them exit
+// here as "no", which is why FAIL CLOSED is a property of the control flow and
+// not of a list somebody has to keep current.
+//
+// See applicationResponseStatuses for what the one true path requires.
+func (g *Gate) attemptAnsweredAsApplication(obs Observation) (bool, string) {
+	if !obs.Issued {
+		return false, "the re-probe did not leave the process"
 	}
-	if what, ok := defensiveStatuses()[obs.Status]; ok {
-		return true, what
+	what, ok := applicationResponseStatuses()[obs.Status]
+	if !ok {
+		if obs.Status == 0 {
+			return false, "the re-probe reported no HTTP status, so it cannot say what it saw"
+		}
+		return false, fmt.Sprintf("status %d is not one this gate accepts as the "+
+			"application answering", obs.Status)
 	}
+	// The defence signature runs LAST and can only take an answer away. It is
+	// the residual case: a 200 that is a block page is on the allowlist by
+	// status and only the caller's own pattern can see it.
 	if g.defence.Constructed() && g.defence.re.Match(obs.Body) {
-		return true, "the configured defence signature matched the body"
+		return false, "the configured defence signature matched the body"
 	}
-	return false, ""
+	return true, what
 }
 
 // Constructed reports whether g came from NewGate.
@@ -1456,10 +1856,10 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 
 	var (
 		matches      int
-		defended     int
+		indecisive   int
 		evidenceSeen bool // evidence came from an attempt the signature matched
 		evAnySeen    bool // evidence came from anything at all
-		evCleanSeen  bool // evidence came from an attempt that was not defended
+		evCleanSeen  bool // evidence came from an attempt that WAS the application
 		ev           EvidenceRef
 		evStatus     int
 	)
@@ -1478,15 +1878,15 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 				ErrNotReprobed, attempt, g.attempts, candidate.Method, candidate.Path)
 		}
 
-		// The defence check runs BEFORE the oracle. A body the target sent
-		// instead of running the application must not be handed to the
-		// signature at all: a block page that happens to contain the
+		// The application-answered test runs BEFORE the oracle. A body the
+		// target sent instead of running the application must not be handed
+		// to the signature at all: a block page that happens to contain the
 		// marker string would otherwise count as a reproduction, and a
 		// block page that does not would count as a disproof. Neither is
 		// an observation of the application.
-		if wasDefended, _ := g.attemptWasDefended(obs); wasDefended {
-			defended++
-			// A defended attempt supplies the body hash only if nothing
+		if answered, _ := g.attemptAnsweredAsApplication(obs); !answered {
+			indecisive++
+			// An indecisive attempt supplies the body hash only if nothing
 			// better has been seen yet, and it carries NO SPAN: the
 			// signature was never run against this body, so there is no
 			// match to extract and inventing one would attribute a block
@@ -1504,7 +1904,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 			matches++
 		}
 		// Evidence comes from the FIRST attempt whose signature matched;
-		// failing that, from the first attempt that was not defended.
+		// failing that, from the first attempt the application answered.
 		// Deterministic, and it means a confirmed finding's span is always
 		// a span that reproduced — never the empty span of some later
 		// attempt that happened to miss, and never a defence page.
@@ -1525,7 +1925,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 		}
 	}
 
-	reason := decide(candidate, matches, defended, g.attempts)
+	reason := decide(candidate, matches, indecisive, g.attempts)
 	outcome, err := outcomeForReason(reason)
 	if err != nil {
 		return nil, err
@@ -1546,7 +1946,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 		status:         evStatus,
 		attempts:       g.attempts,
 		matches:        matches,
-		defended:       defended,
+		indecisive:     indecisive,
 		sealed:         true,
 	}
 	// WHETHER THERE IS A CONFIDENCE AT ALL is three questions, not one, and
@@ -1563,12 +1963,12 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	//     Attempts() still report it. What is withheld is the CLAIM, and
 	//     the claim is exactly what a reproduced signature does not license
 	//     for an inference;
-	//  3. no attempt may have been defended. matches/attempts over a run
-	//     the target refused to answer is a ratio whose denominator counts
-	//     questions that were never asked, and 0.000 reads as "certainly
-	//     not a vulnerability", which is the opposite of what
-	//     ReasonReprobeDefended means.
-	if !candidate.Class.OracleLess() && candidate.DetectionMethod.CanConfirm() && defended == 0 {
+	//  3. every attempt must have been answered by the application.
+	//     matches/attempts over a run the target did not answer is a ratio
+	//     whose denominator counts questions that were never asked, and
+	//     0.000 reads as "certainly not a vulnerability", which is the
+	//     opposite of what ReasonReprobeIndecisive means.
+	if !candidate.Class.OracleLess() && candidate.DetectionMethod.CanConfirm() && indecisive == 0 {
 		f.confidence = float64(matches) / float64(g.attempts)
 		f.confidenceKnown = true
 	}
@@ -1577,6 +1977,9 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	// Validate. Validate ran against the candidate; this runs against the
 	// thing a consumer will hold, which is the object the claim is about.
 	if err := assertFindingStringsBounded(f); err != nil {
+		return nil, err
+	}
+	if err := assertRejectionIsDecisive(f); err != nil {
 		return nil, err
 	}
 	return &f, nil
@@ -1591,34 +1994,41 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     The contract says these are "tagged unconfirmed rather than asserted or
 //     dropped" — a signature that did not match an authorization finding
 //     disproves nothing, so this class can never reach OutcomeRejected.
-//  2. DEFENDED WITH NOTHING TO SHOW FOR IT. At least one attempt was the
-//     target defending itself and the oracle fired on none of the rest.
+//  2. INDECISIVE WITH NOTHING TO SHOW FOR IT. At least one attempt failed
+//     to establish that the target answered as the application, and the
+//     oracle fired on none of the rest.
 //     THIS RULE OUTRANKS "MATCHED NOTHING" AND THAT ORDERING IS THE WHOLE
 //     FIX. Without it, a vulnerable target whose rate limiter trips returns
 //     429 three times, matches zero, and comes out `rejected` —
 //     indistinguishable from a phantom, and Ledger.FindingCountForStatus()
 //     then derives completed_clean over a live vulnerability. Nothing was
-//     disproved here because nothing was asked, so it is unconfirmed.
+//     disproved here because nothing was asked, so it is unconfirmed. Which
+//     inputs reach this rule is decided by an ALLOWLIST of application
+//     responses and not by a list of defences; see
+//     applicationResponseStatuses for why that difference is the fix and not
+//     a spelling.
 //  3. MATCHED NOTHING. The oracle exists, it RAN, and it never fired. This
 //     is the 88 phantom findings, and after rule 2 it is only ever reached
-//     by a run the target actually answered.
+//     by a run in which EVERY attempt was an ordinary application response.
+//     assertRejectionIsDecisive re-states that as a refusal on the assembled
+//     value, because this ordering is the only thing holding it up.
 //  4. MODEL INFERENCE. The signature reproduced but the candidate came from a
 //     model. Outranks the confirmed rule, so no model-detected candidate can
 //     be confirmed here regardless of how clean the reproduction was.
 //  5. INTERMITTENT. Matched sometimes. Not confirmed, not disproved. A run
-//     with any defended attempt and at least one match lands here by
-//     arithmetic — matches can be at most attempts-defended, which is
+//     with any indecisive attempt and at least one match lands here by
+//     arithmetic — matches can be at most attempts-indecisive, which is
 //     strictly less than attempts — and that is the right answer: a mixed
 //     run is exactly "sometimes".
-//  6. REPRODUCED EVERY TIME, with an oracle, a mechanical detection method
-//     and no defence anywhere in the run. The only route to
-//     OutcomeConfirmed.
-func decide(c RawFinding, matches, defended, attempts int) Reason {
+//  6. REPRODUCED EVERY TIME, with an oracle, a mechanical detection method,
+//     and the application answering on every single attempt. The only route
+//     to OutcomeConfirmed.
+func decide(c RawFinding, matches, indecisive, attempts int) Reason {
 	switch {
 	case c.Class.OracleLess():
 		return ReasonNoOracleForClass
-	case defended > 0 && matches == 0:
-		return ReasonReprobeDefended
+	case indecisive > 0 && matches == 0:
+		return ReasonReprobeIndecisive
 	case matches == 0:
 		return ReasonDidNotReproduce
 	case !c.DetectionMethod.CanConfirm():
@@ -1773,6 +2183,16 @@ func (l Ledger) FindingCountForStatus() int { return l.ConfirmedCount() }
 // It mirrors engines.ScanResult.AssertNotSilentlyEmpty one layer up: that one
 // separates "no findings" from "nothing probed"; this one separates "no
 // confirmed findings" from "nothing confirmable".
+//
+// REJECTIONS ARE NOT COUNTED HERE, and that is the whole point of the gate: a
+// ledger of nothing but rejections IS an earned clean, which is what
+// TestEightyEightPhantomsAloneProduceCompletedCleanAndThatIsHonest asserts. What makes that safe is
+// not a second count of "rejections that were not decisive" — that count
+// existed, could not fire from any production path, and has been deleted along
+// with the claim that it was a second line of defence. What makes it safe is
+// that a rejection cannot be ASSEMBLED unless every attempt was an ordinary
+// application response; see assertRejectionIsDecisive, which turns a violation
+// into a refusal, and a refusal IS counted here.
 func (l Ledger) AssertNotSilentlyClean() error {
 	if !l.sealed {
 		return fmt.Errorf("%w: AssertNotSilentlyClean was called on a Ledger ConfirmAll never "+
@@ -1782,51 +2202,13 @@ func (l Ledger) AssertNotSilentlyClean() error {
 		return nil
 	}
 	unconfirmed, refused, rejected := l.UnconfirmedCount(), l.RefusedCount(), l.RejectedCount()
-	indecisive := l.IndecisiveRejectionCount()
-	if unconfirmed == 0 && refused == 0 && indecisive == 0 {
+	if unconfirmed == 0 && refused == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: 0 confirmed, %d unconfirmed, %d rejected (%d of them not "+
-		"decisive), %d refused. Reporting dast_status completed_clean from this ledger "+
-		"would tell a coding agent that Anvil looked and found nothing, which is not "+
-		"what happened",
-		ErrSilentlyClean, unconfirmed, rejected, indecisive, refused)
-}
-
-// IndecisiveRejectionCount returns how many REJECTED findings were rejected
-// on a re-probe that could not have disproved anything.
-//
-// This is the half of AssertNotSilentlyClean that used to be missing: the
-// assertion looked at UnconfirmedCount and RefusedCount and IGNORED
-// RejectedCount entirely, so a ledger of nothing but rejections always read
-// as an earned clean. For a rejection that came from a re-probe the target
-// actually answered, that is correct and TestEightyEightPhantomsAlone... is
-// the case: 88 candidates asked three times each, disproved, clean. For a
-// rejection that came from a run where the oracle never got to run, it is the
-// silent false negative this gate exists to prevent.
-//
-// Two conditions, and each is a route by which a rejection can be worthless:
-//
-//	defended > 0   the target answered with a defence on some attempt.
-//	               decide() routes those to ReasonReprobeDefended before
-//	               ReasonDidNotReproduce, so this is BELT AND BRACES on that
-//	               precedence — exactly the shape Class.OracleLess uses for
-//	               an unrecognised class. A predicate whose default answer
-//	               is "yes, call it clean" is one refactor away from being
-//	               the bug, and this one is one edit to a switch away.
-//	status == 0    the recorded attempt reported no HTTP status. Anvil
-//	               cannot say what it saw, so it has not disproved anything.
-func (l Ledger) IndecisiveRejectionCount() int {
-	n := 0
-	for _, f := range l.findings {
-		if f.outcome != OutcomeRejected {
-			continue
-		}
-		if f.defended > 0 || f.status == 0 {
-			n++
-		}
-	}
-	return n
+	return fmt.Errorf("%w: 0 confirmed, %d unconfirmed, %d rejected, %d refused. Reporting "+
+		"dast_status completed_clean from this ledger would tell a coding agent that Anvil "+
+		"looked and found nothing, which is not what happened",
+		ErrSilentlyClean, unconfirmed, rejected, refused)
 }
 
 // String renders the ledger's arithmetic for a log.
@@ -1834,10 +2216,9 @@ func (l Ledger) String() string {
 	if !l.sealed {
 		return "ledger(unconstructed)"
 	}
-	return fmt.Sprintf("candidates=%d confirmed=%d unconfirmed=%d rejected=%d "+
-		"(indecisive=%d) refused=%d",
+	return fmt.Sprintf("candidates=%d confirmed=%d unconfirmed=%d rejected=%d refused=%d",
 		l.CandidateCount(), l.ConfirmedCount(), l.UnconfirmedCount(),
-		l.RejectedCount(), l.IndecisiveRejectionCount(), l.RefusedCount())
+		l.RejectedCount(), l.RefusedCount())
 }
 
 // ---------------------------------------------------------------------------
@@ -1868,13 +2249,24 @@ func hashBody(body []byte) string {
 //     "(?s).{1,512}" or "[\s\S]" matches the response body itself; cutting
 //     that match down to the budget hands back a VERBATIM 512-BYTE PREFIX OF
 //     THE RESPONSE, which is raw-body inlining arriving through the one
-//     channel plan/00-SPINE.md S7 sanctions. There is no length at which a
-//     prefix of an arbitrary body becomes evidence, so the answer is not a
-//     shorter prefix, it is no prefix. matched stays TRUE — the oracle fired,
-//     and whether the oracle fired is a different question from whether its
-//     match is safe to show. NewSignature refuses most such patterns up
-//     front; this is the second line, because a pattern can be narrow
-//     against benignProbes and still swallow a hostile body.
+//     channel plan/00-SPINE.md S7 sanctions. So the answer is not a shorter
+//     prefix, it is no prefix. matched stays TRUE — the oracle fired, and
+//     whether the oracle fired is a different question from whether its match
+//     is safe to show. NewSignature refuses most such patterns up front; this
+//     is the second line, because a pattern can be narrow against the
+//     generated benign corpus and still swallow a hostile body.
+//
+//     WHAT THIS DOES NOT CLAIM, stated because the comment here used to claim
+//     it: NOT that "there is no length at which a prefix of an arbitrary body
+//     becomes evidence". The implemented rule is narrower and the wider one
+//     was false. `(?s)<div[\s\S]{0,500}` matches at most 504 bytes, so it is
+//     under the budget and its match IS inlined — 500 bytes of whatever
+//     followed the div. What answers that pattern is the corpus, not this
+//     bound: generated HTML contains divs, so NewSignature refuses it, and
+//     TestABoundedPrefixPatternIsRefusedByTheCorpusAndNotByTheSpanBound is
+//     where both halves of that sentence are driven. A bounded-prefix pattern
+//     anchored on something the corpus does not generate would still inline
+//     its match, and that is a real residual, not a rhetorical one.
 //
 //  2. THE OUTPUT IS PRINTABLE ASCII. Everything outside 0x20-0x7e is dropped
 //     and counted. That removes, without needing to enumerate them, every
@@ -1911,6 +2303,57 @@ func extractSpan(body []byte, re *regexp.Regexp) (span string, dropped, overBroa
 		b.WriteByte(c)
 	}
 	return b.String(), dropped, 0, true
+}
+
+// assertRejectionIsDecisive refuses to emit a REJECTED finding that could not
+// have disproved anything.
+//
+// ===========================================================================
+// WHY THIS IS AN ASSERTION AND NOT A COUNT
+// ===========================================================================
+//
+// It replaces Ledger.IndecisiveRejectionCount, which counted this same
+// condition and WAS UNREACHABLE FROM PRODUCTION. Measured by sweeping
+// ConfirmAll over 26 statuses x {the signature matches, the signature does not
+// match} = 52 runs, that method returned non-zero zero times — decide()'s
+// rule 2 routes every indecisive run to ReasonReprobeIndecisive before
+// ReasonDidNotReproduce can be reached, so no ConfirmFinding call can produce
+// the value it was counting. A control that cannot fire is not a second line,
+// it is a sentence; the count and the claim that it was "the second line of
+// AssertNotSilentlyClean" are both deleted rather than qualified.
+//
+// What survives is the invariant they were about, stated at the one place it
+// can actually fail. OutcomeRejected means THE ORACLE RAN AND DID NOT FIRE, so
+// a rejected finding must carry zero indecisive attempts and a status this
+// gate accepts as the application answering. This runs on every Finding
+// ConfirmFinding assembles, in production, on every path.
+//
+// It is reachable: it is one edit to decide()'s switch away, which is exactly
+// the edit it exists to survive.
+// TestARejectionThatCouldNotHaveDisprovedAnythingIsRefused makes that edit and
+// watches this fire.
+//
+// FAIL CLOSED. The failure mode is a candidate reported as REFUSED — which
+// AssertNotSilentlyClean counts, and which therefore cannot become a silent
+// clean — never a candidate reported as disproved.
+func assertRejectionIsDecisive(f Finding) error {
+	if f.outcome != OutcomeRejected {
+		return nil
+	}
+	if f.indecisive > 0 {
+		return fmt.Errorf("%w: a finding was assembled with outcome=%s over a run with %d "+
+			"of %d attempt(s) that never established the application answered. A "+
+			"rejection is the claim that the oracle RAN and did not fire, and this run "+
+			"cannot support it",
+			ErrRefused, OutcomeRejected, f.indecisive, f.attempts)
+	}
+	if !IsApplicationResponseStatus(f.status) {
+		return fmt.Errorf("%w: a finding was assembled with outcome=%s from an attempt "+
+			"whose status was %d, which this gate does not accept as the application "+
+			"answering. Nothing was disproved, because nothing was asked",
+			ErrRefused, OutcomeRejected, f.status)
+	}
+	return nil
 }
 
 // isPrintableASCII reports whether every byte of s is in 0x20-0x7e.

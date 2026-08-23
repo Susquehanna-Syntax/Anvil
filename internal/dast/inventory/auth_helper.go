@@ -61,13 +61,33 @@
 // these reaches the sink ONLY on an artifact whose step types no credential,
 // because the provenance rule refuses the rest without reading them:
 //
-//	a NAMED HTML entity outside the six predefined ones. The numeric forms are
-//	decoded generically; the names are a denylist and credentialIn says so.
+//	A NAMED REFERENCE WHOSE EXPANSION IS MORE THAN ONE RUNE. This bullet used
+//	to say that a name outside the six predefined ones was the only way past
+//	the sweep, because "the numeric forms are decoded generically". THE SECOND
+//	HALF WAS FALSE AND THE FIRST DEPENDED ON IT. Measured against the decoder
+//	that stood here, using this file's own credential: the reference body was
+//	capped at eight bytes, so four decimal leading zeros decoded and five did
+//	not, hexadecimal reached the same four for the credential as a whole (a
+//	single '&' survived five decimal zeros and only four hexadecimal ones,
+//	the 'x' spending a byte of the same eight), and NO semicolon-less
+//	spelling decoded at any width though HTML5 permits it. 231 of the 246
+//	generated spellings in TestNumericCharacterReferencesHaveNoDigitCeiling
+//	were invisible to the sweep.
 //
-//	base64 or any other re-encoding of the credential inside an artifact.
-//	Catching it needs encoding/base64, which is NOT on gate 3's inertImports;
-//	adding it is a one-line edit in internal/dast/authz/egress_chokepoint_test.go
-//	and is reported to the orchestrator rather than made here.
+//	The decoder now recognises a reference BY SHAPE, reads numeric values with
+//	no digit ceiling, and turns a name it cannot resolve into ONE WILDCARD
+//	RUNE that matches any one character — so neither the digit count nor the
+//	table's length is the encoder's budget any more. What one wildcard cannot
+//	stand for is a name whose expansion is two runes.
+//
+//	base64 or any other re-encoding of the credential inside an artifact. It
+//	is now the ONLY spelling in this list that a fixture can demonstrate, and
+//	TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl uses it as its
+//	positive control for exactly that reason. Catching it needs
+//	encoding/base64, which is NOT on gate 3's inertImports; adding it is a
+//	one-line edit in internal/dast/authz/egress_chokepoint_test.go, is
+//	reported to the orchestrator rather than made here, and is recorded as
+//	U10 in internal/SKIPPED-CONTROLS.md.
 //
 //	a compressed artifact. compress/gzip IS allowlisted, so this one is
 //	reachable; it is not done because an artifact sink that stores compressed
@@ -1853,14 +1873,94 @@ func (s *Session) StateAt(t time.Time) AuthState {
 // one turns this claim red rather than quietly making it obsolete.
 //
 // The zero value is false, which is the fail-closed direction.
+//
+// # The bool alone is a CLAIM, and a claim is not evidence
+//
+// CarriedSession is exported, has no constructor and widens a coverage label,
+// so on its own it is a guard made of prose: a caller writing
+// `CoverageInstant{At: t, CarriedSession: true}` moved an observation out of
+// AuthStateSessionNotCarried and into AuthStateAuthenticated, and nothing
+// anywhere disagreed. This package already knows the answer to that shape —
+// Secret, AuthSteps, AuthRequest, StoredArtifact and Session are all SEALED,
+// unforgeable outside their constructors — so a coverage instant is too. The
+// bool is the claim; the unexported carriage below is the evidence, minted only
+// by Session.Carried, and COVERAGE COUNTS ONLY WHEN BOTH ARE PRESENT AND THE
+// EVIDENCE BELONGS TO THE SESSION DOING THE LABELLING.
 type CoverageInstant struct {
 	// At is when the observation was made.
 	At time.Time
-	// CarriedSession is EVIDENCE that this particular request went out under
+	// CarriedSession is the CLAIM that this particular request went out under
 	// the session — a session cookie or header actually attached to it, not a
 	// session that was alive somewhere else at the time. A caller that cannot
 	// show that leaves this false.
+	//
+	// SETTING IT IN A STRUCT LITERAL IS NOT ENOUGH and never widens anything:
+	// without the seal Session.Carried applies, CoverageAt reads the instant as
+	// AuthStateSessionNotCarried, which is what "nobody demonstrated carriage"
+	// honestly means.
 	CarriedSession bool
+	// carriage is the seal. Unexported, so no literal outside this package can
+	// produce one, and bound to the session it was minted from.
+	carriage sessionCarriage
+}
+
+// sessionCarriage is the evidence that one request went out under one session.
+//
+// WHAT IT PROVES AND WHAT IT DOES NOT, stated rather than implied. It makes the
+// carriage claim UNMAKEABLE BY A STRUCT LITERAL and NON-TRANSFERABLE between
+// sessions — both are compiler- and code-enforced, and both are measured by
+// TestAnUnsealedCarriageClaimIsNotCoverage. It does not make the claim
+// true: Session.Carried takes the caller's word for the mechanism, because
+// nothing in this module can attach a session to a crawl request yet (see
+// CoverageOfVisit). What the seal buys is that when such a producer exists,
+// there is exactly ONE function for it to be checked in, and until then the
+// only values in existence name where they came from.
+type sessionCarriage struct {
+	sealed bool
+	// owner is the session this evidence is about. Evidence about one session
+	// cannot label an observation of another.
+	owner *Session
+	// how names the mechanism that attached the session, for the report. It
+	// has been through sanitizeForLedger, because it is caller-authored text
+	// that CarriageEvidence renders back out.
+	how string
+}
+
+// Carried is the ONE constructor for an observation that claims carriage.
+//
+// how must name the mechanism — the cookie jar, the header, the field — and an
+// empty one mints nothing, because a claim that cannot say how is the zero
+// value with extra steps. A nil or unsealed Session mints nothing either.
+//
+// how IS SWEPT, NOT MERELY REDACTED. It is a caller-authored string that
+// CarriageEvidence renders back out of this package, which makes it the same
+// kind of channel as an artifact name or a driver's Detail — and redact() alone
+// cannot protect a credential whose spelling is innocent, which is this file's
+// first paragraph. A mechanism that names the credential is refused whole.
+func (s *Session) Carried(at time.Time, how string) CoverageInstant {
+	c := CoverageInstant{At: at}
+	if s == nil || !s.sealed || strings.TrimSpace(how) == "" {
+		return c
+	}
+	c.CarriedSession = true
+	c.carriage = sessionCarriage{
+		sealed: true, owner: s, how: sanitizeForLedger(how, s.cfg.Steps.secrets()),
+	}
+	return c
+}
+
+// CarriageEvidence returns the mechanism this observation named, or "" when it
+// carries no evidence. It is how a report can say WHY an instant counted.
+func (c CoverageInstant) CarriageEvidence() string { return c.carriage.how }
+
+// carriedFor reports whether this observation carries evidence, sealed by and
+// belonging to s, that its request went out under the session.
+//
+// Every clause is fail-closed: an unsealed instant, an instant sealed by a
+// different session, and an instant whose bool was set without the seal all
+// answer false.
+func (c CoverageInstant) carriedFor(s *Session) bool {
+	return c.CarriedSession && c.carriage.sealed && c.carriage.owner == s && s != nil
 }
 
 // CoverageAt maps one observation to exactly one AuthState.
@@ -1871,7 +1971,7 @@ type CoverageInstant struct {
 // good as the window it landed in.
 func (s *Session) CoverageAt(c CoverageInstant) AuthState {
 	st := s.StateAt(c.At)
-	if st == AuthStateAuthenticated && !c.CarriedSession {
+	if st == AuthStateAuthenticated && !c.carriedFor(s) {
 		return AuthStateSessionNotCarried
 	}
 	return st
@@ -1909,9 +2009,25 @@ func (s *Session) AssertAllAuthenticated(instants []CoverageInstant) error {
 	if bad == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %d of %d instant(s) are not authenticated coverage (%s). %s",
+	// A caller that set the bool without the seal gets told so by name. The
+	// downgrade is fail-closed either way, but an unattested claim is a
+	// DIFFERENT mistake from an honest false, and silently treating them alike
+	// is how the next reader concludes the bool works.
+	unattested := 0
+	for _, c := range instants {
+		if c.CarriedSession && !c.carriedFor(s) {
+			unattested++
+		}
+	}
+	claims := ""
+	if unattested > 0 {
+		claims = fmt.Sprintf(" %d of them CLAIMED carriage with no evidence this session "+
+			"sealed (CoverageInstant.CarriedSession set in a literal rather than by "+
+			"Session.Carried), and were counted as not carried.", unattested)
+	}
+	return fmt.Errorf("%w: %d of %d instant(s) are not authenticated coverage (%s).%s %s",
 		ErrCoverageIsNotAuthenticated, bad, len(instants), strings.Join(parts, ", "),
-		s.CoverageLabel())
+		claims, s.CoverageLabel())
 }
 
 // AssertNoCredentialInLedger reports on BOTH of the places a credential could
@@ -2710,16 +2826,35 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //
 // # What it still does not see, stated rather than qualified away
 //
-//	NAMED HTML ENTITIES beyond &amp; &lt; &gt; &quot; &apos; &nbsp;. The
-//	numeric forms (&#38; &#x26;) are decoded generically, so an encoder has to
-//	reach for a NAMED entity outside those six to get past this — which is an
-//	enumeration, and enumerations lose. It is a backstop; the provenance rule
-//	above is what does not lose.
+//	A NAMED REFERENCE THAT EXPANDS TO MORE THAN ONE RUNE. What stood here was
+//	that a named entity outside the six got past the sweep because "the
+//	numeric forms are decoded generically". The numeric forms were not
+//	generic. The decoder scanned at most eight bytes past the '&' for a ';'
+//	and refused a longer body, so — measured against this file's own
+//	credential — `&#0000115;` decoded and `&#00000115;` did not, a single
+//	'&' survived five decimal zeros but only four hexadecimal ones because
+//	the 'x' spends a byte of the same eight, and the semicolon-less form
+//	HTML5 permits was not read at all. What a blind spelling costs is measured
+//	at the sink, not reasoned about: disable the reference decoder and
+//	TestAPaddedReferenceOnAnInnocentStepIsRefused reports "the backstop
+//	refused 0 of 3 artifact(s). Mix: map[stored:3]" — three artifacts carrying
+//	the credential, on a step the provenance rule permits, STORED. That test
+//	now refuses all three.
+//
+//	The shape of that failure is the shape of the fix. A reference is
+//	recognised by SHAPE, numeric values are read with NO DIGIT CEILING (the
+//	work is bounded by len(b), which codedMaxArtifactBytes bounds), the
+//	optional semicolon is handled, and a name namedEntities cannot resolve
+//	becomes ONE WILDCARD RUNE matching any one character. So the residual is
+//	no longer "a name outside a list" — it is a name whose expansion is not
+//	one rune, which one wildcard cannot stand for.
 //
 //	base64 or any other re-encoding. Catching it needs encoding/base64, which
 //	is NOT on gate 3's inertImports; adding it is a one-line edit in
-//	internal/dast/authz/egress_chokepoint_test.go and is reported to the
-//	orchestrator rather than made here.
+//	internal/dast/authz/egress_chokepoint_test.go, is reported to the
+//	orchestrator rather than made here, and is U10 in
+//	internal/SKIPPED-CONTROLS.md. It is the spelling the backstop's own
+//	positive-control test now uses, because it is the one left.
 //
 //	a compressed artifact, and A CREDENTIAL RENDERED AS PIXELS. Both are in
 //	this file's header with what each would cost.
@@ -2738,7 +2873,7 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 			if raw == "" {
 				continue
 			}
-			if strings.Contains(hay, raw) {
+			if containsAllowingUnresolved(hay, raw) {
 				return i, true
 			}
 		}
@@ -2758,17 +2893,29 @@ const codedSweepRounds = 3
 
 // sweepForms returns the canonical forms of s the sweep searches.
 //
-// It is TWO PIPELINES re-run to a fixpoint, not a combinatorial expansion of
-// every decoder ordering: at most 2*codedSweepRounds+1 strings exist, and a
-// form identical to one already produced is dropped.
+// It is FOUR PIPELINES re-run to a fixpoint, not a combinatorial expansion of
+// every decoder ordering: at most 4*codedSweepRounds+1 strings exist, and a
+// form identical to one already produced is dropped — which is the ordinary
+// case, because a string with no '+' and no unresolvable reference produces
+// the same four.
 //
-// There are two pipelines because '+' means SPACE in a query string and a
-// literal plus everywhere else, and no artifact says which it is. The
-// distinction has to be made INSIDE the loop rather than once on the seed:
-// url.QueryEscape applied twice writes the space as "%2B", which is a literal
-// '+' after one round and a space after two, and a seed-only reading finds
-// nothing. Both readings are searched, and the over-matching direction is the
-// one that REFUSES an artifact rather than the one that ships it.
+// The four are two AMBIGUITIES, each read both ways, and neither can be
+// settled by looking at the bytes:
+//
+//	'+' means SPACE in a query string and a literal plus everywhere else. The
+//	distinction has to be made INSIDE the loop rather than once on the seed:
+//	url.QueryEscape applied twice writes the space as "%2B", which is a literal
+//	'+' after one round and a space after two, and a seed-only reading finds
+//	nothing.
+//
+//	`&commat;` is a character reference under one reading and seven literal
+//	characters under the other. Decoding it to a wildcard is what stops an
+//	unknown name from hiding a credential; NOT decoding it is what stops a
+//	credential that literally contains "&commat;" from being lost when some
+//	outer layer is peeled. Both are searched.
+//
+// The over-matching direction is the one that REFUSES an artifact rather than
+// the one that ships it.
 func sweepForms(s string) []string {
 	out := []string{s}
 	seen := map[string]bool{s: true}
@@ -2779,21 +2926,64 @@ func sweepForms(s string) []string {
 		}
 	}
 	for _, plusIsSpace := range []bool{false, true} {
-		cur := s
-		for r := 0; r < codedSweepRounds; r++ {
-			next := cur
-			if plusIsSpace {
-				next = plusToSpace(next)
+		for _, unresolved := range []unresolvedPolicy{
+			unresolvedAsLiteral, unresolvedAsWildcard,
+		} {
+			cur := s
+			for r := 0; r < codedSweepRounds; r++ {
+				next := cur
+				if plusIsSpace {
+					next = plusToSpace(next)
+				}
+				next = decodeEntities(decodeBackslash(decodePercent(next)), unresolved)
+				if next == cur {
+					break
+				}
+				cur = next
+				add(cur)
 			}
-			next = decodeEntities(decodeBackslash(decodePercent(next)))
-			if next == cur {
-				break
-			}
-			cur = next
-			add(cur)
 		}
 	}
 	return out
+}
+
+// containsAllowingUnresolved reports whether needle occurs in hay, where every
+// unresolvedReference rune in hay stands for ANY ONE rune.
+//
+// That is the whole of what a character reference this decoder cannot resolve
+// tells us: one character was written here and its identity is undecided. An
+// undecided character is not a permission to conclude the credential is absent.
+//
+// A WILDCARD IS EXACTLY ONE RUNE, never more. A named reference whose expansion
+// is two runes therefore is not matched by one wildcard — the residual is
+// stated here rather than assumed away, and the test asserts the bound in both
+// directions so that this does not decay into a matcher that says yes to
+// everything.
+//
+// Cost: the fast path is one strings.Contains. The scan below runs only when a
+// form actually carries an unresolvable reference, and is O(len(hay) ×
+// len(needle)) with len(hay) bounded by codedMaxArtifactBytes.
+func containsAllowingUnresolved(hay, needle string) bool {
+	if strings.Contains(hay, needle) {
+		return true
+	}
+	if needle == "" || !strings.ContainsRune(hay, unresolvedReference) {
+		return false
+	}
+	h, n := []rune(hay), []rune(needle)
+	for i := 0; i+len(n) <= len(h); i++ {
+		ok := true
+		for j := range n {
+			if h[i+j] != n[j] && h[i+j] != unresolvedReference {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 // plusToSpace reads every '+' as the space a query-string encoder writes.
@@ -2922,86 +3112,172 @@ func hex4(s string, off int) (int, bool) {
 	return v, true
 }
 
-// namedEntities is the SIX predefined character entities, and it is a
-// DENYLIST — an encoder that reaches for &commat; gets past it.
+// namedEntities is the resolution table for the six predefined character
+// references — the ones an HTML escaper actually emits.
 //
-// It is written down anyway because the numeric forms beside it are generic
-// and the six below are what an HTML escaper actually emits. The control this
-// backs up is credentialWasInFlight, which does not read bytes at all.
+// ITS LENGTH IS NOT THE ENCODER'S BUDGET, and that is what changed. A name this
+// table does not carry is still RECOGNISED AS A CHARACTER REFERENCE BY SHAPE —
+// '&', a run of ASCII alphanumerics, ';' — and decodes to unresolvedReference,
+// one rune of unknown value that matches any one character during the sweep. So
+// `&commat;` standing where a credential's '@' belongs no longer hides it, and
+// neither does any of the two-thousand-odd other names the specification
+// defines. What this table decides is which references get their EXACT value;
+// a name outside it is UNDECIDED, not absent, and undecided still matches.
 var namedEntities = map[string]rune{
 	"amp": '&', "lt": '<', "gt": '>', "quot": '"', "apos": '\'', "nbsp": ' ',
 }
 
-// maxEntityNameBytes bounds how far past an '&' this scans for a ';'.
-const maxEntityNameBytes = 8
+// unresolvedReference is the rune a character reference whose value this
+// decoder cannot determine decodes to.
+//
+// U+FFFF is a Unicode NONCHARACTER: it is never a legal encoded character, so
+// a literal one in an artifact is not text. Treating one that was already there
+// as a wildcard too costs exactly one over-match, in the direction that REFUSES
+// an artifact rather than the one that ships it.
+const unresolvedReference = '\uFFFF'
 
-// decodeEntities undoes HTML character references: &#38; &#x26; and the six
-// names above. The fixture in the packet that produced this function was
+// unresolvedPolicy is what decodeEntities does with a reference it recognises
+// by shape and cannot resolve to a value.
+//
+// BOTH READINGS ARE SEARCHED, for the same reason both readings of '+' are:
+// no artifact says whether the bytes `&commat;` are a character reference or
+// the literal seven characters. sweepForms runs the pipeline under each.
+type unresolvedPolicy bool
+
+const (
+	unresolvedAsLiteral  unresolvedPolicy = false
+	unresolvedAsWildcard unresolvedPolicy = true
+)
+
+// decodeEntities undoes HTML character references.
+//
+// # A numeric reference has no digit ceiling here, because it has none in the
+// specification
+//
+// `&#38;`, `&#x26;`, `&#0000000000000038;` and `&#x000000000000026;` are the
+// same character. The decoder this replaced scanned at most eight bytes past
+// the '&' for a ';' and refused a longer body, so a single '&' survived five
+// decimal leading zeros and four hexadecimal ones — and an encoder picks the
+// next pad width. A bound on the digit count is an enumeration with an edge;
+// the digits are consumed to their end and the VALUE saturates instead.
+//
+// The work is still bounded, by the thing that is already bounded: no byte is
+// covered by more than one reference scan (a scan stops at the first byte that
+// is neither a digit nor an alphanumeric, and neither of those is '&'), so this
+// is linear in len(s) whatever the input claims, and codedMaxArtifactBytes
+// bounds len(s).
+//
+// # The terminating semicolon is optional, because HTML5 makes it optional
+//
+// A numeric reference is terminated by the first non-digit, and the ';' is
+// consumed if it is there — `&#38` and `&#38;` both decode. A NAMED reference
+// without a ';' resolves only by longest match against namedEntities, and when
+// nothing matches, the '&' stays ordinary text — otherwise a query string's
+// `&next=` starts eating its neighbours — TestABareAmpersandIsNotAReference
+// holds that shut.
+//
+// The fixture in the packet that produced this function was
 // `<input name="password" value="s3cr3t Pa55w0rd&amp;9xQz">` — an artifact
 // stored verbatim by the byte-exact sweep that preceded it.
-func decodeEntities(s string) string {
+func decodeEntities(s string, unresolved unresolvedPolicy) string {
 	if strings.IndexByte(s, '&') < 0 {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(s); {
 		if s[i] != '&' {
 			b.WriteByte(s[i])
+			i++
 			continue
 		}
-		end := -1
-		for j := i + 1; j < len(s) && j <= i+maxEntityNameBytes+1; j++ {
-			if s[j] == ';' {
-				end = j
-				break
-			}
-		}
-		if end < 0 {
+		r, n, ok := referenceAt(s, i, unresolved)
+		if !ok {
 			b.WriteByte(s[i])
+			i++
 			continue
 		}
-		body := s[i+1 : end]
-		if r, ok := entityRune(body); ok {
-			b.WriteRune(r)
-			i = end
-			continue
-		}
-		b.WriteByte(s[i])
+		b.WriteRune(r)
+		i += n
 	}
 	return b.String()
 }
 
-// entityRune resolves one entity body — "amp", "#38" or "#x26".
-func entityRune(body string) (rune, bool) {
-	if body == "" {
-		return 0, false
-	}
-	if r, ok := namedEntities[body]; ok {
-		return r, true
-	}
-	if body[0] != '#' {
-		return 0, false
-	}
-	digits, base := body[1:], 10
-	if len(digits) > 1 && (digits[0] == 'x' || digits[0] == 'X') {
-		digits, base = digits[1:], 16
-	}
-	if digits == "" || len(digits) > 8 {
-		return 0, false
-	}
-	v := 0
-	for i := 0; i < len(digits); i++ {
-		d := hexVal(digits[i])
-		if d < 0 || d >= base {
-			return 0, false
+// referenceAt reads the character reference beginning at the '&' at off. It
+// returns the rune it denotes and how many bytes it spans, or ok=false when
+// those bytes are not a character reference at all.
+func referenceAt(s string, off int, unresolved unresolvedPolicy) (rune, int, bool) {
+	j := off + 1
+	if j < len(s) && s[j] == '#' {
+		j++
+		base := 10
+		if j < len(s) && (s[j] == 'x' || s[j] == 'X') {
+			base, j = 16, j+1
 		}
-		v = v*base + d
+		start, v := j, 0
+		for j < len(s) {
+			d := hexVal(s[j])
+			if d < 0 || d >= base {
+				break
+			}
+			// Saturate rather than stop: the remaining digits are still part
+			// of the reference and still have to be consumed, and an int that
+			// kept accumulating would wrap into a value that has a character.
+			if v <= 0x10FFFF {
+				v = v*base + d
+			}
+			j++
+		}
+		if j == start {
+			return 0, 0, false // "&#" with no digits denotes nothing
+		}
+		if j < len(s) && s[j] == ';' {
+			j++
+		}
+		// A value that is not a Unicode scalar value denotes no character. It
+		// is still a reference, so it is undecided rather than absent.
+		if v == 0 || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
+			return unresolvedRune(unresolved, j-off)
+		}
+		return rune(v), j - off, true
 	}
-	if v < 0 || v > 0x10FFFF {
-		return 0, false
+	start := j
+	for j < len(s) && isASCIIAlnum(s[j]) {
+		j++
 	}
-	return rune(v), true
+	if j == start {
+		return 0, 0, false // a bare '&' is a bare '&'
+	}
+	name := s[start:j]
+	if j < len(s) && s[j] == ';' {
+		if r, ok := namedEntities[name]; ok {
+			return r, j + 1 - off, true
+		}
+		return unresolvedRune(unresolved, j+1-off)
+	}
+	// No ';'. A name is resolved here only by longest match against the table;
+	// anything else is ordinary text and must stay ordinary text, or a query
+	// string's "&next=" starts eating its neighbours.
+	for n := len(name); n > 0; n-- {
+		if r, ok := namedEntities[name[:n]]; ok {
+			return r, (start + n) - off, true
+		}
+	}
+	return 0, 0, false
+}
+
+// unresolvedRune applies the policy to a reference that was recognised by shape
+// and could not be resolved to a value.
+func unresolvedRune(unresolved unresolvedPolicy, span int) (rune, int, bool) {
+	if unresolved == unresolvedAsWildcard {
+		return unresolvedReference, span, true
+	}
+	return 0, 0, false
+}
+
+// isASCIIAlnum reports whether c can appear in a named character reference.
+func isASCIIAlnum(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // sweepOnly replaces a whole string in which a credential was found, and

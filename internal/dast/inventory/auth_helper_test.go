@@ -43,7 +43,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -710,6 +712,332 @@ func d24UnicodeEscape(s string) string {
 	return b.String()
 }
 
+// ---------------------------------------------------------------------------
+// The character-reference decoder, tested by GENERATION rather than by a list
+// ---------------------------------------------------------------------------
+//
+// The number of ways to spell one character as a numeric character reference is
+// INFINITE: the specification puts no ceiling on the leading zeros, the base
+// may be decimal or hexadecimal, the `x` and the hex digits have a case, and
+// the terminating semicolon is optional. A fixture list of spellings is
+// therefore a denylist of examples whose LENGTH IS THE ENCODER'S BUDGET — it
+// needs one spelling the list does not carry. The tests below sample the space
+// instead of enumerating it, which is why the padding widths run past every
+// bound the decoder has ever had.
+
+// d24Reference spells one rune as one numeric character reference, in the
+// chosen base, with the chosen number of leading zeros, with or without the
+// terminating semicolon, and in the chosen case.
+func d24Reference(r rune, base, pad int, semi, upper bool) string {
+	digits := strconv.FormatInt(int64(r), base)
+	if upper {
+		digits = strings.ToUpper(digits)
+	}
+	var b strings.Builder
+	b.WriteString("&#")
+	if base == 16 {
+		if upper {
+			b.WriteByte('X')
+		} else {
+			b.WriteByte('x')
+		}
+	}
+	b.WriteString(strings.Repeat("0", pad))
+	b.WriteString(digits)
+	if semi {
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+// d24AllReferences spells EVERY rune of s the same way.
+func d24AllReferences(s string, base, pad int, semi, upper bool) string {
+	var b strings.Builder
+	for _, r := range s {
+		b.WriteString(d24Reference(r, base, pad, semi, upper))
+	}
+	return b.String()
+}
+
+// TestNumericCharacterReferencesHaveNoDigitCeiling walks padding widths well
+// past any bound a decoder could carry.
+//
+// The decoder this replaced scanned at most eight bytes past the '&' for a ';'
+// and refused a body longer than that, so seven decimal zeros were decoded and
+// eight were not, and the hexadecimal form — one byte longer because of the
+// 'x' — lost a pad width earlier. Both are just numbers, and an encoder picks
+// the next one.
+func TestNumericCharacterReferencesHaveNoDigitCeiling(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	for _, base := range []int{10, 16} {
+		for _, upper := range []bool{false, true} {
+			if base == 10 && upper {
+				continue // no case to vary in a decimal reference
+			}
+			for _, semi := range []bool{true, false} {
+				for pad := 0; pad <= 40; pad++ {
+					name := fmt.Sprintf("base%02d/pad%02d/semi=%v/upper=%v",
+						base, pad, semi, upper)
+					t.Run(name, func(t *testing.T) {
+						in := `<input name="password" value="` +
+							d24AllReferences(d24Password, base, pad, semi, upper) + `">`
+						if _, hit := credentialIn([]byte(in), secrets); !hit {
+							t.Fatalf("the sweep did not see the credential spelled as "+
+								"numeric character references in base %d with %d leading "+
+								"zero(s), semicolon=%v, upper=%v. A digit count is "+
+								"unbounded by specification, so a decoder that bounds it "+
+								"loses to the next pad width", base, pad, semi, upper)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// TestAHugeNumericReferenceIsBoundedByTheInputAndNotByADigitCap is the other
+// half of removing the ceiling: the work has to stay bounded by the LENGTH OF
+// THE INPUT, because that is the thing an artifact cap already bounds.
+//
+// Each rune of the credential is padded with twenty thousand leading zeros —
+// about 440 KB of digits, well inside codedMaxArtifactBytes — and one
+// reference asks for a value far above the largest scalar value there is. The
+// test completing is the measurement: a decoder that grew work with the digit
+// count, or that overflowed on the way, does not get here.
+func TestAHugeNumericReferenceIsBoundedByTheInputAndNotByADigitCap(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	huge := d24AllReferences(d24Password, 10, 20000, true, false)
+	if len(huge) < 400_000 {
+		t.Fatalf("the fixture is %d bytes, which is too small to measure anything",
+			len(huge))
+	}
+	if len(huge) > codedMaxArtifactBytes {
+		t.Fatalf("the fixture is %d bytes, past the %d-byte artifact cap, so it is not "+
+			"an input any artifact could carry", len(huge), codedMaxArtifactBytes)
+	}
+	if _, hit := credentialIn([]byte(huge), secrets); !hit {
+		t.Fatal("the sweep did not see a credential spelled with twenty thousand " +
+			"leading zeros per reference")
+	}
+	// A value past U+10FFFF has no character, and the digits after the point
+	// where that is known must still be consumed rather than overflowing into
+	// a value that has one.
+	for _, over := range []string{
+		"&#" + strings.Repeat("9", 40) + ";",
+		"&#x" + strings.Repeat("F", 40) + ";",
+		"&#" + strings.Repeat("9", 400000) + ";",
+	} {
+		if _, hit := credentialIn([]byte(over), secrets); hit {
+			t.Fatalf("an out-of-range numeric reference of %d bytes was read as a "+
+				"credential", len(over))
+		}
+	}
+}
+
+// TestMixedGeneratedSpellingsAreDecoded samples the space rather than walking
+// it: every rune of the credential independently gets a literal, a decimal or a
+// hexadecimal spelling, with an independently drawn pad width, case and
+// terminator.
+//
+// A semicolon-less reference followed by a LITERAL character is genuinely
+// ambiguous — `&#115` followed by a literal '3' is the single character
+// U+0483 by specification, not 's' then '3' — so the generator terminates a
+// reference whose successor is literal. That is not a concession to the
+// decoder: it is the same rule a browser applies, and an encoder that ignored
+// it would not be spelling the credential at all.
+func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	rng := rand.New(rand.NewPCG(0x24, 0x2718))
+	runes := []rune(d24Password)
+	for iter := 0; iter < 400; iter++ {
+		kinds := make([]int, len(runes)) // 0 literal, 1 decimal, 2 hexadecimal
+		for i := range kinds {
+			kinds[i] = rng.IntN(3)
+		}
+		var b strings.Builder
+		for i, r := range runes {
+			if kinds[i] == 0 {
+				b.WriteRune(r)
+				continue
+			}
+			base := 10
+			if kinds[i] == 2 {
+				base = 16
+			}
+			semi := rng.IntN(2) == 0
+			if i+1 < len(kinds) && kinds[i+1] == 0 {
+				semi = true
+			}
+			if i+1 == len(kinds) {
+				semi = true // the closing quote below is not a digit, but say so anyway
+			}
+			b.WriteString(d24Reference(r, base, rng.IntN(30), semi, rng.IntN(2) == 0))
+		}
+		in := `{"pw":"` + b.String() + `"}`
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			t.Fatalf("iteration %d: the sweep did not see the credential in the "+
+				"generated spelling %q", iter, in)
+		}
+	}
+}
+
+// TestAnUnresolvableReferenceDoesNotHideACredential is the inversion the
+// named-entity table needed.
+//
+// The table carries six names, and the previous shape treated a name outside it
+// as ordinary text — so `&commat;` between two halves of a credential hid it,
+// and the attacker's budget was "one name out of the two-thousand-odd the
+// specification defines". A reference is now recognised BY SHAPE, and one whose
+// value this decoder cannot determine decodes to a single wildcard rune that
+// matches any one character. The name no longer has to be known; only the
+// shape does.
+//
+// The names below are GENERATED, and the assertion is over every position of
+// the credential rather than over the one position a fixture would pick.
+func TestAnUnresolvableReferenceDoesNotHideACredential(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	rng := rand.New(rand.NewPCG(0x99, 0x1024))
+	const alnum = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	runes := []rune(d24Password)
+	for iter := 0; iter < 500; iter++ {
+		var name strings.Builder
+		for n := 1 + rng.IntN(14); n > 0; n-- {
+			name.WriteByte(alnum[rng.IntN(len(alnum))])
+		}
+		if _, known := namedEntities[name.String()]; known {
+			continue // a name the table resolves is not what this measures
+		}
+		pos := rng.IntN(len(runes))
+		in := `value="` + string(runes[:pos]) + "&" + name.String() + ";" +
+			string(runes[pos+1:]) + `"`
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			t.Fatalf("iteration %d: character %d of the credential was written as the "+
+				"unknown named reference &%s; and the sweep saw nothing", iter, pos,
+				name.String())
+		}
+	}
+	// AND THE OTHER DIRECTION, or the assertion above is satisfied by a
+	// matcher that says yes to everything: a wildcard stands for exactly ONE
+	// rune, so a reference that replaces two characters is not a match, and
+	// neither is an unrelated string of the same length.
+	//
+	// The run of wildcards below is deliberately shorter than the SHORTEST
+	// credential in the fixture set. A run at least as long as one of them
+	// matches it — every rune undecided is a credential that may be there —
+	// and that is the over-matching direction, not a defect.
+	for _, miss := range []string{
+		`value="` + string(runes[:4]) + `&commat;` + string(runes[6:]) + `"`,
+		`value="` + strings.Repeat("&commat;", 3) + `"`,
+		`value="&commat;"`,
+	} {
+		if _, hit := credentialIn([]byte(miss), secrets); hit {
+			t.Fatalf("the wildcard matched %q, which is not the credential: a wildcard "+
+				"that matches more than one rune makes every assertion above vacuous",
+				miss)
+		}
+	}
+}
+
+// TestABareAmpersandIsNotAReference holds the other edge shut. A '&' that
+// begins nothing — the ordinary case in a query string — must stay a '&', or
+// the sweep's own fixture (`s3cr3t Pa55w0rd&9xQz`) stops matching itself.
+func TestABareAmpersandIsNotAReference(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	for _, in := range []string{
+		"x=" + d24Password,
+		"/a?next=/b&" + d24Password,
+		"a=1&b=2&" + d24Password,
+		"&#" + d24Password,
+		"&;" + d24Password,
+		"&" + d24Password,
+	} {
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			t.Fatalf("the credential in %q was lost by the reference decoder", in)
+		}
+	}
+}
+
+// TestAPaddedReferenceOnAnInnocentStepIsRefused drives the reported defect all
+// the way to the sink rather than only through credentialIn.
+//
+// The three artifacts below are attached to STEP 3, which types nothing, so the
+// provenance rule permits every one of them — it is the case the backstop
+// exists for, and the case in which the old decoder's bounds decided the
+// outcome. Before the fix all three reached the ArtifactSink and both
+// assertions returned nil.
+func TestAPaddedReferenceOnAnInnocentStepIsRefused(t *testing.T) {
+	out := d24GoodOutcome()
+	out.Artifacts = []AuthArtifact{
+		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "decimal-pad-12",
+			Bytes: []byte(`value="` + d24AllReferences(d24Password, 10, 12, true, false) + `"`)},
+		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "hex-pad-9-no-semicolon",
+			Bytes: []byte(`value="` + d24AllReferences(d24Password, 16, 9, false, false) + `"`)},
+		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "unknown-named-reference",
+			Bytes: []byte(`value="` + strings.ReplaceAll(d24Password, "&", "&AMP;") + `"`)},
+	}
+	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
+	sink := &d24Sink{}
+	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: sink})
+	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
+	if err != nil {
+		t.Fatalf("AuthenticateAndMonitor: %v", err)
+	}
+	mix := s.Report().DispositionMix()
+	if got, want := mix[ArtifactSuppressedCredentialStep], 0; got != want {
+		t.Fatalf("provenance suppressed %d artifact(s), want %d — step 3 types nothing, "+
+			"so if provenance refused these the backstop measured nothing. Mix: %v",
+			got, want, mix)
+	}
+	if got, want := s.Report().CredentialRefusals(), len(out.Artifacts); got != want {
+		t.Fatalf("the backstop refused %d of %d artifact(s). Mix: %v", got, want, mix)
+	}
+	if got := len(sink.stored); got != 0 {
+		t.Fatalf("%d artifact(s) carrying the credential reached the sink: %v",
+			got, sink.stored)
+	}
+	if err := s.Report().AssertNoCredentialWasFound(); err == nil {
+		t.Fatal("AssertNoCredentialWasFound passed on a run in which three artifacts " +
+			"carried the credential")
+	}
+	d24AssertNoCredential(t, "a run with padded character references",
+		d24Emitted(s, audit, sink, err, s.AssertNoCredentialInLedger()))
+}
+
+// d24Base64 is a standard-alphabet base64 encoder written out by hand.
+//
+// It is written out because encoding/base64 is NOT on gate 3's inertImports and
+// this tree may not import it — which is the same reason credentialIn cannot
+// decode base64, and therefore the reason this is the spelling the test below
+// uses to demonstrate that the sweep has a residual at all.
+func d24Base64(s string) string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	d := []byte(s)
+	var b strings.Builder
+	for i := 0; i < len(d); i += 3 {
+		n := len(d) - i
+		v := uint32(d[i]) << 16
+		if n > 1 {
+			v |= uint32(d[i+1]) << 8
+		}
+		if n > 2 {
+			v |= uint32(d[i+2])
+		}
+		b.WriteByte(alphabet[(v>>18)&0x3F])
+		b.WriteByte(alphabet[(v>>12)&0x3F])
+		if n > 1 {
+			b.WriteByte(alphabet[(v>>6)&0x3F])
+		} else {
+			b.WriteByte('=')
+		}
+		if n > 2 {
+			b.WriteByte(alphabet[v&0x3F])
+		} else {
+			b.WriteByte('=')
+		}
+	}
+	return b.String()
+}
+
 // TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl states the division
 // of labour as an executable claim rather than as a comment.
 //
@@ -719,13 +1047,25 @@ func d24UnicodeEscape(s string) string {
 // test would not be measuring the thing it claims to measure.
 func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
 	secrets := d24Steps(t).secrets()
-	// &commat; is a real HTML5 named entity and is NOT one of the six. This is
-	// the "enumeration of encodings is a denylist" limit, demonstrated rather
-	// than asserted: pick any name outside the six and the sweep is blind.
-	beyond := strings.ReplaceAll(d24Password, "&", "&AMP;")
+	// THE RESIDUAL, SPELLED OUT. This used to be a named character reference
+	// outside the six — `&AMP;` — and that spelling is now DECODED, so it
+	// stopped demonstrating anything and this fixture was replaced rather than
+	// the claim being weakened to fit it.
+	//
+	// base64 is what is left. credentialIn cannot decode it because
+	// encoding/base64 is not on gate 3's inertImports, so this package may not
+	// import it — which is also why the encoder below is written out by hand
+	// here. Adding the import is a one-line widening of the egress allowlist in
+	// internal/dast/authz/egress_chokepoint_test.go, is reported to the
+	// orchestrator, and is recorded in internal/SKIPPED-CONTROLS.md (U10).
+	beyond := d24Base64(d24Password)
 	if _, hit := credentialIn([]byte(beyond), secrets); hit {
-		t.Fatal("the sweep decoded a named entity outside the six, so this test no " +
-			"longer demonstrates the limit credentialIn documents; widen the fixture")
+		t.Fatal("the sweep decoded base64, so this test no longer demonstrates the " +
+			"limit credentialIn documents; widen the fixture")
+	}
+	if !strings.Contains(d24Base64("any"), "YW55") {
+		t.Fatalf("d24Base64 does not encode base64, so the fixture is not the "+
+			"encoding this test claims: d24Base64(%q) = %q", "any", d24Base64("any"))
 	}
 
 	out := d24GoodOutcome()
@@ -1203,10 +1543,10 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 			"%q: nothing observed the session in that stretch. Windows: %v",
 			got, AuthStateUnverified, s.Windows())
 	}
-	// A caller that CLAIMS the request carried the session still cannot make
-	// an unverified window authenticated: the window is a ceiling.
+	// A request that DEMONSTRABLY carried the session still cannot make an
+	// unverified window authenticated: the window is a ceiling.
 	if err := s.AssertAllAuthenticated([]CoverageInstant{
-		{At: unverified, CarriedSession: true},
+		s.Carried(unverified, "session cookie attached by the fixture"),
 	}); err == nil {
 		t.Fatal("AssertAllAuthenticated passed on an instant in an unverified window")
 	}
@@ -1217,11 +1557,18 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 		t.Fatalf("an observation inside an authenticated window whose request carried no "+
 			"session is labelled %q, want %q", got, AuthStateSessionNotCarried)
 	}
-	if got := s.CoverageAt(CoverageInstant{At: between, CarriedSession: true}); got !=
+	if got := s.CoverageAt(s.Carried(between, "session cookie attached by the fixture")); got !=
 		AuthStateAuthenticated {
 		t.Fatalf("an observation that DID carry the session inside an authenticated "+
 			"window is labelled %q, want %q — if this is not reachable the assertion "+
 			"above measures nothing", got, AuthStateAuthenticated)
+	}
+	// AND THE CLAIM WITHOUT THE EVIDENCE IS NOT THE EVIDENCE. The same instant,
+	// in the same window, with the exported bool set by hand.
+	if got := s.CoverageAt(CoverageInstant{At: between, CarriedSession: true}); got !=
+		AuthStateSessionNotCarried {
+		t.Fatalf("a struct literal that set CarriedSession widened the label to %q; the "+
+			"seal Session.Carried applies is what CoverageAt must require", got)
 	}
 	if err := s.AssertAllAuthenticated([]CoverageInstant{{At: between}}); err == nil {
 		t.Fatal("AssertAllAuthenticated passed on a request that did not carry the " +
@@ -1231,6 +1578,125 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 
 	d24AssertNoCredential(t, "a run with a mid-scan logout",
 		d24Emitted(s, audit, sink, err))
+}
+
+// d24AuthenticatedWindow returns a session and an instant that sits inside an
+// AUTHENTICATED window of it — two passed liveness observations with the
+// instant between them.
+func d24AuthenticatedWindow(t *testing.T) (*Session, time.Time) {
+	t.Helper()
+	drv := &d24Driver{
+		outcomes: []AuthOutcome{d24GoodOutcome()},
+		probes:   []AuthProbe{d24Alive(), d24Alive()},
+	}
+	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	now := mustClock(t)
+	s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
+	if err != nil {
+		t.Fatalf("AuthenticateAndMonitor: %v", err)
+	}
+	first := lastEventOf(t, s, SessionEventVerified).At()
+	if err := EnsureSessionBeforePhase(context.Background(), s, now); err != nil {
+		t.Fatalf("EnsureSessionBeforePhase: %v", err)
+	}
+	second := lastEventOf(t, s, SessionEventVerified).At()
+	between := first.Add(second.Sub(first) / 2)
+	if got := s.StateAt(between); got != AuthStateAuthenticated {
+		t.Fatalf("the fixture instant is in a %q window, not an authenticated one, so "+
+			"nothing below measures a widening. Windows: %v", got, s.Windows())
+	}
+	return s, between
+}
+
+// TestAnUnsealedCarriageClaimIsNotCoverage is the guard under
+// CoverageInstant.CarriedSession.
+//
+// The field is exported, has no constructor, and moves an observation from
+// AuthStateSessionNotCarried to AuthStateAuthenticated — the one label in this
+// package that means "Anvil looked behind the login". Before the seal, the only
+// thing standing between a caller and that widening was the field's doc
+// comment, and a sentence does not fail a build.
+//
+// The POSITIVE case is asserted first, because every negative below is vacuous
+// if the sealed path cannot reach AuthStateAuthenticated at all.
+func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
+	s, between := d24AuthenticatedWindow(t)
+
+	sealed := s.Carried(between, "session cookie attached by the fixture")
+	if got := s.CoverageAt(sealed); got != AuthStateAuthenticated {
+		t.Fatalf("a SEALED carriage claim inside an authenticated window is labelled "+
+			"%q, want %q — the rest of this test measures nothing if this fails",
+			got, AuthStateAuthenticated)
+	}
+	if sealed.CarriageEvidence() == "" {
+		t.Fatal("a sealed instant does not name the mechanism it was minted with, so a " +
+			"report cannot say why it counted")
+	}
+	// CarriageEvidence is a NEW EXPORTED STRING CHANNEL out of this package, so
+	// it is swept like every other one: a caller that names the credential as
+	// the mechanism gets the refusal marker back, not the credential.
+	leaky := s.Carried(between, "cookie=session; password="+d24Password)
+	if got := leaky.CarriageEvidence(); strings.Contains(got, d24Password) {
+		t.Fatalf("CarriageEvidence returned the credential: %q", got)
+	} else if got != refusedForCredential {
+		t.Fatalf("a mechanism naming the credential rendered as %q, want the whole "+
+			"string refused (%q)", got, refusedForCredential)
+	}
+	if got := s.CoverageAt(leaky); got != AuthStateAuthenticated {
+		t.Fatalf("the refusal changed the LABEL to %q: sweeping the mechanism must not "+
+			"silently drop the evidence, or a leaky caller loses coverage instead of "+
+			"losing the string", got)
+	}
+
+	other, _ := d24AuthenticatedWindow(t)
+	empty := s.Carried(between, "   ")
+	var nilSession *Session
+	for _, tc := range []struct {
+		name string
+		in   CoverageInstant
+	}{
+		{"a struct literal that sets the exported bool",
+			CoverageInstant{At: between, CarriedSession: true}},
+		{"evidence sealed by a DIFFERENT session",
+			other.Carried(between, "session cookie attached by the fixture")},
+		{"a mechanism that names nothing", empty},
+		{"a nil session's evidence", nilSession.Carried(between, "a cookie")},
+		{"an unsealed session's evidence", (&Session{}).Carried(between, "a cookie")},
+		{"the zero value", CoverageInstant{At: between}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := s.CoverageAt(tc.in); got != AuthStateSessionNotCarried {
+				t.Fatalf("%s produced %q, want %q: a coverage claim this session did not "+
+					"seal is not evidence that a request carried it", tc.name, got,
+					AuthStateSessionNotCarried)
+			}
+		})
+	}
+	// The three that mint nothing must also LOOK like nothing, or a caller
+	// reads the bool back and believes it.
+	for _, c := range []CoverageInstant{
+		empty, nilSession.Carried(between, "a cookie"), (&Session{}).Carried(between, "x"),
+	} {
+		if c.CarriedSession || c.CarriageEvidence() != "" {
+			t.Fatalf("a refused mint returned a claim anyway: %+v", c)
+		}
+	}
+	// AND THE DOWNGRADE IS NOT SILENT.
+	err := s.AssertAllAuthenticated([]CoverageInstant{
+		{At: between, CarriedSession: true},
+		sealed,
+	})
+	if err == nil {
+		t.Fatal("AssertAllAuthenticated passed on an unattested carriage claim")
+	}
+	if !strings.Contains(err.Error(), "CLAIMED carriage") {
+		t.Fatalf("the error does not distinguish an unattested claim from an honest "+
+			"false: %v", err)
+	}
+	if !strings.Contains(err.Error(), "1 of 2") {
+		t.Fatalf("the error does not state the count, so the sealed instant beside it "+
+			"was not counted as coverage: %v", err)
+	}
 }
 
 func TestAnUnrecoverableSessionLossIsNotSilent(t *testing.T) {

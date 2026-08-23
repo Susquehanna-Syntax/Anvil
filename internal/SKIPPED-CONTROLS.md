@@ -1781,6 +1781,76 @@ candidates**, not ask each candidate a question it cannot answer.
 
 ---
 
+## U10 — the credential sweep cannot decode base64, because gate 3 forbids the import
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/auth_helper.go` (`credentialIn`, `sweepForms`, `decodeEntities`), `internal/dast/inventory/auth_helper_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. What is absent is a decoder |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a credential base64-encoded inside an artifact attached to a step that types no credential is caught by the BACKSTOP SWEEP. It is not. It is caught by nothing |
+| **Security control?** | **Yes**, and it is the second of the two. The first — `Session.credentialWasInFlight`, which refuses every artifact of a step that types a secret without reading its bytes — is unaffected and is what actually holds |
+| **Verdict** | **OPEN, and it needs an edit this worker may not make.** One line in `internal/dast/authz/egress_chokepoint_test.go` |
+
+### What this is, and why it is not just another missing decoder
+
+The sweep canonicalises the haystack — percent, backslash and HTML character
+references, to a fixpoint, under both readings of `+` and both readings of an
+unresolvable reference — and searches for the credential's actual value in
+every form. On 2026-08-23 the character-reference half was rebuilt: numeric
+references have no digit ceiling, the semicolon-less form HTML5 permits is
+handled, and a named reference the six-entry table cannot resolve becomes one
+wildcard rune that matches any one character, so **the table's length is no
+longer the encoder's budget**.
+
+That left base64 as the only spelling with nothing behind it. It is not a
+hypothetical: `AuthArtifactStorageState` is JSON by definition and base64 is how
+JSON carries bytes.
+
+### What would settle it
+
+```go
+// internal/dast/authz/egress_chokepoint_test.go, in inertImports:
+"encoding/base64":     "byte encoding",
+```
+
+Gate 3 is an **allowlist**: a stdlib import in the DAST tree that is not on
+`inertImports` turns the build red BY DESIGN, and that redness is the review
+this widening is supposed to get. `encoding/hex`, `encoding/csv`,
+`encoding/json`, `encoding/binary` and `encoding/xml` are all already on the
+list with a one-phrase reason, and `encoding/base64` is inert in exactly the
+same way — it has no dialer, no listener and no transport. **This worker's
+write scope did not include that file, so it is reported rather than edited.**
+The decoder that would follow is another pipeline in `sweepForms`, under the
+same fixpoint bound.
+
+### Why the residual is stated here rather than qualified away in a comment
+
+`TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl` used to demonstrate
+this limit with a named character reference outside the six (`&AMP;`). That
+spelling is now decoded, so the fixture stopped measuring anything and was
+**replaced with base64** rather than the claim being softened to fit it. The
+test hand-rolls a base64 encoder — for the same reason the sweep cannot decode
+one — and asserts that the artifact reaches the sink, that the sweep refuses
+nothing, and that the run's own report says so instead of reporting clean.
+
+### What is NOT on this list any more
+
+A named character reference outside the six predefined ones. It was on it, and
+the comment that put it there also claimed the numeric forms beside it were
+"decoded generically". Measured against the decoder that stood there: the
+reference body was capped at eight bytes, so with this file's own credential
+four decimal leading zeros decoded and five did not, and no semicolon-less
+spelling decoded at any width. **231 of 246 generated spellings were invisible
+to the sweep**. What that costs at the sink is measured rather than reasoned:
+with the reference decoder disabled,
+`TestAPaddedReferenceOnAnInnocentStepIsRefused` reports `the backstop refused 0
+of 3 artifact(s). Mix: map[stored:3]` — three artifacts carrying the
+credential, attached to a step the provenance rule permits, stored. That is closed, and the same test now refuses all three.
+
+---
+
 ## L1 — `TestCollectAgainstTheRealHost`
 
 | | |
@@ -1952,7 +2022,7 @@ Skips still firing on this host, all classified LEGITIMATE above:
 
 Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
 G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**, U6, U7,
-U8, U9.
+U8, U9, U10.
 
 U9 is the newest and it is the widest. Every guard in D.26 (coverage) and D.27
 (the finding confirmation gate) runs in **zero production lanes** — measured,
