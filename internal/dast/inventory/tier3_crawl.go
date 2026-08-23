@@ -120,6 +120,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/dast/authz"
 	"github.com/Susquehanna-Syntax/Anvil/internal/dast/engines"
@@ -1694,6 +1695,40 @@ func resolveLinkPath(target authz.Target, from, href string) (string, error) {
 	if !strings.HasPrefix(p, "/") {
 		return "", fmt.Errorf("the resolved path %q does not begin with \"/\"", redact(p))
 	}
+
+	// CANONICALIZE BEFORE MATCHING. url.ResolveReference above removed the dot
+	// segments a link spelled LITERALLY; it left every ENCODED spelling of one
+	// standing, because "%2e%2e" is an ordinary path segment to a URL resolver
+	// and a parent reference to every browser. Everything downstream of here —
+	// gate 11's narrowing, the exclusion list, the visited set, the kernel's
+	// own path validation — is a MATCH against these bytes, so a spelling that
+	// is normalized after the match is not normalized at all.
+	spelled, serr := dotSegmentsSpelledPlainly(p)
+	if serr != nil {
+		return "", serr
+	}
+	if spelled != p {
+		// Resolve the rewritten spelling THE SAME WAY the literal one was
+		// resolved, through the same url.ResolveReference. This file adds no
+		// dot-segment resolver of its own: the rewrite above only changes how
+		// a parent reference is SPELLED, and the resolution stays Go's, which
+		// is the one the literal route already used.
+		ref, perr := url.Parse(spelled)
+		if perr != nil {
+			return "", fmt.Errorf("the link's canonical spelling %q does not parse: %v",
+				redact(spelled), perr)
+		}
+		root := &url.URL{Scheme: base.Scheme, Host: base.Host, Path: "/"}
+		p = root.ResolveReference(ref).EscapedPath()
+		if p == "" {
+			p = "/"
+		}
+		if !strings.HasPrefix(p, "/") {
+			return "", fmt.Errorf("the canonical path %q does not begin with \"/\"",
+				redact(p))
+		}
+	}
+
 	// The FRAGMENT is dropped here and never travels: it does not reach the
 	// server, so "/a#x" and "/a" are one request and keeping it would put a
 	// byte on the wire the browser would not have sent.
@@ -1707,6 +1742,109 @@ func resolveLinkPath(target authz.Target, from, href string) (string, error) {
 		p += "?" + q
 	}
 	return p, nil
+}
+
+// errLinkAmbiguous is the sentinel for a link whose canonical identity is not
+// one value: two conforming intermediaries would read it as two different
+// paths, so Anvil requests neither.
+var errLinkAmbiguous = errors.New("the link's canonical identity is ambiguous")
+
+// dotSegmentsSpelledPlainly rewrites every ENCODED spelling of "." and ".."
+// into the literal segment, and REFUSES every spelling whose canonical
+// identity is not a single value.
+//
+// # Why this exists at all
+//
+// THIS IS THE THIRD TIME THIS BUILD HAS LOST TO A NON-CANONICAL SPELLING —
+// gate 8 encodes the lesson, containment lost to ::ffff:169.254.169.254/128,
+// and D.25 measured this crawl fetching "/%2e%2e/admin" while refusing the
+// plain "/admin" that gate 11 had removed. Every browser resolves the first to
+// the second. A control that matches on bytes the client will re-interpret is
+// matching on the wrong bytes.
+//
+// # What it does NOT do
+//
+// It does not remove dot segments. url.URL.ResolveReference does that, in
+// resolveLinkPath, for links and hops alike; this function only changes how a
+// parent reference is SPELLED so that the resolver already in the path can see
+// it. A second dot-segment resolver here is a second thing that can disagree
+// with the first, and the disagreement would be silent.
+//
+// It also does not decode the path. A segment that is not a dot segment is
+// returned byte-for-byte as the link spelled it, so the request that leaves is
+// the request the link named and the kernel's charset rule still judges the
+// bytes that would actually be sent.
+//
+// # The three refusals, all of them fail-closed
+//
+// Each is a spelling for which "what path is this" has more than one correct
+// answer, so there is no canonical form to match gate 11 against:
+//
+//	AN ENCODED SEPARATOR ("..%2f", "%2e%2e%2fadmin", "x%5C..%5Cadmin").
+//	One decode turns it into a segment boundary, and a proxy that decodes
+//	before routing and an origin that decodes after disagree about how many
+//	segments the path has. The backslash is included because a browser and a
+//	Windows origin both treat it as a separator.
+//
+//	A DOUBLY-ENCODED DOT SEGMENT ("%252e%252e"). A browser decodes once, so
+//	this is the ordinary segment "%2e%2e"; an origin that decodes twice reads
+//	"..". Anvil cannot know which, and guessing in the permissive direction is
+//	how the walk-off happens.
+//
+//	AN OVERLONG OR OTHERWISE INVALID ENCODING ("%c0%ae"). It decodes to bytes
+//	that are not valid UTF-8, which some decoders fold to "." and others
+//	reject.
+//
+// Every refusal lands in the ledger as CrawlOutcomeLinkUnusable with the
+// reason, because a link Anvil saw and would not request is a fact about the
+// target an operator gets to read.
+// separatorBytes is the set of bytes a client may treat as a path
+// separator: the slash, and the backslash that a browser and a Windows
+// origin both fold to one. The backslash is written FIRST so this stays a
+// character set and not a path literal — TestTheOnlyPathLiteralsInThisTierAreTheExclusionList
+// refuses a path constant in this file, and it is right to.
+const separatorBytes = "\\/"
+
+func dotSegmentsSpelledPlainly(escapedPath string) (string, error) {
+	const dot, dotDot = ".", ".."
+	segs := strings.Split(escapedPath, "/")
+	out := make([]string, len(segs))
+	for i, seg := range segs {
+		dec, derr := url.PathUnescape(seg)
+		if derr != nil {
+			return "", fmt.Errorf("%w: segment %q is not a valid percent-encoding: %v",
+				errLinkAmbiguous, redact(seg), derr)
+		}
+		if strings.ContainsAny(dec, separatorBytes) {
+			return "", fmt.Errorf("%w: segment %q carries an ENCODED SEPARATOR. A proxy "+
+				"that decodes before routing and an origin that decodes after do not "+
+				"agree on how many segments this path has, so there is no single "+
+				"canonical form to match gate 11's narrowing against",
+				errLinkAmbiguous, redact(seg))
+		}
+		if !utf8.ValidString(dec) {
+			return "", fmt.Errorf("%w: segment %q decodes to bytes that are not valid "+
+				"UTF-8. An overlong encoding of \".\" is folded to a dot segment by some "+
+				"decoders and rejected by others", errLinkAmbiguous, redact(seg))
+		}
+		if again, aerr := url.PathUnescape(dec); aerr == nil && again != dec &&
+			(again == dot || again == dotDot || strings.ContainsAny(again, separatorBytes)) {
+			return "", fmt.Errorf("%w: segment %q is a DOUBLY-ENCODED dot segment or "+
+				"separator. A browser decodes once and reads an ordinary segment; an "+
+				"origin that decodes twice reads a parent reference",
+				errLinkAmbiguous, redact(seg))
+		}
+		switch dec {
+		case dot, dotDot:
+			// The one rewrite: spell it the way the resolver in
+			// resolveLinkPath can see it. "%2e%2e" and ".." are the same
+			// request to every client that will ever issue it.
+			out[i] = dec
+		default:
+			out[i] = seg
+		}
+	}
+	return strings.Join(out, "/"), nil
 }
 
 // stripQuery returns the address half of a request path: everything before the

@@ -1654,7 +1654,7 @@ func c23Source(t *testing.T) string {
 func TestTier3OpensNothing(t *testing.T) {
 	allowed := map[string]bool{
 		`"context"`: true, `"errors"`: true, `"fmt"`: true, `"net/url"`: true,
-		`"sort"`: true, `"strings"`: true, `"time"`: true,
+		`"sort"`: true, `"strings"`: true, `"time"`: true, `"unicode/utf8"`: true,
 		`"github.com/Susquehanna-Syntax/Anvil/internal/dast/authz"`:   true,
 		`"github.com/Susquehanna-Syntax/Anvil/internal/dast/engines"`: true,
 		`"github.com/Susquehanna-Syntax/Anvil/internal/record"`:       true,
@@ -1801,5 +1801,197 @@ func TestTheCanonicalizerIsD20sAndNotASecondOne(t *testing.T) {
 	if !strings.Contains(src, "authz.Canonicalize(") {
 		t.Fatal("tier3_crawl.go does not compare hosts through authz.Canonicalize, so it " +
 			"holds a second opinion about what two hosts being equal means")
+	}
+}
+
+// ===========================================================================
+// NON-CANONICAL SPELLINGS — the third time this codebase has lost to one
+// ===========================================================================
+
+// c23DotSpellings is every spelling of a dot segment a link or a Location
+// header can carry. Each one resolves, in a browser, to a path the fixture
+// robots.txt has removed from scope.
+//
+// The list is the GENERATOR, and a generator that cannot produce the breaking
+// input is the defect: it carries the three spellings the D.25 critic measured
+// AND the ones it did not — double-encoded, mixed case, overlong, backslash
+// separators, and a triple that only becomes a dot segment after two decodes.
+func c23DotSpellings() []string {
+	return []string{
+		"/%2e%2e/admin",
+		"/x/%2e%2e/admin",
+		"/.%2e/admin",
+		"/%2E%2E/admin",
+		"/%2e./admin",
+		"/x/%2e%2e/%2e%2e/admin",
+		"/%252e%252e/admin",
+		"/%c0%ae%c0%ae/admin",
+		"/x\\..\\admin",
+		"/x/..%2fadmin",
+		"/%2e%2e%2fadmin",
+	}
+}
+
+// TestANonCanonicalSpellingOfARemovedPathIsNeverRequested.
+//
+// Gate 11's narrowing removed /admin. A browser resolves every spelling in
+// c23DotSpellings to /admin or to a path under it, so a crawl that requests
+// any of them has walked outside the narrowed scope by spelling alone.
+func TestANonCanonicalSpellingOfARemovedPathIsNeverRequested(t *testing.T) {
+	const body = "User-agent: *\nDisallow: /admin\n"
+	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
+	if policy.PermitsPath("/admin") {
+		t.Fatal("the fixture robots.txt does not actually disallow /admin, so this test " +
+			"would pass against a crawler with no narrowing at all")
+	}
+	links := append([]string{"/admin"}, c23DotSpellings()...)
+	spider := c23Linking(map[string][]string{"/": links})
+	res := c23Run(t, c23Config(t, c23Opts{
+		spider: spider, robots: body, robotsPol: &policy, maxPages: 200,
+	}))
+
+	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/"}) {
+		t.Fatalf("the spider was asked for %v, want only the seed. Every extra entry is "+
+			"a spelling of a path gate 11 removed, requested because the narrowing was "+
+			"matched against the literal bytes instead of the canonical form", got)
+	}
+	// ASSERT THE COUNT: one row per offered link, none of them silent.
+	if got, want := len(res.Visits()), 1+len(links); got != want {
+		t.Fatalf("the ledger has %d row(s) and %d link(s) were offered plus the seed; a "+
+			"spelling that was dropped without a row is one an operator cannot audit: %v",
+			got, want, c23Ledger(res))
+	}
+	for _, sp := range links {
+		if c23HasRoute(res, sp) {
+			t.Fatalf("%q became a crawl route; a spelling of a removed path is not "+
+				"surface this crawl may report", sp)
+		}
+	}
+	if c23HasRoute(res, "/admin") {
+		t.Fatal("/admin became a crawl route through an encoded spelling")
+	}
+}
+
+// TestANonCanonicalLocationHeaderIsNeverFollowed is the same measurement on
+// the REDIRECT route, which reaches offer() through a different caller and
+// with a different origin label.
+func TestANonCanonicalLocationHeaderIsNeverFollowed(t *testing.T) {
+	const body = "User-agent: *\nDisallow: /admin\n"
+	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
+	for _, loc := range c23DotSpellings() {
+		spider := &c23Spider{
+			pages: map[string]CrawlPage{
+				"/": {Status: 302, Location: loc, Latency: time.Millisecond},
+			},
+			def: CrawlPage{Status: 200},
+		}
+		res := c23Run(t, c23Config(t, c23Opts{
+			spider: spider, robots: body, robotsPol: &policy, maxPages: 200,
+		}))
+		if got := spider.paths(); !reflect.DeepEqual(got, []string{"/"}) {
+			t.Fatalf("a Location of %q made the crawl request %v; the hop must be "+
+				"canonicalized before gate 11's narrowing is matched", loc, got)
+		}
+		if len(res.Visits()) != 2 {
+			t.Fatalf("a Location of %q produced %d ledger row(s), want 2 (the seed and "+
+				"the refused hop): %v", loc, len(res.Visits()), c23Ledger(res))
+		}
+	}
+}
+
+// TestEachNonCanonicalSpellingIsClassifiedRatherThanMerelyDropped.
+//
+// "It was not requested" is two different facts and an operator needs to know
+// which: a spelling Anvil RESOLVED and then found outside the narrowed scope is
+// gate 11 doing its job, and a spelling Anvil REFUSED TO RESOLVE is a link
+// whose canonical identity is not one value. The ledger says which, per link.
+func TestEachNonCanonicalSpellingIsClassifiedRatherThanMerelyDropped(t *testing.T) {
+	const body = "User-agent: *\nDisallow: /admin\n"
+	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
+
+	cases := []struct {
+		link string
+		want CrawlOutcome
+		why  string
+	}{
+		{"/%2e%2e/admin", CrawlOutcomeOutsideNarrowedScope, "one decode gives \"..\""},
+		{"/x/%2e%2e/admin", CrawlOutcomeOutsideNarrowedScope, "one decode gives \"..\""},
+		{"/.%2e/admin", CrawlOutcomeOutsideNarrowedScope, "half-encoded \"..\""},
+		{"/%2E%2E/admin", CrawlOutcomeOutsideNarrowedScope, "uppercase hex digits"},
+		{"/%2e./admin", CrawlOutcomeOutsideNarrowedScope, "the other half-encoding"},
+		{"/x/%2e%2e/%2e%2e/admin", CrawlOutcomeOutsideNarrowedScope, "two parents"},
+		{"/%252e%252e/admin", CrawlOutcomeLinkUnusable, "doubly encoded: ambiguous"},
+		{"/%c0%ae%c0%ae/admin", CrawlOutcomeLinkUnusable, "overlong: not valid UTF-8"},
+		{"/x\\..\\admin", CrawlOutcomeLinkUnusable, "encoded backslash separator"},
+		{"/x/..%2fadmin", CrawlOutcomeLinkUnusable, "encoded slash separator"},
+		{"/%2e%2e%2fadmin", CrawlOutcomeLinkUnusable, "parent plus encoded slash"},
+	}
+	for _, tc := range cases {
+		spider := c23Linking(map[string][]string{"/": {tc.link}})
+		res := c23Run(t, c23Config(t, c23Opts{
+			spider: spider, robots: body, robotsPol: &policy,
+		}))
+		if spider.calls != 1 {
+			t.Fatalf("%q: the spider was called %d time(s), want 1 (the seed alone): %v",
+				tc.link, spider.calls, spider.paths())
+		}
+		var got []CrawlVisit
+		for _, v := range res.Visits() {
+			if v.Outcome() != CrawlOutcomeFetched {
+				got = append(got, v)
+			}
+		}
+		if len(got) != 1 {
+			t.Fatalf("%q: %d non-fetched ledger row(s), want exactly 1: %v",
+				tc.link, len(got), c23Ledger(res))
+		}
+		if got[0].Outcome() != tc.want {
+			t.Fatalf("%q (%s): the ledger says %q, want %q. Detail: %s",
+				tc.link, tc.why, got[0].Outcome(), tc.want, got[0].Detail())
+		}
+	}
+}
+
+// TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount.
+//
+// The counterweight to the refusals above, and the reason this is a
+// canonicalization rather than a denylist of suspicious spellings: an encoded
+// parent reference that resolves to a path the narrowing PERMITS is still
+// crawled — once, at its canonical spelling, and not a second time under the
+// spelling the link used.
+func TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount(t *testing.T) {
+	const body = "User-agent: *\nDisallow: /admin\n"
+	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
+	spider := c23Linking(map[string][]string{
+		"/": {"/x/%2e%2e/public", "/public", "/%2e/public", "/caf%c3%a9"},
+	})
+	res := c23Run(t, c23Config(t, c23Opts{
+		spider: spider, robots: body, robotsPol: &policy,
+	}))
+
+	got := spider.paths()
+	sort.Strings(got)
+	want := []string{"/", "/caf%c3%a9", "/public"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("the spider was asked for %v, want %v. Three spellings of /public are "+
+			"ONE address, and a percent-encoded segment that is not a dot segment is an "+
+			"ordinary path that must still be crawled", got, want)
+	}
+	if !c23HasRoute(res, "/public") {
+		t.Fatalf("/public is not in the inventory: %v", c23RoutePaths(res))
+	}
+	if c23HasRoute(res, "/x/%2e%2e/public") {
+		t.Fatal("the pre-canonical spelling became a second route, which is one endpoint " +
+			"counted twice in the coverage denominator")
+	}
+	// ASSERT THE COUNT: four links plus the seed, and /public reached once.
+	n := 0
+	for _, v := range res.Visits() {
+		if v.CanonicalPath() == "/public" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("/public has %d ledger row(s), want 1: %v", n, c23Ledger(res))
 	}
 }
