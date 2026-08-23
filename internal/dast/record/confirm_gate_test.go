@@ -3199,8 +3199,16 @@ func TestEveryTestNamedInASourceCommentExists(t *testing.T) {
 // outcome=rejected, reason=did_not_reproduce_on_any_attempt, confidence
 // 0.000 — byte-for-byte indistinguishable from one of the 88 phantoms. The
 // ledger then reported FindingCountForStatus()==0 and derived
-// completed_clean over a live vulnerability. ENFORCED BY decide,
+// completed_clean over a live vulnerability. ENFORCED BY ConfirmFinding,
 // MEASURED BY TestARateLimitedReprobeIsNotADisproof.
+//
+// THAT CITATION USED TO NAME decide AND IT WAS SELF-CERTIFYING. A citation
+// standing in a test's own doc comment, measured by that same test, passed
+// the aptness check on the strength of the words "decide()" in the paragraph
+// above it — the claim was certifying itself. Under ruling 17 the check reads
+// the cited test's SYNTAX TREE, where a comment leaves no trace, so the
+// citation now has to name something this test's code names: ConfirmFinding,
+// which every case below drives, and which reaches decide.
 //
 // The neighbours are here for the reason the encodings lesson is in this
 // file's header: 429 is one spelling of "the target did not answer as the
@@ -3495,9 +3503,23 @@ func TestAssertNotSilentlyCleanSeesUnconfirmedAndRefusedAndNotOnlyOne(t *testing
 //
 // The count was unreachable: MEASURED by sweeping ConfirmAll over 26 statuses
 // crossed with {the signature matches, the signature does not match} — 52 runs
-// — it returned non-zero zero times, because decide()'s rule 2 routes every
-// indecisive run to ReasonReprobeIndecisive before ReasonDidNotReproduce can
-// be reached. The report that called it "the second line of
+// — it returned non-zero zero times.
+//
+// THE REASON THIS PARAGRAPH USED TO GIVE FOR THAT WAS FALSE IN BOTH HALVES,
+// AND IT WAS THE SECOND COPY OF A SENTENCE CORRECTED 1,331 LINES AWAY IN
+// confirm_gate.go WHILE THIS ONE STOOD. The withdrawn wording is quoted and
+// refuted once, at assertRejectionIsDecisive, and it is entry 1 of
+// withdrawnPhrasings so that neither copy can be corrected without the other:
+// TestNoWithdrawnPhrasingSurvivesAsLiveProse fails on the wording itself, in
+// any file of this package, at any line wrapping.
+//
+// The route that DOES make the count unreachable: ReasonDidNotReproduce is
+// the only reason outcomeForReason maps to OutcomeRejected, and no indecisive
+// run arrives at it. Rule 3 takes an indecisive run with no match to
+// ReasonReprobeIndecisive, and an indecisive run that also carries an
+// over-broad match is taken earlier still, by rule 2, to
+// ReasonMatchQuotedTheResponse. Either way ConfirmFinding cannot produce the
+// value that method counted. The report that called it "the second line of
 // AssertNotSilentlyClean" was describing a control that cannot fire.
 //
 // assertRejectionIsDecisive states the same invariant where it CAN fire: it
@@ -7877,15 +7899,43 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 //	              declares; <Test...> resolves against every Test function in
 //	              this module. A rename that breaks either one turns this red
 //	              in the same commit.
-//	THE APTNESS   the declaration of <Test...> — doc comment and body —
-//	              mentions <identifier>. This is the part that makes it more
-//	              than a spell-check: a citation cannot name a real rule and a
-//	              real test that never touches it. The doc comment is inside
-//	              the window on purpose and at a price, both measured at
-//	              declaredTestsInModule.
+//	THE APTNESS   <identifier> is among the identifiers the declaration of
+//	              <Test...> REFERENCES — the ast.Ident nodes of its code. This
+//	              is the part that makes it more than a spell-check: a
+//	              citation cannot name a real rule and a real test that never
+//	              touches it.
 //
-// Every citation in a paragraph is checked, not just one, so a resolving
-// citation cannot launder a broken one standing next to it.
+// ===========================================================================
+// RULING 17: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
+// ===========================================================================
+//
+// THE APTNESS ARM SHIPPED WITH THE DEFECT RULING 16 HAD JUST REMOVED FROM THE
+// LAYER ABOVE IT. It asked whether the cited test's SOURCE mentioned the
+// enforcer, and it asked by text search — so an enforcer spelled like an
+// English word was mentioned by any test whose prose used the word. A
+// citation naming decide and a test in internal/match about advisory return
+// order passed. NAMES ARE WORDS, and a text search over source cannot
+// separate a reference from a sentence any more than a case boundary could
+// separate a name from a noun.
+//
+// So the question is put to the TREE. A comment contributes no ast.Ident, so
+// prose is not in the reference set and the check is decidable rather than
+// approximate. The withdrawn rule is still compiled — it is `mentions` — and
+// the_text_search_this_replaced_still_admits_the_attack drives it at that
+// exact citation on every run, beside the shipped rule refusing it.
+//
+// DIRECT REFERENCES ONLY. Ruling 17 allows one hop through same-package
+// helpers instead; that rule was built and counted and it is the LOOSEST of
+// the three, admitting more pairs than the text search it would replace, as
+// well as turning case 6 green. Both facts are asserted by
+// the_one_hop_rule_this_rejected_is_measurably_looser, and what direct-only
+// costs is asserted by cases 22 and 23. The reasoning is at
+// declaredTestsInModule.
+//
+// EVERY CITATION IN THE TWO OWNED FILES IS RESOLVED, whether or not the
+// paragraph holding it states a relation; the arithmetic scan alone reached
+// only the ones inside claim paragraphs, and two of the citations outside
+// them were inapt. See every_citation_in_an_owned_file_resolves_and_is_apt.
 //
 // ===========================================================================
 // EXACTLY WHAT IT CAN SEE, AND EXACTLY WHAT IT CANNOT
@@ -7896,10 +7946,36 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // edge of it is asserted below rather than described.
 //
 // IT SEES a comparison operator — `<=`, `>=`, `==`, `!=`, or a space-delimited
-// `<` or `>` — in a `//` comment in confirm_gate.go or confirm_gate_test.go.
-// Paragraphs are split on blank comment lines, and a godoc display block
+// `<` or `>` — surviving in a comment paragraph of confirm_gate.go or
+// confirm_gate_test.go AFTER commentProse has been applied to every line of
+// it. Paragraphs are split on blank comment lines, and a godoc display block
 // (every line tab-indented) is folded into the prose paragraph that introduces
 // it, because a bare indented equation cannot carry a citation of its own.
+//
+// "SURVIVING" AND "AFTER" ARE THE WHOLE OF IT, AND THIS SENTENCE USED TO SAY
+// NEITHER. It read that the scanner sees an operator "in a `//` comment in
+// confirm_gate.go or confirm_gate_test.go", which overstates the window in
+// two directions and MEASURING IT IS THE ONLY WAY TO KNOW BY HOW MUCH:
+//
+//	176 of the two files' 5,964 comment lines carry a comparison operator in
+//	their RAW text. The scanner counts 40 of them, inside 20 claim
+//	paragraphs. The other 136 are not seen, and NONE of them is unexplained:
+//	118 are banner rules, where a line of equals signs is literally a row of
+//	`==` and commentProse blanks it, and 18 are operators inside backticks or
+//	double quotes, which commentProse removes. There is no third cause.
+//	The counts are produced, not remembered, by
+//	the_window_is_exactly_what_commentProse_leaves.
+//
+// A BLANKED LINE ALSO SPLITS A PARAGRAPH, which is why the banner arm is
+// worth stating rather than waving at: a rule of equals signs between a claim
+// and its citation puts them in different paragraphs, and the claim is then
+// reported uncited. That direction fails loudly and is safe. The unsafe
+// direction is the one the corrected sentence names — an operator that does
+// not survive commentProse is an operator this guard never had.
+//
+// IT ALSO READS BLOCK COMMENTS, not only `//` ones; there are 2 such lines in
+// the two files. The old sentence excluded them in prose while the code read
+// them, which is the smaller half of the same error.
 //
 // IT DOES NOT SEE, and each of these is a real hole:
 //
@@ -7926,13 +8002,20 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 //	A TIGHT `<` OR `>`. `<h1[0-9A-Za-z]{0,400}` is an HTML tag and `len(x)>0`
 //	    is a code fragment. Requiring spaces is what keeps those out, and it
 //	    is also how an author could hide a claim from this guard.
-//	AN ENFORCER MENTIONED ONLY IN THE CITED TEST'S OWN PROSE. The aptness
-//	    check reads the test's declaration as SOURCE, so a doc comment naming
-//	    the enforcer satisfies it where no line of that test touches the rule.
-//	    Reading only executable code refuses every test that drives its rule
-//	    through a helper, which is most of them here; that was measured before
-//	    it was conceded, at declaredTestsInModule, and the concession is
-//	    asserted by case 20 below.
+//	A SECOND RELATION IN A PARAGRAPH THAT ALREADY CARRIES A CITATION. Every
+//	    CITATION is checked, so a resolving one cannot launder a broken one
+//	    beside it — case 11. THE CONVERSE IS FALSE and it is where most of
+//	    this file already sits: the unit checked is the PARAGRAPH, so one
+//	    citation covers however many relations are written under it. MEASURED
+//	    by one_citation_still_covers_every_relation_in_its_paragraph: 12 of
+//	    the 20 claim paragraphs state more than one, and the widest states
+//	    seven. Splitting the unit at the sentence was not attempted; the
+//	    counts are here so nobody has to guess what that would be worth.
+//	A COINCIDENTAL SPELLING IN ANOTHER PACKAGE. Aptness resolves names, not
+//	    symbols, so a test in a package that has never heard of this one
+//	    satisfies a citation by binding a variable with the same spelling.
+//	    Case 24 asserts it against a real one. Locally bound names inside the
+//	    cited test count as references for the same reason.
 //	coverage.go AND coverage_test.go, which are in this package and outside
 //	    D.27's write scope. Widening the window is one entry in `owned` below;
 //	    the reason it has not been widened is scope, not difficulty. What that
@@ -7943,7 +8026,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 	// The files this packet owns. See the window disclosure above.
 	owned := map[string]bool{"confirm_gate.go": true, "confirm_gate_test.go": true}
 
-	tests := declaredTestsInModule(t)
+	tests, callees := declaredTestsInModule(t)
 	fset := token.NewFileSet()
 	idents, files := declaredIdentsInPackage(t, fset)
 
@@ -7971,6 +8054,117 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			"few is not reading them", claims, len(owned))
 	}
 	t.Logf("resolved %d arithmetic claims; %d uncited", claims, uncited)
+
+	// ===================================================================
+	// EVERY CITATION, NOT ONLY THE ONES STANDING IN A CLAIM. The scan
+	// above only opens a paragraph that carries a comparison operator, so
+	// a citation in a paragraph arguing in English was never resolved at
+	// all — MEASURED: the two owned files carry 31 citations and the
+	// arithmetic scan checks 25 of them. Six sat outside the window, and
+	// TWO OF THE SIX WERE INAPT, including the self-certifying one case 21
+	// is about. A citation is a promise to the reader wherever it is
+	// written, so all of them are resolved here.
+	// ===================================================================
+	t.Run("every_citation_in_an_owned_file_resolves_and_is_apt", func(t *testing.T) {
+		checked, inClaims := 0, 0
+		for name, f := range files {
+			if !owned[name] {
+				continue
+			}
+			for _, g := range f.Comments {
+				for _, p := range paragraphsOf(fset, g) {
+					text := strings.Join(p.lines, "\n")
+					cites := citationForm.FindAllStringSubmatch(text, -1)
+					if relationOp.MatchString(text) {
+						inClaims += len(cites)
+					}
+					for _, c := range cites {
+						checked++
+						if d := citationDefect(idents, tests, c[1], c[2]); d != "" {
+							t.Errorf("%s:%d %s.\n    %s", name, p.line, d,
+								strings.TrimSpace(p.lines[0]))
+						}
+					}
+				}
+			}
+		}
+		t.Logf("resolved %d citations across the owned files; %d of them stand in a "+
+			"paragraph the arithmetic scan opens", checked, inClaims)
+		for _, tc := range []struct {
+			what      string
+			got, want int
+		}{
+			{"citations in the owned files", checked, 31},
+			{"of those, ones the arithmetic scan reaches", inClaims, 25},
+		} {
+			if tc.got != tc.want {
+				t.Errorf("%s: %d, and the disclosure above says %d. Move the sentence "+
+					"in this diff", tc.what, tc.got, tc.want)
+			}
+		}
+		if checked <= inClaims {
+			t.Fatal("this arm no longer reaches any citation the arithmetic scan " +
+				"misses, so it is duplicating work; delete it and the paragraph above " +
+				"it rather than keeping a green tautology")
+		}
+	})
+
+	// ===================================================================
+	// THE ANTI-LAUNDERING PROPERTY, IN BOTH DIRECTIONS. The disclosure
+	// above says a resolving citation cannot launder a broken one beside
+	// it. TRUE, and case 11 drives it. THE CONVERSE IS FALSE and it was
+	// stated nowhere: the unit checked is the PARAGRAPH, so one citation
+	// covers every relation written in it, however many there are. The
+	// count is produced here rather than described.
+	// ===================================================================
+	t.Run("one_citation_still_covers_every_relation_in_its_paragraph", func(t *testing.T) {
+		multi, single := 0, 0
+		worst := 0
+		for name, f := range files {
+			if !owned[name] {
+				continue
+			}
+			for _, g := range f.Comments {
+				for _, p := range paragraphsOf(fset, g) {
+					text := strings.Join(p.lines, "\n")
+					n := len(relationOp.FindAllString(text, -1))
+					if n == 0 {
+						continue
+					}
+					if n > 1 {
+						multi++
+					} else {
+						single++
+					}
+					if n > worst {
+						worst = n
+					}
+				}
+			}
+		}
+		t.Logf("%d of %d claim paragraphs state more than one relation; the most "+
+			"any single paragraph states is %d, and one citation covers all of it",
+			multi, multi+single, worst)
+		if multi == 0 {
+			t.Fatal("no owned paragraph states more than one relation any more. That " +
+				"would make the citation-per-claim ratio one, and the concession this " +
+				"subtest exists to measure would be gone — delete it and the sentence " +
+				"it measures rather than keeping a green zero")
+		}
+		for _, tc := range []struct {
+			what      string
+			got, want int
+		}{
+			{"claim paragraphs stating more than one relation", multi, 12},
+			{"claim paragraphs in the owned files", multi + single, 20},
+			{"relations in the widest single paragraph", worst, 7},
+		} {
+			if tc.got != tc.want {
+				t.Errorf("%s: %d, and the hole disclosed above says %d. Move the "+
+					"sentence in this diff", tc.what, tc.got, tc.want)
+			}
+		}
+	})
 
 	// ===================================================================
 	// THE WINDOW, ASSERTED. Every line of the disclosure above is a claim
@@ -8045,15 +8239,18 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 		},
 		{
 			name:   "6_a_real_enforcer_and_a_real_test_that_never_touches_it",
-			defect: "never mentions that enforcer",
+			defect: "references that enforcer",
 			src: "package p\n" +
 				"// q <= 256 always. ENFORCED BY matchQuotesMoreThanItSpells,\n" +
 				"// MEASURED BY TestModelInferenceIsNeverConfirmed.\n" +
 				"func f() {}\n",
 			want: 1,
 			why: "THE APTNESS CHECK, and the reason this is more than a spell-check. " +
-				"Both names resolve. The test is real and green. Its body has nothing " +
-				"to do with the over-broadness rule, so the citation is a dead end",
+				"Both names resolve. The test is real and green. Its code has nothing " +
+				"to do with the over-broadness rule, so the citation is a dead end. " +
+				"IT IS ALSO THE CASE THAT DISQUALIFIED ONE-HOP: that test drives " +
+				"ConfirmFinding, ConfirmFinding consults this enforcer, and a rule " +
+				"following the production call graph would report this paragraph clean",
 		},
 		{
 			name:   "7_the_verifiers_attack_citing_only_english_nouns",
@@ -8201,16 +8398,80 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				"DOES NOT DO, asserted rather than conceded in prose",
 		},
 		{
-			name: "20_a_test_that_mentions_the_enforcer_only_in_its_doc_comment",
+			name:   "20_a_test_that_mentions_the_enforcer_only_in_its_doc_comment",
+			defect: "references that enforcer",
 			src: "package p\n" +
 				"// The floor is not MaxSpanBytes, so q <= 256 rather than 512.\n" +
 				"// ENFORCED BY shapeWalk,\n" +
 				"// MEASURED BY TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds.\n" +
 				"func f() {}\n",
+			want: 1,
+			why: "THE CONCESSION THIS CASE USED TO ASSERT IS WITHDRAWN. It shipped as " +
+				"want:0 — the citation was ACCEPTED because that test's doc comment " +
+				"names shapeWalk while no line of its code does. Under ruling 17 the " +
+				"check reads the syntax tree, where a comment leaves nothing, so " +
+				"prose no longer certifies anything",
+		},
+		{
+			name:   "21_a_claim_paragraph_that_is_the_cited_tests_own_doc_comment",
+			defect: "references that enforcer",
+			src: "package p\n" +
+				"// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds drives shapeWalk\n" +
+				"// at q <= 256. ENFORCED BY shapeWalk,\n" +
+				"// MEASURED BY TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "SELF-CERTIFICATION, KILLED BY CONSTRUCTION. One of the citations this " +
+				"file shipped had exactly this shape — a claim in a test's own doc " +
+				"comment, measured by that same test, apt because the paragraph making " +
+				"the claim mentioned the enforcer. The claim was certifying itself. " +
+				"The AST cannot see the paragraph, so the shape stops working without " +
+				"a rule against it",
+		},
+		{
+			name:   "22_an_enforcer_the_cited_test_reaches_through_a_helper",
+			defect: "references that enforcer",
+			src: "package p\n" +
+				"// The first answered attempt is taken, so matches == 0 does not\n" +
+				"// mean attempt 1. ENFORCED BY ConfirmFinding,\n" +
+				"// MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "THE PRICE OF DIRECT-ONLY, ASSERTED. That test is entirely about " +
+				"ConfirmFinding's step 4 and it is the right measurement — but it " +
+				"drives the gate through confirmAgainst and its code never names " +
+				"ConfirmFinding, so this citation is refused",
+		},
+		{
+			name: "23_the_same_citation_naming_the_helper_the_test_calls",
+			src: "package p\n" +
+				"// The first answered attempt is taken, so matches == 0 does not\n" +
+				"// mean attempt 1. ENFORCED BY confirmAgainst,\n" +
+				"// MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne.\n" +
+				"func f() {}\n",
 			want: 0,
-			why: "THE PRICE OF READING THE DECLARATION RATHER THAN THE CODE, asserted. " +
-				"That test's body never names shapeWalk — its doc comment does — and " +
-				"the citation is accepted on the strength of prose",
+			why: "AND THE REMEDY, ASSERTED BESIDE IT. Ruling 17's answer to a hop is " +
+				"that the citation names the helper; confirmAgainst is four lines whose " +
+				"middle one is g.ConfirmFinding. This is the form ConfirmFinding's own " +
+				"doc comment now uses",
+		},
+		{
+			name: "24_a_test_in_another_package_that_uses_the_same_word_in_its_code",
+			src: "package p\n" +
+				"// Rule 4 is reached after 2 and 3, so matches == 0 does not decide it.\n" +
+				"// ENFORCED BY Error,\n" +
+				"// MEASURED BY TestOutputDoesNotDependOnAdvisoryReturnOrder.\n" +
+				"func f() {}\n",
+			want: 0,
+			why: "THE RESIDUAL HOLE, ASSERTED. Names resolve by SPELLING and the cited " +
+				"test lives in internal/match, which knows nothing about this package. " +
+				"Error is a method this package declares and it is also what that test " +
+				"calls on its own error value, and the coincidence is enough. The tree " +
+				"closed the prose hole; it did not make identifiers unique across a " +
+				"module. THE SAME TEST IS WHAT THE WITHDRAWN RULE FAILED ON, and the " +
+				"difference is the size of the opening: prose admitted decide, " +
+				"findings and finding as well, which are the names a claim in this " +
+				"file would actually want to cite",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -8306,6 +8567,275 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 		}
 	})
 
+	// ===================================================================
+	// RULING 17, RE-MEASURED THE SAME WAY. The aptness arm used to ask
+	// whether the cited test's SOURCE mentioned the enforcer. That rule is
+	// still compiled — it is `mentions` — and it is run here against the
+	// citation it accepts and the shipped rule refuses, so the argument
+	// for reading the tree is reproduced on every invocation instead of
+	// being quoted from the round that made it.
+	// ===================================================================
+	t.Run("the_text_search_this_replaced_still_admits_the_attack", func(t *testing.T) {
+		// The demonstration, verbatim: an enforcer spelled like an
+		// English word, and a test in another package whose prose uses
+		// the word while its code has never heard of the rule.
+		const enforcer, measurement = "decide", "TestOutputDoesNotDependOnAdvisoryReturnOrder"
+		d, ok := tests[measurement]
+		if !ok {
+			t.Fatalf("%s is not declared in this module any more. The attack this "+
+				"guard was rebuilt around cannot be re-run, so re-derive the argument "+
+				"against the text search rather than keeping the sentence", measurement)
+		}
+		if !idents[enforcer] {
+			t.Fatalf("this package no longer declares %s, so the attack citation would "+
+				"now fail at the resolution arm and would measure nothing about "+
+				"aptness", enforcer)
+		}
+		if !mentions(d.src, enforcer) {
+			t.Errorf("%s no longer mentions %s in its source, so the withdrawn rule "+
+				"would refuse this citation and the story above no longer reproduces. "+
+				"That is not a pass — find the attack that does, or delete the claim",
+				measurement, enforcer)
+		}
+		if d.refs[enforcer] {
+			t.Errorf("%s references %s in its code, which would make this citation "+
+				"genuinely apt and this subtest a measurement of nothing",
+				measurement, enforcer)
+		}
+		if got := citationDefect(idents, tests, enforcer, measurement); got == "" {
+			t.Errorf("the shipped rule ACCEPTS the citation naming %s and %s. Ruling "+
+				"17's whole claim is that it does not", enforcer, measurement)
+		}
+
+		// AND THE SIZE OF THE OPENING, over one real test rather than in
+		// the abstract: how many of this package's declared names that
+		// one citation could have named under each rule.
+		byText, byTree := 0, 0
+		var prose []string
+		for id := range idents {
+			if strings.HasPrefix(id, "Test") {
+				continue
+			}
+			m, r := mentions(d.src, id), d.refs[id]
+			if m {
+				byText++
+				if !r && len(prose) < 12 {
+					prose = append(prose, id)
+				}
+			}
+			if r {
+				byTree++
+			}
+		}
+		t.Logf("citing %s: the text search admits %d of this package's %d declared "+
+			"names as its enforcer, the syntax tree admits %d. Admitted by prose "+
+			"alone: %v", measurement, byText, len(idents), byTree, prose)
+		if byText <= byTree {
+			t.Errorf("the text search admits %d names and the tree admits %d. The "+
+				"argument for ruling 17 is that the first number is the larger one; "+
+				"if it is not, this doc is describing a change that did nothing",
+				byText, byTree)
+		}
+	})
+
+	// ===================================================================
+	// THE RULE THAT WAS REJECTED, RUN. Ruling 17 offered a hop through
+	// same-package helpers as an alternative to direct references.
+	// declaredTestsInModule's doc says it was measured and refused; the
+	// measurement is here, and the figures are literals in an assertion
+	// rather than sentences in a comment, so a change to either layer has
+	// to move a number in the same diff.
+	// ===================================================================
+	t.Run("the_one_hop_rule_this_rejected_is_measurably_looser", func(t *testing.T) {
+		// THE DISQUALIFYING FACT FIRST. Case 6 of the table above is the
+		// aptness check's reason to exist, and one hop reports it clean.
+		const enforcer, measurement = "matchQuotesMoreThanItSpells",
+			"TestModelInferenceIsNeverConfirmed"
+		six, ok := tests[measurement]
+		if !ok {
+			t.Fatalf("%s is not declared in this module any more; case 6 is citing a "+
+				"test that does not exist and this argument cannot be run", measurement)
+		}
+		if six.refs[enforcer] {
+			t.Fatalf("%s now references %s directly, so case 6 is no longer the "+
+				"citation this argument is about", measurement, enforcer)
+		}
+		if !callees.reach(six)[enforcer] {
+			t.Error("one hop no longer reaches " + enforcer + " from " + measurement +
+				". That was the fact that disqualified the hop, and if it has stopped " +
+				"being true the choice has to be re-argued rather than restated")
+		}
+
+		// THE POPULATIONS. Every (declared name, module test) pair the
+		// citation form can name, counted under all three rules.
+		var ids []string
+		for id := range idents {
+			if !strings.HasPrefix(id, "Test") {
+				ids = append(ids, id)
+			}
+		}
+		words := map[string]map[string]bool{}
+		hop := map[string]map[string]bool{}
+		for name, d := range tests {
+			w := map[string]bool{}
+			for _, tok := range citeToken.FindAllString(d.src, -1) {
+				w[tok] = true
+			}
+			words[name] = w
+			hop[name] = callees.reach(d)
+		}
+		// Where "this package" is, taken from a test declared in this very
+		// file rather than spelled out, so a move does not silently turn
+		// the second row of the measurement into a count of nothing.
+		self := "TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement"
+		here := filepath.Clean(tests[self].pkg)
+		if here == "" || here == "." {
+			t.Fatalf("cannot locate this package from %s's declaration", self)
+		}
+		count := func(sameOnly bool) (pairs, text, direct, oneHop int) {
+			for _, id := range ids {
+				for name, d := range tests {
+					if sameOnly && filepath.Clean(d.pkg) != here {
+						continue
+					}
+					pairs++
+					if words[name][id] {
+						text++
+					}
+					if d.refs[id] {
+						direct++
+						oneHop++
+						continue
+					}
+					if hop[name][id] {
+						oneHop++
+					}
+				}
+			}
+			return pairs, text, direct, oneHop
+		}
+		pairs, text, direct, oneHop := count(false)
+		t.Logf("over %d (declared name, module test) pairs: text %d, direct %d, "+
+			"one hop %d", pairs, text, direct, oneHop)
+		_, hText, hDirect, hHop := count(true)
+		t.Logf("restricted to this package's own tests: text %d, direct %d, "+
+			"one hop %d", hText, hDirect, hHop)
+
+		// THE FINDING, ASSERTED RATHER THAN LOGGED, and it is not the one
+		// the round expected: one hop is the LOOSEST of the three. It
+		// admits more pairs than the text search it was supposed to
+		// replace, because a callee carries its whole reference set into
+		// every test that names it.
+		if !(direct < text && text < oneHop) {
+			t.Errorf("the three rules no longer order direct, text, one hop: %d, %d, "+
+				"%d. declaredTestsInModule's doc says one hop is the loosest of the "+
+				"three, which is why it was refused; if that has stopped being true "+
+				"the choice has to be re-argued", direct, text, oneHop)
+		}
+		if !(hDirect < hText && hText < hHop) {
+			t.Errorf("within this package direct admits %d pairs, text %d and one hop "+
+				"%d. The same ordering has to hold where this file's citations actually "+
+				"point, or the doc is arguing from the module and deciding for the "+
+				"package", hDirect, hText, hHop)
+		}
+	})
+
+	// ===================================================================
+	// THE WINDOW, COUNTED RATHER THAN DESCRIBED. The disclosure above used
+	// to say the scanner sees an operator "in a // comment in either owned
+	// file". It sees an operator that SURVIVES commentProse, which is a
+	// much smaller thing, and a disclosure that overstates the window is
+	// how a claim ends up written where the guard cannot read it. Every
+	// figure in the corrected sentence is produced here.
+	//
+	// THE THIRD BUCKET IS AN ACCOUNTING IDENTITY, NOT A GUARD, and saying
+	// so is the point of writing it down. Given the scanner as it stands
+	// the three causes are exhaustive by construction — a line either
+	// blanks under commentProse, or loses its operator to a quoted span,
+	// or keeps it and therefore lands in a paragraph the scan opens — so
+	// the third bucket CANNOT be driven red without editing commentProse
+	// or paragraphsOf. It is here to notice exactly that edit. The
+	// assertions that carry weight are the pinned counts: they fail the
+	// moment the window moves, which is what makes the sentence above
+	// checkable rather than decorative.
+	// ===================================================================
+	t.Run("the_window_is_exactly_what_commentProse_leaves", func(t *testing.T) {
+		const (
+			banners = "a banner rule or a line of dashes, blanked by commentProse"
+			quoted  = "the operator is inside backticks or double quotes"
+			unknown = "NO CAUSE THIS TEST KNOWS ABOUT"
+		)
+		var lines, block, rawOps, seen int
+		cause := map[string]int{}
+		for name, f := range files {
+			if !owned[name] {
+				continue
+			}
+			scanned := map[int]bool{}
+			for _, g := range f.Comments {
+				for _, p := range paragraphsOf(fset, g) {
+					if !relationOp.MatchString(strings.Join(p.lines, "\n")) {
+						continue
+					}
+					for _, n := range p.nums {
+						scanned[n] = true
+					}
+				}
+			}
+			for _, g := range f.Comments {
+				for _, c := range g.List {
+					lines++
+					if !strings.HasPrefix(c.Text, "//") {
+						block++
+					}
+					raw := strings.TrimPrefix(strings.TrimSpace(c.Text), "//")
+					if !relationOp.MatchString(raw) {
+						continue
+					}
+					rawOps++
+					if scanned[fset.Position(c.Pos()).Line] {
+						seen++
+						continue
+					}
+					switch pr := commentProse(c.Text); {
+					case strings.TrimSpace(pr) == "":
+						cause[banners]++
+					case !relationOp.MatchString(pr):
+						cause[quoted]++
+					default:
+						cause[unknown]++
+						t.Errorf("%s:%d carries an operator that survives commentProse "+
+							"and sits in no paragraph the scan opened. That is a fourth "+
+							"cause and the window disclosure names three.\n    %s",
+							name, fset.Position(c.Pos()).Line, strings.TrimSpace(raw))
+					}
+				}
+			}
+		}
+		t.Logf("%d comment lines (%d of them block comments); %d carry an operator "+
+			"in raw text; %d are scanned; unseen by cause: %v",
+			lines, block, rawOps, seen, cause)
+		for _, tc := range []struct {
+			what string
+			got  int
+			want int
+		}{
+			{"comment lines in the two owned files", lines, 5964},
+			{"block-comment lines among them", block, 2},
+			{"lines whose RAW text carries an operator", rawOps, 176},
+			{"of those, lines the scan opens", seen, 40},
+			{"unseen because " + banners, cause[banners], 118},
+			{"unseen because " + quoted, cause[quoted], 18},
+			{"unseen for any other reason", cause[unknown], 0},
+		} {
+			if tc.got != tc.want {
+				t.Errorf("%s: %d, and the window disclosure above says %d. Re-measure "+
+					"and move the sentence in this diff; a figure a reader cannot "+
+					"reproduce is the defect this guard is for", tc.what, tc.got, tc.want)
+			}
+		}
+	})
+
 	t.Run("window_excludes_the_two_unowned_files_in_this_package", func(t *testing.T) {
 		for _, tc := range []struct {
 			file            string
@@ -8374,12 +8904,25 @@ var (
 		`ENFORCED\s+BY\s+([A-Za-z_][A-Za-z0-9_]*),\s+MEASURED\s+BY\s+(Test[A-Za-z0-9_]+)`)
 	// testDeclLine finds a test function declaration in a source file.
 	testDeclLine = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+	// citeToken is how the WITHDRAWN aptness rule read a declaration: as a
+	// bag of words. It is used only by the two subtests that re-run the
+	// rules this guard replaced, so their arguments are measured rather
+	// than remembered.
+	citeToken = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 )
 
-// mentions reports whether name occurs in src as a whole word. It is the
-// aptness half of the citation check: the cited test has to have the cited
-// enforcer somewhere in its body, so a citation cannot point at a real
-// enforcer and an unrelated real test.
+// mentions reports whether name occurs in src as a whole word.
+//
+// IT IS THE WITHDRAWN APTNESS RULE AND NOTHING SHIPPED CALLS IT. It was the
+// aptness half of the citation check until ruling 17, and it is kept for the
+// same reason the previous ruling's rule is kept: so the argument against it
+// is RE-RUN rather than remembered. Its one caller is
+// the_text_search_this_replaced_still_admits_the_attack, which drives it at
+// the citation the shipped rule refuses.
+//
+// A TEXT SEARCH OVER SOURCE CANNOT TELL A REFERENCE FROM A SENTENCE, for
+// exactly the reason a case boundary could not tell a name from a noun: names
+// are words, and a test's doc comment is source too.
 func mentions(src, name string) bool {
 	for i := 0; ; {
 		j := strings.Index(src[i:], name)
@@ -8422,15 +8965,24 @@ func commentProse(text string) string {
 // is a weaker guarantee than the one before it dressed as the same sentence:
 // the paragraph carries the FORM at all; the two names in it RESOLVE — the
 // enforcer against this package's declarations, the measurement against the
-// module's test declarations; and the cited test MENTIONS the cited enforcer,
-// which is what stops a citation naming a real rule and a real test that have
-// nothing to do with each other.
+// module's test declarations; and the cited test REFERENCES the cited
+// enforcer, which is what stops a citation naming a real rule and a real test
+// that have nothing to do with each other.
+//
+// RULING 17 IS THE THIRD ONE. It reads the cited test's REFERENCE SET — the
+// ast.Ident nodes of its declaration — and not its source, so prose in the
+// test's doc comment cannot satisfy a citation. See referencedIdents and
+// declaredTestsInModule for what that set contains and what choosing it cost.
 //
 // Every citation in the paragraph is checked, not the first one that passes.
 // A paragraph is allowed to cite two rules, and a good citation standing
-// beside a broken one would otherwise launder it.
+// beside a broken one would otherwise launder it. A CITATION IS NOT LAUNDERED
+// BY ANOTHER CITATION; A CLAIM IS STILL LAUNDERED BY ANOTHER CLAIM, because
+// the unit checked here is the PARAGRAPH and a paragraph may state several
+// relations under one citation. That asymmetry is measured, not conceded, by
+// one_citation_still_covers_every_relation_in_its_paragraph.
 func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
-	idents map[string]bool, tests map[string]string) (claims int, uncited []claimSite) {
+	idents map[string]bool, tests map[string]testDecl) (claims int, uncited []claimSite) {
 	for _, g := range f.Comments {
 		for _, p := range paragraphsOf(fset, g) {
 			text := strings.Join(p.lines, "\n")
@@ -8450,19 +9002,8 @@ func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
 				continue
 			}
 			for _, c := range cites {
-				enforcer, measurement := c[1], c[2]
-				body, declared := tests[measurement]
-				switch {
-				case !idents[enforcer]:
-					site(fmt.Sprintf("names %s as its enforcer, and this package "+
-						"declares no such identifier", enforcer))
-				case !declared:
-					site(fmt.Sprintf("names %s as its measurement, and this module "+
-						"declares no such test", measurement))
-				case !mentions(body, enforcer):
-					site(fmt.Sprintf("cites %s and %s, and the body of that test never "+
-						"mentions that enforcer — the citation points at an unrelated "+
-						"measurement", enforcer, measurement))
+				if d := citationDefect(idents, tests, c[1], c[2]); d != "" {
+					site(d)
 				}
 			}
 		}
@@ -8470,10 +9011,43 @@ func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
 	return claims, uncited
 }
 
+// citationDefect reports what is wrong with one citation, or the empty string
+// if the two names resolve and the measurement is apt.
+//
+// It is a function of its own rather than a switch inside the scan because
+// every_citation_in_an_owned_file_resolves_and_is_apt applies the same three
+// checks to the citations that sit in paragraphs stating no relation, which
+// the arithmetic scan never looks at.
+func citationDefect(idents map[string]bool, tests map[string]testDecl,
+	enforcer, measurement string) string {
+	d, declared := tests[measurement]
+	switch {
+	case !idents[enforcer]:
+		return fmt.Sprintf("names %s as its enforcer, and this package "+
+			"declares no such identifier", enforcer)
+	case !declared:
+		return fmt.Sprintf("names %s as its measurement, and this module "+
+			"declares no such test", measurement)
+	case !d.refs[enforcer]:
+		return fmt.Sprintf("cites %s and %s, and nothing in that test's code "+
+			"references that enforcer — the citation points at an unrelated "+
+			"measurement. Naming it in the test's PROSE does not count: a "+
+			"comment leaves no node in the syntax tree this is read from",
+			enforcer, measurement)
+	}
+	return ""
+}
+
 // commentParagraph is a run of comment lines with no blank line in it.
 type commentParagraph struct {
 	line  int
 	lines []string
+	// nums is the source line of each entry in lines. A folded display
+	// block makes the two non-contiguous, which is why the numbers are
+	// carried rather than derived from line. Only
+	// the_window_is_exactly_what_commentProse_leaves reads them, to work
+	// out which comment lines the scan actually looked at.
+	nums []int
 }
 
 // paragraphsOf splits a comment group on blank comment lines and folds a godoc
@@ -8496,6 +9070,7 @@ func paragraphsOf(fset *token.FileSet, g *ast.CommentGroup) []commentParagraph {
 			cur.line = fset.Position(c.Pos()).Line
 		}
 		cur.lines = append(cur.lines, s)
+		cur.nums = append(cur.nums, fset.Position(c.Pos()).Line)
 	}
 	if len(cur.lines) > 0 {
 		split = append(split, cur)
@@ -8512,6 +9087,7 @@ func paragraphsOf(fset *token.FileSet, g *ast.CommentGroup) []commentParagraph {
 		}
 		if indented && len(folded) > 0 {
 			folded[len(folded)-1].lines = append(folded[len(folded)-1].lines, p.lines...)
+			folded[len(folded)-1].nums = append(folded[len(folded)-1].nums, p.nums...)
 			continue
 		}
 		folded = append(folded, p)
@@ -8519,34 +9095,89 @@ func paragraphsOf(fset *token.FileSet, g *ast.CommentGroup) []commentParagraph {
 	return folded
 }
 
+// testDecl is one Test function's declaration, reduced to the two things a
+// citation is checked against.
+type testDecl struct {
+	// refs is every identifier the declaration REFERENCES: the ast.Ident
+	// nodes of its parameters, its body and the types it names. It is what
+	// the aptness arm reads, and the property that matters is what is NOT
+	// in it — a doc comment contributes no ast.Ident, so prose cannot
+	// satisfy a citation.
+	refs map[string]bool
+	// src is the declaration's source, doc comment included. It is kept for
+	// ONE purpose: the_text_search_this_replaced_still_admits_the_attack
+	// re-runs the withdrawn rule against it on every invocation, so the
+	// argument for ruling 17 is measured here rather than quoted from a
+	// commit message. Nothing in the shipped check reads it.
+	src string
+	// pkg is the directory the declaration was parsed from, which is what
+	// a one-hop rule would have to resolve callees against. Nothing in the
+	// shipped check reads it either.
+	pkg string
+}
+
 // declaredTestsInModule is every Test function declared anywhere in this
-// module, mapped to THE SOURCE OF ITS WHOLE DECLARATION, which is the universe
-// a measurement citation resolves against. Repo-wide rather than
-// package-local for the reason TestEveryTestNamedInASourceCommentExists gives:
-// a comment here may legitimately cite one of the kernel's own guards.
+// module, mapped to its declaration, which is the universe a measurement
+// citation resolves against. Repo-wide rather than package-local for the
+// reason TestEveryTestNamedInASourceCommentExists gives: a comment here may
+// legitimately cite one of the kernel's own guards.
 //
-// THE SOURCE IS CARRIED, not just the name, because resolving the name alone
-// only proves the test exists. The aptness check needs to look inside it.
+// ===========================================================================
+// RULING 17: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
+// ===========================================================================
 //
-// THE SLICE INCLUDES THE DOC COMMENT AND THAT IS A MEASURED CONCESSION, not
-// an oversight. Body-only was written first, and the doc comment was added
-// back only after measuring what body-only cost. REPLACING THE FOUR LINES
-// BELOW THAT COMPUTE `start` WITH `start := fd.Body.Lbrace` AND RE-RUNNING
-// REFUSES 2 OF THE 20 CLAIMS THIS FILE CARRIES — the exact experiment, and
-// the exact number it produced. In both, the only identifier the cited test's
-// body names is a test HELPER: the test that is entirely about
-// ConfirmFinding's attempt-selection rule reaches it through confirmAgainst,
-// and the rate-limit test that exists to pin what decide() does with a 429
-// reaches decide through the gate. Both citations are apt, and the strict
-// rule would have forced each to name a helper instead. A guard that makes an
-// author write a worse citation is not a stricter guard.
+// THIS FUNCTION USED TO RETURN SOURCE TEXT AND THE APTNESS ARM USED TO GREP
+// IT, and that arm had, one layer down, the exact defect ruling 16 had just
+// removed from the layer above. NAMES ARE WORDS: a text search cannot tell a
+// reference from a sentence, so an enforcer spelled like an English word was
+// "mentioned" by any test whose prose used the word. The demonstration is not
+// described here, it is RE-RUN on every invocation by
+// the_text_search_this_replaced_still_admits_the_attack: a citation naming
+// decide and a test in internal/match about advisory return order passes the
+// withdrawn rule and fails the shipped one.
 //
-// WHAT THE CONCESSION COSTS is that a test naming the enforcer only in its
-// own prose satisfies the check, asserted rather than described by case 20 of
-// the table above.
-func declaredTestsInModule(t *testing.T) map[string]string {
+// The tree is the answer, and it is decidable rather than approximate. A
+// comment contributes no ast.Ident, so the reference set is exactly what the
+// test's CODE names.
+//
+// DIRECT REFERENCES ONLY, AND THE ALTERNATIVE WAS BUILT BEFORE IT WAS
+// REJECTED. Ruling 17 offers a hop through same-package helpers for the case
+// where a test reaches its enforcer through something it calls. Both rules
+// were run over every (declared identifier, module test) pair the citation
+// form can name, and the counts are asserted as literals by
+// the_one_hop_rule_this_rejected_is_measurably_looser rather than written
+// out here, because a figure in a comment goes stale and a figure in an
+// assertion cannot. Two findings decided it:
+//
+//	ONE HOP IS NOT A NARROWING AT ALL. It admits MORE pairs than the text
+//	search it was supposed to replace — module-wide and again when the
+//	count is restricted to this package's own tests, which is where this
+//	file's citations point. A callee carries its entire reference set into
+//	every test that names it, and a test naming three helpers inherits
+//	three transitive sets, so the population grows rather than shrinks.
+//	That result was not the one this round expected, which is the reason
+//	it is asserted from a live count instead of reasoned about.
+//
+//	IT TURNS CASE 6 OF THE TABLE ABOVE GREEN, which is disqualifying rather
+//	than merely loose. Case 6 is a real enforcer cited against a real test
+//	that has nothing to do with it — the aptness check's entire reason for
+//	existing — and it survives only under direct references.
+//
+// THE PRICE OF DIRECT-ONLY IS ONE CITATION AND IT IS PAID IN THE OPEN.
+// ConfirmFinding's step 4 is measured by a test that drives it through
+// confirmAgainst, so that citation names confirmAgainst — ruling 17's own
+// remedy — with ConfirmFinding named in the prose beside it. Cases 22 and 23
+// below assert both halves.
+//
+// WHAT DIRECT-ONLY STILL CANNOT SEE is that the reference set is every
+// ast.Ident in the declaration, locally bound names included, and that names
+// are resolved by SPELLING, so a test in another package that happens to use
+// the same word satisfies a citation. Case 24 asserts the second one against
+// a real coincidence.
+func declaredTestsInModule(t *testing.T) (map[string]testDecl, calleeIndex) {
 	t.Helper()
-	declared := map[string]string{}
+	declared := map[string]testDecl{}
+	callees := calleeIndex{}
 	root := filepath.Join("..", "..", "..")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -8558,7 +9189,7 @@ func declaredTestsInModule(t *testing.T) map[string]string {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(d.Name(), "_test.go") {
+		if !strings.HasSuffix(d.Name(), ".go") {
 			return nil
 		}
 		b, rerr := os.ReadFile(path)
@@ -8572,9 +9203,18 @@ func declaredTestsInModule(t *testing.T) map[string]string {
 		if perr != nil {
 			return fmt.Errorf("parsing %s for its test declarations: %w", path, perr)
 		}
+		dir := filepath.Dir(path)
+		isTest := strings.HasSuffix(d.Name(), "_test.go")
 		for _, dec := range f.Decls {
 			fd, ok := dec.(*ast.FuncDecl)
-			if !ok || fd.Body == nil || !strings.HasPrefix(fd.Name.Name, "Test") {
+			if !ok || fd.Body == nil {
+				continue
+			}
+			if !isTest || !strings.HasPrefix(fd.Name.Name, "Test") {
+				if callees[dir] == nil {
+					callees[dir] = map[string]map[string]bool{}
+				}
+				callees[dir][fd.Name.Name] = referencedIdents(fd)
 				continue
 			}
 			start := fd.Pos()
@@ -8587,7 +9227,14 @@ func declaredTestsInModule(t *testing.T) map[string]string {
 				return fmt.Errorf("%s: %s has an unreadable declaration span",
 					path, fd.Name.Name)
 			}
-			declared[fd.Name.Name] = src[lo : hi+1]
+			declared[fd.Name.Name] = testDecl{
+				refs: referencedIdents(fd),
+				src:  src[lo : hi+1],
+				pkg:  dir,
+			}
+		}
+		if !isTest {
+			return nil
 		}
 		// The regex walk is kept as a CROSS-CHECK on the parse: a test the
 		// AST did not reach is a test a measurement citation would fail to
@@ -8607,7 +9254,66 @@ func declaredTestsInModule(t *testing.T) map[string]string {
 		t.Fatalf("found %d test functions in the module; the walk is not working and "+
 			"every measurement citation would resolve for the wrong reason", len(declared))
 	}
-	return declared
+	// The positive control on the REFERENCE half of the walk. Resolving the
+	// name alone proved the test existed; this proves the tree under it was
+	// read, and without it an empty reference set would refuse every
+	// citation for a reason no message would name.
+	if !declared["TestDecideTablePrecedenceIsAsDocumented"].refs["decide"] {
+		t.Fatal("the walk cannot see that TestDecideTablePrecedenceIsAsDocumented " +
+			"references decide, which it does on its own line. The reference sets " +
+			"are not being built and every aptness check would fail for the wrong " +
+			"reason")
+	}
+	return declared, callees
+}
+
+// calleeIndex is directory -> function name -> reference set, for every
+// non-Test function in the module.
+//
+// NOTHING IN THE SHIPPED CHECK READS IT. It exists so that
+// the_one_hop_rule_this_rejected_is_measurably_looser can RUN the alternative
+// ruling 17 offered rather than describe it, and so the table in
+// declaredTestsInModule's doc is recomputed on every invocation instead of
+// being remembered from the round that wrote it.
+type calleeIndex map[string]map[string]map[string]bool
+
+// reach is the reference set ONE HOP out: every identifier referenced by any
+// same-package function this declaration names.
+func (c calleeIndex) reach(d testDecl) map[string]bool {
+	out := map[string]bool{}
+	for callee := range d.refs {
+		for id := range c[d.pkg][callee] {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// referencedIdents is every identifier the declaration REFERENCES: every
+// ast.Ident under it, less its own name.
+//
+// THE POINT IS WHAT IS ABSENT. Comments are not ast.Ident nodes, so a doc
+// comment naming the enforcer contributes nothing here, and that single fact
+// is what turns the aptness check from a text search into a decision. A
+// selector's field or method name IS included — `f.Evidence()` references
+// Evidence — because this package's citations legitimately name methods and
+// struct fields.
+//
+// LOCALLY BOUND NAMES ARE INCLUDED TOO, and that is a hole rather than a
+// decision: a test declaring a variable spelled like a package identifier
+// satisfies a citation to it. Excluding them was built and measured, and it
+// changed the verdict on none of the citations this file carries, so the
+// simpler set is the one that ships.
+func referencedIdents(fd *ast.FuncDecl) map[string]bool {
+	refs := map[string]bool{}
+	ast.Inspect(fd, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			refs[id.Name] = true
+		}
+		return true
+	})
+	delete(refs, fd.Name.Name)
+	return refs
 }
 
 // declaredIdentsInPackage is every name this package declares — functions,
@@ -8660,4 +9366,345 @@ func declaredIdentsInPackage(t *testing.T, fset *token.FileSet) (map[string]bool
 		}
 	}
 	return idents, files
+}
+
+// ===========================================================================
+// D.31 — THE WITHDRAWN-PHRASING REGISTRY
+// ===========================================================================
+
+// withdrawnPhrasing is one sentence this package has RETRACTED as false,
+// together with how many times it is still allowed to appear as a QUOTATION.
+//
+// THE REGISTRY EXISTS BECAUSE OF A COUNTED FAILURE, not a worry. Five
+// consecutive rounds were each sent to correct a false sentence and each left
+// exactly one behind, and the fifth left THE SAME ONE: the wording in entry 1
+// below was corrected at length in confirm_gate.go and stood verbatim, at a
+// different line wrapping, 1,331 lines away in confirm_gate_test.go. A false
+// sentence that exists in two files was being half-corrected, and a human
+// sweep cannot stop that, because the second copy is only findable by
+// somebody who already knows about the first.
+//
+// The registry turns that into a mechanical fact: once a wording is entered
+// here it cannot be asserted anywhere in this package again, so correcting
+// one copy and leaving the other is a RED TEST rather than a missed line.
+type withdrawnPhrasing struct {
+	// text is the withdrawn wording. Line wrapping does not matter — it is
+	// collapsed before matching, which is what makes the two differently
+	// wrapped copies of entry 1 the same string.
+	text string
+	// wantQuoted is how many times this package still QUOTES the wording in
+	// order to refute it. Pinned rather than merely permitted: an entry
+	// whose quotation has been deleted is an entry nobody can check any
+	// more, and it would go silently vacuous.
+	wantQuoted int
+	why        string
+}
+
+var withdrawnPhrasings = []withdrawnPhrasing{
+	{
+		text: "decide()'s rule 2 routes every indecisive run to " +
+			"ReasonReprobeIndecisive before ReasonDidNotReproduce can be reached",
+		wantQuoted: 1,
+		why: "FALSE IN BOTH HALVES. Rule 2 is the over-quoted rule and it routes " +
+			"to ReasonMatchQuotedTheResponse, so it is not what takes an " +
+			"indecisive run anywhere near ReasonReprobeIndecisive; and " +
+			"ReasonDidNotReproduce is not a reason an indecisive run could reach " +
+			"in the first place, so there is no ordering between the two to " +
+			"state. The surviving quotation is in assertRejectionIsDecisive's " +
+			"doc comment in confirm_gate.go, where it is quoted and then refuted",
+	},
+	{
+		text: "With no exported field and no exported constructor outside this " +
+			"file, the only EvidenceRef that exists is one newEvidenceRef built, " +
+			"and newEvidenceRef bounds its span",
+		wantQuoted: 1,
+		why: "IT CREDITED A FUNCTION THAT HAS NEVER EXISTED. There is no " +
+			"newEvidenceRef in this package, so the sentence attributed a real " +
+			"invariant to a mechanism a reader could not go and read — which is " +
+			"worse than saying nothing, because it stops them looking. What " +
+			"actually holds the invariant up is listed on EvidenceRef itself, " +
+			"where the quotation now sits",
+	},
+}
+
+// TestNoWithdrawnPhrasingSurvivesAsLiveProse is the streak-breaker.
+//
+// ===========================================================================
+// WHAT IT DOES
+// ===========================================================================
+//
+// For every entry in withdrawnPhrasings it reads every .go file in this
+// package and sorts the occurrences of that wording into three piles:
+//
+//	LIVE      the wording appears in a comment, outside any quotation. This
+//	          is a retracted sentence being asserted again, and it FAILS.
+//	QUOTED    the wording appears inside a double-quoted or backticked span
+//	          in a comment. That is the historical record refuting itself,
+//	          and the count is pinned by wantQuoted.
+//	OUTSIDE   the wording appears in the file but in no comment — a string
+//	          literal. It FAILS: a refusal message restating a withdrawn
+//	          sentence is the same defect wearing a different hat.
+//
+// Matching is done on COLLAPSED prose: comment markers are replaced by spaces
+// and every run of whitespace becomes one space. That is the whole mechanism,
+// and it is the part that matters. The two copies of entry 1 were wrapped
+// differently — one broke the line after "every indecisive", the other after
+// "every" — so any check comparing lines, or comparing raw source, would have
+// seen two different strings. Collapsed, they are one.
+//
+// THE SCAN IS PACKAGE-WIDE, not scoped to the two files D.27 owns. Reading is
+// free and a retracted sentence resurfacing in coverage.go is worth knowing
+// about; the failure message says so, because fixing it there is a REPORT and
+// not an edit under this packet's write scope.
+//
+// ===========================================================================
+// WHAT IT CANNOT SEE, AND THIS IS THE PRICE OF THE WHOLE IDEA
+// ===========================================================================
+//
+//	A FALSE SENTENCE NOBODY HAS REGISTERED. This is a denylist, which is the
+//	    shape this file distrusts everywhere else, and the distrust is
+//	    correct: it finds nothing new. What it makes impossible is the
+//	    HALF-CORRECTION of something already found, which is the failure that
+//	    actually recurred five times running. The two jobs are different and
+//	    only the second is mechanisable at this price.
+//	A PARAPHRASE. Change one word of a registered sentence and it is
+//	    invisible here. Asserted, not conceded, by case 6 below.
+//	A WORDING SPLIT ACROSS A Go STRING CONCATENATION. The outside-comments
+//	    arm reads the raw file, where two adjacent literals do not collapse
+//	    into one string, so a withdrawn sentence assembled from a pair of
+//	    them is not matched.
+//	ANY FILE OUTSIDE THIS PACKAGE DIRECTORY, including plan/*.md, where the
+//	    standing orders already record two stale lines.
+func TestNoWithdrawnPhrasingSurvivesAsLiveProse(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading the package directory: %v", err)
+	}
+	if len(withdrawnPhrasings) == 0 {
+		t.Fatal("the registry is empty, so this test measures nothing. It is not a " +
+			"place to keep a zero — delete the test or enter the sentence")
+	}
+
+	for i, w := range withdrawnPhrasings {
+		needle := collapseProse(w.text)
+		if needle == "" {
+			t.Fatalf("registry entry %d collapses to nothing: %q", i+1, w.text)
+		}
+		quoted, asserted, inStrings := 0, 0, 0
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			b, rerr := os.ReadFile(e.Name())
+			if rerr != nil {
+				t.Fatalf("reading %s: %v", e.Name(), rerr)
+			}
+			wfset := token.NewFileSet()
+			f, perr := parser.ParseFile(wfset, e.Name(), b,
+				parser.ParseComments|parser.SkipObjectResolution)
+			if perr != nil {
+				t.Fatalf("parsing %s: %v", e.Name(), perr)
+			}
+			live, q, outside := scanWithdrawn(wfset, f, string(b), needle)
+			quoted += q
+			asserted += len(live)
+			if outside > 0 {
+				inStrings += outside
+			}
+			for _, line := range live {
+				t.Errorf("%s:%d ASSERTS A WITHDRAWN SENTENCE.\n"+
+					"    %s\n"+
+					"Why it was withdrawn: %s.\n"+
+					"This wording is entry %d of withdrawnPhrasings. It may appear "+
+					"inside a quotation, where it is history being refuted, and "+
+					"nowhere else. If this file is outside D.27's write scope, that "+
+					"is a REPORT to the orchestrator, not an edit.",
+					e.Name(), line, w.text, w.why, i+1)
+			}
+			if outside > 0 {
+				t.Errorf("%s restates a withdrawn sentence %d time(s) outside any "+
+					"comment — a string literal.\n    %s\n"+
+					"A refusal message repeating a retracted claim is the same defect "+
+					"the comment was", e.Name(), outside, w.text)
+			}
+			if outside < 0 {
+				t.Fatalf("%s: the comment arm found more occurrences than the whole "+
+					"file does, so the two arms are not reading the same text and "+
+					"this test's own numbers cannot be trusted", e.Name())
+			}
+		}
+		if quoted != w.wantQuoted {
+			t.Errorf("the withdrawn sentence\n    %s\nis quoted %d time(s) in this "+
+				"package and the registry says %d. A quotation is how the retraction "+
+				"stays readable; if it was deliberately deleted, move wantQuoted in "+
+				"this diff so the entry does not go silently vacuous",
+				w.text, quoted, w.wantQuoted)
+		}
+		t.Logf("entry %d across %d package file(s): %d asserted, %d quoted, "+
+			"%d in string literals", i+1, len(entries), asserted, quoted, inStrings)
+	}
+
+	// ===================================================================
+	// THE MECHANISM, ASSERTED. Every line of the description above is a
+	// claim about scanWithdrawn, so each is driven against a synthetic
+	// source rather than trusted — including the two holes it cannot see.
+	// ===================================================================
+	sentence := withdrawnPhrasings[0].text
+	needle := collapseProse(sentence)
+
+	for _, tc := range []struct {
+		name                    string
+		src                     string
+		wantLive                int
+		wantQuoted, wantOutside int
+		why                     string
+	}{
+		{
+			name: "1_the_wording_wrapped_the_way_confirm_gate_go_wrapped_it",
+			src: "package p\n" +
+				"// It read: decide()'s rule 2 routes every indecisive\n" +
+				"// run to ReasonReprobeIndecisive before ReasonDidNotReproduce can be reached.\n" +
+				"func f() {}\n",
+			wantLive: 1,
+			why:      "one of the two wrappings that actually shipped",
+		},
+		{
+			name: "2_the_wording_wrapped_the_way_confirm_gate_test_go_wrapped_it",
+			src: "package p\n" +
+				"// it returned non-zero zero times, because decide()'s rule 2 routes every\n" +
+				"// indecisive run to ReasonReprobeIndecisive before ReasonDidNotReproduce can\n" +
+				"// be reached. The report that called it a second line was wrong.\n" +
+				"func f() {}\n",
+			wantLive: 1,
+			why: "THE COPY FIVE ROUNDS WALKED PAST. It breaks lines in three different " +
+				"places from case 1 and it is the same sentence; this is the case that " +
+				"makes the half-correction impossible rather than unlikely",
+		},
+		{
+			name:     "3_the_wording_on_one_unwrapped_line",
+			src:      "package p\n// " + sentence + "\nfunc f() {}\n",
+			wantLive: 1,
+			why:      "a third wrapping, to show the collapse is not tuned to the two real ones",
+		},
+		{
+			name: "4_the_wording_inside_a_quotation",
+			src: "package p\n" +
+				"// The withdrawn sentence read \"decide()'s rule 2 routes every indecisive\n" +
+				"// run to ReasonReprobeIndecisive before ReasonDidNotReproduce can be reached\"\n" +
+				"// and rule 2 is the over-quoted rule, so it is false.\n" +
+				"func f() {}\n",
+			wantQuoted: 1,
+			why: "the refutation has to be allowed to restate what it refutes, or the " +
+				"registry would delete the historical record it depends on",
+		},
+		{
+			name: "5_the_wording_in_a_string_literal",
+			src: "package p\n" +
+				"func f() string { return \"" + sentence + "\" }\n",
+			wantOutside: 1,
+			why:         "a refusal message is prose too, and it is outside every comment",
+		},
+		{
+			name: "6_a_paraphrase",
+			src: "package p\n" +
+				"// Rule 2 of decide() sends any indecisive run to ReasonReprobeIndecisive\n" +
+				"// before ReasonDidNotReproduce is ever considered.\n" +
+				"func f() {}\n",
+			why: "THE HOLE, ASSERTED. Same false claim, different words, entirely " +
+				"invisible here. A registry is a denylist and this is what a denylist " +
+				"costs; it is written down rather than discovered later",
+		},
+		{
+			name: "7_an_unrelated_comment_naming_the_same_rule",
+			src: "package p\n" +
+				"// decide()'s rule 2 is the over-quoted rule.\n" +
+				"func f() {}\n",
+			why: "the control. A comment that names the same function and the same rule " +
+				"number is not the withdrawn sentence, and a check that fired here " +
+				"would be unusable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sfset := token.NewFileSet()
+			f, perr := parser.ParseFile(sfset, "synthetic.go", tc.src,
+				parser.ParseComments|parser.SkipObjectResolution)
+			if perr != nil {
+				t.Fatalf("parsing the synthetic source: %v", perr)
+			}
+			live, quoted, outside := scanWithdrawn(sfset, f, tc.src, needle)
+			if len(live) != tc.wantLive || quoted != tc.wantQuoted ||
+				outside != tc.wantOutside {
+				t.Fatalf("scanWithdrawn = %d live, %d quoted, %d outside; want "+
+					"%d, %d, %d. %s\nsource:\n%s",
+					len(live), quoted, outside,
+					tc.wantLive, tc.wantQuoted, tc.wantOutside, tc.why, tc.src)
+			}
+		})
+	}
+}
+
+// whitespaceRun is every run of spaces, tabs and newlines, which is exactly
+// what line wrapping is made of.
+var whitespaceRun = regexp.MustCompile(`\s+`)
+
+// collapseProse reduces source text to the prose it contains, so that two
+// copies of one sentence wrapped at different columns become one string.
+//
+// Comment markers become spaces before the collapse, because a wrapped
+// sentence has a `//` sitting in the middle of it and that is the whole
+// reason the two shipped copies of entry 1 did not look alike.
+func collapseProse(s string) string {
+	s = strings.ReplaceAll(s, "//", " ")
+	return strings.TrimSpace(whitespaceRun.ReplaceAllString(s, " "))
+}
+
+// quotationSpan is what a comment QUOTES rather than asserts. It is the same
+// distinction quotedSpan draws for the arithmetic guard, narrowed to the two
+// forms a retraction actually uses.
+var quotationSpan = regexp.MustCompile("(`[^`]*`|\"[^\"]*\")")
+
+// occurrencesOf counts every occurrence of needle in hay and how many of them
+// fall entirely inside a quotation.
+func occurrencesOf(hay, needle string) (total, quoted int) {
+	regions := quotationSpan.FindAllStringIndex(hay, -1)
+	for i := 0; ; {
+		j := strings.Index(hay[i:], needle)
+		if j < 0 {
+			return total, quoted
+		}
+		s := i + j
+		e := s + len(needle)
+		total++
+		for _, r := range regions {
+			if r[0] <= s && e <= r[1] {
+				quoted++
+				break
+			}
+		}
+		i = s + 1
+	}
+}
+
+// scanWithdrawn sorts one file's occurrences of needle into the three piles
+// TestNoWithdrawnPhrasingSurvivesAsLiveProse describes: live comment prose
+// (returned as the line of each offending comment group), quotations, and
+// occurrences that are in the file but in no comment at all.
+//
+// The third pile is computed by DIFFERENCE — everything the raw file holds,
+// less everything the comments hold — rather than by walking string literals,
+// so a form of literal nobody thought of still lands somewhere countable
+// instead of vanishing.
+func scanWithdrawn(fset *token.FileSet, f *ast.File, src, needle string) (
+	live []int, quoted, outside int) {
+	inComments := 0
+	for _, g := range f.Comments {
+		total, q := occurrencesOf(collapseProse(g.Text()), needle)
+		inComments += total
+		quoted += q
+		for i := 0; i < total-q; i++ {
+			live = append(live, fset.Position(g.Pos()).Line)
+		}
+	}
+	rawTotal, _ := occurrencesOf(collapseProse(src), needle)
+	return live, quoted, rawTotal - inComments
 }

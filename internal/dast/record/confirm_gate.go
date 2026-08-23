@@ -2706,9 +2706,35 @@ func (s Signature) Pattern() string { return s.src }
 //
 // Both fields are unexported. That is not decoration: an exported
 // ExtractedSpan is a field a consumer — or a future maintainer with a body in
-// hand and a deadline — can assign a body to. With no exported field and no
-// exported constructor outside this file, the only EvidenceRef that exists is
-// one newEvidenceRef built, and newEvidenceRef bounds its span.
+// hand and a deadline — can assign a body to.
+//
+// WHAT ENFORCES THAT IS NOT A CONSTRUCTOR, AND THIS PARAGRAPH USED TO SAY IT
+// WAS. It read "With no exported field and no exported constructor outside
+// this file, the only EvidenceRef that exists is one newEvidenceRef built,
+// and newEvidenceRef bounds its span" — and no function called
+// newEvidenceRef has ever existed in this package. The invariant is real; the
+// mechanism named for it was not. Three things do the work instead, and each
+// one is somewhere a reader can go and check:
+//
+//	THE UNEXPORTED FIELDS. Outside package record the zero value is all
+//	anyone can build, and the zero value carries nothing. The type half of
+//	that — that there is nowhere in the struct to put a body in the first
+//	place — is TestFindingTypeClosureHasNoRawBodyPath.
+//
+//	ONE ASSIGNMENT SITE. In production `span` is written in exactly one
+//	place, the composite literal in ConfirmFinding's step 4, and the value
+//	it is written from is extractSpan's, which is where the bound lives.
+//	The other literal in that function is the indecisive-attempt one: it
+//	sets a body hash and leaves the span empty on purpose, because the
+//	signature was never run.
+//
+//	assertFindingStringsBounded, which re-reads evidence.extracted_span on
+//	every Finding ConfirmFinding assembles. A second assignment site added
+//	later is refused at runtime rather than trusted, and the value half is
+//	TestNoFindingReachableStringExceedsTheSpanLimit.
+//
+// The withdrawn sentence is entry 2 of withdrawnPhrasings, so it cannot be
+// asserted again anywhere in this package.
 type EvidenceRef struct {
 	bodyHash string
 	span     string
@@ -3680,11 +3706,18 @@ func (g *Gate) ReproberWired() bool { return g.Constructed() && g.reprober != ni
 // Steps 2 and 3 are ENFORCED BY ConfirmFinding,
 // MEASURED BY TestAReprobeThatDidNotHappenIsNotAConfirmationAndIsNotARejection
 // and ENFORCED BY ConfirmFinding,
-// MEASURED BY TestEveryAttemptIsIssuedAndOneAttemptCannotStandForThree; step
-// 4's attempt-selection rule is ENFORCED BY ConfirmFinding,
-// MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne;
+// MEASURED BY TestEveryAttemptIsIssuedAndOneAttemptCannotStandForThree;
 // step 5's agreement is ENFORCED BY outcomeForReason,
 // MEASURED BY TestDecideTablePrecedenceIsAsDocumented.
+//
+// Step 4's attempt-selection rule is ENFORCED BY confirmAgainst,
+// MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne,
+// and the name in that citation is the TEST HELPER rather than this function
+// because ruling 17's aptness check reads the cited test's syntax tree, and
+// that test's code names confirmAgainst and never names ConfirmFinding.
+// confirmAgainst is four lines whose middle one is g.ConfirmFinding, so it is
+// an honest first stop for a reader; a citation naming this function would be
+// asserting a reference the test does not make.
 //
 //	1  the gate is constructed and the candidate validates. Validation runs
 //	   BEFORE egress: a candidate that cannot produce an interpretable
@@ -4536,8 +4569,13 @@ func matchQuotesMoreThanItSpells(matchLen, spelled int) bool {
 // ReasonMatchQuotedTheResponse. Either way no ConfirmFinding call can produce
 // the value that method was counting. The precedence is
 // ENFORCED BY decide, MEASURED BY TestDecideTablePrecedenceIsAsDocumented, and
-// the two indecisive routes are ENFORCED BY decide,
-// MEASURED BY TestARateLimitedReprobeIsNotADisproof.
+// the end-to-end path that reaches the two indecisive routes is
+// ENFORCED BY ConfirmFinding,
+// MEASURED BY TestARateLimitedReprobeIsNotADisproof. That second citation used
+// to name decide as well; it now names its caller, because under ruling 17 the
+// cited test has to REFERENCE the enforcer and that test drives a whole gate —
+// ConfirmFinding is the identifier its code names, and decide is a step inside
+// the call it makes.
 //
 // A control that cannot fire is not a second line, it is a sentence; the count
 // and the claim that it was "the second line of AssertNotSilentlyClean" are
