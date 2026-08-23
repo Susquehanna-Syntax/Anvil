@@ -659,7 +659,7 @@ func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 		// \uXXXX is what encoding/json writes when asked to escape HTML.
 		{"unicode-escaped password", `{"pw":"` + d24UnicodeEscape(d24Password) + `"}`, true},
 		// LAYERED: the JSON form of the HTML form. One decoder alone finds
-		// nothing here; the fixpoint is what closes it.
+		// nothing here; the candidate set is what closes it.
 		{"JSON-escaped HTML-entity-encoded password",
 			`{"html":"` + d24JSONEscape(t, htmlPW) + `"}`, true},
 		// Percent-encoded twice, the classic double-encoding walk-past.
@@ -902,8 +902,35 @@ func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
 // secret present in ANY of them is present.
 func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
 	secrets := d24Steps(t).secrets()
+	corpus, ambiguous := d24SemicolonLessCorpus()
+	missed := []string(nil)
+	for _, in := range corpus {
+		if _, hit := credentialIn([]byte(in), secrets); !hit {
+			missed = append(missed, in)
+		}
+	}
+	if ambiguous == 0 {
+		t.Fatal("no spelling this test generated was ambiguous, so it measures nothing")
+	}
+	if len(missed) > 0 {
+		t.Fatalf("the sweep did not see the credential in %d of the %d generated "+
+			"spellings (%d of which are ambiguous). First miss: %q. A greedy digit "+
+			"run picks one reading of an ambiguous input; the union is the "+
+			"fail-closed reading", len(missed), len(corpus), ambiguous, missed[0])
+	}
+}
+
+// d24SemicolonLessCorpus generates the semicolon-less re-spellings of the
+// credential — every position of it, both bases, nine pad widths — and reports
+// how many of them are genuinely AMBIGUOUS, meaning the digit run of the
+// reference runs straight on into a literal digit of the same base.
+//
+// It is one generator shared by two tests because the two tests must measure
+// THE SAME CORPUS at two different encoding depths. When each had its own copy
+// of the loop, the flat reading passed and the layered one was never written,
+// which is exactly the gap ruling 11 is about.
+func d24SemicolonLessCorpus() (corpus []string, ambiguous int) {
 	runes := []rune(d24Password)
-	ambiguous, missed := 0, []string(nil)
 	for _, base := range []int{10, 16} {
 		for pad := 0; pad <= 8; pad++ {
 			for pos := range runes {
@@ -915,22 +942,270 @@ func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
 				if tail != "" && hexVal(tail[0]) >= 0 && hexVal(tail[0]) < base {
 					ambiguous++
 				}
-				in := `value="` + string(runes[:pos]) + ref + tail + `"`
-				if _, hit := credentialIn([]byte(in), secrets); !hit {
-					missed = append(missed, in)
-				}
+				corpus = append(corpus, `value="`+string(runes[:pos])+ref+tail+`"`)
 			}
 		}
 	}
+	return corpus, ambiguous
+}
+
+// TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed is ruling 11,
+// measured.
+//
+// THE UNION USED TO EXIST AT ENCODING DEPTH 0 AND NOWHERE ELSE.
+// containsUnderEveryReading reads a digit run every way — but it reads the
+// FORM sweepForms handed it, and sweepForms built that form by running
+// decodeEntities, which had already PICKED the greedy reading. At depth 0 the
+// seed itself is a form, still carrying the ambiguous bytes, so the union had
+// something to work on and the test above passed. Put ONE url.QueryEscape
+// around the same string and the only form carrying the credential is the
+// output of a pass that decoded the percent layer and the reference together,
+// and the ambiguous bytes never exist in any retained form.
+//
+// A UNION TAKEN OVER THE OUTPUT OF A DECODER THAT ALREADY CHOSE IS NOT A UNION.
+//
+// Measured before the fix: 0 of 450 missed flat, 135 of 450 missed under one
+// QueryEscape — exactly the genuinely ambiguous ones. The walk is contiguous
+// from zero so that the depth at which the union stops existing is visible
+// rather than averaged out.
+func TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	corpus, ambiguous := d24SemicolonLessCorpus()
 	if ambiguous == 0 {
 		t.Fatal("no spelling this test generated was ambiguous, so it measures nothing")
 	}
-	if len(missed) > 0 {
-		t.Fatalf("the sweep did not see the credential in %d of the %d generated "+
-			"spellings (%d of which are ambiguous). First miss: %q. A greedy digit "+
-			"run picks one reading of an ambiguous input; the union is the "+
-			"fail-closed reading", len(missed), 2*9*len(runes), ambiguous, missed[0])
+	for _, layers := range []int{0, 1, 2, 3} {
+		missed := []string(nil)
+		for _, in := range corpus {
+			if _, hit := credentialIn([]byte(d24PercentLayers(in, layers)), secrets); !hit {
+				missed = append(missed, in)
+			}
+		}
+		if len(missed) > 0 {
+			t.Errorf("under %d layer(s) of percent-encoding the sweep did not see the "+
+				"credential in %d of the %d semicolon-less spellings (%d of which are "+
+				"ambiguous). First miss: %q. An ambiguity has to branch AT THE STEP "+
+				"WHERE IT OCCURS: a decoding pass returns a SET of candidate strings "+
+				"and the next pass maps over the set, or the union is taken over the "+
+				"output of a decoder that already chose",
+				layers, len(missed), len(corpus), ambiguous, missed[0])
+		}
 	}
+}
+
+// d24EscapeShapedSecrets are ten realistic credentials WHOSE OWN BYTES ARE AN
+// ESCAPE SEQUENCE of one of the three decoders.
+//
+// This is not an exotic shape. A base64 secret carries '+' and '/'; a secret
+// pasted out of a JSON config carries a literal backslash; an API key copied
+// out of a URL carries a literal '%'; a secret out of an HTML form dump carries
+// a literal '&' and can carry a literal "&amp;" or "&#65;". Each of these is
+// the credential ITSELF, not an encoding of it.
+//
+// They break a pipeline that composes decodePercent, decodeBackslash and
+// decodeEntities inside one pass and retains only the composition: one outer
+// percent layer produces the secret's exact bytes as an INTERMEDIATE, and the
+// next decoder in the same pass then eats the secret's own escape before
+// anything sees it.
+var d24EscapeShapedSecrets = []string{
+	`pa\nssw0rd`,          // a literal backslash-n, as a JSON config file spells it
+	`s3cr3t%20key`,        // a key lifted out of a URL, percent signs and all
+	`tok&amp;en`,          // a value lifted out of an HTML form dump
+	`aws\\secret\\v1`,     // doubled backslashes, as a Windows path-shaped id
+	`hdr\u0041pikey`,      // a literal \u escape inside the value
+	`%2Fbucket%2Fkey`,     // an object key that was already percent-encoded
+	`p@ss\tword`,          // a literal backslash-t
+	`&#65;PI-KEY-9f2a`,    // a value that literally begins with a reference
+	`x%5Cy%5Cz`,           // percent-encoded backslashes inside the secret
+	`b64+seg/ment+ends==`, // base64 alphabet: '+' is the plus/space ambiguity
+}
+
+// TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer is the second face of
+// the same root cause.
+//
+// Three decoders composed inside one pass and only the composition was
+// retained, so the secret's own escape was destroyed by an earlier decoder
+// before the later one could see the form that contained it. Six of these ten
+// shapes were lost under ONE percent layer.
+//
+// Retaining the intermediates is not a special case for these ten: an
+// intermediate IS a member of the candidate set, and dropping it was the bug.
+// The zero-layer row is here so a regression that loses the flat case is not
+// read as a regression in the layered one.
+func TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer(t *testing.T) {
+	for _, raw := range d24EscapeShapedSecrets {
+		t.Run(raw, func(t *testing.T) {
+			secrets := []Secret{mustSecret(t, raw)}
+			for _, layers := range []int{0, 1, 2} {
+				in := `{"state":"` + d24PercentLayers(raw, layers) + `"}`
+				if _, hit := credentialIn([]byte(in), secrets); !hit {
+					t.Errorf("under %d layer(s) of percent-encoding the sweep did not "+
+						"see the credential %q in %q. The secret's own bytes are an "+
+						"escape sequence, so an earlier decoder in the same pass ate "+
+						"them; every INTERMEDIATE of a pass is a member of the "+
+						"candidate set and has to survive to the comparison",
+						layers, raw, in)
+				}
+			}
+			// And the widened set still says no. A credential one character
+			// short of the fixture is not the fixture, however many readings
+			// the sweep carries.
+			near := `{"state":"` + d24PercentLayers(raw[:len(raw)-1]+"Z", 1) + `"}`
+			if _, hit := credentialIn([]byte(near), secrets); hit {
+				t.Errorf("the sweep read %q as the credential %q. A candidate set that "+
+					"says yes to a string that is not the secret makes every "+
+					"assertion in this file vacuous", near, raw)
+			}
+		})
+	}
+}
+
+// TestANonGreedyReadingThatMustBeDecodedAgainIsAMemberOfTheSet is the part of
+// the digit-run ambiguity that the matcher CANNOT reach, and therefore the part
+// that has to branch inside the decoder.
+//
+// containsUnderEveryReading unions the readings of a reference at the point of
+// matching, so it covers every reading that is already the secret's bytes. It
+// cannot cover a reading that has to be DECODED AGAIN first, because it does
+// not decode — it matches. `&#3741` read greedily is U+0E9D; read at index 1 it
+// is '%' followed by the literal characters "41", and one further percent step
+// turns that into 'A'. Only a decoder that emits the non-greedy reading as its
+// own candidate gets there.
+//
+// The negative row is what stops this from being a matcher that says yes to
+// anything: `&#3841` has the same shape and its index-1 reading is '&', so the
+// same machinery must NOT produce an 'A'.
+func TestANonGreedyReadingThatMustBeDecodedAgainIsAMemberOfTheSet(t *testing.T) {
+	for _, tc := range []struct {
+		secret, in string
+		want       bool
+	}{
+		{"A", "&#3741", true},                // reading 1 is '%', then "41", then 'A'
+		{"A", "x&#3741y", true},              // and not only at the start of the form
+		{"AB", "&#3741&#3742", true},         // two sites, both needing reading 1
+		{"%41", "&#3741", true},              // the reading itself, before the next step
+		{string(rune(3741)), "&#3741", true}, // and the greedy reading is still there
+		{"A", "&#3841", false},               // reading 1 is '&', which spells no 'A'
+		{"AA", "&#3741", false},              // one site is not two
+		{"B", "&#3741", false},               // no reading of this run spells a 'B'
+	} {
+		secrets := []Secret{mustSecret(t, tc.secret)}
+		if _, hit := credentialIn([]byte(tc.in), secrets); hit != tc.want {
+			t.Errorf("credentialIn(%q) for secret %q = %v, want %v. A decoder must "+
+				"emit a SET: a reading it does not produce is one the matcher can "+
+				"never decode its way back to",
+				tc.in, tc.secret, hit, tc.want)
+		}
+	}
+}
+
+// TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual SHOWS the residual
+// with a fixture instead of asserting it is gone.
+//
+// A step asks decodeEntitiesReading for the k-th reading of the whole string,
+// so every site in one candidate takes the SAME index. That is the DIAGONAL of
+// the reading cross-product. The off-diagonal matters only where the chosen
+// readings must be decoded a second time — everywhere else
+// containsUnderEveryReading takes the full per-site cross-product at the point
+// of matching — and the fixture below is exactly there:
+//
+//	`&#3741&#90` carries the secret "A\t0" if and only if the first site is
+//	read at index 1 ('%', leaving "41" for a later percent step) and the second
+//	at index 0 (U+0009, leaving a literal '0'). No single index does both.
+//
+// The two control rows are the ones the diagonal DOES cover, so a reader can
+// see that the gap is the off-diagonal and not the whole mechanism. Closing it
+// costs the full cross-product, which is exponential in the number of ambiguous
+// sites in the artifact; the provenance rule is what covers it meanwhile.
+//
+// IF THIS TEST EVER FAILS BECAUSE THE RESIDUAL CLOSED, THE FIX IS TO DELETE THE
+// BULLET, NOT THE TEST. A residual list that keeps naming something that no
+// longer exists is the same defect as one that omits something that does.
+func TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual(t *testing.T) {
+	offDiagonal := []Secret{mustSecret(t, "A\t0")}
+	if _, hit := credentialIn([]byte("&#3741&#90"), offDiagonal); hit {
+		t.Fatal(`the sweep found "A\t0" in "&#3741&#90", so two sites at different ` +
+			"reading indices are no longer a residual. Delete that bullet from " +
+			"credentialIn's doc and from this file's header, and delete this test — " +
+			"a residual list that names a gap that closed is as wrong as one that " +
+			"omits a gap that is open")
+	}
+	// The diagonal itself, which is covered: both sites at index 1.
+	if _, hit := credentialIn([]byte("&#3741&#3742"), []Secret{mustSecret(t, "AB")}); !hit {
+		t.Error(`the sweep did not find "AB" in "&#3741&#3742", where BOTH sites need ` +
+			"reading index 1. That is the diagonal, and it is supposed to be covered, " +
+			"so this test is measuring a broken decoder rather than the off-diagonal")
+	}
+	// And the per-site cross-product the MATCHER takes, which needs no further
+	// decoding and is therefore covered at every combination of indices.
+	if _, hit := credentialIn([]byte("&#115&#514Z"), []Secret{mustSecret(t, "s\x0514Z")}); !hit {
+		t.Error(`the sweep did not find "s\x0514Z" in "&#115&#514Z", where the first ` +
+			"site needs reading index 2 ('s') and the second needs index 0 (U+0005, " +
+			`leaving the literal "14Z"). Readings that need no second decode are ` +
+			"unioned at the point of matching, over every site independently, and " +
+			"that half must stay complete or the residual above is much larger than " +
+			"this file says it is")
+	}
+}
+
+// TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize is the honest half of
+// turning a pipeline into a set.
+//
+// The old shape had an argument that a string under about 2 KiB always reached
+// its fixpoint: 2·len+specials strictly decreases on any pass that changes
+// anything, so one trajectory costs at most 3L² bytes. THAT ARGUMENT DOES NOT
+// SURVIVE A SET. It still bounds the DEPTH at 3L, but nothing in it bounds how
+// many forms are reachable, so 3L² is no longer an upper bound on the work and
+// the claim has been deleted from codedSweepWorkBytes' doc rather than
+// qualified.
+//
+// What can be demonstrated is asserted here instead, and it is the WORK BOUND —
+// the thing ruling 11 says to bound and disclose. The size of the set is
+// measured and logged, not capped: a cap would be a budget an encoder could
+// step outside by shaping an artifact to branch harder.
+//
+// The corpus is assembled out of nothing but escape fragments, which is the
+// shape that branches worst: every '%', '\' and '&' is a site where two
+// decoders disagree about what the bytes mean.
+func TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize(t *testing.T) {
+	rng := rand.New(rand.NewPCG(0x11, 0x5e7))
+	fragments := []string{
+		"%", "\\", "&", "#", "+", ";", "a", "1", "3", "7", "5", "0",
+		"%25", "%2B", "%5C", "&#37", "&#1153", "&amp;", `A`, `\n`, "&#x25",
+	}
+	worst, worstBytes, worstIn := 0, 0, ""
+	for iter := 0; iter < 4000; iter++ {
+		var b strings.Builder
+		for n := 2 + rng.IntN(40); n > 0; n-- {
+			b.WriteString(fragments[rng.IntN(len(fragments))])
+		}
+		in := b.String()
+		forms := sweepForms(in)
+		total := 0
+		for _, f := range forms {
+			total += len(f)
+		}
+		// THE ASSERTION. The traversal is charged for every pass it makes, so
+		// the set it returns cannot be larger than the budget it was allowed to
+		// spend. If this ever fails the budget is not a bound on anything.
+		if total > codedSweepWorkBytes {
+			t.Fatalf("iteration %d: sweepForms returned %d forms totalling %d bytes "+
+				"from a %d-byte seed, past the %d-byte work bound. The budget is the "+
+				"disclosed bound on this traversal, so a set that outgrows it means "+
+				"codedSweepWorkBytes' doc describes something the code does not do",
+				iter, len(forms), total, len(in), codedSweepWorkBytes)
+		}
+		if len(forms) > worst {
+			worst, worstBytes, worstIn = len(forms), total, in
+		}
+	}
+	// The corpus has to actually branch, or the assertion above is vacuous.
+	if worst < 8 {
+		t.Fatalf("the widest candidate set this corpus produced was %d forms, which "+
+			"is not branching at all, so this test measures nothing", worst)
+	}
+	t.Logf("widest candidate set over 4000 generated strings: %d forms, %d bytes, "+
+		"from a %d-byte seed %q", worst, worstBytes, len(worstIn), worstIn)
 }
 
 // TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading is the other direction,
@@ -989,9 +1264,11 @@ func d24PercentLayers(s string, n int) string {
 // six were not — and the doc's list of residuals did not name it, so a reader
 // took its absence for completeness.
 //
-// No constant in the file names a depth any more. sweepForms runs to a fixpoint
-// and spends BYTES SCANNED, so the depth an artifact reaches is a property of
-// that artifact rather than a parameter of the decoder. Repeated QueryEscape is
+// No constant in the file names a depth any more. sweepForms walks a CANDIDATE
+// SET to closure and spends BYTES SCANNED, so the depth an artifact reaches is
+// a property of that artifact rather than a parameter of the decoder — and it
+// is a property of the artifact's BRANCHING too, since the budget is shared
+// with every reading the traversal has to carry. Repeated QueryEscape is
 // the shape that pays worst — it re-encodes only the percent signs, so each
 // pass shrinks the string by a trickle rather than collapsing it — which is why
 // it is the fixture here rather than a friendlier one.
@@ -1031,6 +1308,47 @@ func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
 	if _, hit := credentialIn([]byte(filler+d24PercentLayers(d24Password, 3)), secrets); !hit {
 		t.Fatal("a credential three layers deep at the end of a megabyte of filler " +
 			"was not found, so the byte budget is tighter than its doc claims")
+	}
+}
+
+// TestANonShrinkingArtifactIsDecodedAsDeepAsTheWorkBoundPaysFor pins the
+// residual curve that codedSweepWorkBytes' doc discloses, so that the numbers
+// in that doc cannot go quietly stale.
+//
+// AN ARTIFACT OF PURE FILLER IS THE WORST CASE FOR A BYTE BUDGET: it does not
+// shrink as it is decoded, so every form the traversal visits costs the whole
+// artifact, and the depth reached is decided by the budget rather than by the
+// encoding. That is the one place the sweep has a ceiling, and the point of
+// this test is that the ceiling is WRITTEN DOWN and checked.
+//
+// The floors below are set from measurement with roughly a third of headroom —
+// measured 11, 24, 50 and 60+ layers at these four sizes — and they are FLOORS,
+// not targets: going deeper is always fine, and the assertion fires when
+// something makes the traversal more expensive per level without anybody
+// noticing that the disclosed curve moved. Turning the pipelines into a set
+// cost exactly that and was caught exactly this way: at the multiplier that
+// stood before, a 4 MiB artifact went from four layers to two.
+func TestANonShrinkingArtifactIsDecodedAsDeepAsTheWorkBoundPaysFor(t *testing.T) {
+	secrets := d24Steps(t).secrets()
+	for _, tc := range []struct{ filler, floor int }{
+		{256 << 10, 48},
+		{1 << 20, 32},
+		{2 << 20, 16},
+		{4<<20 - 400, 8},
+	} {
+		body := strings.Repeat("z", tc.filler) + d24PercentLayers(d24Password, tc.floor)
+		if len(body) > codedMaxArtifactBytes {
+			t.Fatalf("the %d-byte-filler fixture is %d bytes, past the artifact cap, "+
+				"so it is not an input any artifact could carry", tc.filler, len(body))
+		}
+		if _, hit := credentialIn([]byte(body), secrets); !hit {
+			t.Errorf("a credential %d layers deep at the end of %d bytes of filler was "+
+				"not found. That is the residual codedSweepWorkBytes' doc discloses as "+
+				"a measured curve, so either the budget got tighter, a step got more "+
+				"expensive, or the doc is now describing a sweep that does not exist — "+
+				"re-measure it and rewrite the curve rather than lowering this floor",
+				tc.floor, tc.filler)
+		}
 	}
 }
 

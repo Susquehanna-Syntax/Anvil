@@ -37,12 +37,15 @@
 //	                  attached to an innocent step whose bytes carry the
 //	                  credential anyway. Every byte that leaves for the sink,
 //	                  and every driver-authored string that reaches the
-//	                  ledger, is CANONICALIZED — percent, backslash and HTML
-//	                  character references decoded to a fixpoint — and then
-//	                  searched for the credential's actual value, and the
-//	                  whole artifact or string is REFUSED if it is found. Not
-//	                  redacted in place: a partial rewrite has to anticipate
-//	                  every encoding, and refusing the artifact does not.
+//	                  ledger, is expanded into the SET OF ITS CANDIDATE
+//	                  READINGS — percent, backslash and HTML character
+//	                  references decoded ONE DECODER AT A TIME, every
+//	                  intermediate retained, every ambiguity branched where it
+//	                  arises — and every member of that set is searched for
+//	                  the credential's actual value, and the whole artifact or
+//	                  string is REFUSED if it is found. Not redacted in place:
+//	                  a partial rewrite has to anticipate every encoding, and
+//	                  refusing the artifact does not.
 //
 // THE SWEEP IS NOT A COMPLETENESS CLAIM AND SAYS SO IN ITS OWN DOC. An earlier
 // shape of it searched three ENCODINGS OF THE SECRET (raw, QueryEscape,
@@ -80,26 +83,41 @@
 //	table's length is the encoder's budget any more. What one wildcard cannot
 //	stand for is a name whose expansion is two runes.
 //
+//	TWO REFERENCES NEEDING DIFFERENT NON-GREEDY READINGS THAT THEN NEED
+//	DECODING AGAIN. The sweep no longer resolves an ambiguity while producing
+//	the form its own union is taken over — that defect is closed and measured
+//	in credentialIn's doc — but one form still takes the SAME reading index at
+//	every site, which is the diagonal of the cross-product rather than the
+//	whole of it. The residual is exactly the off-diagonal, and only where the
+//	readings must be decoded a second time; it is shown by a fixture in
+//	TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual rather than
+//	asserted about.
+//
 //	A DEEPLY LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK. This
 //	bullet is here because its absence was itself a defect: the sweep re-ran
 //	its pipeline THREE TIMES and nothing said so, so percent-encoding applied
 //	four times was invisible and the residual list read as though it were
-//	complete. The pipeline now runs to a fixpoint under a bound on BYTES
-//	SCANNED rather than on layers — measured, it reaches 1546 layers of
+//	complete. The sweep now walks a candidate set to closure under a bound on
+//	BYTES SCANNED rather than on layers — measured, it reaches 2767 layers of
 //	repeated url.QueryEscape, and no constant in this file names a depth. What
-//	remains is disclosed at codedSweepWorkBytes: an artifact that does not
-//	shrink as it is decoded gets codedSweepWorkBytes/N passes, which is four
-//	at the 4 MiB artifact cap, and below about 2 KiB there is no residual at
-//	all.
+//	remains is disclosed as a MEASURED CURVE at codedSweepWorkBytes: an
+//	artifact that does not shrink as it is decoded is decoded eleven layers at
+//	the 4 MiB cap, fifty at a megabyte, and more than sixty below 256 KiB.
 //
-//	base64 or any other re-encoding of the credential inside an artifact. It
-//	is now the ONLY spelling in this list that a fixture can demonstrate, and
-//	TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl uses it as its
-//	positive control for exactly that reason. Catching it needs
-//	encoding/base64, which is NOT on gate 3's inertImports; adding it is a
-//	one-line edit in internal/dast/authz/egress_chokepoint_test.go, is
-//	reported to the orchestrator rather than made here, and is recorded as
-//	U10 in internal/SKIPPED-CONTROLS.md.
+//	base64 or any other re-encoding of the credential inside an artifact.
+//	THE CLAIM THAT THIS WAS THE ONLY DEMONSTRABLE SPELLING IN THIS LIST IS
+//	DELETED, BECAUSE IT WAS FALSE: the digit-run ambiguity under one encoding
+//	layer was demonstrable too, and 135 of 450 generated re-spellings
+//	demonstrated it. That one is closed now; the reading-index diagonal above
+//	is the other bullet here that a fixture can still demonstrate, and both
+//	fixtures are named beside their bullets so a reader can run them instead
+//	of believing this comment. base64 remains
+//	TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl's positive
+//	control. Catching it needs encoding/base64, which is NOT on gate 3's
+//	inertImports; adding it is a one-line edit in
+//	internal/dast/authz/egress_chokepoint_test.go, is reported to the
+//	orchestrator rather than made here, and is recorded as U10 in
+//	internal/SKIPPED-CONTROLS.md.
 //
 //	a compressed artifact. compress/gzip IS allowlisted, so this one is
 //	reachable; it is not done because an artifact sink that stores compressed
@@ -2846,15 +2864,26 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 // depending on what the encoder meant.
 //
 // AN AMBIGUOUS INPUT IS READ EVERY WAY AND ANY READING THAT CONTAINS THE SECRET
-// REFUSES. sweepForms runs the '+' ambiguity as two pipelines;
-// containsUnderEveryReading carries the digit-run ambiguity as alternatives at
-// the point of matching, which is cheaper than a pipeline per site and is the
-// only way the two ambiguities compose. Reading greedily instead was measured
-// to cost six of the twenty-five single-character re-spellings of this file's
-// credential in base 10 alone, and the credential left the package through
-// CoverageInstant.CarriageEvidence().
+// REFUSES — AND IT IS READ EVERY WAY AT THE STEP WHERE THE AMBIGUITY ARISES,
+// not where the answer is consumed. That distinction is the whole of ruling 11
+// and it was got wrong once already: containsUnderEveryReading took the union
+// over readings, but it took it over a FORM that decodeEntities had produced by
+// picking the greedy reading, so the union existed at encoding depth 0 and
+// nowhere else. Measured: 0 of 450 semicolon-less re-spellings of this file's
+// credential missed flat, 135 of 450 missed under ONE url.QueryEscape.
+//
+// So sweepForms is a SET, one step is ONE decoder, every reading a step
+// produces is retained, and the next step maps over all of them. The union at
+// the point of matching is unchanged and still does the site-independent
+// cross-product; what changed is that it is now taken over forms that still
+// carry the ambiguous bytes at every depth, rather than over one form a decoder
+// already resolved.
 //
 // # What it still does not see, stated rather than qualified away
+//
+// EVERY BULLET BELOW THAT IS STILL LIVE HAS A FIXTURE. Where a residual could
+// not be demonstrated it has been deleted from this list rather than qualified,
+// and where one is demonstrable the test that demonstrates it is named.
 //
 //	A NAMED REFERENCE THAT EXPANDS TO MORE THAN ONE RUNE. What stood here was
 //	that a named entity outside the six got past the sweep because "the
@@ -2879,21 +2908,40 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //	no longer "a name outside a list" — it is a name whose expansion is not
 //	one rune, which one wildcard cannot stand for.
 //
+//	TWO CHARACTER REFERENCES THAT NEED DIFFERENT NON-GREEDY READINGS, AND NEED
+//	THEM DECODED AGAIN AFTERWARDS. A step asks decodeEntitiesReading for the
+//	k-th reading of the WHOLE STRING, so every site in one form takes the same
+//	index: that is the diagonal of the cross-product, not the whole of it. The
+//	off-diagonal matters only where the chosen readings must be decoded a
+//	second time, because containsUnderEveryReading already unions the readings
+//	of every site independently on bytes it can still see.
+//	SHOWN, NOT ASSERTED AWAY: the secret "A\t0" inside `&#3741&#90` needs the
+//	first site's reading 1 ('%', leaving "41" for a later percent step) and the
+//	second site's reading 0 (a tab, leaving a literal '0'), and the sweep does
+//	not find it. TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual is
+//	that fixture, and it fails loudly if the residual is ever closed so that
+//	this list cannot go stale in the other direction. Closing it costs the full
+//	cross-product, which is exponential in the number of ambiguous sites; the
+//	provenance rule is what covers it.
+//
 //	A LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK AS IT IS
-//	DECODED. This bullet was MISSING, and its absence was the defect: the
+//	DECODED. This bullet was MISSING once, and its absence was the defect: the
 //	pipeline re-ran exactly three times, so url.QueryEscape applied four times
 //	hid the credential and this list read as though nothing of the kind
-//	existed. There is no round count now — sweepForms runs to a fixpoint and
-//	spends bytes scanned — and what is left is stated at codedSweepWorkBytes:
-//	codedSweepWorkBytes/N passes on an artifact of N bytes that does not
-//	shrink, four at the artifact cap, and no residual at all below ~2 KiB.
+//	existed. There is no round count now — sweepForms walks a candidate set and
+//	spends bytes scanned — and what is left is a MEASURED CURVE at
+//	codedSweepWorkBytes: an artifact of pure filler that does not shrink is
+//	decoded eleven layers at the 4 MiB cap, fifty at a megabyte, and more than
+//	sixty below 256 KiB, against four at the cap when four pipelines stood
+//	here. The claim that there was NO residual below ~2 KiB is deleted: it was
+//	derived for a single trajectory and a set is not one.
 //
 //	base64 or any other re-encoding. Catching it needs encoding/base64, which
 //	is NOT on gate 3's inertImports; adding it is a one-line edit in
 //	internal/dast/authz/egress_chokepoint_test.go, is reported to the
 //	orchestrator rather than made here, and is U10 in
 //	internal/SKIPPED-CONTROLS.md. It is the spelling the backstop's own
-//	positive-control test now uses, because it is the one left.
+//	positive-control test uses.
 //
 //	a compressed artifact, and A CREDENTIAL RENDERED AS PIXELS. Both are in
 //	this file's header with what each would cost.
@@ -2920,9 +2968,9 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 	return 0, false
 }
 
-// codedSweepWorkBytes bounds the TOTAL BYTES one canonicalizer pipeline may
-// scan on its way to a fixpoint. It replaced a round count, and the difference
-// is the whole point of it.
+// codedSweepWorkBytes bounds the TOTAL BYTES the canonicalizer may scan while
+// building one candidate set. It replaced a round count, and the difference is
+// the whole point of it.
 //
 // # A round count was a ceiling on encoding DEPTH, and its size was the budget
 //
@@ -2936,106 +2984,281 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 //
 // # What replaced it, and why the number below is not the same ceiling
 //
-// NO CONSTANT IN THIS FILE NAMES A DEPTH ANY MORE. The loop in sweepForms runs
-// until the string stops changing; what it spends is BYTES SCANNED, one pass
-// costing the current length, and the descent continues while the running
-// total fits in codedSweepWorkBytes. Depth is therefore not a parameter of the
-// decoder at all — it is whatever the artifact's own shape pays for. Two
-// artifacts of the same size get different depths, which is exactly what a
-// fixed round count could not express.
+// NO CONSTANT IN THIS FILE NAMES A DEPTH ANY MORE. sweepForms walks the
+// candidate set until no form produces a form it has not already seen; what it
+// spends is BYTES SCANNED, and it stops when the running total no longer fits
+// in codedSweepWorkBytes. Depth is not a parameter of the decoder at all — it
+// is whatever the artifact's own shape pays for, and two artifacts of the same
+// size reach different depths, which is exactly what a fixed round count could
+// not express.
+//
+// # The accounting is of PASSES ACTUALLY MADE, not of a chosen depth
+//
+// One step over a form of length N makes at most codedSweepStepPasses + r
+// passes over it: the three single-decoder readings and the reference-depth
+// scan are one pass each even when their fast path finds nothing to do, and
+// each of the r character-reference readings the step returns is one more. The
+// charge is exactly that, so the budget is an upper bound on work rather than a
+// number that happens to correlate with it.
+//
+// # The multiplier, and why it is not the one that was here
+//
+// It was `4 *`, and it meant four passes down each of FOUR FIXED PIPELINES at
+// the artifact cap. A traversal costs more per level than a pipeline does — a
+// step is charged codedSweepStepPasses over the form before it is charged one
+// pass per reading — so keeping `4 *` would have bought two layers at the cap
+// where the pipelines bought four, and the multiplier is NOT chosen to make a
+// sentence come out. It was set by measuring the thing the residual is about:
+// with `16 *` a 4 MiB artifact of pure filler was decoded 2 layers, with `64 *`
+// it is decoded 11, against 4 before this file had a set at all. The measured
+// curve is in the residual section below.
 //
 // # What that buys, measured rather than reasoned about
 //
 // Applying url.QueryEscape repeatedly is the WORST shape for a byte budget: it
 // re-encodes only the percent signs, so the artifact grows about two bytes per
 // percent sign per layer and each pass shrinks it by the same trickle instead
-// of collapsing it. Even there, this file's own credential is found at 1546
-// layers, against three before. An encoding that covers the whole body —
-// backslash escaping at two bytes per byte, percent at three — collapses it
-// geometrically instead, and the whole descent then costs under 2N bytes for an
-// artifact of N bytes, which is inside the budget at every size an artifact can
-// have.
+// of collapsing it. Even there, and even with the traversal carrying both
+// readings of every layer's '+', this file's own credential is found at 2767
+// layers, against three when a round count stood here. An encoding that covers
+// the whole body — backslash escaping at two bytes per byte, percent at three —
+// collapses it geometrically instead.
 //
 // # The residual, disclosed because an absent one reads as completeness
 //
-// The budget bites on an artifact that does NOT shrink as it is decoded: a
-// megabyte of plain filler with one deeply-nested credential at the end costs a
-// full pass per layer, so such an artifact gets codedSweepWorkBytes/N passes —
-// four at the 4 MiB artifact cap, four thousand at a kilobyte. Two consequences,
-// both stated rather than implied:
+// The budget bites on an artifact that does NOT shrink as it is decoded: plain
+// filler with one deeply-nested credential in it costs a full pass per form
+// visited, and those visits are shared with whatever branching the artifact
+// forces. MEASURED, with the credential under N layers of repeated
+// url.QueryEscape at the end of that much filler:
 //
-//	A 4 MiB artifact that is almost all filler with a five-deep encoding
-//	somewhere in it is decoded four layers and not five. That is a real
-//	residual, it is the provenance rule that covers it, and it is the one
-//	credentialIn's doc now names.
+//	1 KiB      60+ layers        1 MiB      50 layers
+//	16 KiB     60+ layers        2 MiB      24 layers
+//	256 KiB    60+ layers        4 MiB      11 layers
 //
-//	Below about 2 KiB the fixpoint is ALWAYS reached, whatever the artifact
-//	looks like — no residual at all. The measure 2·len+specials (specials being
-//	'&', '%', '\' and '+') strictly decreases on every pass that changes
-//	anything: a pass either shortens the string or, in the one case where it
-//	cannot (`&#0`, three bytes in and three bytes of U+FFFF out), consumes an
-//	'&' and produces no special. So a string of length L reaches its fixpoint
-//	within 3L passes costing at most 3L² bytes, and 3L² is inside
-//	codedSweepWorkBytes for every L below ~2360.
-const codedSweepWorkBytes = 4 * codedMaxArtifactBytes
+// (60 is where the measurement stopped, not where the sweep did.) Two
+// consequences, both stated rather than implied:
+//
+//	A 4 MiB artifact that is almost all filler, in which the credential is
+//	deeper than twelve layers, is not reached. That is a real residual, it is
+//	the provenance rule that covers it, and it is the one credentialIn's doc
+//	names.
+//
+//	THE OLD CLAIM THAT BELOW ~2 KiB THERE IS NO RESIDUAL AT ALL IS GONE, AND
+//	IT IS DELETED RATHER THAN QUALIFIED. It was derived from 3L passes on ONE
+//	trajectory: 2·len+specials (specials being '&', '%', '\' and '+') strictly
+//	decreases on every pass that changes anything, which still bounds the
+//	traversal's DEPTH at 3L — but the traversal is a set, and nothing in that
+//	argument bounds how many forms are reachable, so 3L² is no longer an upper
+//	bound on the work. What can be demonstrated instead is measured, not
+//	derived, by TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize: over
+//	four thousand generated strings assembled out of nothing but escape
+//	fragments — the shape that branches worst — the largest set observed is 476
+//	forms totalling 19515 bytes, from a 77-byte seed. The assertion that test
+//	makes is the WORK BOUND, that the set the traversal returns fits inside
+//	codedSweepWorkBytes, because the size of the set is a measurement and not a
+//	control: a cap on it would be a budget an encoder could step outside by
+//	shaping an artifact to branch harder.
+const codedSweepWorkBytes = 64 * codedMaxArtifactBytes
 
-// sweepForms returns the canonical forms of s the sweep searches.
+// codedSweepStepPasses is how many passes over a form one step makes before it
+// makes one per reading it returns: plusToSpace, decodePercent, decodeBackslash
+// and referenceReadingDepth, each of which scans the form even when its fast
+// path finds nothing to decode. It is an accounting constant — no behaviour
+// reads it — and it is here so that the budget charges what the step spends.
+const codedSweepStepPasses = 4
+
+// sweepForms returns the SET of candidate readings of s that the sweep
+// searches. It is a set and not a string, and that is the whole of it.
 //
-// It is FOUR PIPELINES re-run to a fixpoint, not a combinatorial expansion of
-// every decoder ordering, and a form identical to one already produced is
-// dropped — which is the ordinary case, because a string with no '+' and no
-// unresolvable reference produces the same four.
+// # A DECODING PASS RETURNS A SET, AND THE NEXT PASS MAPS OVER THE SET
 //
-// The four are two AMBIGUITIES, each read both ways, and neither can be
-// settled by looking at the bytes:
+// What stood here was four PIPELINES, each running `decodeEntities(
+// decodeBackslash(decodePercent(x)))` to a fixpoint and retaining only each
+// pass's composed output. Two things were lost inside every pass, and they are
+// the same thing:
 //
-//	'+' means SPACE in a query string and a literal plus everywhere else. The
-//	distinction has to be made INSIDE the loop rather than once on the seed:
-//	url.QueryEscape applied twice writes the space as "%2B", which is a literal
-//	'+' after one round and a space after two, and a seed-only reading finds
-//	nothing.
+//	THE UNION EXISTED AT ENCODING DEPTH 0 AND NOWHERE ELSE.
+//	containsUnderEveryReading reads an ambiguous digit run every way — but it
+//	reads the FORM it is handed, and decodeEntities had already picked the
+//	greedy reading while producing that form. At depth 0 the seed is itself a
+//	form and still carries the ambiguous bytes, so the union had something to
+//	work on; wrap the same string in ONE url.QueryEscape and the only form
+//	carrying the credential is the output of a pass that decoded the percent
+//	layer and the reference together, and the ambiguous bytes exist in no
+//	retained form at all. Measured against this file's own credential: 0 of
+//	450 semicolon-less re-spellings missed flat, 135 of 450 missed under one
+//	QueryEscape — exactly the genuinely ambiguous ones.
+//	A UNION TAKEN OVER THE OUTPUT OF A DECODER THAT ALREADY CHOSE IS NOT A
+//	UNION.
+//
+//	THE THREE DECODERS COMPOSED INSIDE ONE PASS AND ONLY THE COMPOSITION WAS
+//	RETAINED, so a secret whose OWN BYTES are an escape sequence was destroyed
+//	by an earlier decoder before the later one could see the form containing
+//	it. `pa\nssw0rd` under one percent layer is `pa%5Cnssw0rd`: decodePercent
+//	produces the secret exactly, and decodeBackslash in the same pass eats it.
+//	Six of the ten realistic secret shapes in d24EscapeShapedSecrets were lost
+//	that way under ONE percent layer — a base64 secret carries '+' and '/', a
+//	secret out of a JSON config carries a backslash, a key lifted out of a URL
+//	carries a '%'.
+//
+// So an ambiguity branches AT THE STEP WHERE IT OCCURS rather than where the
+// answer is consumed. One step is ONE decoder, every candidate it produces is
+// retained, and the next step maps over all of them: composition of passes is
+// composition of sets. An intermediate is a member of the set, not a value on
+// its way somewhere.
+//
+// # What one step produces
+//
+// From a form x, decodeStep returns every one-decoder reading of x:
+// plusToSpace, decodePercent, decodeBackslash, and the character-reference
+// readings under each unresolvedPolicy. Three of the ambiguities are settled by
+// producing both answers rather than choosing:
+//
+//	'+' means SPACE in a query string and a literal plus everywhere else, and
+//	no byte settles it. Both are members; because they are separate steps
+//	rather than a flag on a pipeline, a trajectory may read one '+' as a space
+//	and a later one as a plus, which a per-pipeline flag could not express.
 //
 //	`&commat;` is a character reference under one reading and seven literal
 //	characters under the other. Decoding it to a wildcard is what stops an
 //	unknown name from hiding a credential; NOT decoding it is what stops a
-//	credential that literally contains "&commat;" from being lost when some
-//	outer layer is peeled. Both are searched.
+//	credential that literally contains "&commat;" from being lost when an outer
+//	layer is peeled.
+//
+//	A SEMICOLON-LESS DIGIT RUN has a reading per prefix that denotes a
+//	character, and referenceReadingDepth counts them. The k-th reading of the
+//	whole string takes each site's k-th reading, so a reading that must be
+//	DECODED AGAIN before the secret appears — `&#3741` read as '%' then "41",
+//	which the next percent step turns into 'A' — is a member of the set rather
+//	than a possibility the matcher can only assert about bytes it can see.
+//	Where the readings need no further decoding, containsUnderEveryReading
+//	already unions them at the point of matching, over every site
+//	independently, and that half is unchanged.
+//
+// # The work bound, which is disclosed because an absent one reads as
+// completeness
+//
+// codedSweepWorkBytes now bounds the WHOLE traversal rather than one pipeline,
+// and a step over a form is charged for every pass it makes over that form —
+// codedSweepStepPasses of them before it makes one per reading it returns. Two
+// properties keep that from being a depth ceiling in disguise:
+//
+//	THE SET CANNOT REVISIT. Each decoder strictly decreases 2·len+specials on
+//	any form it changes (see codedSweepWorkBytes), so the traversal is a DAG of
+//	depth at most 3·len and the seen map makes each form cost once.
+//
+//	THE FRONTIER RECONVERGES. The decoders are whole-string passes, not
+//	per-site choices, so two orderings of the same work meet again: for
+//	repeated url.QueryEscape the frontier is the two readings of the layer's
+//	'+' and they collapse back to one form on the next percent step. Measured,
+//	this file's credential is still found at the depths
+//	TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount walks.
+//
+// The residual is unchanged in kind and stated at codedSweepWorkBytes: an
+// artifact that does not SHRINK as it is decoded pays a full pass per form, so
+// it gets codedSweepWorkBytes/N form-visits. When the budget runs out the
+// traversal stops where it is and returns what it has — it never collapses the
+// set to make it fit.
 //
 // The over-matching direction is the one that REFUSES an artifact rather than
 // the one that ships it.
 func sweepForms(s string) []string {
 	out := []string{s}
 	seen := map[string]bool{s: true}
-	add := func(v string) {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	for _, plusIsSpace := range []bool{false, true} {
-		for _, unresolved := range []unresolvedPolicy{
-			unresolvedAsLiteral, unresolvedAsWildcard,
-		} {
-			cur := s
-			// The loop runs to the FIXPOINT. What stops it is either the
-			// string ceasing to change or the pipeline having scanned
-			// codedSweepWorkBytes — never a count of layers.
-			for budget := codedSweepWorkBytes; len(cur) <= budget; {
-				budget -= len(cur)
-				next := cur
-				if plusIsSpace {
-					next = plusToSpace(next)
-				}
-				next = decodeEntities(decodeBackslash(decodePercent(next)), unresolved)
-				if next == cur {
-					break
-				}
-				cur = next
-				add(cur)
+	frontier := []string{s}
+	budget := codedSweepWorkBytes
+	for len(frontier) > 0 {
+		var next []string
+		for _, cur := range frontier {
+			// A form costs its own length per reading taken of it. The empty
+			// string costs one so that a budget cannot be spent forever.
+			cost := len(cur)
+			if cost == 0 {
+				cost = 1
 			}
+			// The base passes of the step are charged BEFORE the step runs, so
+			// the budget cannot be overspent by more than the readings one
+			// already-affordable step returns.
+			if budget < cost*codedSweepStepPasses {
+				return out // the budget is spent; the set stops growing here
+			}
+			budget -= cost * codedSweepStepPasses
+			reads := decodeStep(cur)
+			budget -= cost * len(reads)
+			for _, r := range reads {
+				if !seen[r] {
+					seen[r] = true
+					out = append(out, r)
+					next = append(next, r)
+				}
+			}
+		}
+		frontier = next
+	}
+	return out
+}
+
+// decodeStep returns every reading of s that ONE decoder produces, excluding s
+// itself. It is the step function ruling 11 requires: a pass returns a set.
+//
+// The decoders are applied SEPARATELY rather than composed, because composing
+// them inside one step is what destroyed a secret whose own bytes are an
+// escape sequence — the intermediate that held it was never a member of
+// anything. Each is a whole-string pass, so this is one reading per decoder
+// plus one per character-reference reading index, and never a per-site
+// cross-product.
+func decodeStep(s string) []string {
+	var out []string
+	add := func(v string) {
+		if v == s {
+			return
+		}
+		for _, have := range out {
+			if have == v {
+				return
+			}
+		}
+		out = append(out, v)
+	}
+	add(plusToSpace(s))
+	add(decodePercent(s))
+	add(decodeBackslash(s))
+	depth := referenceReadingDepth(s)
+	for _, unresolved := range []unresolvedPolicy{
+		unresolvedAsLiteral, unresolvedAsWildcard,
+	} {
+		for k := 0; k < depth; k++ {
+			add(decodeEntitiesReading(s, unresolved, k))
 		}
 	}
 	return out
+}
+
+// referenceReadingDepth returns the largest number of readings any character
+// reference in s has, which is how many reading indices decodeStep has to walk.
+//
+// IT IS COUNTED FROM THE BYTES, NOT CAPPED. referenceReadingsAt's doc bounds it
+// by arithmetic at eight — seven decimal prefixes of a digit run can denote a
+// character before 10⁷ passes U+10FFFF, six in hexadecimal, plus the greedy
+// reading — so this is a measurement of the input and not a budget an encoder
+// can step outside by padding.
+func referenceReadingDepth(s string) int {
+	if strings.IndexByte(s, '&') < 0 {
+		return 0
+	}
+	depth := 0
+	var reads []referenceReading
+	for i := 0; i < len(s); i++ {
+		if s[i] != '&' {
+			continue
+		}
+		reads = referenceReadingsAt(reads[:0], s, i)
+		if len(reads) > depth {
+			depth = len(reads)
+		}
+	}
+	return depth
 }
 
 // containsUnderEveryReading reports whether needle occurs in hay under ANY
@@ -3377,6 +3600,29 @@ const (
 // `<input name="password" value="s3cr3t Pa55w0rd&amp;9xQz">` — an artifact
 // stored verbatim by the byte-exact sweep that preceded it.
 func decodeEntities(s string, unresolved unresolvedPolicy) string {
+	return decodeEntitiesReading(s, unresolved, greedyReadingIndex)
+}
+
+// greedyReadingIndex asks decodeEntitiesReading for the LAST reading at every
+// site, which is the longest one and therefore the one a browser takes. Any
+// index at or past a site's reading count means the same thing there, so a
+// string whose deepest site has k readings is fully covered by indices 0..k-1.
+const greedyReadingIndex = -1
+
+// decodeEntitiesReading is decodeEntities with the reading chosen rather than
+// assumed: every character reference in s takes its reading at index k, or its
+// greedy reading when it has fewer than k+1 readings.
+//
+// THE INDEX IS THE STEP-LEVEL BRANCH. A decoder must emit one string, so it
+// must pick; sweepForms therefore asks for every index the input actually has
+// and keeps all the answers, which is what makes "a pass returns a set" true of
+// this pass rather than only of the ones with a boolean ambiguity. What is NOT
+// produced is a form in which two sites take DIFFERENT non-greedy indices —
+// that is the diagonal of the cross-product and not the whole of it, and it is
+// disclosed in credentialIn's residual list. The site-independent
+// cross-product is covered where it can be: containsUnderEveryReading takes it
+// at the point of matching, over bytes it can still see.
+func decodeEntitiesReading(s string, unresolved unresolvedPolicy, k int) string {
 	if strings.IndexByte(s, '&') < 0 {
 		return s
 	}
@@ -3390,7 +3636,7 @@ func decodeEntities(s string, unresolved unresolvedPolicy) string {
 			continue
 		}
 		reads = referenceReadingsAt(reads[:0], s, i)
-		r, n, ok := greedyReading(reads, unresolved)
+		r, n, ok := nthReading(reads, k, unresolved)
 		if !ok {
 			b.WriteByte(s[i])
 			i++
@@ -3522,13 +3768,19 @@ func referenceReadingsAt(dst []referenceReading, s string, off int) []referenceR
 	return dst
 }
 
-// greedyReading returns the reading a browser takes — the longest one — under
-// the policy for a reference whose value could not be determined.
-func greedyReading(reads []referenceReading, unresolved unresolvedPolicy) (rune, int, bool) {
+// nthReading returns the reading at index k, clamping to the LAST — the
+// longest, which is the one a browser takes — for any index the site does not
+// have. It reports false when the bytes are not a reference at all, and when
+// the chosen reading is undecided under a policy that reads an unresolvable
+// reference as literal text.
+func nthReading(reads []referenceReading, k int, unresolved unresolvedPolicy) (rune, int, bool) {
 	if len(reads) == 0 {
 		return 0, 0, false
 	}
-	g := reads[len(reads)-1]
+	if k < 0 || k >= len(reads) {
+		k = len(reads) - 1
+	}
+	g := reads[k]
 	if g.undecided && unresolved != unresolvedAsWildcard {
 		return 0, 0, false
 	}

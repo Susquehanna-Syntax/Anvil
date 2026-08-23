@@ -1952,6 +1952,35 @@ const (
 	// NON-empty — so that a type quietly losing its capability (a Signature
 	// that stopped carrying a compiled regexp, an Observation that stopped
 	// carrying a body) fails here instead of passing.
+	//
+	// ===================================================================
+	// IT USED TO BE A TOTAL EXEMPTION, AND A TOTAL EXEMPTION IS A
+	// JUDGEMENT LIST WITH ONE ENTRY
+	// ===================================================================
+	//
+	// "closureViolations must be non-empty" is satisfied BY THE VIOLATION
+	// ITSELF. MEASURED: adding `Raw []byte` to Summary and changing its
+	// registration from bounded to inbound — one word — left the whole
+	// package GREEN. Finding is defended against that by
+	// TestFindingTypeClosureHasNoRawBodyPath, which asserts its closure
+	// outside this registry; Summary had nothing.
+	//
+	// So the exemption is now bounded twice over, and both bounds are
+	// derived rather than listed:
+	//
+	//	WHO MAY CLAIM IT. Only a type the package's OWN SOURCE shows
+	//	crossing inward — a parameter of an exported function, anything
+	//	in an exported interface's method signatures, or a field of one
+	//	of those — or a type holding a CAPABILITY (an interface, a func
+	//	or a channel), which is the one shape no other verdict can
+	//	express. Summary is neither, so the flip above is now refused
+	//	before its routes are even looked at. See inboundEligibleTypes.
+	//
+	//	WHAT IT COVERS. Exactly the routes named in boundaryType.carries,
+	//	compared as a SET against what closureViolations reports. A new
+	//	body route on an inbound type fails like a new one anywhere
+	//	else; declaring it is an explicit line of registry, not a
+	//	one-word verdict change.
 	verdictInbound boundaryVerdict = "inbound"
 )
 
@@ -1962,6 +1991,27 @@ type boundaryType struct {
 	typ     reflect.Type
 	verdict boundaryVerdict
 	why     string
+	// carries is the EXACT set of field paths closureViolations may report
+	// for a verdictInbound type — the capability or the raw input this type
+	// exists to hold, named one path at a time.
+	//
+	// It must be empty for every other verdict, and for an inbound type it
+	// must match what the walker actually finds, set-for-set. That is what
+	// stops "inbound" meaning "stop looking".
+	carries []string
+}
+
+// violationPaths reduces walker output to the field paths it named, so a
+// registry entry can state WHICH routes a type carries without pinning the
+// wording of the walker's explanation. The path is everything before the
+// first " is ", which is how both walkers format their messages.
+func violationPaths(violations []string) []string {
+	out := make([]string, 0, len(violations))
+	for _, v := range violations {
+		out = append(out, strings.SplitN(v, " is ", 2)[0])
+	}
+	sort.Strings(out)
+	return out
 }
 
 // boundaryTypes is the registry. IT IS NOT THE MEMBERSHIP RULE — the rule is
@@ -1973,20 +2023,20 @@ func boundaryTypes() []boundaryType {
 	return []boundaryType{
 		// --- confirm_gate.go: the values a consumer holds after the gate ---
 		{"Finding", reflect.TypeOf(Finding{}), verdictClosed,
-			"the gate's output type; D.27 requires that a raw body be a type error here"},
+			"the gate's output type; D.27 requires that a raw body be a type error here", nil},
 		{"EvidenceRef", reflect.TypeOf(EvidenceRef{}), verdictClosed,
-			"{body_hash, extracted_span} and nothing else"},
+			"{body_hash, extracted_span} and nothing else", nil},
 		{"Refusal", reflect.TypeOf(Refusal{}), verdictClosed,
 			"the error channel is part of the output; Refusal.Err is the field that " +
-				"proved it"},
+				"proved it", nil},
 		{"RefusalError", reflect.TypeOf(RefusalError{}), verdictClosed,
-			"a value with no Unwrap, so no foreign Error() can print a body through it"},
-		{"Class", reflect.TypeOf(ClassUnset), verdictClosed, "a named string"},
+			"a value with no Unwrap, so no foreign Error() can print a body through it", nil},
+		{"Class", reflect.TypeOf(ClassUnset), verdictClosed, "a named string", nil},
 		{"DetectionMethod", reflect.TypeOf(DetectionMethodUnset), verdictClosed,
-			"a named string"},
-		{"Outcome", reflect.TypeOf(OutcomeUnset), verdictClosed, "a named string"},
-		{"Reason", reflect.TypeOf(ReasonUnset), verdictClosed, "a named string"},
-		{"RefuseReason", reflect.TypeOf(RefuseNotReprobed), verdictClosed, "a named string"},
+			"a named string", nil},
+		{"Outcome", reflect.TypeOf(OutcomeUnset), verdictClosed, "a named string", nil},
+		{"Reason", reflect.TypeOf(ReasonUnset), verdictClosed, "a named string", nil},
+		{"RefuseReason", reflect.TypeOf(RefuseNotReprobed), verdictClosed, "a named string", nil},
 
 		// --- coverage.go: the OTHER consumer-held output types ----------
 		//
@@ -1998,35 +2048,39 @@ func boundaryTypes() []boundaryType {
 		// is why the list is now derived rather than written.
 		{"Summary", reflect.TypeOf(Summary{}), verdictBounded,
 			"holds the qualifier, row and tier slices, the provenance maps and a " +
-				"NULL-able server-line float; every accessor clones"},
+				"NULL-able server-line float; every accessor clones", nil},
 		{"ProvenanceRow", reflect.TypeOf(ProvenanceRow{}), verdictBounded,
 			"Operations is a []string by design: many GraphQL operations share one " +
-				"address"},
-		{"Qualifier", reflect.TypeOf(Qualifier{}), verdictClosed, "a reason, a count, a note"},
+				"address", nil},
+		{"Qualifier", reflect.TypeOf(Qualifier{}), verdictClosed, "a reason, a count, a note", nil},
 		{"TierContribution", reflect.TypeOf(TierContribution{}), verdictClosed,
-			"a tier name and three integers"},
-		{"ScanMode", reflect.TypeOf(ScanMode("")), verdictClosed, "a named string"},
-		{"Determinacy", reflect.TypeOf(Determinacy("")), verdictClosed, "a named string"},
-		{"Direction", reflect.TypeOf(Direction("")), verdictClosed, "a named string"},
+			"a tier name and three integers", nil},
+		{"ScanMode", reflect.TypeOf(ScanMode("")), verdictClosed, "a named string", nil},
+		{"Determinacy", reflect.TypeOf(Determinacy("")), verdictClosed, "a named string", nil},
+		{"Direction", reflect.TypeOf(Direction("")), verdictClosed, "a named string", nil},
 		{"QualifierReason", reflect.TypeOf(QualifierReason("")), verdictClosed,
-			"a named string"},
-		{"TierName", reflect.TypeOf(TierName("")), verdictClosed, "a named string"},
+			"a named string", nil},
+		{"TierName", reflect.TypeOf(TierName("")), verdictClosed, "a named string", nil},
 
 		// --- containers -------------------------------------------------
 		{"Ledger", reflect.TypeOf(Ledger{}), verdictBounded,
-			"a container of closed record types; the slices are the point"},
+			"a container of closed record types; the slices are the point", nil},
 
 		// --- inbound, and NOT closed on purpose -------------------------
 		{"Signature", reflect.TypeOf(Signature{}), verdictInbound,
 			"holds the caller's own *regexp.Regexp travelling INTO the gate; a clean " +
-				"closure here would mean the oracle is gone"},
+				"closure here would mean the oracle is gone",
+			[]string{"Signature.re"}},
 		{"Observation", reflect.TypeOf(Observation{}), verdictInbound,
 			"carries the response body — that is its job, and it is the only type in " +
-				"the package that does"},
+				"the package that does",
+			[]string{"Observation.Body"}},
 		{"RawFinding", reflect.TypeOf(RawFinding{}), verdictInbound,
-			"the untrusted candidate, carrying a Signature"},
+			"the untrusted candidate, carrying a Signature",
+			[]string{"RawFinding.Signature.re"}},
 		{"Gate", reflect.TypeOf(Gate{}), verdictInbound,
-			"the engine, not an output: it holds the Reprober interface by design"},
+			"the engine, not an output: it holds the Reprober interface by design",
+			[]string{"Gate.reprober", "Gate.defence.re"}},
 
 		// --- the three the RESULT-POSITION derivation could not see -----
 		//
@@ -2037,15 +2091,211 @@ func boundaryTypes() []boundaryType {
 		{"GateConfig", reflect.TypeOf(GateConfig{}), verdictInbound,
 			"the caller's configuration travelling INTO NewGate: it holds the Reprober " +
 				"interface and the caller's DefenceSignature, so a clean closure here " +
-				"would mean the seam or the defence pattern is gone"},
+				"would mean the seam or the defence pattern is gone",
+			[]string{"GateConfig.Reprober", "GateConfig.DefenceSignature.re"}},
 		{"Reprober", reflect.TypeOf((*Reprober)(nil)).Elem(), verdictInbound,
 			"the re-probe seam itself. It IS an interface, which is the capability gate 3 " +
 				"pushes to the far side of this package, and a version of it that " +
-				"walked clean would not be a seam"},
+				"walked clean would not be a seam",
+			[]string{"Reprober"}},
 		{"Inputs", reflect.TypeOf(Inputs{}), verdictInbound,
 			"coverage.go's INPUT struct: it holds pointers to the inventory tiers' own " +
-				"results, which is how the merge is checked, and it is never handed back"},
+				"results, which is how the merge is checked, and it is never handed back",
+			[]string{"Inputs.Union", "Inputs.Tier0", "Inputs.Tier1", "Inputs.Tier2Go",
+				"Inputs.Tier2Other", "Inputs.ServerLineCoverage"}},
 	}
+}
+
+// inboundEligibleTypes is the DIRECTION half of the verdictInbound bound: the
+// set of registered types that may claim the exemption at all.
+//
+// ===========================================================================
+// WHY THIS EXISTS AT ALL
+// ===========================================================================
+//
+// verdictInbound's only check used to be "closureViolations is non-empty",
+// which the violation itself satisfies. MEASURED: adding `Raw []byte` to
+// Summary and changing one word — bounded to inbound — left the package green.
+// The type had no business claiming the exemption in the first place, and
+// nothing was asking whether it did.
+//
+// A type is eligible on either of two grounds, and both are derived:
+//
+//	IT CROSSES INWARD. The package's own source shows the caller producing
+//	it: a parameter of an exported function or method, anything in an
+//	exported interface's method signatures, or a FIELD of one of those.
+//	Signature is a field of RawFinding and of GateConfig; Observation is
+//	Reprober.Reprobe's result and Reprober is the caller's to implement.
+//
+//	IT HOLDS A CAPABILITY. Its field closure contains an interface, a func
+//	or a channel. That is not a loophole, it is the residue: a type holding
+//	one CANNOT be verdictClosed and CANNOT be verdictBounded, because both
+//	walkers refuse those kinds outright, so inbound is the only verdict that
+//	can be true of it. Gate reaches eligibility this way — it is returned by
+//	NewGate and passed to nothing, but it holds the Reprober seam.
+//
+// A []byte is deliberately NOT a capability. It is DATA, and raw data on a
+// consumer-held type is precisely what the output verdicts exist to forbid, so
+// admitting it here would hand back the exemption this function takes away.
+// That is the difference between Summary+Raw (ineligible) and Gate (eligible).
+//
+// THE RESIDUAL, STATED: eligibility is NECESSARY, not sufficient.
+// ProvenanceRow is a parameter of SortRows, so it crosses inward and is
+// eligible — the thing that stops it being flipped is the other half of the
+// bound, boundaryType.carries, which would have to name
+// "ProvenanceRow.Operations" in the same diff.
+func inboundEligibleTypes(registry map[string]boundaryType, callerSupplied map[string]bool) map[string]bool {
+	byType := map[reflect.Type]string{}
+	for name, bt := range registry {
+		byType[bt.typ] = name
+	}
+
+	eligible := map[string]bool{}
+	// GROUND 1: the source shows it crossing inward, plus the field closure
+	// of everything that does — a type reachable from a parameter is a type
+	// the caller had to build.
+	seen := map[reflect.Type]bool{}
+	var reach func(t reflect.Type)
+	reach = func(t reflect.Type) {
+		if t == nil || seen[t] {
+			return
+		}
+		seen[t] = true
+		if name, ok := byType[t]; ok {
+			eligible[name] = true
+		}
+		switch t.Kind() {
+		case reflect.Struct:
+			for i := 0; i < t.NumField(); i++ {
+				reach(t.Field(i).Type)
+			}
+		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Chan:
+			reach(t.Elem())
+		case reflect.Map:
+			reach(t.Key())
+			reach(t.Elem())
+		}
+	}
+	for name := range callerSupplied {
+		bt, ok := registry[name]
+		if !ok {
+			continue
+		}
+		eligible[name] = true
+		reach(bt.typ)
+	}
+
+	// GROUND 2: it holds a capability, so no other verdict can be true of
+	// it.
+	for name, bt := range registry {
+		if holdsACapability(bt.typ) {
+			eligible[name] = true
+		}
+	}
+	return eligible
+}
+
+// holdsACapability reports whether typ's field closure contains an interface,
+// a func or a channel — code or a rendezvous the caller supplies, as opposed
+// to DATA the type carries.
+//
+// The distinction is the whole of ground 2 in inboundEligibleTypes: a []byte
+// is data and must never make a type eligible, or the exemption reopens for
+// exactly the field it was closed against.
+func holdsACapability(typ reflect.Type) bool {
+	seen := map[reflect.Type]bool{}
+	var walk func(t reflect.Type) bool
+	walk = func(t reflect.Type) bool {
+		if t == nil || seen[t] {
+			return false
+		}
+		seen[t] = true
+		switch t.Kind() {
+		case reflect.Interface, reflect.Func, reflect.Chan:
+			return true
+		case reflect.Struct:
+			for i := 0; i < t.NumField(); i++ {
+				if walk(t.Field(i).Type) {
+					return true
+				}
+			}
+		case reflect.Pointer, reflect.Slice, reflect.Array:
+			return walk(t.Elem())
+		case reflect.Map:
+			return walk(t.Key()) || walk(t.Elem())
+		}
+		return false
+	}
+	return walk(typ)
+}
+
+// verdictViolations is the per-type verdict check, factored out for the same
+// reason unregisteredBoundaryTypes is: a rule that has only ever run against
+// the real registry is a rule whose failure nobody has watched.
+// TestTheMetaGuardFailsWhenAVerdictIsFlipped runs it against every wrong
+// verdict for every registered type.
+func verdictViolations(bt boundaryType, eligible map[string]bool) []string {
+	closed := closureViolations(bt.typ)
+	bounded := outputViolations(bt.typ)
+	var out []string
+
+	if bt.verdict != verdictInbound && len(bt.carries) != 0 {
+		out = append(out, fmt.Sprintf("%s is registered %s and names carried routes (%s). "+
+			"Only an inbound type carries anything: on any other verdict the claim is "+
+			"that there is nothing to name", bt.name, bt.verdict,
+			strings.Join(bt.carries, ", ")))
+	}
+
+	switch bt.verdict {
+	case verdictClosed:
+		if len(closed) != 0 {
+			out = append(out, fmt.Sprintf("%s is registered closed (%s) but its field-type "+
+				"closure has %d body route(s):\n%s", bt.name, bt.why, len(closed),
+				strings.Join(closed, "\n")))
+		}
+	case verdictBounded:
+		if len(bounded) != 0 {
+			out = append(out, fmt.Sprintf("%s is registered bounded (%s) but its closure "+
+				"has %d route(s) a raw response body could travel through:\n%s",
+				bt.name, bt.why, len(bounded), strings.Join(bounded, "\n")))
+		}
+		if len(closed) == 0 {
+			out = append(out, fmt.Sprintf("%s is registered bounded but its closure is "+
+				"CLEAN, so the stronger verdict is true of it. Registering the weaker "+
+				"one loses a guarantee in a diff that looks like nothing", bt.name))
+		}
+	case verdictInbound:
+		if !eligible[bt.name] {
+			out = append(out, fmt.Sprintf("%s is registered inbound and NOTHING IN THE "+
+				"PACKAGE'S OWN SOURCE says it travels inward: it is not a parameter of "+
+				"an exported function, not in an exported interface's signatures, not a "+
+				"field of anything that is, and it holds no interface, func or channel. "+
+				"verdictInbound is not a way to stop the walkers looking — MEASURED, a "+
+				"one-word flip from bounded to inbound hid a `Raw []byte` on Summary. "+
+				"Register the true verdict, or explain why the type is inbound in the "+
+				"API rather than in this table", bt.name))
+		}
+		if len(closed) == 0 {
+			out = append(out, fmt.Sprintf("%s is registered inbound (%s) but its closure "+
+				"is clean, which means it stopped carrying the thing it exists to carry",
+				bt.name, bt.why))
+		}
+		got := violationPaths(closed)
+		want := append([]string(nil), bt.carries...)
+		sort.Strings(want)
+		if !reflect.DeepEqual(got, want) {
+			out = append(out, fmt.Sprintf("%s is registered inbound carrying {%s} and its "+
+				"closure actually holds {%s}. An inbound verdict covers EXACTLY the "+
+				"routes it names: a new one is a new body route and has to be declared "+
+				"in the same diff that adds it, and a stale one is a claim about a "+
+				"field that is gone", bt.name, strings.Join(want, ", "),
+				strings.Join(got, ", ")))
+		}
+	default:
+		out = append(out, fmt.Sprintf("%s carries verdict %q, which is not one this test "+
+			"knows", bt.name, bt.verdict))
+	}
+	return out
 }
 
 // outputViolations is the verdictBounded walk: no route to a raw body, and no
@@ -2114,16 +2364,27 @@ func outputViolations(typ reflect.Type) []string {
 	return out
 }
 
-// exportedResultTypeNames derives two sets from this package's own source and
-// returns both, because the meta-guard needs one for MEMBERSHIP and the other
-// for NON-VACUITY, and conflating them is what let two types go unwalked.
+// exportedResultTypeNames derives three sets from this package's own source
+// and returns all three, because the meta-guard needs one for MEMBERSHIP, one
+// for NON-VACUITY and one for DIRECTION, and conflating them is what let two
+// types go unwalked and then let a verdict be flipped on a third.
 //
-//	declared    every exported type declared in this package's non-test
-//	            files. THIS IS THE MEMBERSHIP RULE. A type that exists and is
-//	            not registered fails, whatever it is and wherever it appears.
-//	handedBack  the subset that appears in a RESULT position of an exported
-//	            function, an exported method, or an exported interface's
-//	            method.
+//	declared        every exported type declared in this package's non-test
+//	                files. THIS IS THE MEMBERSHIP RULE. A type that exists
+//	                and is not registered fails, whatever it is and wherever
+//	                it appears.
+//	handedBack      the subset that appears in a RESULT position of an
+//	                exported function, an exported method, or an exported
+//	                interface's method.
+//	callerSupplied  the subset the package's API requires the CALLER to
+//	                produce: a parameter of an exported function or method,
+//	                anything in an exported interface's method signatures
+//	                (the caller implements it, so its results travel inward
+//	                too), or the exported interface type itself.
+//
+// THE THIRD SET IS THE DIRECTION HALF OF verdictInbound, and it is derived
+// here rather than judged in the registry because "this type travels inward"
+// was exactly the claim a one-word edit could make about anything.
 //
 // ===========================================================================
 // WHY MEMBERSHIP IS "DECLARED" AND NOT "HANDED BACK"
@@ -2148,7 +2409,7 @@ func outputViolations(typ reflect.Type) []string {
 // It reads the source rather than using reflection because Go cannot enumerate
 // a package's declarations at runtime. The parse is of the NON-TEST files
 // only: a type declared in a test is not API.
-func exportedResultTypeNames(t *testing.T) (declaredOut, handedBack map[string]bool) {
+func exportedResultTypeNames(t *testing.T) (declaredOut, handedBack, callerSupplied map[string]bool) {
 	t.Helper()
 
 	entries, err := os.ReadDir(".")
@@ -2209,12 +2470,28 @@ func exportedResultTypeNames(t *testing.T) (declaredOut, handedBack map[string]b
 		// package's problem; a FuncType, StructType or InterfaceType in a
 		// result position is anonymous and has no name to register.
 	}
+	inward := map[string]bool{}
+	var collectInward func(e ast.Expr)
+	collectInward = func(e ast.Expr) {
+		saved := out
+		out = inward
+		collect(e)
+		out = saved
+	}
 	results := func(ft *ast.FuncType) {
 		if ft == nil || ft.Results == nil {
 			return
 		}
 		for _, f := range ft.Results.List {
 			collect(f.Type)
+		}
+	}
+	params := func(ft *ast.FuncType) {
+		if ft == nil || ft.Params == nil {
+			return
+		}
+		for _, f := range ft.Params.List {
+			collectInward(f.Type)
 		}
 	}
 
@@ -2236,21 +2513,33 @@ func exportedResultTypeNames(t *testing.T) (declaredOut, handedBack map[string]b
 					}
 				}
 				results(v.Type)
+				params(v.Type)
 			case *ast.TypeSpec:
 				it, ok := v.Type.(*ast.InterfaceType)
 				if !ok || !v.Name.IsExported() || it.Methods == nil {
 					return true
 				}
+				// AN EXPORTED INTERFACE IS IMPLEMENTED BY THE CALLER, so
+				// everything in its method signatures crosses inward —
+				// its RESULTS included. Observation is only ever produced
+				// by Reprober.Reprobe, which is the caller's code.
+				inward[v.Name.Name] = true
 				for _, m := range it.Methods.List {
 					if ft, ok := m.Type.(*ast.FuncType); ok {
 						results(ft)
+						params(ft)
+						if ft.Results != nil {
+							for _, r := range ft.Results.List {
+								collectInward(r.Type)
+							}
+						}
 					}
 				}
 			}
 			return true
 		})
 	}
-	return declared, out
+	return declared, out, inward
 }
 
 // unregisteredBoundaryTypes is the membership rule, factored out so a test can
@@ -2278,7 +2567,7 @@ func unregisteredBoundaryTypes(declared map[string]bool, registry map[string]bou
 // something this suite has watched happen, for every entry, rather than
 // something a reader is asked to believe.
 func TestTheMetaGuardFailsWhenARegistrationIsDeleted(t *testing.T) {
-	declared, _ := exportedResultTypeNames(t)
+	declared, _, _ := exportedResultTypeNames(t)
 	full := map[string]boundaryType{}
 	for _, bt := range boundaryTypes() {
 		full[bt.name] = bt
@@ -2314,6 +2603,121 @@ func TestTheMetaGuardFailsWhenARegistrationIsDeleted(t *testing.T) {
 				"result-position derivation could not see, and if the derivation has "+
 				"narrowed back, this whole guard has too", name)
 		}
+	}
+}
+
+// TestTheMetaGuardFailsWhenAVerdictIsFlipped is the mutation the VERDICT half
+// could not survive, and it is the exact counterpart of
+// TestTheMetaGuardFailsWhenARegistrationIsDeleted for the other half of the
+// registry.
+//
+// ===========================================================================
+// THE MEASURED DEFECT
+// ===========================================================================
+//
+// The membership half was derived and mutation-tested; the verdict half was a
+// human claim with one non-vacuity check each, and verdictInbound's check —
+// "closureViolations must be non-empty" — IS SATISFIED BY THE VIOLATION
+// ITSELF. Adding `Raw []byte` to Summary and changing one word, bounded to
+// inbound, left the whole package GREEN. Finding was defended against that by
+// TestFindingTypeClosureHasNoRawBodyPath, which asserts its closure outside
+// this registry; Summary had nothing, and neither did Ledger, ProvenanceRow or
+// any other output type.
+//
+// So this test flips EVERY registration to EVERY other verdict and requires
+// the check to report it. That is the same standard the deletion mutation
+// holds membership to: the guard's failure is something this suite has watched
+// happen, for every entry, rather than something a reader is asked to believe.
+//
+// It flips the verdict AND NOTHING ELSE, which is the point: the mutation
+// under test is the one-word edit. A flip to inbound keeps the entry's own
+// carries (empty, for every type that is not already inbound), so the routes
+// half refuses it; and eligibility refuses it before that wherever the type
+// has no claim on the exemption at all.
+func TestTheMetaGuardFailsWhenAVerdictIsFlipped(t *testing.T) {
+	registry := map[string]boundaryType{}
+	for _, bt := range boundaryTypes() {
+		registry[bt.name] = bt
+	}
+	_, _, callerSupplied := exportedResultTypeNames(t)
+	eligible := inboundEligibleTypes(registry, callerSupplied)
+
+	// The baseline: the intact registry must be clean, or a mutation below
+	// cannot be told from the state it started in.
+	for _, bt := range boundaryTypes() {
+		if v := verdictViolations(bt, eligible); len(v) != 0 {
+			t.Fatalf("the intact registry already reports %s: %s. Every mutation below "+
+				"would pass for that reason instead of its own",
+				bt.name, strings.Join(v, "\n"))
+		}
+	}
+
+	all := []boundaryVerdict{verdictClosed, verdictBounded, verdictInbound}
+	flips := 0
+	for _, bt := range boundaryTypes() {
+		for _, v := range all {
+			if v == bt.verdict {
+				continue
+			}
+			mutated := bt
+			mutated.verdict = v
+			t.Run(bt.name+"_as_"+string(v), func(t *testing.T) {
+				if got := verdictViolations(mutated, eligible); len(got) == 0 {
+					t.Errorf("%s registered %s instead of %s is reported by NOTHING. A "+
+						"verdict nobody checks is a verdict anybody can edit, and the "+
+						"measured version of this edit hid a raw body field on an "+
+						"output type", bt.name, v, bt.verdict)
+				}
+			})
+			flips++
+		}
+	}
+	if flips != 2*len(boundaryTypes()) {
+		t.Errorf("the sweep tried %d flips over %d registrations, want %d; it is not "+
+			"covering every wrong verdict for every type",
+			flips, len(boundaryTypes()), 2*len(boundaryTypes()))
+	}
+
+	// AND THE MEASURED EDIT ITSELF, END TO END, on a stand-in with Summary's
+	// shape plus the field that was added to it. A registration claiming
+	// this is inbound must be refused on BOTH grounds — it is not eligible,
+	// and it names none of the routes it holds — because either one alone is
+	// a bound somebody can argue their way past.
+	type summaryWithRawBody struct {
+		Qualifiers []Qualifier
+		Rows       []ProvenanceRow
+		ServerLine *float64
+		Raw        []byte
+	}
+	forged := boundaryType{
+		name:    "summaryWithRawBody",
+		typ:     reflect.TypeOf(summaryWithRawBody{}),
+		verdict: verdictInbound,
+		why:     "the measured one-word flip, as a fixture",
+	}
+	got := verdictViolations(forged, eligible)
+	if len(got) < 2 {
+		t.Errorf("a Summary-shaped type carrying `Raw []byte`, registered inbound, is "+
+			"reported by %d check(s): %s. It must be refused twice — once for claiming "+
+			"an exemption it has no source-derived claim to, and once for not naming "+
+			"the routes it carries", len(got), strings.Join(got, "\n"))
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{"NOTHING IN THE PACKAGE'S OWN SOURCE", ".Raw"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the refusal of the forged inbound registration does not mention "+
+				"%q:\n%s", want, joined)
+		}
+	}
+
+	// THE NEGATIVE CONTROL ON THE FIXTURE: the same type WITHOUT the raw
+	// body must still be refused (it is still not eligible), and a genuinely
+	// inbound type must still be accepted, or the check above is just
+	// refusing everything.
+	if v := verdictViolations(registry["Observation"], eligible); len(v) != 0 {
+		t.Errorf("Observation, which carries the response body by design and is the "+
+			"result of the caller-implemented Reprober, is refused: %s. The bound has "+
+			"become a ban and the seam cannot be expressed", strings.Join(v, "\n"))
 	}
 }
 
@@ -2358,7 +2762,7 @@ func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
 	}
 
 	// THE DERIVATION IS THE RULE, and the registry is measured against it.
-	declared, handedBack := exportedResultTypeNames(t)
+	declared, handedBack, callerSupplied := exportedResultTypeNames(t)
 	if len(declared) < 20 {
 		t.Fatalf("the derivation found %d exported types declared in this package; it is "+
 			"not working and every assertion below is vacuous", len(declared))
@@ -2414,38 +2818,34 @@ func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
 		}
 	}
 
+	// THE DIRECTION HALF OF verdictInbound, derived before the walk so the
+	// exemption can be refused to a type that has no claim on it.
+	eligible := inboundEligibleTypes(registry, callerSupplied)
+	if len(eligible) == 0 {
+		t.Fatal("no registered type is eligible for the inbound verdict; the derivation " +
+			"is not working and every inbound registration below would fail for the " +
+			"wrong reason")
+	}
+	if len(eligible) >= len(registry) {
+		t.Errorf("%d of %d registered types are eligible for the inbound exemption. It is "+
+			"supposed to be the minority that genuinely crosses inward or holds a "+
+			"capability; an eligibility rule that admits everything is the total "+
+			"exemption again under a longer name", len(eligible), len(registry))
+	}
+	// THE MEASURED FLIP, BY NAME. Summary is the type the one-word edit was
+	// measured on, so it is asserted here rather than left to the sweep.
+	if eligible["Summary"] {
+		t.Error("Summary is eligible for the inbound exemption. MEASURED: adding " +
+			"`Raw []byte` to Summary and changing bounded to inbound left this package " +
+			"GREEN, and this is the check that is supposed to refuse the claim before " +
+			"its routes are looked at")
+	}
+
 	// THE WALK ITSELF, one verdict at a time.
 	for _, bt := range boundaryTypes() {
 		t.Run(bt.name, func(t *testing.T) {
-			closed := closureViolations(bt.typ)
-			bounded := outputViolations(bt.typ)
-			switch bt.verdict {
-			case verdictClosed:
-				if len(closed) != 0 {
-					t.Errorf("%s is registered closed (%s) but its field-type closure has "+
-						"%d body route(s):\n%s", bt.name, bt.why, len(closed),
-						strings.Join(closed, "\n"))
-				}
-			case verdictBounded:
-				if len(bounded) != 0 {
-					t.Errorf("%s is registered bounded (%s) but its closure has %d "+
-						"route(s) a raw response body could travel through:\n%s",
-						bt.name, bt.why, len(bounded), strings.Join(bounded, "\n"))
-				}
-				if len(closed) == 0 {
-					t.Errorf("%s is registered bounded but its closure is CLEAN, so the "+
-						"stronger verdict is true of it. Registering the weaker one "+
-						"loses a guarantee in a diff that looks like nothing", bt.name)
-				}
-			case verdictInbound:
-				if len(closed) == 0 {
-					t.Errorf("%s is registered inbound (%s) but its closure is clean, "+
-						"which means it stopped carrying the thing it exists to carry",
-						bt.name, bt.why)
-				}
-			default:
-				t.Fatalf("%s carries verdict %q, which is not one this test knows",
-					bt.name, bt.verdict)
+			for _, v := range verdictViolations(bt, eligible) {
+				t.Error(v)
 			}
 		})
 	}
@@ -3076,47 +3476,159 @@ func TestEveryStatusOutsideTheApplicationAllowlistIsIndecisive(t *testing.T) {
 	}
 }
 
+// statusForbidsABody is conjunct (a) of the allowlist's membership rule: RFC
+// 9110 section 6.4.1 and section 15.3.5 — a 1xx, a 204 and a 304 response is
+// terminated by the first empty line after the header fields and cannot
+// contain a message body; a 205 must have a zero-length one.
+//
+// These predicates live in the TEST rather than beside the map on purpose.
+// They are the rule the map is measured AGAINST, and a rule that ships in the
+// same function as the thing it judges is a rule that can be edited to fit.
+func statusForbidsABody(status int) bool {
+	switch {
+	case status >= 100 && status <= 199:
+		return true
+	case status == 204, status == 205, status == 304:
+		return true
+	}
+	return false
+}
+
+// statusBodyIsAFragment is conjunct (b): a 206 body is a byte range chosen by
+// whoever answered, so a signature's silence over it is silence about part of
+// a representation and not about the representation.
+func statusBodyIsAFragment(status int) bool { return status == 206 }
+
+// statusReportsTheRequestWasCarriedOut is conjunct (c): only the origin can
+// report that the request it was sent was performed. Every error status is
+// something a CDN, a proxy, a gateway or a WAF manufactures on its own.
+func statusReportsTheRequestWasCarriedOut(status int) bool {
+	return status >= 200 && status <= 299
+}
+
+// statusSatisfiesTheMembershipRule is the rule itself, as one predicate: A
+// STATUS IS ON THE ALLOWLIST WHEN THE STATUS ITSELF ESTABLISHES THAT THE BODY
+// IS A REPRESENTATION THE ORIGIN APPLICATION PRODUCED.
+//
+// It is NECESSARY and not sufficient — see the test — because a status also
+// has to have a meaning before it can have this one.
+func statusSatisfiesTheMembershipRule(status int) bool {
+	return statusReportsTheRequestWasCarriedOut(status) &&
+		!statusForbidsABody(status) &&
+		!statusBodyIsAFragment(status)
+}
+
 // TestTheApplicationAllowlistMatchesTheRuleItsCommentStates is the check that
 // was missing when 404, 405, 410, 422 and 500 sat on this list under a comment
-// that did not cover them.
+// that did not cover them — and that was still missing, in a smaller way, when
+// 204 and 206 did.
 //
-// The stated rule is: A STATUS IS ON THIS ALLOWLIST WHEN THE STATUS ITSELF
-// ESTABLISHES THAT THE BODY IS A REPRESENTATION THE ORIGIN APPLICATION
-// PRODUCED. Exactly one family of status codes satisfies that — 2xx, where the
-// answer IS the requested representation and a cached copy is still the
-// application's own bytes. Every error status can be, and routinely is,
-// manufactured by an intermediary that never consulted the origin.
+// ===========================================================================
+// IT USED TO ENCODE "2xx". THE RULE IS NOT "2xx".
+// ===========================================================================
 //
-// So this test does not enumerate the allowlist. It derives the predicate from
-// the rule and asserts membership against it in both directions, which means
-// ADDING AN ENTRY THAT DOES NOT SATISFY THE RULE FAILS HERE — the failure mode
-// the previous shape of this list did not have.
+// The predicate here was `status >= 200 && status <= 299`, and the comment
+// beside it said that was the rule. It is one THIRD of the rule — conjunct (c)
+// — and the two conjuncts it dropped are exactly the two that decide the two
+// entries nobody had checked:
+//
+//	204  MEASURED: a 204 re-probe over a vulnerable candidate yielded
+//	     outcome=rejected at confidence 0.000 marked KNOWN. A 204 cannot
+//	     carry a body at all, so that is a finding disproven by bytes that
+//	     could not have held the marker. 205 — the neighbouring
+//	     mandated-empty status — was never on the list, so the list
+//	     disagreed with itself about the same body semantics.
+//	206  the body is a byte range somebody else chose, so a non-match is
+//	     silence about the part that came back and nothing about the rest.
+//
+// So this test asserts the RULE, in all three conjuncts, over every member and
+// over the whole status space. Adding an entry the rule does not admit fails
+// here, and so does removing a conjunct: each one has a control below proving
+// it rejects something, so a conjunct edited into a tautology fails too.
 func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
-	originRepresentation := func(status int) bool { return status >= 200 && status <= 299 }
-
-	for status := -1; status <= 1000; status++ {
-		on := IsApplicationResponseStatus(status)
-		if on && !originRepresentation(status) {
-			t.Errorf("status %d is on the application allowlist and is not a 2xx. The "+
-				"stated rule is that the STATUS ITSELF establishes an origin "+
-				"representation, and no error status does: every one of them is "+
-				"something a CDN, a proxy, a gateway or a WAF emits without reaching "+
-				"the application. Either the entry goes or the comment does",
-				status)
+	// THE CONJUNCTS ARE NOT VACUOUS. A predicate that returned false for
+	// every status would make the rule trivially satisfied by the whole
+	// list, which is precisely the failure being repaired.
+	for _, c := range []struct {
+		name    string
+		pred    func(int) bool
+		holds   []int
+		refutes []int
+	}{
+		{"forbids a body", statusForbidsABody,
+			[]int{100, 101, 199, 204, 205, 304}, []int{200, 201, 202, 203, 206, 404}},
+		{"body is a fragment", statusBodyIsAFragment,
+			[]int{206}, []int{200, 204, 205, 207}},
+		{"reports the request was carried out", statusReportsTheRequestWasCarriedOut,
+			[]int{200, 201, 202, 204, 206, 299}, []int{100, 199, 300, 302, 400, 403, 500}},
+	} {
+		for _, s := range c.holds {
+			if !c.pred(s) {
+				t.Errorf("conjunct %q says status %d does not hold it; the conjunct has "+
+					"been narrowed and the rule below is weaker than it reads", c.name, s)
+			}
+		}
+		for _, s := range c.refutes {
+			if c.pred(s) {
+				t.Errorf("conjunct %q holds for status %d; the conjunct has been widened "+
+					"into something that decides nothing", c.name, s)
+			}
 		}
 	}
 
-	// The rule alone would permit every 2xx; the list is narrower, because a
-	// status has to have a MEANING before it can have this one. That is a
-	// judgement and it is stated as one, so the assertion is only that the
-	// list is a subset of the rule and non-empty — not that it is all of it.
+	// THE RULE, OVER THE WHOLE SPACE. Every member must satisfy every
+	// conjunct, and the failure message says WHICH one it broke, because
+	// "not 2xx" was the message that could not describe 204 or 206.
+	admitted := 0
+	for status := -1; status <= 1000; status++ {
+		on := IsApplicationResponseStatus(status)
+		if statusSatisfiesTheMembershipRule(status) {
+			admitted++
+		}
+		if !on {
+			continue
+		}
+		switch {
+		case !statusReportsTheRequestWasCarriedOut(status):
+			t.Errorf("status %d is on the application allowlist and does not report that "+
+				"the request was carried out (conjunct c). Every error status is "+
+				"something a CDN, a proxy, a gateway or a WAF emits without reaching "+
+				"the application. Either the entry goes or the comment does", status)
+		case statusForbidsABody(status):
+			t.Errorf("status %d is on the application allowlist and CANNOT CARRY A BODY "+
+				"(conjunct a, RFC 9110). A signature's silence over a body the protocol "+
+				"forbids is not the application declining to emit a marker, and a "+
+				"rejection built on it is a finding disproven by bytes that never "+
+				"existed", status)
+		case statusBodyIsAFragment(status):
+			t.Errorf("status %d is on the application allowlist and its body is a byte "+
+				"RANGE somebody else chose (conjunct b). A signature that did not match "+
+				"a fragment has shown nothing about the representation the fragment "+
+				"came from", status)
+		}
+	}
+	if admitted < 2 {
+		t.Fatalf("the rule admits %d status(es) over the whole space; it has collapsed "+
+			"and every assertion above passes for the wrong reason", admitted)
+	}
+
+	// The rule alone would permit every 2xx that carries a whole body; the
+	// list is narrower, because a status has to have a MEANING before it can
+	// have this one. That is a judgement and it is stated as one, so the
+	// assertion is only that the list is a subset of the rule and non-empty
+	// — not that it is all of it.
 	if len(applicationResponseStatuses()) == 0 {
 		t.Fatal("the allowlist is empty; the gate can never decide anything")
 	}
+	if len(applicationResponseStatuses()) >= admitted {
+		t.Errorf("the allowlist has %d entries and the rule admits %d; the list is "+
+			"supposed to be a strict subset, and one that is not has stopped being a "+
+			"judgement about meaning", len(applicationResponseStatuses()), admitted)
+	}
 
-	// AND THE FOUR REMOVALS BY NAME, each with the reason, so re-adding one
-	// is a deliberate act against a written argument rather than a one-line
-	// diff nobody reads.
+	// AND THE REMOVALS BY NAME, each with the reason, so re-adding one is a
+	// deliberate act against a written argument rather than a one-line diff
+	// nobody reads.
 	for _, tc := range []struct {
 		status int
 		why    string
@@ -3128,12 +3640,28 @@ func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
 		{422, "an API gateway's request validation, and any WAF with a configurable " +
 			"block status, answer 422 with no origin round trip"},
 		{500, "a reverse proxy emits 500 for its own internal failures"},
+		{204, "a 204 cannot carry a message body at all, so there is nothing for the " +
+			"oracle to be silent about; MEASURED as outcome=rejected at confidence " +
+			"0.000 marked KNOWN"},
+		{206, "a 206 body is a byte range chosen by whoever answered, so a non-match " +
+			"says nothing about the rest of the representation"},
 	} {
 		if IsApplicationResponseStatus(tc.status) {
 			t.Errorf("status %d is back on the application allowlist. It was removed "+
 				"because %s, and nothing about that has changed by adding it again",
 				tc.status, tc.why)
 		}
+	}
+
+	// THE CONSISTENCY THE LIST DID NOT HAVE: 204 and 205 are the two
+	// statuses whose bodies the protocol mandates empty, and a list that
+	// decides them differently is a list following something other than its
+	// stated rule.
+	if IsApplicationResponseStatus(204) != IsApplicationResponseStatus(205) {
+		t.Errorf("204 is %v on the allowlist and 205 is %v. Both are mandated-empty by "+
+			"RFC 9110 and the rule cannot see any difference between them; deciding "+
+			"them differently is the list disagreeing with itself",
+			IsApplicationResponseStatus(204), IsApplicationResponseStatus(205))
 	}
 }
 
@@ -3617,6 +4145,153 @@ func TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure(t *testing.T)
 	}
 }
 
+// generatorVocabularySize counts the entries of the first []string literal
+// declared inside the named generator function in confirm_gate.go.
+//
+// The corpus's budget IS those lists, and the control's header now names their
+// sizes. Reading them out of the source is what stops the disclosure and the
+// code drifting apart: the lists are local variables inside the generators, so
+// there is nothing to call, and a number written into a comment beside code
+// nobody re-checks is how the last disclosure got narrower than the truth.
+func generatorVocabularySize(t *testing.T, fn, varName string) int {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "confirm_gate.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing confirm_gate.go: %v", err)
+	}
+	n := -1
+	ast.Inspect(f, func(node ast.Node) bool {
+		fd, ok := node.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != fn {
+			return true
+		}
+		ast.Inspect(fd, func(inner ast.Node) bool {
+			as, ok := inner.(*ast.AssignStmt)
+			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+				return true
+			}
+			id, ok := as.Lhs[0].(*ast.Ident)
+			if !ok || id.Name != varName {
+				return true
+			}
+			if cl, ok := as.Rhs[0].(*ast.CompositeLit); ok && n < 0 {
+				n = len(cl.Elts)
+			}
+			return true
+		})
+		return false
+	})
+	if n < 0 {
+		t.Fatalf("no []string literal named %q found in %s; the corpus generators have "+
+			"been restructured and this measurement is of nothing", varName, fn)
+	}
+	return n
+}
+
+// TestTheCorpusResidualIsAsWideAsItsVocabularies drives the backstop's
+// disclosed budget, because THE DISCLOSURE WAS NARROWER THAN THE RESIDUAL.
+//
+// ===========================================================================
+// ONE FACE WAS NAMED. THERE ARE FIVE.
+// ===========================================================================
+//
+// The header said the residual was "a pattern that spells ordinary text the
+// generator's vocabulary happens not to emit" and gave
+// `(?i)(error|warning|expired)` as the example — a gap in ONE list, the prose
+// word list. The corpus draws from five written-down vocabularies, and a
+// literal outside ANY of them is a literal it cannot see. MEASURED, one pair
+// of probes per list, with the structural control silent on every one of them
+// so it is the CORPUS that decides:
+//
+//	list                     inside (refused)          outside (accepted)
+//	benignWords              `invoice`                 `expired`
+//	benignHTML tags          `<div`, `<h2`             `<h1>`, `<table`,
+//	                                                   `<button`, `<form `
+//	benignHTML classes       `class="row"`             `class="banner"`
+//	benignJSON keys          `"status":`               `"error_code":`,
+//	                                                   `"user_id":`
+//	benignStructural toks    `Content-Type: ...`       `X-Powered-By: `,
+//	                                                   `Set-Cookie: `
+//
+// A BACKSTOP IS ALLOWED A BUDGET; what it is not allowed is a budget stated
+// smaller than it is, because the next person sizes their trust to the
+// statement. This test fails when the statement stops being true in either
+// direction — a list that grows past its disclosed size, or an "outside" probe
+// the corpus starts catching.
+func TestTheCorpusResidualIsAsWideAsItsVocabularies(t *testing.T) {
+	for _, v := range []struct {
+		what      string
+		size      int
+		disclosed int
+		inside    []string
+		outside   []string
+	}{
+		{"benignWords (prose vocabulary)", len(benignWords()), 33,
+			[]string{`invoice`, `warehouse`},
+			[]string{`expired`, `warning`, `(?i)(error|warning|expired)`}},
+		{"benignHTML tag names", generatorVocabularySize(t, "benignHTML", "tags"), 13,
+			[]string{`<div`, `<h2`},
+			[]string{`<h1>`, `<table`, `<button`, `<form `}},
+		{"benignHTML class values", generatorVocabularySize(t, "benignHTML", "classes"), 9,
+			[]string{`class="row"`, `class="card"`},
+			[]string{`class="banner"`, `class="checkout-total"`}},
+		{"benignJSON key names", generatorVocabularySize(t, "benignJSON", "keys"), 14,
+			[]string{`"status":`, `"created_at":`},
+			[]string{`"error_code":`, `"user_id":`}},
+		{"benignStructural tokens", generatorVocabularySize(t, "benignStructural", "toks"), 45,
+			[]string{`Content-Type: application/json`, `Cache-Control: no-store`},
+			[]string{`X-Powered-By: `, `Set-Cookie: `}},
+	} {
+		if v.size != v.disclosed {
+			t.Errorf("%s has %d entries and the corpus header discloses %d. The size of "+
+				"each list IS the backstop's budget, and a reader sizes their trust to "+
+				"the number in the comment; move the comment in the same diff that "+
+				"moves the list", v.what, v.size, v.disclosed)
+		}
+		for _, p := range v.inside {
+			if _, err := refuseOverBroadPattern(p); err != nil {
+				t.Errorf("%s: the control refuses %q (%v), so this probe says nothing "+
+					"about the corpus", v.what, p, err)
+				continue
+			}
+			if _, err := NewSignature(p); err == nil {
+				t.Errorf("%s: %q is INSIDE the vocabulary and the corpus accepted it. "+
+					"The corpus cannot see the shape at all, so the paired 'outside' "+
+					"probe below proves nothing about a vocabulary gap", v.what, p)
+			}
+		}
+		for _, p := range v.outside {
+			if _, err := refuseOverBroadPattern(p); err != nil {
+				t.Errorf("%s: the control refuses %q (%v); it is no longer a measurement "+
+					"of the corpus's budget", v.what, p, err)
+				continue
+			}
+			if _, err := NewSignature(p); err != nil {
+				t.Errorf("%s: %q is now REFUSED (%v). That is a good change and the "+
+					"disclosure in the corpus header is now wider than the truth — "+
+					"narrow it, rather than leaving a residual described that no "+
+					"longer exists", v.what, p, err)
+			}
+		}
+	}
+
+	// THE ORIGINALLY-DISCLOSED FACE, BY NAME, with its consequence rather
+	// than just its acceptance: it is not "a pattern the corpus misses", it
+	// is a SQL-injection candidate confirmed at confidence 1.000 by an
+	// ordinary page carrying the word "expired".
+	sig, err := NewSignature(`(?i)(error|warning|expired)`)
+	if err != nil {
+		t.Fatalf("the measured word-vocabulary residual no longer compiles: %v. Widen or "+
+			"narrow the disclosure to match", err)
+	}
+	ordinary := []byte(`<!doctype html><html><body><p>Your session has expired.</p></body></html>`)
+	if !sig.re.Match(ordinary) {
+		t.Fatal("the measured residual pattern does not fire on the ordinary page it was " +
+			"measured against; the fixture has drifted")
+	}
+}
+
 // TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the arithmetic
 // the control's header states, over real matches rather than on paper.
 //
@@ -3679,6 +4354,149 @@ func TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry(t *testing.T) {
 	}
 	t.Logf("greediest inlined quotation over the sweep: %d bytes (bound %d)",
 		worst, MaxSpanBytes/2)
+}
+
+// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes is R3's
+// aggregation rule, and it exists because the per-branch reading of it was
+// EVADED BY SPELLING.
+//
+// MEASURED against the previous shape of shapeOf:
+//
+//	ZZZZZZZZ(?:([0-9A-Za-z])|([[:punct:]])|( ))*
+//	  ACCEPTED, quoted=0, and then matched ALL 634 bytes of an ordinary
+//	  634-byte single-line HTML document.
+//
+// Every branch is a class R3 is silent about on its own — alnum carries no
+// separator, punct carries no letter, a single space is a spelled literal —
+// and the three capture groups are what stop regexp/syntax folding them into
+// the one class that WOULD have been content-bearing. Taking a MAX over
+// branches asks which branch quotes most; the question at a position a match
+// can enter by any branch is what the position can consume AT ALL, which is
+// the union.
+//
+// The three parts below are the three things that have to be true at once: the
+// evasions are refused BY R3 rather than by the corpus behind it, the patterns
+// the carve-out exists for still compile, and the residual the rule does NOT
+// decide is measured at its ceiling instead of being described.
+func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T) {
+	// PART 1: the evasion family, refused, and refused by the CONTROL.
+	// refuseOverBroadPattern is called directly rather than through
+	// NewSignature so that a pass cannot be credited to the benign corpus:
+	// the corpus is a backstop and a backstop catching this would leave the
+	// rule just as broken.
+	for _, tc := range []struct {
+		pattern string
+		why     string
+	}{
+		{`ZZZZZZZZ(?:([0-9A-Za-z])|([[:punct:]])|( ))*`,
+			"THE MEASURED ONE: capture groups block the parser's class merge, so no " +
+				"single branch is content-bearing and the union is"},
+		{`ZZZZZZZZ(?:[0-9A-Za-z]|[[:punct:]]| )*`,
+			"the same alternation with the merge left intact; it must not be the " +
+				"parser's folding that decides this"},
+		{`ZZZZZZZZ(?:([0-9A-Za-z])|([[:punct:]])|( )){0,400}`,
+			"the same union under a CEILING: 400 positions against 8 spelled bytes"},
+		{`ZZZZZZZZ(?:([a-z])|([[:punct:]]))+`,
+			"two branches rather than three, and a plus rather than a star"},
+		{`ZZZZZZZZ(?:[a-z][[:punct:]])*`,
+			"the same defect through CONCATENATION inside a repeat: the repeat makes " +
+				"one region of the response out of both classes"},
+		{`ZZZZZZZZ(?:[a-z][[:punct:]]){200}`,
+			"the concatenated unit under a ceiling"},
+		{`ZZZZZZZZ(?:([0-9])|([a-z])|([[:punct:]]))*`,
+			"three narrow branches, none content-bearing, union content-bearing"},
+	} {
+		_, err := refuseOverBroadPattern(tc.pattern)
+		if err == nil {
+			t.Errorf("refuseOverBroadPattern(%q) ACCEPTED it. %s. R3 is aggregating over "+
+				"branches instead of over the union, which is the reading that let a "+
+				"pattern quoting zero positions match a whole document",
+				tc.pattern, tc.why)
+			continue
+		}
+		if !strings.Contains(err.Error(), "rule R3") {
+			t.Errorf("refuseOverBroadPattern(%q) refused it for %q, not R3. It has to be "+
+				"the quotation rule that decides this: if some other rule happens to "+
+				"catch it, R3 is still evaded and the next spelling gets through",
+				tc.pattern, err)
+		}
+	}
+
+	// PART 2: NON-VACUITY. A union rule that swallowed the carve-out would
+	// refuse the patterns the carve-out exists for, and a control that
+	// refuses everything is not a control.
+	for _, tc := range []struct {
+		pattern string
+		why     string
+	}{
+		{`AKIA[0-9A-Z]{16}`, "an AWS key id: one token-shaped class, repeated"},
+		{`Server: nginx/1\.[0-9]+\.[0-9]+`,
+			"two digit classes and literals; the union is digits and stays token-shaped"},
+		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`,
+			"a dotted quad: a repeat whose unit mixes a digit class with a SPELLED " +
+				"dot, and a spelled rune is not in the union"},
+		{`<h1[0-9A-Za-z]{0,400}`,
+			"the disclosed alnum residual; it is closed at extraction by property 1b " +
+				"and must not start being closed here, or the disclosure is wrong"},
+		{`<h1[[:print:]]{0,3}`, "three quoted against three spelled: R3 satisfied 1:1"},
+		{`Server: nginx/[0-9]+\.[0-9]+ \(Ubuntu[[:print:]]{0,2}\)`,
+			"a content-bearing class CONCATENATED with a digit class. A union taken " +
+				"at the concatenation would poison the digit run and refuse this"},
+		{`(?i)(error|warning|expired)`,
+			"an alternation of LITERALS: spelled runes contribute nothing to a union"},
+	} {
+		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
+			t.Errorf("refuseOverBroadPattern(%q) = %v. %s. The union is taken over what a "+
+				"position can CONSUME FROM A CLASS, and widening it past that turns R3 "+
+				"into a ban on repeats", tc.pattern, err, tc.why)
+		}
+	}
+
+	// PART 3: THE RESIDUAL, MEASURED AT ITS CEILING RATHER THAN DESCRIBED.
+	//
+	// A CONCATENATION is a sequence of positions, each with one alphabet, so
+	// R3 does not promote its union — and that is a deliberate line, not an
+	// oversight, because promoting at a concatenation is what would refuse
+	// the nginx pattern in part 2. What it costs is bounded by arithmetic:
+	// every such position must be SPELLED OUT, the cheapest two-rune class
+	// is four bytes, and MaxPatternBytes is 1024.
+	const worstPairs = 127
+	worst := "Z" + strings.Repeat("[ab][,;]", worstPairs)
+	if len(worst) > MaxPatternBytes {
+		t.Fatalf("the residual fixture is %d bytes and MaxPatternBytes is %d; the ceiling "+
+			"moved and this measurement is of nothing", len(worst), MaxPatternBytes)
+	}
+	if over := "Z" + strings.Repeat("[ab][,;]", worstPairs+1); len(over) <= MaxPatternBytes {
+		t.Errorf("%d pairs is %d bytes and still fits under MaxPatternBytes=%d, so %d is "+
+			"not the ceiling and the disclosed number is too small",
+			worstPairs+1, len(over), MaxPatternBytes, worstPairs)
+	}
+	sig, err := NewSignature(worst)
+	if err != nil {
+		t.Fatalf("the residual fixture no longer compiles: %v. That is a WIDENING of R3 "+
+			"and the disclosure in the control's header now overstates the residual — "+
+			"which is the same defect as understating it", err)
+	}
+	body := []byte("Z" + strings.Repeat("a,b;", worstPairs))
+	span, _, overBroad, matched := extractSpan(body, sig)
+	if !matched {
+		t.Fatalf("the residual fixture did not match its own body; the measurement below " +
+			"is vacuous")
+	}
+	if len(span) != 0 {
+		t.Errorf("extractSpan INLINED %d byte(s) of the residual match. The whole reason "+
+			"this residual is disclosed rather than closed is that property 1b refuses "+
+			"to inline it: %q", len(span), span)
+	}
+	if overBroad != 2*worstPairs+1 {
+		t.Errorf("extractSpan reported %d over-broad byte(s), want %d. The residual is a "+
+			"CONFIRMATION residual of a known size, and if the size has changed the "+
+			"disclosure has to change with it", overBroad, 2*worstPairs+1)
+	}
+	if sig.spelled != 1 {
+		t.Errorf("the residual fixture spells %d byte(s), want 1; it is supposed to be the "+
+			"worst ratio the pattern budget can buy", sig.spelled)
+	}
 }
 
 // TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is extractSpan's

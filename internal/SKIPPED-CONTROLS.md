@@ -1795,18 +1795,33 @@ candidates**, not ask each candidate a question it cannot answer.
 
 ### What this is, and why it is not just another missing decoder
 
-The sweep canonicalises the haystack — percent, backslash and HTML character
-references, to a fixpoint, under both readings of `+`, both readings of an
-unresolvable reference and **every reading of an unterminated digit run** — and
-searches for the credential's actual value in every form. On 2026-08-23 the
+The sweep expands the haystack into the **set of its candidate readings** —
+percent, backslash and HTML character references decoded **one decoder at a
+time with every intermediate retained**, under both readings of `+`, both
+readings of an unresolvable reference and every reading index of an unterminated
+digit run — and searches for the credential's actual value in every member of
+that set. On 2026-08-23 the
 character-reference half was rebuilt: numeric references have no digit ceiling,
 the semicolon-less form HTML5 permits is handled, and a named reference the
 six-entry table cannot resolve becomes one wildcard rune that matches any one
 character, so **the table's length is no longer the encoder's budget**.
 
-That left base64 as the only spelling with nothing behind it. It is not a
-hypothetical: `AuthArtifactStorageState` is JSON by definition and base64 is how
-JSON carries bytes.
+**THE SENTENCE THAT STOOD HERE — "that left base64 as the only spelling with
+nothing behind it" — WAS FALSE WHEN IT WAS WRITTEN, and it is corrected rather
+than softened.** The union over readings of an ambiguous digit run was taken at
+the POINT OF MATCHING, against a form `decodeEntities` had produced by picking
+the greedy reading, so it existed at encoding depth 0 and nowhere else. Measured
+on 2026-08-23: 0 of 450 semicolon-less re-spellings of this file's credential
+missed flat, **135 of 450 missed under one `url.QueryEscape`** — and separately,
+three decoders composed inside one pass with only the composition retained, so
+**six of ten realistic secret shapes whose own bytes are an escape sequence were
+lost under one percent layer**. Both are closed now (see "What is NOT on this
+list any more" below); base64 was not the only demonstrable spelling, it was the
+only one anybody had written down.
+
+base64 itself is still open and is still not a hypothetical:
+`AuthArtifactStorageState` is JSON by definition and base64 is how JSON carries
+bytes.
 
 ### What would settle it
 
@@ -1822,8 +1837,9 @@ this widening is supposed to get. `encoding/hex`, `encoding/csv`,
 list with a one-phrase reason, and `encoding/base64` is inert in exactly the
 same way — it has no dialer, no listener and no transport. **This worker's
 write scope did not include that file, so it is reported rather than edited.**
-The decoder that would follow is another pipeline in `sweepForms`, under the
-same fixpoint bound.
+The decoder that would follow is one more line in `decodeStep`, under the same
+work bound — a step is one decoder, so adding one costs one more reading per
+form and nothing else.
 
 ### Why the residual is stated here rather than qualified away in a comment
 
@@ -1869,22 +1885,70 @@ generator shaped around the input that breaks it — and that forcing is gone.
 canonicalizer re-ran its pipeline exactly three times, so `url.QueryEscape`
 applied one, two or three times was caught and **four, five and six were not**,
 and the residual list in `credentialIn`'s doc read as complete because it said
-nothing. There is no round count now: `sweepForms` runs to a fixpoint and spends
-`codedSweepWorkBytes` of *bytes scanned*. Measured, it reaches **1546** layers of
-repeated `QueryEscape`.
+nothing. There is no round count now: `sweepForms` spends `codedSweepWorkBytes`
+of *bytes scanned*. Measured, it reaches **2767** layers of repeated
+`QueryEscape`.
 
-### The residual that replaced it, which is stated rather than removed
+**A UNION TAKEN OVER THE OUTPUT OF A DECODER THAT ALREADY CHOSE.** This is the
+2026-08-23 finding and it is the one the two paragraphs above were wrong about.
+`containsUnderEveryReading` reads a digit run every way, but it read the FORM
+`sweepForms` handed it, and `sweepForms` built that form by running
+`decodeEntities`, which picks the greedy reading. At depth 0 the seed is itself
+a form and still carries the ambiguous bytes, so the union had something to work
+on and the guard passed; under one `url.QueryEscape` the only form carrying the
+credential was the output of a pass that decoded the percent layer and the
+reference together. **135 of 450**, first miss `&#1153cr3t "Pa55w0rd" &<9xQz>` —
+the string the previous round's report quoted as closed.
 
-An artifact that does **not shrink as it is decoded** — a megabyte of filler with
-one deeply nested credential in it — costs a full pass per layer, so it gets
-`codedSweepWorkBytes/N` passes: four at the 4 MiB artifact cap. A 4 MiB artifact
-that is almost all filler with a five-deep encoding inside it is decoded four
-layers and not five. Below about 2 KiB there is **no residual at all**: the
-measure `2·len + specials` strictly decreases on every pass that changes
-anything, so such a string reaches its fixpoint within `3L` passes costing at
-most `3L²` bytes, which is inside the budget. The arithmetic is at
-`codedSweepWorkBytes` in `auth_helper.go`. This is not on the U-list because it
-needs no edit anyone is forbidden to make — it is a CPU bound with a stated
+**THREE DECODERS COMPOSED INSIDE ONE PASS WITH ONLY THE COMPOSITION RETAINED.**
+`pa\nssw0rd` under one percent layer is `pa%5Cnssw0rd`: `decodePercent` produced
+the secret exactly and `decodeBackslash` ate it in the same pass, because the
+intermediate that held it was never a member of anything. **Six of ten** shapes
+in `d24EscapeShapedSecrets`.
+
+Both are closed by the same change: a decoding pass returns a **set**, one step
+is **one decoder**, every intermediate is retained, and the next step maps over
+all of them. `TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed` and
+`TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer` are the guards, and
+restoring the composed pass turns both red with the numbers above.
+
+### The residuals that replaced it, which are stated rather than removed
+
+**Work, not depth.** An artifact that does **not shrink as it is decoded** — a
+megabyte of filler with one deeply nested credential in it — costs a full pass
+per form visited, and those visits are shared with whatever branching the
+artifact forces. Measured, with the credential under N layers of repeated
+`QueryEscape` at the end of that much filler: **11 layers at the 4 MiB artifact
+cap, 24 at 2 MiB, 50 at 1 MiB, more than 60 below 256 KiB** — against four at
+the cap when four fixed pipelines stood here. A traversal costs more per level
+than a pipeline does, so `codedSweepWorkBytes` was raised from `4 *` to `64 *`
+`codedMaxArtifactBytes` by measuring that curve rather than by argument.
+**The claim that there was no residual at all below ~2 KiB is DELETED, not
+qualified.** It was derived from `3L` passes on ONE trajectory; `2·len +
+specials` still bounds the traversal's depth at `3L`, but nothing in that
+argument bounds how many forms are reachable, so `3L²` is not an upper bound on
+the work of a set. What is asserted instead is the work bound itself —
+`TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize` — and the size of the
+set is measured and logged rather than capped: over four thousand generated
+strings built out of nothing but escape fragments, the widest set observed is
+**476 forms totalling 19515 bytes from a 77-byte seed**.
+
+**The diagonal of the reading cross-product.** A step asks
+`decodeEntitiesReading` for the k-th reading of the whole string, so every
+reference site in one candidate takes the SAME index. That is the diagonal, not
+the whole cross-product. It matters only where the chosen readings must be
+decoded a second time, because `containsUnderEveryReading` still takes the full
+per-site cross-product on bytes it can see. **Shown with a fixture rather than
+asserted about**: the secret `"A\t0"` inside `&#3741&#90` needs the first site
+at reading 1 (`%`, leaving `41` for a later percent step) and the second at
+reading 0 (a tab, leaving a literal `0`), and the sweep does not find it.
+`TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual` pins it and fails
+loudly if it ever closes, so this list cannot go stale in the other direction
+either. Closing it costs the full cross-product, exponential in the number of
+ambiguous sites.
+
+Neither is on the U-list, because neither needs an edit anyone is forbidden to
+make — they are a CPU bound and a combinatorial bound, each with a stated
 consequence, and the provenance rule is what covers the consequence.
 
 ---

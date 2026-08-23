@@ -799,6 +799,24 @@ type Signature struct {
 //	    longer open, but 400 quoted positions against 3 spelled bytes is
 //	    refused all the same.
 //
+//	    "SUCH A CLASS" IS THE UNION OF WHAT THE POSITION CAN CONSUME, not
+//	    the classes taken one at a time, and getting that wrong was a
+//	    measured evasion of this rule. `[0-9A-Za-z]` is not content-bearing;
+//	    `[[:punct:]]` carries no letter and is not content-bearing either;
+//	    their UNION is both, and a match at a position that can take either
+//	    runs across token boundaries exactly as `[[:print:]]` does.
+//	    regexp/syntax merges `[0-9A-Za-z]|[[:punct:]]` into one class and
+//	    the old per-branch reading caught it by accident — but capture
+//	    groups block that merge, and
+//	    `ZZZZZZZZ(?:([0-9A-Za-z])|([[:punct:]])|( ))*` was ACCEPTED with a
+//	    quotation count of zero and then matched ALL 634 BYTES of an
+//	    ordinary single-line HTML document — 626 of them past its eight
+//	    bytes of literal footing, through spaces, semicolons, angle brackets
+//	    and quotes. So the union is taken AT THE STEP WHERE THE AMBIGUITY IS:
+//	    at an alternation, whose branches are readings of one position, and
+//	    at a repeat, whose unit's alphabet is the alphabet of the contiguous
+//	    region the repeat produces. See quotationOverUnion.
+//
 // ===========================================================================
 // WHAT R3 BUYS THE SPAN, AS ARITHMETIC
 // ===========================================================================
@@ -831,8 +849,11 @@ type Signature struct {
 // ===========================================================================
 //
 // THE RULES DECIDE STRUCTURE. THEY DO NOT DECIDE WHETHER A LITERAL IS
-// TARGET-SPECIFIC, and nothing structural can. There is exactly one residual
-// and it wears three faces, all the same defect:
+// TARGET-SPECIFIC, and nothing structural can. That is ONE residual, wearing
+// three faces, all the same defect. (It is not the only thing the rules leave
+// open — the class carve-out at the end of this section is the other, and it
+// is a different question: not "is this literal a marker" but "how much of the
+// response may a token-shaped class run through".)
 //
 //	(?i)(error|warning|expired)   spells five to seven bytes on every path,
 //	                              quotes nothing, passes R1, R2 and R3 — and
@@ -865,6 +886,33 @@ type Signature struct {
 // the response. NOTHING IS QUOTED FROM IT: extractSpan's composition rule
 // bounds the actual match by the same inequality with no class involved, so
 // the residual is a confirmation residual and not an inlining one.
+//
+// THE CARVE-OUT IS OVER THE UNION, and stating it any other way is what the
+// previous round got wrong. It is not "each class is token-shaped", it is
+// "everything the position can consume is token-shaped together" — because a
+// position that can take a letter on one reading and a semicolon on another
+// crosses the boundary those two classes were supposed to respect. So
+// `[0-9A-Z]` repeated is silent, and `(?:[0-9A-Z]|[[:punct:]])` repeated is
+// not, even when capture groups stop the parser folding the two into one
+// class. R3 aggregates over the union at an ALTERNATION and at a REPEAT'S
+// UNIT; those are the two nodes where one region of the response has more than
+// one alphabet.
+//
+// WHAT R3 STILL DOES NOT DECIDE, SO IT IS SAID RATHER THAN IMPLIED: a
+// CONCATENATION of differing narrow classes. A concatenation is a sequence of
+// positions, each with one alphabet, so its union is not any position's
+// alphabet and R3 does not promote it. `Z[ab][,;][ab][,;]...` therefore quotes
+// positions R3 counts as zero. THE BOUND ON THAT IS ARITHMETIC, NOT A LIST:
+// every such position must be SPELLED OUT in the pattern, the cheapest
+// spelling of a two-rune class is four bytes, and MaxPatternBytes is 1024.
+// MEASURED at the ceiling: `Z` followed by 127 copies of `[ab][,;]` is 1017
+// bytes, is accepted, and matches 255 bytes of a body it spells one byte of;
+// 128 copies is 1025 bytes and does not compile at all. The consequence is
+// closed downstream and measured there too: extractSpan inlines ZERO bytes of
+// that 255-byte match and reports all 255 as SpanOverBroadBytes, because
+// property 1b re-applies L - s <= s to the match with no class definition
+// involved. TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes
+// drives both halves.
 
 // printableASCIILo and printableASCIIHi are extractSpan's charset. R2 is about
 // exactly that set, and a second spelling of 0x20 and 0x7e would be a second
@@ -893,6 +941,26 @@ type patternShape struct {
 	// draw from a content-bearing class. shapeUnbounded means a repeat with
 	// no ceiling. R3 compares it with minLiteral.
 	quoted int
+	// declared is an UPPER BOUND on the number of rune positions a match can
+	// draw from ANY multi-rune class, content-bearing or not. It is what
+	// quoted becomes when the UNION of those classes turns out to be
+	// content-bearing even though no single one of them was: see
+	// quotationOverUnion.
+	declared int
+	// consumes is the UNION, as a rune-pair list in the shape
+	// regexp/syntax uses, of every multi-rune class a position in this
+	// sub-expression can draw from. Spelled runes are not in it — a literal
+	// is not a class, and counting it would make every pattern with a
+	// letter in it content-bearing.
+	//
+	// IT IS WHY THIS STRUCT EXISTS RATHER THAN TWO INTS. quoted alone is a
+	// MAX over alternation branches, and a max over branches is not the
+	// alphabet of the position: `(?:([0-9A-Za-z])|([[:punct:]]))` has a
+	// non-content-bearing class on every branch and a content-bearing
+	// UNION, and the capture groups stop the parser merging the classes
+	// into one. The union is taken where the ambiguity is — at the
+	// alternation, and at a repeat's unit — not at the end.
+	consumes []rune
 	// open reports that some path can consume a rune the pattern neither
 	// spells nor confines to printable ASCII. R2 refuses it outright, so
 	// this is a bool and not a count: one open position is enough.
@@ -936,6 +1004,96 @@ func mulShape(a, n int) int {
 		return shapeUnbounded
 	}
 	return a * n
+}
+
+// maxShape is the larger of two counts with shapeUnbounded ordered above every
+// finite one. shapeUnbounded is negative, so the ordinary comparison would
+// pick the finite number and lose the refusal.
+func maxShape(a, b int) int {
+	if a == shapeUnbounded || b == shapeUnbounded {
+		return shapeUnbounded
+	}
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// unionRunes merges two rune-pair class lists into one normalised list.
+//
+// The result is sorted by low bound with overlapping and ADJACENT ranges
+// merged, so `[0-9]` unioned with `[a-z]` and `[A-Z]` is three pairs rather
+// than a list that grows with every class the walk meets. That bound matters:
+// a normalised union over printable ASCII can hold at most 48 pairs whatever
+// the pattern does, so this cannot be made expensive by a hostile pattern.
+//
+// It always allocates. The inputs are the parser's own slices, shared between
+// sub-expressions, and appending into one of them would rewrite a class the
+// walk has not finished with.
+func unionRunes(a, b []rune) []rune {
+	if len(a) == 0 && len(b) == 0 {
+		return nil
+	}
+	pairs := make([][2]rune, 0, (len(a)+len(b))/2)
+	for _, src := range [][]rune{a, b} {
+		for i := 0; i+1 < len(src); i += 2 {
+			if src[i] > src[i+1] {
+				continue
+			}
+			pairs = append(pairs, [2]rune{src[i], src[i+1]})
+		}
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i][0] != pairs[j][0] {
+			return pairs[i][0] < pairs[j][0]
+		}
+		return pairs[i][1] < pairs[j][1]
+	})
+	out := make([]rune, 0, len(pairs)*2)
+	lo, hi := pairs[0][0], pairs[0][1]
+	for _, p := range pairs[1:] {
+		if p[0] <= hi+1 {
+			if p[1] > hi {
+				hi = p[1]
+			}
+			continue
+		}
+		out = append(out, lo, hi)
+		lo, hi = p[0], p[1]
+	}
+	return append(out, lo, hi)
+}
+
+// quotationOverUnion is R3's aggregation, and it is the whole of ruling 11
+// applied to a regex walk: THE UNION IS TAKEN WHERE THE AMBIGUITY IS.
+//
+// A sub-expression's `quoted` is a max over the branches it was built from,
+// and a max over branches answers "which single branch quotes most". That is
+// the wrong question at a position a match can enter by any branch: the
+// alphabet of such a position is the UNION of the branches' alphabets, and a
+// union of token-shaped classes need not be token-shaped.
+//
+//	MEASURED, and it is why this function exists:
+//	`ZZZZZZZZ(?:([0-9A-Za-z])|([[:punct:]])|( ))*` was ACCEPTED with
+//	quoted=0 and then matched all 634 bytes of an ordinary 634-byte
+//	single-line HTML document, running through spaces, semicolons and tags.
+//	Each branch is a class R3 is silent about — alnum is not
+//	content-bearing, punct carries no letter, and a single space is a
+//	spelled literal — and the capture groups stop regexp/syntax merging the
+//	three into the one class that would have been content-bearing.
+//
+// So where a union is formed, the count of DECLARED positions is promoted to
+// quotation if the union is content-bearing. declared >= quoted always, so
+// this can only ever raise the number, which is the direction this gate fails
+// in.
+func quotationOverUnion(s patternShape) int {
+	if contentBearingClass(s.consumes) {
+		return maxShape(s.quoted, s.declared)
+	}
+	return s.quoted
 }
 
 // literalRuneBytes is how many bytes of the response a spelled rune requires.
@@ -1053,6 +1211,11 @@ func contentBearingClass(runes []rune) bool {
 }
 
 // classShape is the per-class verdict: spelled, declared, or open.
+//
+// A class that is not content-bearing still reports declared=1 and its own
+// rune list, because R3's aggregation over a union has to know what the
+// position can consume even when this class alone decides nothing. See
+// quotationOverUnion.
 func classShape(runes []rune) patternShape {
 	// A class naming exactly one rune is a literal with brackets round it,
 	// and reading it as anything else would let `[<][h][1]` evade R1.
@@ -1063,9 +1226,9 @@ func classShape(runes []rune) patternShape {
 		return patternShape{open: true}
 	}
 	if contentBearingClass(runes) {
-		return patternShape{quoted: 1}
+		return patternShape{quoted: 1, declared: 1, consumes: unionRunes(runes, nil)}
 	}
-	return patternShape{}
+	return patternShape{declared: 1, consumes: unionRunes(runes, nil)}
 }
 
 // shapeOf walks a parsed pattern.
@@ -1121,8 +1284,19 @@ func shapeOf(re *syntax.Regexp) patternShape {
 			s := shapeOf(sub)
 			out.minLiteral = addShape(out.minLiteral, s.minLiteral)
 			out.quoted = addShape(out.quoted, s.quoted)
+			out.declared = addShape(out.declared, s.declared)
+			out.consumes = unionRunes(out.consumes, s.consumes)
 			out.open = out.open || s.open
 		}
+		// NO UNION PROMOTION HERE, and that is deliberate. A concatenation
+		// is a SEQUENCE of positions, each declared by its own class; it is
+		// not one position with several readings, so the union is not this
+		// node's alphabet. What a concatenation of narrow-but-differing
+		// classes can do is bounded by how many of them the pattern spells
+		// out, and MaxPatternBytes bounds that. A repeat is where the same
+		// unit's alphabet becomes a stream region's alphabet, and that is
+		// where the promotion happens. See the residual note in this
+		// section's header.
 		return out
 
 	case syntax.OpAlternate:
@@ -1130,6 +1304,7 @@ func shapeOf(re *syntax.Regexp) patternShape {
 			return patternShape{open: true}
 		}
 		out := shapeOf(re.Sub[0])
+		out.consumes = unionRunes(out.consumes, nil)
 		for _, sub := range re.Sub[1:] {
 			s := shapeOf(sub)
 			// The THINNEST branch decides the footing: a candidate can
@@ -1137,36 +1312,43 @@ func shapeOf(re *syntax.Regexp) patternShape {
 			if s.minLiteral < out.minLiteral {
 				out.minLiteral = s.minLiteral
 			}
-			// The GREEDIEST branch decides the quotation.
-			if s.quoted == shapeUnbounded || out.quoted == shapeUnbounded {
-				out.quoted = shapeUnbounded
-			} else if s.quoted > out.quoted {
-				out.quoted = s.quoted
-			}
+			// The GREEDIEST branch decides the quotation...
+			out.quoted = maxShape(out.quoted, s.quoted)
+			out.declared = maxShape(out.declared, s.declared)
+			// ...and the UNION of the branches decides the alphabet. A
+			// match entering here can take any branch, so this position
+			// consumes from all of them.
+			out.consumes = unionRunes(out.consumes, s.consumes)
 			out.open = out.open || s.open
 		}
+		out.quoted = quotationOverUnion(out)
 		return out
 
 	case syntax.OpQuest:
 		s := shapeOf(re.Sub[0])
-		return patternShape{minLiteral: 0, quoted: s.quoted, open: s.open}
+		return patternShape{minLiteral: 0, quoted: s.quoted, declared: s.declared,
+			consumes: s.consumes, open: s.open}
 
 	case syntax.OpStar:
 		s := shapeOf(re.Sub[0])
-		return patternShape{minLiteral: 0, quoted: unboundedIfQuoting(s), open: s.open}
+		return patternShape{minLiteral: 0, quoted: unboundedIfQuoting(s),
+			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open}
 
 	case syntax.OpPlus:
 		s := shapeOf(re.Sub[0])
-		return patternShape{minLiteral: s.minLiteral, quoted: unboundedIfQuoting(s), open: s.open}
+		return patternShape{minLiteral: s.minLiteral, quoted: unboundedIfQuoting(s),
+			declared: unboundedIfDeclaring(s), consumes: s.consumes, open: s.open}
 
 	case syntax.OpRepeat:
 		s := shapeOf(re.Sub[0])
-		out := patternShape{open: s.open}
+		out := patternShape{consumes: s.consumes, open: s.open}
 		out.minLiteral = mulShape(s.minLiteral, re.Min)
 		if re.Max < 0 {
 			out.quoted = unboundedIfQuoting(s)
+			out.declared = unboundedIfDeclaring(s)
 		} else {
-			out.quoted = mulShape(s.quoted, re.Max)
+			out.quoted = mulShape(quotationOverUnion(s), re.Max)
+			out.declared = mulShape(s.declared, re.Max)
 		}
 		return out
 
@@ -1180,8 +1362,29 @@ func shapeOf(re *syntax.Regexp) patternShape {
 // Repeating something that quotes nothing quotes nothing however many times it
 // runs: `(abc)+` can be arbitrarily long and every byte of it is spelled.
 // Repeating something that quotes even one position quotes without limit.
+//
+// THE UNIT'S QUOTATION IS TAKEN OVER ITS UNION, not over its per-branch max.
+// A repeat makes one contiguous region of the response out of many traversals
+// of the unit, so the region's alphabet is the union of everything the unit
+// can consume — which is how `(?:[a-z][[:punct:]])*` quotes without limit
+// while neither of its two classes is content-bearing on its own.
 func unboundedIfQuoting(s patternShape) int {
-	if s.quoted == 0 {
+	if quotationOverUnion(s) == 0 {
+		return 0
+	}
+	return shapeUnbounded
+}
+
+// unboundedIfDeclaring is unboundedIfQuoting for the declared count: a
+// ceiling-less repeat of a unit that draws even one position from a class
+// draws unboundedly many.
+//
+// declared has to be carried through repeats separately from quoted, because
+// it is what quoted BECOMES when an enclosing alternation's union turns out to
+// be content-bearing. Collapsing it into quoted here would be the same defect
+// this fix exists to close, one node higher.
+func unboundedIfDeclaring(s patternShape) int {
+	if s.declared == 0 {
 		return 0
 	}
 	return shapeUnbounded
@@ -1271,11 +1474,40 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // ITS ANSWER IS ONLY AS WIDE AS ITS VOCABULARY, AND THAT IS A BUDGET. The tag
 // list below has thirteen entries and `h1` is not one of them, which is the
 // measured miss: 17 of 20 bounded-prefix HTML anchors passed this check.
-// Those all fail R2 now, on the pattern, whatever tag they name. What is left
-// inside the budget is a pattern that spells ordinary text the generator's
-// vocabulary happens not to emit — `(?i)(error|warning|expired)` is the
-// measured one. A BACKSTOP IS ALLOWED A BUDGET. A control is not, which is why
-// the control is somewhere else now.
+// Those all fail R2 now, on the pattern, whatever tag they name.
+//
+// THE BUDGET IS FIVE WRITTEN-DOWN LISTS, NOT ONE, and the disclosure used to
+// name only the first. Every generator below draws from a fixed vocabulary,
+// and a signature spelling something outside ANY of them is a signature this
+// corpus cannot see. MEASURED, one probe per list, all accepted by
+// NewSignature with nothing wrong with them:
+//
+//	benignWords, 33 entries       `(?i)(error|warning|expired)` — the
+//	                              originally-disclosed face. It confirms a
+//	                              SQL-injection candidate at confidence
+//	                              1.000 against an ordinary page carrying
+//	                              the word "expired".
+//	benignHTML tags, 13 entries   `<h1>`, `<table`, `<button`, `<form ` are
+//	                              accepted; `<div` and `<h2` are refused.
+//	                              The difference between those two groups is
+//	                              nothing but the list.
+//	benignJSON keys, 14 entries   `"error_code":` and `"user_id":` are
+//	                              accepted; `"status":` is refused.
+//	benignStructural toks,        `X-Powered-By: ` and `Set-Cookie: ` are
+//	  45 entries                  accepted. The list carries one status
+//	                              line and three response headers, and
+//	                              every other header ever sent is outside
+//	                              it.
+//	benignHTML classes, 9         reachable the same way, through
+//	                              `class="..."` values the generator never
+//	                              emits.
+//
+// TestTheCorpusResidualIsAsWideAsItsVocabularies drives all of these, so the
+// disclosure fails when it stops being true rather than aging quietly.
+//
+// A BACKSTOP IS ALLOWED A BUDGET. A control is not, which is why the control
+// is somewhere else now — and why the honest statement of this one is "five
+// vocabularies" rather than "a word list".
 //
 // A Signature must fire on NONE of these bodies. What they are is "responses
 // with nothing wrong with them", and an oracle that cannot tell one of those
@@ -1833,15 +2065,69 @@ type Observation struct {
 // this". The question is whether the NUMBER settles it, because the number is
 // all this function has.
 //
-// WHAT COUNTS, and why each:
+// THE RULE HAS THREE CONJUNCTS, and they are written out because the last
+// round's list satisfied only the first and nobody noticed. "The body is a
+// representation the origin application produced" requires ALL of:
 //
-//	200 201 202 204 206  a success status is the answer to the request that
-//	                     was asked, and only the origin can produce one: a
-//	                     CDN serving a cached 200 is serving a COPY of the
-//	                     application's own bytes, which is still the
-//	                     application's output. This is the family in which a
-//	                     signature's silence really is the application
-//	                     declining to emit the marker.
+//	(a) THERE IS A BODY. A status that forbids one cannot establish anything
+//	    about one. RFC 9110 §6.4.1 and §15.3.5: a 1xx, a 204 and a 304 are
+//	    terminated by the first empty line after the header fields and
+//	    CANNOT contain a message body at all; a 205 must have a zero-length
+//	    one.
+//	(b) THE BODY IS THE WHOLE REPRESENTATION. A 206 body is a byte range
+//	    SOMEONE ELSE CHOSE. A signature that failed to match a fragment has
+//	    not shown the marker is absent from the representation, only from
+//	    the part that came back.
+//	(c) ONLY THE ORIGIN CAN HAVE PRODUCED IT. A success status reports that
+//	    the request was carried out, and carrying it out is the
+//	    application's own act. A CDN serving a cached 200 is serving a COPY
+//	    of the application's own bytes, which is still the application's
+//	    output. Every error status, by contrast, is something a CDN, a
+//	    proxy, a gateway or a WAF manufactures without reaching the origin.
+//
+// EACH MEMBER, DERIVED FROM THE RULE RATHER THAN ASSERTED:
+//
+//	200 ok          (a) a 200 carries the representation of the target
+//	                resource. (b) it is the whole of it. (c) only the origin
+//	                can report that a request was carried out. ON.
+//	201 created     (a) RFC 9110 §15.3.2: the response contains a
+//	                representation describing the request's status and the
+//	                new resource. (b) whole. (c) creating the resource is
+//	                the origin's act. ON.
+//	202 accepted    (a) §15.3.3: the representation describes the request's
+//	                current status. (b) whole. (c) accepting the request
+//	                into processing is the origin's act. ON.
+//
+// WHAT THE RULE THREW OFF THIS ROUND, and this is the entry a reader should
+// check hardest, because both were on the list under the rule above and
+// NEITHER SATISFIED IT:
+//
+//	204 no content  FAILS (a). §15.3.5: a 204 cannot contain a message body.
+//	                MEASURED, and the measurement is the argument: a 204
+//	                re-probe over a vulnerable candidate yielded
+//	                outcome=rejected at confidence 0.000 MARKED KNOWN — a
+//	                finding disproven by bytes that could not have existed.
+//	                The list also disagreed with itself: 205, the other
+//	                mandated-empty status, was never a member, so two
+//	                statuses with the same body semantics were decided two
+//	                different ways. A signature's silence over a body the
+//	                protocol forbids is not the application declining to
+//	                emit a marker; it is nothing at all.
+//	206 partial     FAILS (b). The body is a range, and the range boundaries
+//	    content     were chosen by whoever answered — which need not be the
+//	                origin: a range-capable cache assembles a 206 from what
+//	                it already holds. A marker two bytes past the end of the
+//	                returned range is a marker the signature cannot see, so
+//	                a non-match disproves nothing. This gate never sends a
+//	                Range header, so a 206 to its re-probe is additionally a
+//	                report about a request it did not make.
+//
+// THE COST OF THOSE TWO IS SMALLER THAN THE OTHER REMOVALS AND IS STILL
+// STATED: an endpoint that answers 204 or 206 on every attempt is now
+// UNCONFIRMED rather than REJECTED. For 204 that costs nothing real — there
+// were never any bytes to run the oracle over — and for 206 it costs the case
+// where a marker happens to fall inside the returned range. Both land in front
+// of a human with the body hash, which is where an undecided thing belongs.
 //
 // WHAT IS DELIBERATELY ABSENT. Nothing below is "denied" — the allowlist still
 // has no deny side, and a status not named simply falls to indecisive by
@@ -1936,13 +2222,16 @@ type Observation struct {
 //
 // It is a map keyed by the status itself, for the reason classOracles is: a
 // positional list silently changes meaning when someone inserts a value.
+//
+// TestTheApplicationAllowlistMatchesTheRuleItsCommentStates runs the three
+// conjuncts above over every member and over the whole status space. It used
+// to encode "2xx", which is conjunct (c) alone — and (c) alone is what let 204
+// and 206 sit here under a comment that did not cover either.
 func applicationResponseStatuses() map[int]string {
 	return map[int]string{
 		200: "ok",
 		201: "created",
 		202: "accepted",
-		204: "no content",
-		206: "partial content",
 	}
 }
 
