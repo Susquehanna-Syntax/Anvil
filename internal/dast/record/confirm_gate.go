@@ -197,7 +197,7 @@
 // confirmed count as "scanned clean" while unconfirmed or refused candidates
 // are sitting in the ledger.
 //
-// Sources: plan/50-dast.md D.27 (lines 870-911) and the Coverage Reporting
+// Sources: plan/50-dast.md D.27 (lines 869-907) and the Coverage Reporting
 // Contract (lines 1142-1160); plan/00-SPINE.md S7; research/15-dast-tooling-
 // landscape.md (ZAP's 88 phantom SQL-injection findings);
 // research/23-dast-signal-sources.md Risk #2.
@@ -214,10 +214,20 @@
 // re-deriving it. The line is at internal/dast/authz/egress_chokepoint_test.go
 // in inertImports, added by the orchestrator on review rather than by the
 // packet that needed it, because a packet that widens the allowlist in the same
-// diff that needs it has reviewed itself. Gate 3 is green:
+// diff that needs it has reviewed itself. Gate 3 is green, and what the scan
+// printed ON THE TREE THAT WIDENED THE ALLOWLIST was:
 //
 //	gate 3: 110 files scanned, 10 egress site(s), all inside the kernel or
 //	on the allowlist
+//
+// THOSE TWO COUNTS MEASURE A TREE; THEY ARE NOT A PROPERTY OF THIS GATE, and
+// they are qualified above rather than pinned because nothing this packet may
+// write can pin them: the scan lives in another package's test and its file
+// count moves with every file added anywhere beneath it. What does survive
+// every commit is the sentence, not the transcript — the allowlist entry
+// exists and the gate passes — and THAT is pinned, by
+// TestGate3NoSocketIsConstructedOutsideTheKernel turning red the moment it
+// stops being true. Re-run the gate rather than trusting the numbers.
 //
 // THE SENTENCES THIS REPLACED WERE FALSE IN FOUR PLACES, and they are recorded
 // here because the way they became false is worth more than the correction.
@@ -866,7 +876,10 @@ type Signature struct {
 // that reads as though it were is a claim this paragraph withdraws.
 //
 // R1, R2 and R3 are a BEST-EFFORT EARLY REFUSAL. They run at NewSignature
-// time, they cost about 2.3 us, and they refuse obviously-bad signatures
+// time, they cost microseconds — the benchmark block above buildBenignCorpus
+// carries the figure, the machine it was taken on and the command that
+// reproduces it, and it is not copied here because a timing written twice is
+// a timing that goes stale once — and they refuse obviously-bad signatures
 // before an operator ships one — which is worth having, is cheap, and is why
 // they stay. What they are NOT is complete. A SIGNATURE THAT PASSED
 // NewSignature HAS NOT BEEN PROVEN NARROW. Do not read an acceptance here as
@@ -925,8 +938,13 @@ type Signature struct {
 //	                             because <h1 is not one of the thirteen tag
 //	                             names the generator was given
 //
-// The third is MEASURED: 17 of 20 bounded-prefix HTML anchors pass, and the
-// h1 spelling ALSO INLINED 403 verbatim body bytes into ExtractedSpan, which
+// The third is MEASURED: 11 of the 14 bounded-prefix HTML anchors in
+// anchorTags walk past the corpus untouched, because the corpus catches such
+// an anchor only when the anchor's tag is one of the thirteen it was given.
+// Both counts are pinned — see the header of
+// TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure, which also
+// records the unreproducible figure this replaced. The h1 spelling ALSO
+// INLINED 403 verbatim body bytes into ExtractedSpan, which
 // MaxSpanBytes cannot see because that bound only refuses matches LONGER than
 // 512. THE PAST TENSE IS THE CORRECTION: that inlining is closed now, but not
 // by anything in this paragraph — extractSpan's property 1b withholds the
@@ -2184,8 +2202,11 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 //
 // ITS ANSWER IS ONLY AS WIDE AS ITS VOCABULARY, AND THAT IS A BUDGET. The tag
 // list below has thirteen entries and `h1` is not one of them, which is the
-// measured miss: 17 of 20 bounded-prefix HTML anchors passed this check.
-// Those all fail R2 now, on the pattern, whatever tag they name.
+// measured miss: 11 of the 14 bounded-prefix HTML anchors in anchorTags walk
+// past this check, and only the 3 whose tag the list happens to contain do
+// not. Both counts are pinned by
+// the_corpus_catches_an_anchor_only_when_it_knows_the_tag. Those all fail R2
+// now, on the pattern, whatever tag they name.
 //
 // THE BUDGET IS EVERY WRITTEN-DOWN LIST IN THESE GENERATORS, AND THERE ARE
 // NINE OF THEM. It was disclosed as one, then as five, and five was still
@@ -2307,7 +2328,14 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // quietly become false.
 //
 // THE COST, MEASURED RATHER THAN ASSERTED. Two costs exist and they are
-// different things:
+// different things. EVERY FIGURE IN THIS SECTION IS A READING OF ONE RUN ON
+// ONE MACHINE, NOT A PROPERTY OF THIS CODE, and the run is identified at the
+// foot of the section: the tree that landed ruling 12, on the machine and Go
+// version named there. A timing is the one measurement here that cannot be
+// pinned as an equality — pinning it would pin the hardware — so it takes the
+// other treatment and says which tree it came off. Nothing re-measures these
+// on a commit that only moves comments, and nothing should be read as though
+// something did.
 //
 //	BUILDING IT, once, at package initialisation: 3.3 ms, allocating the
 //	1 MiB ceiling body and about 200 KiB of shorter ones.
@@ -2326,9 +2354,11 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // benchmark block that still said 972 would be a measurement of a tree that no
 // longer exists.
 //
-// MEASURED ON THIS TREE, NOT ESTIMATED, by BenchmarkBenignCorpusBuild,
-// BenchmarkNewSignature and BenchmarkRefuseOverBroadPattern in
-// confirm_gate_test.go — go1.26.5, AMD Ryzen 5 9600X, windows/amd64:
+// MEASURED, NOT ESTIMATED, ON THE TREE THAT LANDED RULING 12 — which is the
+// last tree on which anything in this section was timed — by
+// BenchmarkBenignCorpusBuild, BenchmarkNewSignature and
+// BenchmarkRefuseOverBroadPattern in confirm_gate_test.go, under go1.26.5 on
+// an AMD Ryzen 5 9600X, windows/amd64:
 //
 //	go test -run XXX -bench 'BenignCorpus|NewSignature|RefuseOverBroad' -benchtime 200x ./internal/dast/record/
 //	BenchmarkBenignCorpusBuild-12          200    3394635 ns/op

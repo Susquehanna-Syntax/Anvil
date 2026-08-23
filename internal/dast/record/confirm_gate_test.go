@@ -2603,7 +2603,11 @@ func outputViolations(typ reflect.Type) []string {
 //
 // It was "handed back", and MEASURED: that derivation reached 21 of this
 // package's 26 exported types, and deleting RawFinding and RefusalError from
-// boundaryTypes left the meta-guard GREEN. That is the Summary/ProvenanceRow
+// boundaryTypes left the meta-guard GREEN. BOTH FIGURES ARE PINNED AS
+// EQUALITIES in TestEveryExportedTypeThatCrossesTheBoundaryIsWalked — the
+// withdrawn derivation is still computed on every run, so neither is
+// remembered, and a twenty-seventh exported type turns this sentence red in
+// the diff that declares it. That is the Summary/ProvenanceRow
 // defect — a membership rule that does not enumerate its own members — still
 // live in the fix written to close it, one level further down. RawFinding
 // travels IN and is never returned, so no result position mentions it; it is
@@ -2950,7 +2954,8 @@ func TestTheMetaGuardFailsWhenAVerdictIsFlipped(t *testing.T) {
 //
 // So the list is DERIVED, and this round the derivation got WIDER. It used to
 // be "every type in a result position", which reached 21 of 26 exported types
-// and left RawFinding and RefusalError registered by nothing — deleting both
+// (pinned below, not remembered — the withdrawn derivation still runs) and
+// left RawFinding and RefusalError registered by nothing — deleting both
 // from boundaryTypes left this test green, which is the same defect again, one
 // level down. The rule is now EVERY EXPORTED TYPE DECLARED IN THIS PACKAGE.
 // Registering a verdict for each is still a human act — the verdicts are
@@ -2990,6 +2995,34 @@ func TestEveryExportedTypeThatCrossesTheBoundaryIsWalked(t *testing.T) {
 			"supposed to be the WIDER of the two: it was 'handed back' before, that "+
 			"reached 21 of 26, and RawFinding and RefusalError could be deleted from "+
 			"the registry with a green build", len(declared), len(handedBack))
+	}
+
+	// ===================================================================
+	// AND THE TWO FIGURES THAT SENTENCE QUOTES ARE PINNED HERE. "21 of 26"
+	// is written in two doc comments in this file and in the message just
+	// above, and until this block it was guarded by a FLOOR of twenty —
+	// which is not a guard on a figure at all. The withdrawn derivation is
+	// still computed on every run, so both numbers are available and there
+	// is no reason to remember either.
+	//
+	// The declared count going red on a new exported type is the point,
+	// not a cost: this test already forces that type into boundaryTypes in
+	// the same diff, and now it forces the sentences that count them too.
+	// ===================================================================
+	for _, tc := range []struct {
+		what      string
+		got, want int
+	}{
+		{"exported types this package declares", len(declared), 26},
+		{"of those, ones the withdrawn 'handed back' rule reached",
+			len(handedBack), 21},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: %d, and the two paragraphs that argue for the widening say "+
+				"%d. Re-measure and move both sentences in this diff; a count of a "+
+				"tree, left in prose, is false at the next commit that moves the tree",
+				tc.what, tc.got, tc.want)
+		}
 	}
 
 	missing := unregisteredBoundaryTypes(declared, registry)
@@ -4378,6 +4411,19 @@ func TestTheLengthThresholdFamilyIsClosedAndNotMerelyOutrun(t *testing.T) {
 	}
 }
 
+// anchorTags is the bounded-prefix family this file measures, WRITTEN DOWN so
+// that a count taken over it can be reproduced by the reader it is written
+// for. It was an inline literal in the sweep below until the figure beside it
+// turned out to be a count over a family nobody had recorded.
+//
+// Three of these are in benignHTML's tag vocabulary and the rest are not, on
+// purpose: the point of the sweep is that the control refuses all of them
+// alike, and the point of the count is that the corpus never could.
+var anchorTags = []string{
+	"h1", "h2", "h6", "div", "span", "form", "main", "figure", "dialog",
+	"marquee", "blink", "anvil-widget", "x", "custom-element-nobody-wrote",
+}
+
 // TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure is the
 // measured CRITICAL of this round, closed and then attacked from both sides.
 //
@@ -4390,7 +4436,21 @@ func TestTheLengthThresholdFamilyIsClosedAndNotMerelyOutrun(t *testing.T) {
 // verbatim body bytes into ExtractedSpan. MaxSpanBytes could not see the
 // second, because that bound only refuses matches LONGER than 512. The corpus
 // could not see the first, because `h1` was not one of the thirteen tag names
-// the generator was given — 17 of 20 bounded-prefix HTML anchors passed.
+// the generator was given, and a corpus catches a bounded-prefix anchor only
+// when the anchor's tag is one it knows.
+//
+// THE FIGURE THAT USED TO END THAT SENTENCE IS DELETED, and how it failed is
+// the reason to say so rather than quietly drop it. It read "17 of 20
+// bounded-prefix HTML anchors passed" — a real measurement, over a family of
+// twenty anchors that WAS NEVER WRITTEN DOWN ANYWHERE IN THIS TREE. A reader
+// could not reproduce it, this package could not pin it, and no rename or
+// vocabulary change could ever have turned it red. What replaces it is the
+// same measurement over the family this test does write down: 11 of the 14
+// anchors in anchorTags walk past the corpus untouched and 3 do not, and both
+// counts are pinned as equalities by
+// the_corpus_catches_an_anchor_only_when_it_knows_the_tag, which runs the
+// corpus arm alone. Add a tag to benignHTML or a member to anchorTags and
+// this sentence goes red in the same diff.
 //
 // So the family is decided on the PATTERN now, and this test attacks that
 // decision the way the last four rounds were attacked: by varying the thing
@@ -4400,10 +4460,7 @@ func TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure(t *testing.T)
 	// says so. The corpus knew thirteen tags; the control knows none. Every
 	// anchor here is refused for the same structural reason, including the
 	// ones no vocabulary contains.
-	for _, tag := range []string{
-		"h1", "h2", "h6", "div", "span", "form", "main", "figure", "dialog",
-		"marquee", "blink", "anvil-widget", "x", "custom-element-nobody-wrote",
-	} {
+	for _, tag := range anchorTags {
 		p := `(?s)<` + tag + `[\s\S]{0,400}`
 		_, err := refuseOverBroadPattern(p)
 		if err == nil {
@@ -4416,6 +4473,68 @@ func TestTheBoundedPrefixFamilyIsRefusedByTheControlOnItsStructure(t *testing.T)
 			t.Errorf("NewSignature(%q) = %v, want ErrSignatureMatchesEverything", p, nerr)
 		}
 	}
+
+	// ===================================================================
+	// THE CORPUS'S SHARE OF THIS FAMILY, MEASURED RATHER THAN QUOTED. The
+	// header says a corpus catches a bounded-prefix anchor only when it
+	// knows the tag. That is run here, over the family named in
+	// anchorTags, against the corpus arm ALONE — a raw regexp against
+	// benignCorpus, with refuseOverBroadPattern taken out of the way,
+	// because on the shipped path the control refuses every one of these
+	// before the corpus is ever consulted and the measurement would be of
+	// nothing.
+	//
+	// BOTH COUNTS ARE PINNED. The figure this replaced was a floor on
+	// nothing: it named a family that was never written down, so no
+	// vocabulary edit, no tag added to benignHTML and no member added here
+	// could have moved it. These two move in the same diff as either list.
+	// ===================================================================
+	t.Run("the_corpus_catches_an_anchor_only_when_it_knows_the_tag", func(t *testing.T) {
+		caught, missed := 0, 0
+		var passed []string
+		for _, tag := range anchorTags {
+			p := `(?s)<` + tag + `[\s\S]{0,400}`
+			re, err := regexp.Compile(p)
+			if err != nil {
+				t.Fatalf("the anchor %q does not compile: %v; the sweep above is "+
+					"measuring something other than a regex", p, err)
+			}
+			fires := false
+			for _, body := range benignCorpus {
+				if re.MatchString(body) {
+					fires = true
+					break
+				}
+			}
+			if fires {
+				caught++
+			} else {
+				missed++
+				passed = append(passed, tag)
+			}
+		}
+		t.Logf("the corpus alone catches %d of the %d anchors in anchorTags and misses "+
+			"%d: %v", caught, len(anchorTags), missed, passed)
+		for _, tc := range []struct {
+			what      string
+			got, want int
+		}{
+			{"anchors the corpus alone catches", caught, 3},
+			{"anchors that walk past the corpus", missed, 11},
+			{"members of anchorTags", len(anchorTags), 14},
+		} {
+			if tc.got != tc.want {
+				t.Errorf("%s: %d, and the header above this test says %d. Move the "+
+					"sentence in the same diff that moves the list", tc.what, tc.got, tc.want)
+			}
+		}
+		if caught == 0 || missed == 0 {
+			t.Fatal("the corpus now catches all of this family or none of it. Either " +
+				"way the header's claim — that a corpus catches an anchor only when " +
+				"it knows the tag — is no longer what this measures, and the sentence " +
+				"has to be re-derived rather than kept")
+		}
+	})
 
 	// AND THE OBVIOUS EVASION: narrow the class until R2 stops objecting.
 	// `[[:print:]]`, `[ -~]` and `[!-~]` are all confined to printable
@@ -4544,7 +4663,7 @@ func TestTheCorpusResidualIsAsWideAsItsVocabularies(t *testing.T) {
 	// no number is claimed, because a number nothing checks is the kind of
 	// claim this file deletes rather than qualifies.
 	const sizeNotASliceLiteral = -1
-	for _, v := range []struct {
+	vocabularies := []struct {
 		what      string
 		size      int
 		disclosed int
@@ -4587,7 +4706,25 @@ func TestTheCorpusResidualIsAsWideAsItsVocabularies(t *testing.T) {
 			[]string{`Content-Type: application/json`, `Cache-Control: no-store`,
 				`HTTP/1\.1 200 OK`},
 			[]string{`X-Powered-By: `, `Set-Cookie: `, `text/html`, `HTTP/1\.1 404`}},
-	} {
+	}
+
+	// HOW MANY VOCABULARIES THERE ARE IS ITSELF A DISCLOSED FIGURE, and it
+	// is written in the corpus header three times over: "nine vocabularies"
+	// twice, and "NINE OF THEM" once. Counted, not eyeballed. It was
+	// the one number in that header nothing checked — the per-list sizes
+	// below have been pinned since the header was written, but the LENGTH of
+	// the list of lists was a count somebody took by eye. A tenth generator
+	// vocabulary would have made all four sentences false at once and left
+	// this test green.
+	if len(vocabularies) != 9 {
+		t.Errorf("this test probes %d generator vocabularies and the corpus header "+
+			"discloses NINE, in four separate sentences. The header's whole argument "+
+			"is that the backstop's budget is the SET of written-down lists, so the "+
+			"size of that set is a disclosure too: move every one of those sentences "+
+			"in this diff", len(vocabularies))
+	}
+
+	for _, v := range vocabularies {
 		if v.size != v.disclosed {
 			t.Errorf("%s has %d entries and the corpus header discloses %d. The size of "+
 				"each list IS the backstop's budget, and a reader sizes their trust to "+
@@ -6981,7 +7118,13 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 // matched short — it is not matched AT ALL. MEASURED over 2,000 seeded random
 // 40-character base64url tokens: `eyJ[0-9A-Za-z]{20,60}` hit 1,036 of them,
 // missing 964 — roughly a 48% miss, and (62/64)^20 = 0.53 says that is the
-// rate rather than the draw. Lowering the minimum to `{8,60}` does
+// rate rather than the draw. ALL THREE FIGURES ARE PINNED AS EQUALITIES by
+// the_remedy_misses_tokens_carrying_an_underscore_or_hyphen_early, and until
+// this round they sat behind a window four hundred wide that could not have
+// caught them going stale. The seed, the alphabet and the trial count are all
+// constants, so this draw is the same on every machine and a figure that
+// reproducible is pinned rather than bounded. Lowering the minimum to
+// `{8,60}` does
 // match the truncated prefix, at the price of a shorter and less specific
 // literal-to-evidence ratio. Neither is the pattern the operator wanted; both
 // are what this gate will compile. That trade is the disclosure.
@@ -7162,10 +7305,30 @@ func TestTheContentBearingEvidenceClassFamilyIsRefusedByR3(t *testing.T) {
 				hits++
 			}
 		}
-		// The window is wide because the number that matters is the
-		// ORDER — "about half" — not the exact draw. A remedy that
-		// suddenly hit everything, or nothing, would mean the class
-		// semantics moved and the disclosure needs rewriting.
+		// THE EXACT DRAW IS PINNED, AND IT USED TO BE ONLY WINDOWED.
+		// The disclosure above quotes 1036 hits and a 48% miss to the
+		// digit, and the window below admits everything from 900 to
+		// 1300 — so the quoted figure could go stale by four hundred
+		// and this test would stay green. Nothing about this draw is
+		// uncertain: the seed is a constant, the alphabet is a
+		// constant, trials is a constant, and extractSpan is
+		// deterministic, so the same three numbers come out on every
+		// machine. A figure that reproducible has no excuse for a
+		// floor.
+		if hits != 1036 {
+			t.Errorf("the remedy hit %d/%d seeded tokens and the disclosure above says "+
+				"1036, missing %d, roughly a %d%% miss. This draw is fully determined "+
+				"by a constant seed over a constant alphabet, so a change here is a "+
+				"change in what the class rule matches: re-measure and move all three "+
+				"figures in the disclosure in this diff",
+				hits, trials, trials-hits, ((trials-hits)*100)/trials)
+		}
+		// The window stays, and it is a DIFFERENT claim from the pin
+		// above: the pin says the disclosure is current, and this says
+		// the ORDER — "about half" — is what the operator guidance
+		// rests on. A remedy that suddenly hit everything, or nothing,
+		// would mean the class semantics moved and the disclosure needs
+		// rewriting rather than renumbering.
 		if hits < 900 || hits > 1300 {
 			t.Fatalf("the remedy hit %d/%d seeded random base64url tokens; the "+
 				"disclosure above says 1036, roughly a 48%% miss. A number far "+
@@ -7957,10 +8120,10 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // confirm_gate.go or confirm_gate_test.go", which overstates the window in
 // two directions and MEASURING IT IS THE ONLY WAY TO KNOW BY HOW MUCH:
 //
-//	184 of the two files' 6,211 comment NODES carry a comparison operator in
+//	188 of the two files' 6,332 comment NODES carry a comparison operator in
 //	their RAW text. The scanner counts 40 of them, inside 20 claim
-//	paragraphs. The other 144 are not seen, and NONE of them is unexplained:
-//	126 are banner rules, where a line of equals signs is literally a row of
+//	paragraphs. The other 148 are not seen, and NONE of them is unexplained:
+//	130 are banner rules, where a line of equals signs is literally a row of
 //	`==` and commentProse blanks it, and 18 are operators inside backticks or
 //	double quotes, which commentProse removes. There is no third cause.
 //	The counts are produced, not remembered, by
@@ -7970,8 +8133,8 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // WHILE PRINTING THE NODE COUNT. The two are not the same number. Every `//`
 // comment is one node on one line, so for almost all of these two files they
 // agree — but the two block comments in confirm_gate_test.go share a SINGLE
-// line, so the nodes run one ahead of the physical lines they sit on: 6,211
-// against 6,210. A count reported under the wrong unit is the same defect this
+// line, so the nodes run one ahead of the physical lines they sit on: 6,332
+// against 6,331. A count reported under the wrong unit is the same defect this
 // whole section was built to catch, one unit further down, so both figures are
 // now measured and both are pinned.
 //
@@ -8853,13 +9016,13 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			got  int
 			want int
 		}{
-			{"comment NODES in the two owned files", nodes, 6211},
-			{"physical LINES those nodes occupy", len(physical), 6210},
+			{"comment NODES in the two owned files", nodes, 6332},
+			{"physical LINES those nodes occupy", len(physical), 6331},
 			{"block-comment NODES among them", block, 2},
 			{"physical lines those block comments occupy", len(blockPhysical), 1},
-			{"comment NODES whose RAW text carries an operator", rawOps, 184},
+			{"comment NODES whose RAW text carries an operator", rawOps, 188},
 			{"of those, lines the scan opens", seen, 40},
-			{"unseen because " + banners, cause[banners], 126},
+			{"unseen because " + banners, cause[banners], 130},
 			{"unseen because " + quoted, cause[quoted], 18},
 			{"unseen for any other reason", cause[unknown], 0},
 		} {
@@ -8920,13 +9083,24 @@ var (
 	// MEASURED: the previous guard accepted any token in the paragraph that
 	// resolved to a declared identifier and carried an upper-case letter,
 	// on the theory that a case boundary separates a NAME from an English
-	// word. That shape admits 435 of this package's 757 declared
-	// identifiers, ordinary English nouns among them, and a verifier's
-	// paragraph asserting a ceiling of 4096 (real: MaxSpanBytes) passed it
-	// on the strength of the words Evidence and Finding. Both figures are
-	// recomputed on every run by
-	// the_shape_this_replaced_is_still_measurably_vacuous rather than
-	// quoted here.
+	// word. That shape admits enough of this package's declared vocabulary
+	// that ordinary English nouns resolve as enforcer citations, and a
+	// verifier's paragraph asserting a ceiling of 4096 (real: MaxSpanBytes)
+	// passed it on the strength of the words Evidence and Finding.
+	//
+	// THE TWO COUNTS ARE DELIBERATELY NOT WRITTEN HERE, AND THIS SENTENCE
+	// USED TO WRITE THEM. It stated the admitted count and the declared
+	// count in the PRESENT TENSE, two sentences before claiming both were
+	// recomputed every run "rather than quoted here" — so the paragraph
+	// contradicted itself and rotted at the same time. The pair was true
+	// together exactly once, on the tree that shipped the guard; every
+	// commit since has moved the tree and left the sentence where it was.
+	// the_shape_this_replaced_is_still_measurably_vacuous recomputes both
+	// on every run and logs them, and the historical figures, qualified by
+	// the tree they were taken on, are written ONCE — in this guard's own
+	// doc comment and nowhere else. A SECOND COPY OF A MEASUREMENT IS HOW
+	// THE FIRST ONE ROTS UNNOTICED, which is the argument withdrawnPhrasings
+	// already makes about a false sentence living in two places.
 	//
 	// NAMES ARE WORDS, so no rule about spelling can tell one from the
 	// other. A FORM is not a word: ordinary prose does not accidentally
@@ -9949,9 +10123,14 @@ var proseNamesWithNoDeclaration = []proseNameException{
 	},
 	{
 		name: "zzCarrier",
-		why: "SYNTHETIC. A two-field struct in the worked example of how the " +
-			"closure walker marks a type it has already seen. It exists to be " +
-			"walked in prose and nowhere else",
+		why: "SYNTHETIC. A one-field struct in the worked example of what the " +
+			"WITHDRAWN dedup key cost: the walk used to mark seen[reflect.Type] on " +
+			"entry, so a struct reaching zzCarrier twice had its second route to a " +
+			"raw body skipped and reported nothing. THIS ENTRY USED TO DESCRIBE THE " +
+			"EXAMPLE AS THE LIVE WALKER 'marking a type it has already seen', which " +
+			"cannot be right in either tense — the walker has had no dedup key since " +
+			"ruling 12, and the example exists precisely to say why. It is walked in " +
+			"prose and nowhere else",
 	},
 	{
 		name: "AloneAreACleanScan",
@@ -9967,15 +10146,23 @@ var proseNamesWithNoDeclaration = []proseNameException{
 	// ----------------------------------------------------------------
 	{
 		name: "BenignCorpus",
-		why: "A FRAGMENT OF A COMMAND LINE. It is one alternative inside the -bench " +
-			"regex of the reproduction command for the benchmark figures. The " +
-			"declared names that regex selects, BenchmarkBenignCorpusBuild and " +
-			"buildBenignCorpus, both resolve on their own lines",
+		why: "A FRAGMENT OF A COMMAND LINE — of BOTH of them, in fact: these two " +
+			"files carry two `go test -bench` reproduction commands and this " +
+			"alternative is inside the -bench regex of each. The declared names that " +
+			"regex selects, BenchmarkBenignCorpusBuild and buildBenignCorpus, both " +
+			"resolve on their own lines",
 	},
 	{
 		name: "RefuseOverBroad",
-		why: "A FRAGMENT OF THE SAME COMMAND LINE, selecting " +
-			"BenchmarkRefuseOverBroadPattern, which resolves on the line above it",
+		why: "A FRAGMENT OF THE LONGER OF THOSE TWO COMMAND LINES, and the declared " +
+			"name it selects, BenchmarkRefuseOverBroadPattern, resolves on its own " +
+			"lines in the same block — once in the sentence attributing the " +
+			"measurement and once in the benchmark output beneath it. THIS ENTRY USED " +
+			"TO SAY 'which resolves on the line above it', which was a POSITION and " +
+			"not a fact. It was never the line above — the name stood several lines " +
+			"up when that was written and stands both above and below the fragment " +
+			"now — and no offset is written here to replace it, because a line " +
+			"offset in prose is stale the next time anything in the block rewraps",
 	},
 	{
 		name: "zA",
