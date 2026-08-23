@@ -314,12 +314,24 @@ const MaxFieldBytes = MaxSpanBytes
 // MaxSpanBytes rather than chosen.
 //
 // THE DERIVATION, IN ONE SENTENCE A READER CAN CHECK: an inlined span exists
-// only when its match L fits in MaxSpanBytes, and the quotation relation caps
-// the unspelled bytes q at the spelled bytes s = L - q, so q <= L - q gives
-// 2q <= L <= MaxSpanBytes and therefore q <= MaxSpanBytes/2 = 256 — exactly
-// the q <= L/2 <= 256 the R-rules section already derives. 256 is not a new
-// number: it is the ceiling this package has published on inlined quotation
-// since that section was written.
+// only when its match L fits in MaxSpanBytes, and above this floor the ratio
+// arm caps the unspelled bytes q at the spelled bytes s = L - q, so q <= L - q
+// gives 2q <= L <= MaxSpanBytes and therefore q <= MaxSpanBytes/2 = 256. 256
+// is not a new number: it is the ceiling on inlined quotation this package has
+// published since the R-rules section was written, and it is the one half of
+// that section's old "q <= L/2 <= 256" that survived ruling 15 — see the
+// withdrawal there, and matchQuotesMoreThanItSpells for the proof that the
+// floor does not raise it.
+//
+// BOTH FACTS ABOUT THIS CONSTANT ARE PINNED SEPARATELY, because a pin that
+// computes its expectation from the constant it pins cannot see the constant
+// move. TestTheUnspelledFloorIsTheLiteralTwoFiftySix asserts the VALUE against
+// a written-out 256 and names no other constant;
+// TestTheUnspelledFloorIsExactlyHalfTheSpanBound asserts the RELATION,
+// 2*MaxUnspelledBytes == MaxSpanBytes, and names no literal. Replacing this
+// declaration with a bare literal 299 — measured, and green across the whole
+// package before those two tests existed — now fails the first; changing
+// MaxSpanBytes while leaving a literal floor behind fails the second.
 //
 // WHY THE FLOOR IS THIS AND NOT MaxSpanBytes ITSELF. Ruling 15 names
 // MaxSpanBytes as "what this package already permits to be inlined", and
@@ -650,10 +662,18 @@ const (
 	// content of ruling 14's third paragraph:
 	//
 	// CONFIRMED is wrong. A confirmation is the claim "the oracle fired on
-	// this response". A match that runs past its own footing is not the
-	// oracle firing on the response, it IS the response — the span is the
-	// body rather than evidence about it, which is the same sentence R3
-	// refuses patterns with, said about a match instead of a pattern.
+	// this response". A match that runs past BOTH the floor and its own
+	// footing is not the oracle firing on the response, it IS the response
+	// — the span is the body rather than evidence about it, which is the
+	// same sentence R3 refuses patterns with, said about a match instead of
+	// a pattern.
+	//
+	// THE "BOTH" IS LOAD-BEARING AND THIS SENTENCE USED TO OMIT IT, which
+	// made the paragraph contradict the one four lines above. Running past
+	// the footing ALONE is not this outcome: `Z[0-9A-Za-z]*` with s=1 and
+	// L=201 runs 200 bytes past its footing, and it CONFIRMS at confidence
+	// 1.000 with overQuoted=0. MEASURED. That is the floor's disclosed
+	// cost, not this reason.
 	//
 	// REJECTED is wrong, and this is the more important half. A rejection
 	// is the claim that the oracle RAN AND DID NOT FIRE — the 88-phantom
@@ -827,12 +847,20 @@ type Signature struct {
 //
 // WHERE THE GUARANTEE ACTUALLY LIVES: matchQuotesMoreThanItSpells, consulted
 // by extractSpan for the span and by decide() for the OUTCOME. At confirmation
-// time the match is in hand, so R3's own sentence — "a signature may not quote
-// more of the response than it spells" — is one comparison between two
-// integers, exactly decidable, with no analysis, no alphabet, no corpus and no
-// budget. A new operator, a new spelling or a parser change cannot produce a
+// time the match is in hand, so the question is arithmetic on two integers,
+// exactly decidable, with no analysis, no alphabet, no corpus and no budget. A
+// new operator, a new spelling or a parser change cannot produce a
 // confirmation from an over-broad match, because that check reads the match
 // that happened rather than reasoning about the match that might.
+//
+// WHAT IT ENFORCES IS NOT R3'S SENTENCE, AND THIS PARAGRAPH USED TO SAY IT
+// WAS. R3 says "a signature may not quote more of the response than it
+// spells"; the match check says the unspelled part must be inside
+// MaxUnspelledBytes OR inside the footing. Below the floor a match may quote
+// far more than it spells and still confirm — `Z[0-9A-Za-z]*` with s=1 and
+// L=201 does, MEASURED, at confidence 1.000. Ruling 15 chose that weakening
+// deliberately and priced it; see MaxUnspelledBytes and the residual section
+// of matchQuotesMoreThanItSpells.
 //
 // SO THE TWO LAYERS DIVIDE LIKE THIS. The rules below decide whether a
 // signature is WORTH SHIPPING and refuse early when it plainly is not; the
@@ -861,9 +889,14 @@ type Signature struct {
 //	                             names the generator was given
 //
 // The third is MEASURED: 17 of 20 bounded-prefix HTML anchors pass, and the
-// h1 spelling also INLINES 403 verbatim body bytes into ExtractedSpan, which
+// h1 spelling ALSO INLINED 403 verbatim body bytes into ExtractedSpan, which
 // MaxSpanBytes cannot see because that bound only refuses matches LONGER than
-// 512.
+// 512. THE PAST TENSE IS THE CORRECTION: that inlining is closed now, but not
+// by anything in this paragraph — extractSpan's property 1b withholds the
+// span and decide()'s rule 2 withholds the confirmation, because 400
+// unspelled bytes are over MaxUnspelledBytes AND over three spelled ones. The
+// point that survives is the one this list is making: the CORPUS never saw
+// it.
 //
 // So the question is asked a different way, and it is asked OF THE PATTERN. A
 // parsed regex is a finite object. "What must every match path of this pattern
@@ -960,7 +993,13 @@ type Signature struct {
 //
 // THE 256 IS THE NUMBER THAT SURVIVED AND IT IS NOW CODED, as
 // MaxUnspelledBytes. The measured 403-byte h1 inlining is not made smaller by
-// this; it stops compiling.
+// this; the `[\s\S]` and `[[:print:]]` spellings stop compiling, at R2 and R3
+// respectively. NAMING THE SPELLING MATTERS HERE AND THIS SENTENCE USED TO
+// SAY ONLY "it stops compiling": the ALNUM spelling
+// `<h1[0-9A-Za-z]{0,400}` COMPILES FINE — R3 does not count a token-shaped
+// class — and it is stopped later, at extraction and at decide(), because 400
+// unspelled is over both the floor and three spelled bytes. Two different
+// layers, and only one of them is this one.
 // TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the inequality
 // over real matches rather than restating it.
 //
@@ -984,11 +1023,23 @@ type Signature struct {
 // THE ORDER OF THAT SENTENCE MATTERS AND IT USED TO RUN THE OTHER WAY. The
 // paragraph above derives q <= L/2 <= 256 from R3, and R3 is a best-effort
 // analysis, so a derivation resting on it is only as good as the arms
-// shapeWalk happens to have. It does not rest on it. Every claim in this
+// shapeWalk happens to have. It does not rest on it. What holds for every
+// signature — including ones R3 waved through and ones written after this
+// comment — is the SECOND clause alone: every span this package inlines
+// satisfies q <= MaxUnspelledBytes = 256, and matchQuotesMoreThanItSpells is
+// what carries that, not R3. R3 is what refuses such a pattern EARLY; it is
+// not what makes the surviving inequality hold.
+//
+// THE FIRST CLAUSE IS NOT ENFORCED FOR EVERY SIGNATURE AND THE SENTENCE THAT
+// SAID IT WAS IS DELETED RATHER THAN QUALIFIED. It read: "Every claim in this
 // section is true because the match check enforces L - s <= s on the match,
-// for every signature, including ones R3 waved through and ones written after
-// this comment. R3 is what refuses such a pattern EARLY; it is not what makes
-// the inequality hold.
+// for every signature". MEASURED FALSE: `Z[0-9A-Za-z]*` against `Z` followed
+// by 200 lowercase bytes has s=1 and L=201, so L - s = 200 > s — and the
+// 201-byte span is INLINED and the finding CONFIRMS at confidence 1.000. The
+// ratio decides only ABOVE the floor; at or below it the floor decides and
+// the ratio is never consulted. matchQuotesMoreThanItSpells's two arms are
+// the whole rule, and TestTheConfirmationBoundaryIsPinnedOnBothArms runs the
+// edge of each.
 //
 // ===========================================================================
 // WHAT THIS DOES NOT DECIDE, STATED BECAUSE IT IS THE WHOLE RESIDUAL
@@ -1780,9 +1831,18 @@ func shapeWalk(re *syntax.Regexp) patternShape {
 		// THE 255 IS THEREFORE NOT A DISCLOSED BOUND ON THIS ARM. It is one
 		// measurement of one shape. What bounds the arm is not in this
 		// function at all: matchQuotesMoreThanItSpells reads the match that
-		// actually happened, so neither of the two patterns above can
-		// confirm a finding from a match that ran past its footing,
-		// whatever this walk concluded about them.
+		// actually happened, so the 12,500,141-byte pattern above cannot
+		// confirm a finding whatever this walk concluded about it.
+		//
+		// THE OTHER ONE CAN, AND THIS SENTENCE USED TO DENY IT. It read
+		// "neither of the two patterns above can confirm a finding from a
+		// match that ran past its footing". The 255-byte match has one
+		// spelled byte and 254 unspelled, 254 is INSIDE MaxUnspelledBytes,
+		// so it is inlined and CONFIRMS — which is exactly the residual
+		// this arm's own header discloses at
+		// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes.
+		// Ruling 15's floor is what admits it; running past the footing
+		// alone has not been disqualifying since that floor landed.
 		// TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes
 		// drives both measurements.
 		return out
@@ -2621,8 +2681,13 @@ type EvidenceRef struct {
 	// THERE IS NO SPAN even though the signature matched.
 	//
 	// TWO RULES SET IT, and extractSpan documents both: the match was
-	// longer than MaxSpanBytes, or it carried more bytes the pattern did
-	// not spell than bytes it did. They are recorded the same way on
+	// longer than MaxSpanBytes, or its unspelled part ran past BOTH
+	// MaxUnspelledBytes and the pattern's own footing. The second used to
+	// be written here as "carried more bytes the pattern did not spell
+	// than bytes it did", which is ruling 15's floor left out: a match
+	// carrying 200 unspelled bytes against 1 spelled sets this field to
+	// ZERO and is inlined whole. MEASURED on `Z[0-9A-Za-z]*`. They are
+	// recorded the same way on
 	// purpose — the fact a reader needs is "the oracle fired and its match
 	// is not shown, and it was this long", and which bound withheld it is
 	// a property of the signature rather than of the finding.
@@ -3104,11 +3169,16 @@ type Finding struct {
 	// get to run that many times, which is a different fact from the oracle
 	// running and not firing.
 	indecisive int
-	// overQuoted is how many of the MATCHING attempts produced a match that
-	// quoted more of the response than the signature spells. Non-zero means
-	// the signature is not evidence about this target's responses, which is
-	// a third fact again: the oracle ran, it "fired", and what it fired on
-	// was the body. See matchQuotesMoreThanItSpells and decide's rule 2.
+	// overQuoted is how many of the MATCHING attempts produced a match
+	// whose unspelled part ran past BOTH MaxUnspelledBytes and the
+	// signature's own footing. Non-zero means the signature is not evidence
+	// about this target's responses, which is a third fact again: the
+	// oracle ran, it "fired", and what it fired on was the body. See
+	// matchQuotesMoreThanItSpells and decide's rule 2.
+	//
+	// IT IS NOT "QUOTED MORE THAN IT SPELLS", WHICH IS WHAT THIS COMMENT
+	// USED TO SAY. Under the floor a match may quote 200 bytes against 1
+	// spelled and this counter stays 0. MEASURED on `Z[0-9A-Za-z]*`.
 	overQuoted int
 
 	// confidence is the reproduction ratio, matches/attempts. It is
@@ -3187,7 +3257,14 @@ func (f Finding) SignatureMatches() int { return f.matches }
 func (f Finding) IndecisiveAttempts() int { return f.indecisive }
 
 // OverQuotedMatches returns how many of the matching attempts produced a match
-// that quoted more of the response than the signature spells.
+// whose unspelled part ran past BOTH MaxUnspelledBytes and the signature's own
+// literal footing.
+//
+// THAT IS NARROWER THAN "QUOTED MORE THAN IT SPELLS", which is what this
+// accessor's doc claimed before ruling 15's floor landed. A match quoting 200
+// bytes against 1 spelled is inside the floor, so it is NOT counted here and
+// the finding confirms. MEASURED on `Z[0-9A-Za-z]*`; the cost is disclosed at
+// MaxUnspelledBytes.
 //
 // It is reported separately from SignatureMatches for the same reason
 // IndecisiveAttempts is: it is a different fact. matches=3, overQuoted=0 is an
@@ -3564,7 +3641,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	var (
 		matches      int
 		indecisive   int
-		overQuoted   int  // attempts whose match quoted more than the signature spells
+		overQuoted   int  // attempts whose match ran past BOTH the floor and the footing
 		evidenceSeen bool // evidence came from an attempt the signature matched
 		evAnySeen    bool // evidence came from anything at all
 		evCleanSeen  bool // evidence came from an attempt that WAS the application
@@ -3686,10 +3763,10 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 	//     whose denominator counts questions that were never asked, and
 	//     0.000 reads as "certainly not a vulnerability", which is the
 	//     opposite of what ReasonReprobeIndecisive means.
-	//  4. no attempt's match may have quoted more of the response than the
-	//     signature spells. matches/attempts is a REPRODUCTION ratio, and a
-	//     match that ran past its own footing did not reproduce anything —
-	//     it quoted the body. 3/3 such matches reported confidence 1.000,
+	//  4. no attempt's match may have run past BOTH MaxUnspelledBytes and
+	//     the signature's own footing. matches/attempts is a REPRODUCTION
+	//     ratio, and a match that ran past both did not reproduce anything
+	//     — it quoted the body. 3/3 such matches reported confidence 1.000,
 	//     which is rule 2's contradiction again with a different cause: the
 	//     record would carry the strongest number this gate can print
 	//     beside a reason saying the signature could not see. The 3/3 is not
@@ -3770,7 +3847,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //  4. MATCHED NOTHING. The oracle exists, it RAN, and it never fired. This
 //     is the 88 phantom findings, and after rules 2 and 3 it is only ever
 //     reached by a run in which EVERY attempt was an ordinary application
-//     response and no match ran past its own footing.
+//     response and no match ran past both the floor and its own footing.
 //     assertRejectionIsDecisive re-states part of that as a refusal on the
 //     assembled value, because this ordering is the only thing holding it up.
 //
@@ -3786,7 +3863,15 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //
 //  7. REPRODUCED EVERY TIME, with an oracle, a mechanical detection method,
 //     the application answering on every single attempt, and every match
-//     inside its own footing. The only route to OutcomeConfirmed.
+//     inside EITHER MaxUnspelledBytes or its own footing. The only route to
+//     OutcomeConfirmed.
+//
+//     "INSIDE ITS OWN FOOTING" IS WHAT THIS LINE USED TO SAY AND IT IS
+//     MEASURABLY FALSE SINCE RULING 15. `Z[0-9A-Za-z]*` against `Z` plus 200
+//     lowercase bytes has s=1 and L=201, runs 200 bytes past its footing,
+//     and arrives HERE: outcome confirmed, reason
+//     reproduced_on_every_attempt, overQuoted=0, confidence 1.000. The floor
+//     is what admits it and MaxUnspelledBytes is where that is priced.
 func decide(c RawFinding, matches, indecisive, overQuoted, attempts int) Reason {
 	switch {
 	case c.Class.OracleLess():
@@ -4066,9 +4151,18 @@ func hashBody(body []byte) string {
 //     at EXTRACTION time, over the actual match, for every class: with s the
 //     pattern's minLiteral and L the match length, a span exists only when
 //     the unspelled part L - s is inside MaxUnspelledBytes or inside s.
-//     Nothing is exempt, there is no class list, and the arithmetic still
-//     gives q <= L/2 <= 256 for a pattern R3 never looked at — see the proof
-//     in matchQuotesMoreThanItSpells.
+//     Nothing is exempt and there is no class list.
+//
+//     WHAT THAT PAIR GIVES IS q <= 256, NOT q <= L/2, AND THE SENTENCE THAT
+//     CLAIMED BOTH IS DELETED RATHER THAN QUALIFIED. It read: "the
+//     arithmetic still gives q <= L/2 <= 256 for a pattern R3 never looked
+//     at". MEASURED FALSE on exactly such a pattern — `Z[0-9A-Za-z]*`
+//     against 256 alphanumerics has q=256 and L=257, so q > L/2 = 128, and
+//     the 257-byte span IS inlined; the h1 residual this file discloses two
+//     paragraphs down, `<h1[0-9A-Za-z]{0,256}` against 256 alphanumerics,
+//     has q=256 and L=259 and inlines all 259. q <= MaxUnspelledBytes = 256
+//     is the half that survives, it holds for every inlined span whatever R3
+//     saw, and its proof is in matchQuotesMoreThanItSpells.
 //
 //     THE SENTENCE THAT USED TO END THIS PARAGRAPH WAS MEASURABLY FALSE AND
 //     IS KEPT AS A QUOTATION SO THE CORRECTION IS LEGIBLE. It read: "a

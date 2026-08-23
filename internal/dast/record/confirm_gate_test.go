@@ -6780,15 +6780,14 @@ func TestTheDisclosedFixedWidthUnitSplitHasAWitness(t *testing.T) {
 // derived in the assertion, so a change to either layer has to move a number
 // here in the same diff.
 //
-// ONE SHAPE IS NOT ON THIS LIST AND IS NAMED SO ITS ABSENCE IS NOT READ AS
-// COVERAGE: `eyJ[0-9A-Za-z_-]{20,60}\.eyJ[0-9A-Za-z_-]{20,60}`, a JWT pair, is
-// REFUSED BY NewSignature — the class admits letters and also `_` and `-`, so
-// R3 counts 120 quoted positions against seven spelled bytes. That is the
-// STATIC layer refusing at compile time, not the floor, and ruling 15 changed
-// nothing about it: a pattern that never compiles never reaches a match. It is
-// recorded here as a KNOWN GAP in the oracle vocabulary rather than as a
-// finding about the floor, and no remedy is asserted because none was
-// measured.
+// A WHOLE FAMILY IS NOT ON THIS LIST AND IS NAMED SO ITS ABSENCE IS NOT READ
+// AS COVERAGE. This paragraph used to name ONE member — the JWT pair — and
+// read as if that were the whole gap. It is not; see
+// TestTheBase64URLOracleFamilyIsRefusedByR3, which measures the family and is
+// the disclosure this comment now only summarises. In short: EVERY credential
+// oracle whose evidence class is base64url is refused at NewSignature by R3,
+// upstream of the floor, and that is a real coverage gap in a security
+// scanner rather than one awkward pattern.
 func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 	for _, tc := range []struct {
 		pattern     string
@@ -6886,6 +6885,261 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 	}
 }
 
+// TestTheBase64URLOracleFamilyIsRefusedByR3 is a DISCLOSED COVERAGE GAP,
+// measured, named as the family it is.
+//
+// ===========================================================================
+// WHAT THE FAMILY IS
+// ===========================================================================
+//
+// Every credential oracle whose evidence class is BASE64URL — a class that
+// admits letters and digits AND `-` or `_` — is refused at NewSignature by R3,
+// before any body exists and therefore upstream of ruling 15's floor. The same
+// is true of standard base64's `+` and `/`, and of a `.` admitted alongside
+// letters to span a JWT's dots.
+//
+// WHY R3 REFUSES IT, and it is R3 working correctly rather than a bug.
+// contentBearingClass partitions printable ASCII: a class admitting a LETTER
+// and something that is NEITHER LETTER NOR DIGIT can run from one token into
+// the next, so a repeat of it can carry the response's own prose, markup or
+// JSON. `-` and `_` are exactly such runes. `[0-9A-Za-z_-]{20,60}` is
+// therefore 60 QUOTED positions, and R3's relation is 1:1 against the
+// pattern's literal footing — `eyJ` is three bytes. The class is not
+// token-shaped in R3's sense even though a token is what an operator means by
+// it, because R3 cannot see intent, only the alphabet.
+//
+// THE GAP IS THAT THIS IS ALSO THE ALPHABET OF NEARLY EVERY MODERN BEARER
+// CREDENTIAL. JWTs, Google OAuth access tokens, OpenAI keys, GitLab PATs,
+// Slack tokens and raw `Authorization: Bearer` headers all live in it. A
+// scanner that cannot express an oracle for them cannot report them, and an
+// operator needs to know the SHAPE of that hole rather than one example of it.
+//
+// ===========================================================================
+// WHAT AN OPERATOR SHOULD DO INSTEAD, AND WHAT IT COSTS
+// ===========================================================================
+//
+// DROP `_` AND `-` FROM THE CLASS. `eyJ[0-9A-Za-z]{20,60}` compiles, because
+// `[0-9A-Za-z]` is not content-bearing, and it confirms on a genuine hit
+// inlining the token's leading alphanumeric run. The remedy is measured below
+// rather than asserted, because the last version of this disclosure asserted
+// none.
+//
+// ITS COST IS A MISS RATE, NOT A TRUNCATION, and that is the part worth
+// reading. The repeat's MINIMUM still has to be met by alphanumerics alone, so
+// a token whose first 20 base64url characters contain one `_` or `-` is not
+// matched short — it is not matched AT ALL. MEASURED over 2,000 seeded random
+// 40-character base64url tokens: `eyJ[0-9A-Za-z]{20,60}` hit 1,036 of them,
+// missing 964 — roughly a 48% miss, and (62/64)^20 = 0.53 says that is the
+// rate rather than the draw. Lowering the minimum to `{8,60}` does
+// match the truncated prefix, at the price of a shorter and less specific
+// literal-to-evidence ratio. Neither is the pattern the operator wanted; both
+// are what this gate will compile. That trade is the disclosure.
+//
+// TWO MEMBERS FAIL A DIFFERENT WAY AND ARE NOT COUNTED IN THE SIX. A ceiling-
+// less base64url repeat (`{10,}`) meets R3's UNBOUNDED arm rather than its
+// counting arm, and a bare `[A-Za-z0-9+/]{40,}={0,2}` with no sigil at all is
+// refused by R1 for spelling nothing. Both are refusals an operator would
+// expect; the six below are the ones that look like ordinary oracles and are
+// refused anyway.
+func TestTheBase64URLOracleFamilyIsRefusedByR3(t *testing.T) {
+	// THE SIX MEASURED MEMBERS. quoted/spelled are the two numbers R3's
+	// message reports, written out here so a change to either layer has to
+	// move a number in this file in the same diff.
+	for _, tc := range []struct {
+		pattern     string
+		what        string
+		wantQuoted  int
+		wantSpelled int
+	}{
+		{`eyJ[0-9A-Za-z_-]{20,60}\.eyJ[0-9A-Za-z_-]{20,60}`, "a JWT header.payload pair", 120, 7},
+		{`ya29\.[0-9A-Za-z_-]{20,120}`, "a Google OAuth2 access token", 120, 5},
+		{`sk-[A-Za-z0-9_-]{32,64}`, "an OpenAI-style secret key", 64, 3},
+		{`glpat-[0-9A-Za-z_-]{20}`, "a GitLab personal access token", 20, 6},
+		{`xoxb-[0-9A-Za-z-]{20,60}`, "a Slack bot token", 60, 5},
+		{`Bearer [A-Za-z0-9\-_.]{40,200}`, "a raw Authorization bearer header", 200, 7},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			_, err := NewSignature(tc.pattern)
+			if err == nil {
+				t.Fatalf("NewSignature(%q) was ACCEPTED. %s now compiles, which is a "+
+					"REAL IMPROVEMENT and not a failure — but this test is the "+
+					"disclosure of a gap, so close the gap in the comment above "+
+					"before deleting the case",
+					tc.pattern, tc.what)
+			}
+			if !errors.Is(err, ErrSignatureMatchesEverything) {
+				t.Fatalf("NewSignature(%q): err = %v, want an "+
+					"ErrSignatureMatchesEverything", tc.pattern, err)
+			}
+			// R3 AND NOT SOMETHING ELSE. If one of these ever starts
+			// being refused by R1 or by the benign corpus instead, the
+			// family this test names is no longer the family it
+			// describes.
+			if got := err.Error(); !strings.Contains(got, "(rule R3)") {
+				t.Fatalf("NewSignature(%q) was refused, but not by R3: %v\n"+
+					"The disclosure above is specifically about R3 counting a "+
+					"base64url class as quotation", tc.pattern, err)
+			}
+			for _, want := range []string{
+				fmt.Sprintf("quotes up to %d position(s)", tc.wantQuoted),
+				fmt.Sprintf("against %d byte(s) of literal footing", tc.wantSpelled),
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("R3's refusal of %q does not report %q:\n%v",
+						tc.pattern, want, err)
+				}
+			}
+		})
+	}
+
+	// THE REMEDY, MEASURED. Same oracles with `_` and `-` out of the class:
+	// accepted, matched, inlined, confirmed.
+	t.Run("the_remedy_compiles_and_confirms", func(t *testing.T) {
+		for _, tc := range []struct{ pattern, body, wantSpan string }{
+			{`eyJ[0-9A-Za-z]{20,60}`,
+				`{"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0"}`,
+				`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`},
+			{`glpat-[0-9A-Za-z]{20}`,
+				`PRIVATE-TOKEN: glpat-NOTAREALTOKEN0000000`,
+				`glpat-NOTAREALTOKEN0000000`},
+			{`ya29\.[0-9A-Za-z]{20,120}`,
+				`Authorization: Bearer ya29.a0ARrdaM9xKfQwErTyUiOpAsDfGhJkL`,
+				`ya29.a0ARrdaM9xKfQwErTyUiOpAsDfGhJkL`},
+		} {
+			sig := mustSignature(t, tc.pattern)
+			span, _, over, matchLen, ok := extractSpan([]byte(tc.body), sig)
+			if !ok || over != 0 || span != tc.wantSpan {
+				t.Errorf("extractSpan(%q) = (%q, over=%d, match=%d, ok=%v), want span %q "+
+					"with no over-broad bytes", tc.pattern, printable(span, 96), over,
+					matchLen, ok, tc.wantSpan)
+				continue
+			}
+			f, _ := overBroadCandidate(t, tc.pattern, []byte(tc.body), 3)
+			if got := f.Outcome(); got != OutcomeConfirmed {
+				t.Errorf("%q: outcome = %q (reason %q), want %q — the remedy this "+
+					"disclosure recommends has to actually confirm",
+					tc.pattern, got, f.Reason(), OutcomeConfirmed)
+			}
+		}
+	})
+
+	// THE COST, MEASURED, so the miss rate in the comment above cannot
+	// quietly become false. A seeded generator, so a failure reproduces.
+	t.Run("the_remedy_misses_tokens_carrying_an_underscore_or_hyphen_early", func(t *testing.T) {
+		const base64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+		const trials = 2000
+		sig := mustSignature(t, `eyJ[0-9A-Za-z]{20,60}`)
+		// A three-line xorshift rather than math/rand: this package's
+		// import set is an allowlist and a disclosure does not earn a new
+		// entry in it. Seeded, so a failure reproduces byte-for-byte.
+		state := uint64(0x9E3779B97F4A7C15)
+		next := func() uint64 {
+			state ^= state << 13
+			state ^= state >> 7
+			state ^= state << 17
+			return state
+		}
+		hits := 0
+		for i := 0; i < trials; i++ {
+			token := []byte("eyJ")
+			for j := 0; j < 40; j++ {
+				token = append(token, base64URL[next()%uint64(len(base64URL))])
+			}
+			if _, _, _, _, ok := extractSpan(token, sig); ok {
+				hits++
+			}
+		}
+		// The window is wide because the number that matters is the
+		// ORDER — "about half" — not the exact draw. A remedy that
+		// suddenly hit everything, or nothing, would mean the class
+		// semantics moved and the disclosure needs rewriting.
+		if hits < 900 || hits > 1300 {
+			t.Fatalf("the remedy hit %d/%d seeded random base64url tokens; the "+
+				"disclosure above says 1036, roughly a 48%% miss. A number far "+
+				"outside that means the class rule moved and the operator "+
+				"guidance needs remeasuring", hits, trials)
+		}
+		t.Logf("remedy `eyJ[0-9A-Za-z]{20,60}` hit %d/%d seeded random base64url "+
+			"tokens: %d missed entirely", hits, trials, trials-hits)
+	})
+}
+
+// TestTheUnspelledFloorIsTheLiteralTwoFiftySix pins the floor's VALUE, and it
+// names no other constant in this package on purpose.
+//
+// WHY A TEST THAT LOOKS LIKE A TAUTOLOGY EXISTS. It is not one, and the reason
+// is measured rather than argued: replacing
+//
+//	const MaxUnspelledBytes = MaxSpanBytes / 2
+//
+// with the bare literal
+//
+//	const MaxUnspelledBytes = 299
+//
+// — carrying no derivation and no relation to any coded constant — left the
+// ENTIRE PACKAGE GREEN, `go test -count=1 ./internal/dast/record/` and all.
+// The green window was 255 through 300. Every fixture in this file either
+// over-quotes by orders of magnitude or, in the one test written to pin the
+// boundary, took its own edge FROM MaxUnspelledBytes, so the boundary moved
+// with the constant and nothing could see it move. That is the standing-sweep
+// item "a pin computing its expectation from the constant it pins",
+// reproduced inside the pin.
+//
+// SO THE TWO FACTS ARE PINNED SEPARATELY AND NEITHER IS COMPUTED FROM THE
+// OTHER. This test carries the LITERAL and mentions MaxSpanBytes nowhere;
+// TestTheUnspelledFloorIsExactlyHalfTheSpanBound carries the RELATION and
+// mentions no literal. A bare-literal rewrite of the declaration fails this
+// one whatever number it picks outside 256. Changing MaxSpanBytes and leaving
+// a hard-coded floor behind fails the other.
+//
+// 256 IS NOT ARBITRARY AND THE FILE SAYS WHERE IT COMES FROM in two places —
+// MaxUnspelledBytes's own derivation, and the R-rules section's surviving
+// "q <= 256" ceiling on inlined quotation. This test does not restate the
+// derivation; it asserts the number the derivation lands on, which is the one
+// thing the derivation cannot assert about itself.
+func TestTheUnspelledFloorIsTheLiteralTwoFiftySix(t *testing.T) {
+	const theFloorThisPackagePublishes = 256
+	if MaxUnspelledBytes != theFloorThisPackagePublishes {
+		t.Fatalf("MaxUnspelledBytes = %d, want %d.\n"+
+			"This is the published ceiling on how many bytes of a target's response "+
+			"a confirmed finding may inline without the pattern spelling them, and "+
+			"it is the magnitude of the residual MaxUnspelledBytes discloses. "+
+			"Moving it moves what this scanner will confirm and what it will quote; "+
+			"if that is intended, change this number IN THE SAME DIFF and restate "+
+			"the residual's magnitude at MaxUnspelledBytes and at "+
+			"matchQuotesMoreThanItSpells.",
+			MaxUnspelledBytes, theFloorThisPackagePublishes)
+	}
+}
+
+// TestTheUnspelledFloorIsExactlyHalfTheSpanBound pins the floor's RELATION to
+// MaxSpanBytes, and it writes down no literal on purpose.
+//
+// The floor is DERIVED — `MaxSpanBytes / 2` — and the derivation is what makes
+// 256 the right number rather than a number: an inlined span's match fits in
+// MaxSpanBytes, and above the floor the ratio arm forces the unspelled half to
+// be the smaller one, so 2q <= L <= MaxSpanBytes. If MaxSpanBytes moves and
+// the floor does not move with it, that argument is silently false and the
+// package goes on printing the old ceiling in its comments.
+//
+// A LITERAL PIN CANNOT SEE THAT. TestTheUnspelledFloorIsTheLiteralTwoFiftySix
+// asserts 256 and would keep passing with MaxSpanBytes at 1024 and the floor
+// hard-coded at 256 — a floor that is a quarter of the span bound while every
+// comment in the file says half. This test is the other half of the pair and
+// fails exactly there.
+func TestTheUnspelledFloorIsExactlyHalfTheSpanBound(t *testing.T) {
+	if 2*MaxUnspelledBytes != MaxSpanBytes {
+		t.Fatalf("2*MaxUnspelledBytes = %d, MaxSpanBytes = %d: the floor is no longer "+
+			"half the span bound.\n"+
+			"MaxUnspelledBytes is documented as DERIVED FROM MaxSpanBytes rather than "+
+			"chosen, and matchQuotesMoreThanItSpells proves the floor does not raise "+
+			"the package's published quotation ceiling by using exactly that relation "+
+			"(q > MaxUnspelledBytes implies L >= 2q > MaxSpanBytes, so no span). "+
+			"Either restore the derivation or rewrite both proofs.",
+			2*MaxUnspelledBytes, MaxSpanBytes)
+	}
+}
+
 // TestTheConfirmationBoundaryIsPinnedOnBothArms is the boundary no
 // confirmation-layer test pinned.
 //
@@ -6921,7 +7175,18 @@ func TestTheConfirmationBoundaryIsPinnedOnBothArms(t *testing.T) {
 				"this test says it is", arm.name, sig.spelled, arm.spelled)
 		}
 		// The boundary value each arm is pinned against.
-		edge := MaxUnspelledBytes
+		//
+		// THE FLOOR ARM'S EDGE IS WRITTEN OUT AND NOT READ FROM
+		// MaxUnspelledBytes, and that is the whole point of the number
+		// being here. This test used to say `edge := MaxUnspelledBytes`,
+		// so the boundary moved with the constant and the test could not
+		// see it move: MaxUnspelledBytes could be replaced by a bare
+		// literal 299 and the entire package stayed green. MEASURED. A
+		// pin that computes its expectation from the constant it pins is
+		// not a pin. The value here is 256 because that is where the
+		// boundary IS, and TestTheUnspelledFloorIsTheLiteralTwoFiftySix
+		// asserts separately that the constant agrees.
+		edge := 256
 		if arm.name == "ratio" {
 			edge = arm.spelled
 		}
