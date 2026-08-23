@@ -1165,10 +1165,11 @@ func TestUnconfirmedIsStructurallyDistinctFromBothOthers(t *testing.T) {
 	// ReasonReproducedIntermittently, which outcomeForReason maps to
 	// unconfirmed), so there is no confidence value at which confirmed and
 	// unconfirmed overlap. Proved by running every reason through the
-	// mapping; the arithmetic itself is driven by
-	// TestIntermittentReproductionIsUnconfirmed on the matches < attempts side
-	// and by TestNoUnconfirmedFindingCarriesFullConfidence on the confidence
-	// side.
+	// mapping; the arithmetic itself is ENFORCED BY ConfirmFinding,
+	// MEASURED BY TestIntermittentReproductionIsUnconfirmed on the
+	// matches < attempts side, and ENFORCED BY Confidence,
+	// MEASURED BY TestNoUnconfirmedFindingCarriesFullConfidence on the
+	// confidence side.
 	for _, r := range ReasonValues() {
 		o, err := outcomeForReason(r)
 		if err != nil {
@@ -3198,7 +3199,8 @@ func TestEveryTestNamedInASourceCommentExists(t *testing.T) {
 // outcome=rejected, reason=did_not_reproduce_on_any_attempt, confidence
 // 0.000 — byte-for-byte indistinguishable from one of the 88 phantoms. The
 // ledger then reported FindingCountForStatus()==0 and derived
-// completed_clean over a live vulnerability.
+// completed_clean over a live vulnerability. ENFORCED BY decide,
+// MEASURED BY TestARateLimitedReprobeIsNotADisproof.
 //
 // The neighbours are here for the reason the encodings lesson is in this
 // file's header: 429 is one spelling of "the target did not answer as the
@@ -5052,7 +5054,8 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 	// property 1 has already refused it. So at EXTRACTION the ratio arm is
 	// unreachable, and the floor is the whole visible boundary. The ratio
 	// arm is observable at the OUTCOME, where matchLen has no ceiling:
-	// TestTheConfirmationBoundaryIsPinnedOnBothArms drives it there.
+	// ENFORCED BY matchQuotesMoreThanItSpells,
+	// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms.
 	for footing := 1; footing <= 48; footing++ {
 		lit := strings.Repeat("Z", footing)
 		sig := mustSignature(t, lit+`[0-9A-Za-z]*`)
@@ -7209,6 +7212,8 @@ func TestTheUnspelledFloorIsTheLiteralTwoFiftySix(t *testing.T) {
 // be the smaller one, so 2q <= L <= MaxSpanBytes. If MaxSpanBytes moves and
 // the floor does not move with it, that argument is silently false and the
 // package goes on printing the old ceiling in its comments.
+// ENFORCED BY MaxUnspelledBytes,
+// MEASURED BY TestTheUnspelledFloorIsExactlyHalfTheSpanBound.
 //
 // A LITERAL PIN CANNOT SEE THAT. TestTheUnspelledFloorIsTheLiteralTwoFiftySix
 // asserts 256 and would keep passing with MaxSpanBytes at 1024 and the floor
@@ -7247,6 +7252,8 @@ func TestTheUnspelledFloorIsExactlyHalfTheSpanBound(t *testing.T) {
 // The ratio arm needs spelled > MaxUnspelledBytes to be reachable at all, and
 // that is not an inconvenience of the fixture, it is the shape of the rule: a
 // match whose unspelled part is inside the floor never reaches the ratio.
+// ENFORCED BY matchQuotesMoreThanItSpells,
+// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms.
 func TestTheConfirmationBoundaryIsPinnedOnBothArms(t *testing.T) {
 	for _, arm := range []struct {
 		name     string
@@ -7581,8 +7588,12 @@ func TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne(t *testing.T) {
 		})
 	})
 
-	// BOTH DIRECTIONS OF THE BICONDITIONAL THE FILE HEADER USED TO STATE.
-	// It read "evidence exists exactly when something matched".
+	// THE BICONDITIONAL THE FILE HEADER USED TO STATE, IN BOTH OF THE SENSES
+	// ITS WITHDRAWAL USED TO EQUIVOCATE BETWEEN. It read "evidence exists
+	// exactly when something matched", and `evidence` can mean the RECORD or
+	// the SPAN. The header now fixes it to the span, where the failure is one
+	// direction; these two subtests hold the measurements under both readings
+	// so the fixing is a choice about wording and not about facts.
 	t.Run("evidence_exists_when_nothing_matched", func(t *testing.T) {
 		for _, tc := range []struct {
 			what string
@@ -7824,26 +7835,57 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // learning to distrust.
 //
 // ===========================================================================
-// WHAT IT CHECKS
+// RULING 16: A CITATION IS A FORM, NOT A WORD
 // ===========================================================================
 //
-// It cannot read English and does not try. What it can do is require a claim
-// to NAME something a test can look up — the same idiom
-// TestEveryTestNamedInASourceCommentExists uses on test citations, and the
-// same idiom internal/dast/containment's SKIPPED-CONTROLS pointer test uses on
-// entry ids.
+// THE FIRST VERSION OF THIS GUARD HAD THE DEFECT IT WAS BUILT TO END. It asked
+// a claim to NAME something — any token in the paragraph that resolved to a
+// declared identifier and carried an upper-case letter counted as the enforcer
+// — and its own doc asserted that requiring a case boundary "is what separates
+// a NAME from an English word without keeping a denylist of English words".
+// MEASURED FALSE, and the measurement is not quoted here from a commit
+// message: the_shape_this_replaced_is_still_measurably_vacuous re-runs it on
+// every invocation. It reported 435 of this package's 757 declared identifiers
+// admitted as enforcer citations on the tree that shipped this, and among them
+// the ordinary English nouns this file's prose leans on. A verifier appended a
+// paragraph to confirm_gate.go asserting a ceiling of 4096 and a span running
+// to twice the published limit, citing nothing its author intended — that
+// subtest names the two tokens the old shape read out of it, `Evidence` and
+// `Finding` — AND THE GUARD PASSED IT. That paragraph is case 7 of the table
+// below and it is now caught.
 //
-// A comment PARAGRAPH stating a relation must name two things:
+// Requiring a NAME cannot work, because names are words. So this asks for a
+// FORM instead, which is the answer this project has reached three times in
+// other places: enumerate the shape the thing must take, and anything outside
+// the shape fails by default.
 //
-//	AN ENFORCER    an identifier declared in this package — the constant,
-//	               function, field or type that makes the relation hold.
-//	A MEASUREMENT  a Test function declared anywhere in this module. A
-//	               paragraph that is itself the doc comment of a Test needs
-//	               no second citation: the measurement is the next line.
+// ===========================================================================
+// THE TEMPLATE
+// ===========================================================================
 //
-// Both are resolved, not pattern-matched: an enforcer that is not declared and
-// a test that does not exist both fail, in the same commit as the rename that
-// broke them.
+// A comment PARAGRAPH stating a relation must carry, somewhere in it:
+//
+//	ENFORCED BY <identifier>, MEASURED BY <Test...>
+//
+// and three things are then checked, weakest last:
+//
+//	THE FORM      the paragraph matches citationForm at all. Prose naming the
+//	              same two identifiers in English does NOT satisfy this, and
+//	              that is the entire point: prose accidentally matches a word,
+//	              it does not accidentally match a template.
+//	THE NAMES     <identifier> resolves against every name this package
+//	              declares; <Test...> resolves against every Test function in
+//	              this module. A rename that breaks either one turns this red
+//	              in the same commit.
+//	THE APTNESS   the declaration of <Test...> — doc comment and body —
+//	              mentions <identifier>. This is the part that makes it more
+//	              than a spell-check: a citation cannot name a real rule and a
+//	              real test that never touches it. The doc comment is inside
+//	              the window on purpose and at a price, both measured at
+//	              declaredTestsInModule.
+//
+// Every citation in a paragraph is checked, not just one, so a resolving
+// citation cannot launder a broken one standing next to it.
 //
 // ===========================================================================
 // EXACTLY WHAT IT CAN SEE, AND EXACTLY WHAT IT CANNOT
@@ -7861,28 +7903,41 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 //
 // IT DOES NOT SEE, and each of these is a real hole:
 //
+//	A FALSE CLAIM THAT FILLS THE TEMPLATE IN CORRECTLY. THIS IS THE CEILING
+//	    ON THE WHOLE IDEA AND IT IS MEASURED, not conceded: case 19 of the
+//	    table below is a paragraph asserting a ceiling of 4096 and a floor of
+//	    1024 — both false — over a citation naming a real enforcer and a real
+//	    test that really does drive it, and the scanner reports it clean. What
+//	    the form buys is that the false sentence and the code that refutes it
+//	    are now named in the same paragraph. It does not read either one.
 //	RELATIONS WRITTEN IN ENGLISH. "more of the response than the pattern
 //	    spells", "half the span bound", "twice the floor", "at most", "bounded
 //	    by" — no operator, no detection. EVERY DEFECT THE ROUND THAT BUILT
-//	    THIS GUARD WAS SENT TO FIX WAS OF EXACTLY THAT SHAPE. This guard would
-//	    have caught none of the five. What it does is stop the NEXT author
-//	    adding an uncited one in the form it can read, and force a citation
-//	    onto the paragraphs around the prose, which is where a reader checking
-//	    a sentence would start.
+//	    THIS GUARD WAS SENT TO FIX WAS OF EXACTLY THAT SHAPE, including the
+//	    one about decide()'s rule 2 that four rounds walked past and this
+//	    round finally fixed: it names a rule by number and states a routing,
+//	    and there is not an operator in it. This guard would still not catch
+//	    it. What it does is stop the NEXT author adding an uncited one in the
+//	    form it can read, and force a citation onto the paragraphs around the
+//	    prose, which is where a reader checking a sentence would start.
 //	ANYTHING IN BACKTICKS OR DOUBLE QUOTES. `re.Op == OpAlternate` is a
 //	    specimen and "q <= L/2 <= 256" is a quoted withdrawal, not a live
 //	    claim. Deliberate, and asserted as a decision below.
 //	A TIGHT `<` OR `>`. `<h1[0-9A-Za-z]{0,400}` is an HTML tag and `len(x)>0`
 //	    is a code fragment. Requiring spaces is what keeps those out, and it
 //	    is also how an author could hide a claim from this guard.
+//	AN ENFORCER MENTIONED ONLY IN THE CITED TEST'S OWN PROSE. The aptness
+//	    check reads the test's declaration as SOURCE, so a doc comment naming
+//	    the enforcer satisfies it where no line of that test touches the rule.
+//	    Reading only executable code refuses every test that drives its rule
+//	    through a helper, which is most of them here; that was measured before
+//	    it was conceded, at declaredTestsInModule, and the concession is
+//	    asserted by case 20 below.
 //	coverage.go AND coverage_test.go, which are in this package and outside
 //	    D.27's write scope. Widening the window is one entry in `owned` below;
-//	    the reason it has not been widened is scope, not difficulty.
-//	WHETHER THE CITATION IS APT. It resolves names. A paragraph may cite
-//	    matchQuotesMoreThanItSpells and a real test and still state something
-//	    false about them. This is a forcing function, not a proof — the value
-//	    is that writing the citation puts the enforcer and the sentence in
-//	    front of the same pair of eyes.
+//	    the reason it has not been widened is scope, not difficulty. What that
+//	    costs is measured, not guessed, by the window_excludes_the_two
+//	    _unowned_files_in_this_package case below.
 //	STRINGS, plan/*.md, AND EVERY OTHER PACKAGE. Comments only, here only.
 func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing.T) {
 	// The files this packet owns. See the window disclosure above.
@@ -7901,13 +7956,13 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 		claims += n
 		for _, v := range bad {
 			uncited++
-			t.Errorf("%s:%d states a relation and cites no %s.\n"+
+			t.Errorf("%s:%d states a relation and %s.\n"+
 				"    %s\n"+
 				"An arithmetic claim a reader cannot follow to the code that enforces "+
 				"it and the test that measures it is read as evidence and is not any. "+
-				"Name the enforcing identifier and the Test in this paragraph, or "+
-				"stop asserting the relation.",
-				name, v.line, v.missing, v.first)
+				"Put `ENFORCED BY <identifier>, MEASURED BY <Test...>` in this "+
+				"paragraph, or stop asserting the relation.",
+				name, v.line, v.defect, v.first)
 		}
 	}
 	if claims < 12 {
@@ -7923,14 +7978,23 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 	// rather than trusted. A guard whose own boundary is undescribed is the
 	// thing it exists to prevent.
 	// ===================================================================
+	// `defect` IS NOT DECORATION AND IT WAS ADDED BECAUSE THE COUNT ALONE
+	// MEASURED NOTHING. Disabling BOTH resolution arms — the enforcer's and
+	// the measurement's — and re-running this table left it entirely GREEN:
+	// an undeclared enforcer is also an enforcer the cited test does not
+	// mention, and an undeclared test carries an empty declaration that
+	// mentions nothing either, so the aptness arm was silently answering for
+	// all three. Asserting WHICH arm fired is what separates them.
 	for _, tc := range []struct {
-		name string
-		src  string
-		want int
-		why  string
+		name   string
+		src    string
+		want   int
+		defect string
+		why    string
 	}{
 		{
-			name: "a relation with no citation at all",
+			name:   "1_a_relation_with_no_citation_at_all",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
 				"// The unspelled part is at most 256, because q <= 256 always.\n" +
 				"func f() {}\n",
@@ -7938,91 +8002,121 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			why:  "this is the case the whole guard exists for",
 		},
 		{
-			name: "a relation citing an enforcer and a test",
+			name: "2_a_relation_carrying_the_template",
 			src: "package p\n" +
-				"// q <= 256 always: matchQuotesMoreThanItSpells is the rule and\n" +
-				"// TestTheConfirmationBoundaryIsPinnedOnBothArms pins both arms of it.\n" +
+				"// q <= 256 always. ENFORCED BY matchQuotesMoreThanItSpells,\n" +
+				"// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms.\n" +
 				"func f() {}\n",
 			want: 0,
 			why:  "a fully cited claim is what the guard is asking for",
 		},
 		{
-			name: "a relation citing an enforcer and no test",
-			src: "package p\n" +
-				"// q <= 256 always, and matchQuotesMoreThanItSpells is the rule.\n" +
-				"func f() {}\n",
-			want: 1,
-			why:  "an unmeasured rule is an argument, not a measurement",
-		},
-		{
-			name: "a relation citing a test and no enforcer",
-			src: "package p\n" +
-				"// q <= 256 always; TestTheConfirmationBoundaryIsPinnedOnBothArms.\n" +
-				"func f() {}\n",
-			want: 1,
-			why:  "a measurement with no named enforcer leaves the reader nothing to read",
-		},
-		{
-			name: "a citation to a test that does not exist",
+			name:   "3_the_same_two_names_in_english_prose",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
 				"// q <= 256 always: matchQuotesMoreThanItSpells is the rule and\n" +
-				"// TestThisNameHasNeverBeenDeclaredAnywhereInThisModule measures it.\n" +
+				"// TestTheConfirmationBoundaryIsPinnedOnBothArms pins both arms of it.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "RULING 16. This paragraph PASSED the previous guard and it names " +
+				"exactly the right pair — but a citation is a form, and reading names " +
+				"out of prose is what let the English nouns counted by the_shape_this" +
+				"_replaced_is_still_measurably_vacuous serve as enforcers",
+		},
+		{
+			name:   "4_a_citation_to_a_test_that_does_not_exist",
+			defect: "as its measurement, and this module declares no such test",
+			src: "package p\n" +
+				"// q <= 256 always. ENFORCED BY matchQuotesMoreThanItSpells,\n" +
+				"// MEASURED BY TestThisNameHasNeverBeenDeclaredAnywhereInThisModule.\n" +
 				"func f() {}\n",
 			want: 1,
 			why:  "the citation is RESOLVED; an invented test name is worse than none",
 		},
 		{
-			name: "a citation to an identifier this package does not declare",
+			name:   "5_a_citation_to_an_identifier_this_package_does_not_declare",
+			defect: "as its enforcer, and this package declares no such identifier",
 			src: "package p\n" +
-				"// q <= 256 always: enforceTheQuotationCeilingSomewhereElse is the rule\n" +
-				"// and TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"// q <= 256 always. ENFORCED BY enforceTheCeilingSomewhereElse,\n" +
+				"// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms.\n" +
 				"func f() {}\n",
 			want: 1,
 			why:  "an enforcer nobody declared cannot be read",
 		},
 		{
-			name: "an English word that happens to be a declared identifier",
+			name:   "6_a_real_enforcer_and_a_real_test_that_never_touches_it",
+			defect: "never mentions that enforcer",
 			src: "package p\n" +
-				"// q <= 256 always: somethingUndeclared is the rule, and\n" +
-				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"// q <= 256 always. ENFORCED BY matchQuotesMoreThanItSpells,\n" +
+				"// MEASURED BY TestModelInferenceIsNeverConfirmed.\n" +
 				"func f() {}\n",
 			want: 1,
-			why: "THIS IS THE MEASURED VACUITY enforcerShape exists for. `rule` is a " +
-				"declared field name in this package, and without the case rule it " +
-				"satisfied the enforcer citation on its own",
+			why: "THE APTNESS CHECK, and the reason this is more than a spell-check. " +
+				"Both names resolve. The test is real and green. Its body has nothing " +
+				"to do with the over-broadness rule, so the citation is a dead end",
 		},
 		{
-			name: "an all-lower-case declared identifier",
+			name:   "7_the_verifiers_attack_citing_only_english_nouns",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
-				"// q <= 256 always: decide is where it lands, and\n" +
-				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures it.\n" +
+				"// The Evidence a Finding carries is capped at 4096, so len(span) <= 4096\n" +
+				"// holds for every Finding, and a span may run to 1024 bytes.\n" +
 				"func f() {}\n",
 			want: 1,
-			why: "the disclosed COST of enforcerShape: a real declaration with no case " +
-				"boundary cannot carry the citation, and this asserts the price rather " +
-				"than describing it",
+			why: "THE REGRESSION. Both figures are false, the paragraph cites nothing " +
+				"its author intended, and `Evidence` and `Finding` are declared types " +
+				"with a case boundary — which is all the previous guard asked for",
 		},
 		{
-			name: "the doc comment of a Test function",
+			name: "8_an_all_lower_case_declared_identifier",
+			src: "package p\n" +
+				"// Rule 4 is reached only after rules 2 and 3, so matches == 0 alone\n" +
+				"// does not decide it. ENFORCED BY decide,\n" +
+				"// MEASURED BY TestDecideTablePrecedenceIsAsDocumented.\n" +
+				"func f() {}\n",
+			want: 0,
+			why: "THE PRICE THE PREVIOUS SHAPE CHARGED, NOW REFUNDED. `decide` has no " +
+				"case boundary and could not carry a citation under enforcerShape; " +
+				"under a template the spelling of the name stops mattering",
+		},
+		{
+			name:   "9_the_doc_comment_of_a_test_function",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
 				"// TestSomething drives matchQuotesMoreThanItSpells at q <= 256.\n" +
 				"func TestSomething() {}\n",
-			want: 0,
-			why:  "the measurement is the next line; a self-citation would be noise",
+			want: 1,
+			why: "THE EXEMPTION IS WITHDRAWN. The previous guard treated a Test's own " +
+				"doc comment as self-measuring, which made the whole enforcer half " +
+				"optional across the file's largest body of prose",
 		},
 		{
-			name: "an in-body comment inside a Test function",
+			name:   "10_an_in_body_comment_inside_a_test_function",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
 				"// TestSomething drives matchQuotesMoreThanItSpells.\n" +
 				"func TestSomething() {\n" +
 				"\t// A second relation, q <= 128 this time, with nothing named.\n" +
 				"}\n",
 			want: 1,
-			why: "the doc-comment exemption is the DOC comment only; a claim buried " +
-				"in a test body is not measured by the enclosing test merely by being there",
+			why: "a claim buried in a test body is not measured by the enclosing test " +
+				"merely by being there",
 		},
 		{
-			name: "a relation inside backticks",
+			name:   "11_two_citations_one_of_them_broken",
+			defect: "as its enforcer, and this package declares no such identifier",
+			src: "package p\n" +
+				"// q <= 256 always. ENFORCED BY matchQuotesMoreThanItSpells,\n" +
+				"// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms, and\n" +
+				"// ENFORCED BY noSuchIdentifierIsDeclared,\n" +
+				"// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms.\n" +
+				"func f() {}\n",
+			want: 1,
+			why: "every citation is checked. A resolving one standing beside a broken " +
+				"one would otherwise launder it",
+		},
+		{
+			name: "12_a_relation_inside_backticks",
 			src: "package p\n" +
 				"// The promotion used to ask `re.Op == OpAlternate`, which is a specimen.\n" +
 				"func f() {}\n",
@@ -8030,7 +8124,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			why:  "a quoted code fragment is not an assertion — DELIBERATE, and a hole",
 		},
 		{
-			name: "a relation inside double quotes",
+			name: "13_a_relation_inside_double_quotes",
 			src: "package p\n" +
 				"// The withdrawn sentence read \"q <= L/2 <= 256\" and is kept as a quotation.\n" +
 				"func f() {}\n",
@@ -8038,18 +8132,19 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			why:  "a quoted withdrawal is history, not a live claim — DELIBERATE, and a hole",
 		},
 		{
-			name: "a relation stated in English with no operator",
+			name: "14_a_relation_stated_in_english_with_no_operator",
 			src: "package p\n" +
 				"// At most half of any inlined span is body the pattern did not spell,\n" +
 				"// and never more than twice the floor.\n" +
 				"func f() {}\n",
 			want: 0,
 			why: "THE HOLE THAT MATTERS. Every defect the round that built this guard " +
-				"was sent to fix was of this shape. It is asserted here so the limit " +
-				"is measured rather than described",
+				"was sent to fix was of this shape, and so was the rule-2 routing claim " +
+				"this round fixed. It is asserted here so the limit is measured rather " +
+				"than described",
 		},
 		{
-			name: "a tag-like angle bracket and a tight comparison",
+			name: "15_a_tag_like_angle_bracket_and_a_tight_comparison",
 			src: "package p\n" +
 				"// `<h1[0-9A-Za-z]{0,400}` was accepted, and asserting len(x)>0 is the\n" +
 				"// mistake in the other direction.\n" +
@@ -8058,7 +8153,8 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			why:  "requiring spaces around a bare < or > is what keeps markup out",
 		},
 		{
-			name: "an indented display equation under an uncited paragraph",
+			name:   "16_an_indented_display_equation_under_an_uncited_paragraph",
+			defect: "carries no citation in the form",
 			src: "package p\n" +
 				"// The derivation runs like this and names nothing:\n" +
 				"//\n" +
@@ -8069,10 +8165,10 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				"citation belongs there and cannot be evaded by indenting the equation",
 		},
 		{
-			name: "an indented display equation under a cited paragraph",
+			name: "17_an_indented_display_equation_under_a_cited_paragraph",
 			src: "package p\n" +
-				"// matchQuotesMoreThanItSpells gives, and\n" +
-				"// TestTheConfirmationBoundaryIsPinnedOnBothArms measures:\n" +
+				"// ENFORCED BY matchQuotesMoreThanItSpells,\n" +
+				"// MEASURED BY TestTheConfirmationBoundaryIsPinnedOnBothArms:\n" +
 				"//\n" +
 				"//\tq <= L/2 <= 256.\n" +
 				"func f() {}\n",
@@ -8080,7 +8176,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			why:  "the fold has to work in the passing direction too, or it is just noise",
 		},
 		{
-			name: "a banner rule",
+			name: "18_a_banner_rule",
 			src: "package p\n" +
 				"// ===========================================================\n" +
 				"// A SECTION HEADING\n" +
@@ -8088,6 +8184,33 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				"func f() {}\n",
 			want: 0,
 			why:  "a rule of equals signs is not a claim about anything",
+		},
+		{
+			name: "19_a_false_claim_that_fills_the_template_in_correctly",
+			src: "package p\n" +
+				"// The span ceiling is 4096 and no span shorter than 1024 is ever\n" +
+				"// inlined, so 1024 <= len(span) <= 4096 for every span this gate\n" +
+				"// emits. ENFORCED BY MaxSpanBytes,\n" +
+				"// MEASURED BY TestNoFindingReachableStringExceedsTheSpanLimit.\n" +
+				"func f() {}\n",
+			want: 0,
+			why: "THE MEASURED CEILING ON THIS ENTIRE IDEA. Every figure in that " +
+				"paragraph is false — the real bound is MaxSpanBytes and there is no " +
+				"floor on a span at all — and the citation resolves in all three " +
+				"directions, so the scanner reports it clean. THIS IS WHAT THE GUARD " +
+				"DOES NOT DO, asserted rather than conceded in prose",
+		},
+		{
+			name: "20_a_test_that_mentions_the_enforcer_only_in_its_doc_comment",
+			src: "package p\n" +
+				"// The floor is not MaxSpanBytes, so q <= 256 rather than 512.\n" +
+				"// ENFORCED BY shapeWalk,\n" +
+				"// MEASURED BY TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds.\n" +
+				"func f() {}\n",
+			want: 0,
+			why: "THE PRICE OF READING THE DECLARATION RATHER THAN THE CODE, asserted. " +
+				"That test's body never names shapeWalk — its doc comment does — and " +
+				"the citation is accepted on the strength of prose",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -8099,18 +8222,123 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			}
 			_, bad := scanArithmeticClaims(sfset, f, idents, tests)
 			if len(bad) != tc.want {
-				t.Errorf("the scanner reported %d uncited claims, want %d. %s.\n"+
+				t.Fatalf("the scanner reported %d uncited claims, want %d. %s.\n"+
 					"source:\n%s\nreported: %v", len(bad), tc.want, tc.why, tc.src, bad)
+			}
+			if (tc.defect != "") != (tc.want != 0) {
+				t.Fatalf("this case wants %d defect(s) and names %q as the one it is "+
+					"about; a rejecting case with no named defect measures only that "+
+					"SOMETHING fired", tc.want, tc.defect)
+			}
+			if tc.want != 0 && !strings.Contains(bad[0].defect, tc.defect) {
+				t.Errorf("the scanner rejected this for the wrong reason.\n"+
+					" got: %s\nwant it to contain: %s\n%s\nsource:\n%s",
+					bad[0].defect, tc.defect, tc.why, tc.src)
 			}
 		})
 	}
+
+	// ===================================================================
+	// WHAT THE WINDOW COSTS, MEASURED. The disclosure above says two files
+	// in this package are outside `owned`. A report of this guard once put
+	// figures on that exclusion which did not reproduce against the
+	// shipped scanner, which is the same defect as a false comment. So the
+	// figures live here, produced by the scanner itself, and a change to
+	// either file has to move a number in this diff.
+	// ===================================================================
+	// ===================================================================
+	// WHY THE SHAPE THIS REPLACED HAD TO GO, RE-MEASURED HERE RATHER THAN
+	// REMEMBERED. The previous guard accepted, as the enforcer citation,
+	// any token in the paragraph that resolved to a declared identifier
+	// and carried an upper-case letter. That rule is restated below and
+	// run — against the population it admits, and against the verifier's
+	// attack paragraph, which it accepts. A number quoted in a commit
+	// message goes stale the day after; this one is recomputed on every
+	// run, and the exact value is logged so a reader never has to trust
+	// the floor.
+	// ===================================================================
+	t.Run("the_shape_this_replaced_is_still_measurably_vacuous", func(t *testing.T) {
+		oldEnforcerShape := regexp.MustCompile(`[A-Z]`)
+		oldCiteToken := regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]{2,}\b`)
+		admits := 0
+		for id := range idents {
+			if !strings.HasPrefix(id, "Test") && oldEnforcerShape.MatchString(id) &&
+				oldCiteToken.MatchString(id) {
+				admits++
+			}
+		}
+		t.Logf("the case-boundary shape admits %d of this package's %d declared "+
+			"identifiers as enforcer citations", admits, len(idents))
+		if admits < 400 {
+			t.Errorf("the case-boundary shape admits only %d identifiers. The whole "+
+				"argument for ruling 16 is that this population is large enough to "+
+				"contain the English nouns this file's prose uses; if it has "+
+				"collapsed, re-derive the argument rather than keeping the sentence",
+				admits)
+		}
+
+		// THE ATTACK, VERBATIM, AGAINST THE OLD RULE. It states two false
+		// figures and names nothing its author intended.
+		const attack = "The Evidence a Finding carries is capped at 4096, so " +
+			"len(span) <= 4096 holds for every Finding, and a span may run to " +
+			"1024 bytes."
+		accepted := false
+		for _, id := range oldCiteToken.FindAllString(attack, -1) {
+			if idents[id] && !strings.HasPrefix(id, "Test") &&
+				oldEnforcerShape.MatchString(id) {
+				accepted = true
+				t.Logf("the case-boundary shape reads %q out of the attack paragraph "+
+					"as its enforcer citation", id)
+			}
+		}
+		if !accepted {
+			t.Error("the attack paragraph no longer satisfies the shape this guard " +
+				"replaced. That is not a pass — it means the story told above about " +
+				"why the form replaced the name no longer reproduces, and the doc " +
+				"has to be rewritten around what does")
+		}
+		// And the shape that shipped refuses it. Case 7 asserts this over the
+		// scanner; here it stands beside the old rule so the two are read
+		// together.
+		if citationForm.MatchString(attack) {
+			t.Error("the attack paragraph matches citationForm, which would make " +
+				"case 7 pass for a reason it does not name")
+		}
+	})
+
+	t.Run("window_excludes_the_two_unowned_files_in_this_package", func(t *testing.T) {
+		for _, tc := range []struct {
+			file            string
+			claims, uncited int
+		}{
+			{"coverage.go", 2, 2},
+			{"coverage_test.go", 4, 4},
+		} {
+			f, ok := files[tc.file]
+			if !ok {
+				t.Fatalf("%s is not in this package any more; the exclusion "+
+					"disclosed above is describing a file that does not exist", tc.file)
+			}
+			if owned[tc.file] {
+				t.Fatalf("%s is now owned; delete this case and the disclosure "+
+					"it measures", tc.file)
+			}
+			n, bad := scanArithmeticClaims(fset, f, idents, tests)
+			if n != tc.claims || len(bad) != tc.uncited {
+				t.Errorf("%s holds %d relation-stating paragraph(s), %d of them "+
+					"uncited; the disclosure says %d and %d.\nreported: %v",
+					tc.file, n, len(bad), tc.claims, tc.uncited, bad)
+			}
+		}
+	})
 }
 
-// claimSite is one comment paragraph that states a relation.
+// claimSite is one comment paragraph that states a relation, together with
+// what is wrong with the way it cites itself.
 type claimSite struct {
-	line    int
-	first   string
-	missing string
+	line   int
+	first  string
+	defect string
 }
 
 var (
@@ -8121,26 +8349,58 @@ var (
 	// quotedSpan is what a comment quotes rather than claims: a backticked
 	// specimen, a double-quoted sentence, or an arrow.
 	quotedSpan = regexp.MustCompile("(`[^`]*`|\"[^\"]*\"|->|<-|=>|<[A-Za-z][A-Za-z0-9_]*>)")
-	// citeToken is any identifier a paragraph might be naming.
-	citeToken = regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]{2,}\b`)
-	// enforcerShape is the SPELLING an enforcer citation has to have: an
-	// upper-case letter somewhere in it.
+	// citationForm IS THE TEMPLATE, and it is the whole of ruling 16.
 	//
-	// WITHOUT IT THE ENFORCER HALF IS VACUOUS AND THAT WAS MEASURED, NOT
-	// FEARED. This package declares fields and locals called `rule`, `body`,
-	// `span`, `status` and `what`, so a sentence of the form
-	// `q <= 256 always: somethingUndeclared is the rule` resolved `rule` as
-	// its enforcer and passed. Requiring a case boundary is what separates a
-	// NAME from an English word without keeping a denylist of English words.
+	// THE SHAPE THIS REPLACED ASKED FOR A NAME AND THAT IS UNSATISFIABLE,
+	// MEASURED: the previous guard accepted any token in the paragraph that
+	// resolved to a declared identifier and carried an upper-case letter,
+	// on the theory that a case boundary separates a NAME from an English
+	// word. That shape admits 435 of this package's 757 declared
+	// identifiers, ordinary English nouns among them, and a verifier's
+	// paragraph asserting a ceiling of 4096 (real: MaxSpanBytes) passed it
+	// on the strength of the words Evidence and Finding. Both figures are
+	// recomputed on every run by
+	// the_shape_this_replaced_is_still_measurably_vacuous rather than
+	// quoted here.
 	//
-	// ITS COST IS DISCLOSED: an all-lower-case declaration — `decide`,
-	// `printable` — cannot serve as the citation, and a paragraph about one
-	// has to name the camelCase or exported identifier beside it. The two
-	// directions are asserted below.
-	enforcerShape = regexp.MustCompile(`[A-Z]`)
-	// testDecl finds a test function declaration in a source file.
-	testDecl = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+	// NAMES ARE WORDS, so no rule about spelling can tell one from the
+	// other. A FORM is not a word: ordinary prose does not accidentally
+	// write `ENFORCED BY x, MEASURED BY TestY`, and anything outside the
+	// form fails by default, which is the shape this project has landed on
+	// three times elsewhere. `\s+` rather than a literal space because the
+	// two names together are wider than a comment line and the citation has
+	// to be allowed to wrap.
+	citationForm = regexp.MustCompile(
+		`ENFORCED\s+BY\s+([A-Za-z_][A-Za-z0-9_]*),\s+MEASURED\s+BY\s+(Test[A-Za-z0-9_]+)`)
+	// testDeclLine finds a test function declaration in a source file.
+	testDeclLine = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
 )
+
+// mentions reports whether name occurs in src as a whole word. It is the
+// aptness half of the citation check: the cited test has to have the cited
+// enforcer somewhere in its body, so a citation cannot point at a real
+// enforcer and an unrelated real test.
+func mentions(src, name string) bool {
+	for i := 0; ; {
+		j := strings.Index(src[i:], name)
+		if j < 0 {
+			return false
+		}
+		s := i + j
+		e := s + len(name)
+		beforeOK := s == 0 || !isIdentByte(src[s-1])
+		afterOK := e == len(src) || !isIdentByte(src[e])
+		if beforeOK && afterOK {
+			return true
+		}
+		i = s + 1
+	}
+}
+
+func isIdentByte(b byte) bool {
+	return b == '_' || ('0' <= b && b <= '9') ||
+		('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
+}
 
 // commentProse strips a comment line down to what it ASSERTS: the marker goes,
 // quoted spans go, and a rule of equals or dashes becomes empty.
@@ -8155,18 +8415,22 @@ func commentProse(text string) string {
 }
 
 // scanArithmeticClaims reports how many comment paragraphs in f state a
-// relation, and which of those name neither an enforcer nor a measurement.
+// relation, and which of those do not carry a resolving citation in the
+// template form.
+//
+// THREE THINGS HAVE TO HOLD and they are checked in this order, because each
+// is a weaker guarantee than the one before it dressed as the same sentence:
+// the paragraph carries the FORM at all; the two names in it RESOLVE — the
+// enforcer against this package's declarations, the measurement against the
+// module's test declarations; and the cited test MENTIONS the cited enforcer,
+// which is what stops a citation naming a real rule and a real test that have
+// nothing to do with each other.
+//
+// Every citation in the paragraph is checked, not the first one that passes.
+// A paragraph is allowed to cite two rules, and a good citation standing
+// beside a broken one would otherwise launder it.
 func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
-	idents, tests map[string]bool) (claims int, uncited []claimSite) {
-	// A doc comment on a Test function is measured by that test.
-	selfMeasured := map[*ast.CommentGroup]bool{}
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if ok && fd.Doc != nil && strings.HasPrefix(fd.Name.Name, "Test") {
-			selfMeasured[fd.Doc] = true
-		}
-	}
-
+	idents map[string]bool, tests map[string]string) (claims int, uncited []claimSite) {
 	for _, g := range f.Comments {
 		for _, p := range paragraphsOf(fset, g) {
 			text := strings.Join(p.lines, "\n")
@@ -8174,30 +8438,33 @@ func scanArithmeticClaims(fset *token.FileSet, f *ast.File,
 				continue
 			}
 			claims++
-			enforcer, measured := false, selfMeasured[g]
-			for _, id := range citeToken.FindAllString(text, -1) {
-				switch {
-				case tests[id]:
-					measured = true
-				case idents[id] && !strings.HasPrefix(id, "Test") && enforcerShape.MatchString(id):
-					enforcer = true
-				}
+			site := func(defect string) {
+				uncited = append(uncited, claimSite{
+					line: p.line, first: strings.TrimSpace(p.lines[0]), defect: defect,
+				})
 			}
-			if enforcer && measured {
+			cites := citationForm.FindAllStringSubmatch(text, -1)
+			if len(cites) == 0 {
+				site("carries no citation in the form " +
+					"`ENFORCED BY <identifier>, MEASURED BY <Test...>`")
 				continue
 			}
-			var missing string
-			switch {
-			case !enforcer && !measured:
-				missing = "enforcing identifier and no measuring Test"
-			case !enforcer:
-				missing = "enforcing identifier declared in this package"
-			default:
-				missing = "Test that measures it"
+			for _, c := range cites {
+				enforcer, measurement := c[1], c[2]
+				body, declared := tests[measurement]
+				switch {
+				case !idents[enforcer]:
+					site(fmt.Sprintf("names %s as its enforcer, and this package "+
+						"declares no such identifier", enforcer))
+				case !declared:
+					site(fmt.Sprintf("names %s as its measurement, and this module "+
+						"declares no such test", measurement))
+				case !mentions(body, enforcer):
+					site(fmt.Sprintf("cites %s and %s, and the body of that test never "+
+						"mentions that enforcer — the citation points at an unrelated "+
+						"measurement", enforcer, measurement))
+				}
 			}
-			uncited = append(uncited, claimSite{
-				line: p.line, first: strings.TrimSpace(p.lines[0]), missing: missing,
-			})
 		}
 	}
 	return claims, uncited
@@ -8253,13 +8520,33 @@ func paragraphsOf(fset *token.FileSet, g *ast.CommentGroup) []commentParagraph {
 }
 
 // declaredTestsInModule is every Test function declared anywhere in this
-// module, which is the universe a measurement citation resolves against.
-// Repo-wide rather than package-local for the reason
-// TestEveryTestNamedInASourceCommentExists gives: a comment here may
-// legitimately cite one of the kernel's own guards.
-func declaredTestsInModule(t *testing.T) map[string]bool {
+// module, mapped to THE SOURCE OF ITS WHOLE DECLARATION, which is the universe
+// a measurement citation resolves against. Repo-wide rather than
+// package-local for the reason TestEveryTestNamedInASourceCommentExists gives:
+// a comment here may legitimately cite one of the kernel's own guards.
+//
+// THE SOURCE IS CARRIED, not just the name, because resolving the name alone
+// only proves the test exists. The aptness check needs to look inside it.
+//
+// THE SLICE INCLUDES THE DOC COMMENT AND THAT IS A MEASURED CONCESSION, not
+// an oversight. Body-only was written first, and the doc comment was added
+// back only after measuring what body-only cost. REPLACING THE FOUR LINES
+// BELOW THAT COMPUTE `start` WITH `start := fd.Body.Lbrace` AND RE-RUNNING
+// REFUSES 2 OF THE 20 CLAIMS THIS FILE CARRIES — the exact experiment, and
+// the exact number it produced. In both, the only identifier the cited test's
+// body names is a test HELPER: the test that is entirely about
+// ConfirmFinding's attempt-selection rule reaches it through confirmAgainst,
+// and the rate-limit test that exists to pin what decide() does with a 429
+// reaches decide through the gate. Both citations are apt, and the strict
+// rule would have forced each to name a helper instead. A guard that makes an
+// author write a worse citation is not a stricter guard.
+//
+// WHAT THE CONCESSION COSTS is that a test naming the enforcer only in its
+// own prose satisfies the check, asserted rather than described by case 20 of
+// the table above.
+func declaredTestsInModule(t *testing.T) map[string]string {
 	t.Helper()
-	declared := map[string]bool{}
+	declared := map[string]string{}
 	root := filepath.Join("..", "..", "..")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -8278,8 +8565,38 @@ func declaredTestsInModule(t *testing.T) map[string]bool {
 		if rerr != nil {
 			return rerr
 		}
-		for _, m := range testDecl.FindAllStringSubmatch(string(b), -1) {
-			declared[m[1]] = true
+		src := string(b)
+		tfset := token.NewFileSet()
+		f, perr := parser.ParseFile(tfset, path, src,
+			parser.ParseComments|parser.SkipObjectResolution)
+		if perr != nil {
+			return fmt.Errorf("parsing %s for its test declarations: %w", path, perr)
+		}
+		for _, dec := range f.Decls {
+			fd, ok := dec.(*ast.FuncDecl)
+			if !ok || fd.Body == nil || !strings.HasPrefix(fd.Name.Name, "Test") {
+				continue
+			}
+			start := fd.Pos()
+			if fd.Doc != nil {
+				start = fd.Doc.Pos()
+			}
+			lo := tfset.Position(start).Offset
+			hi := tfset.Position(fd.Body.Rbrace).Offset
+			if lo < 0 || hi <= lo || hi >= len(src) {
+				return fmt.Errorf("%s: %s has an unreadable declaration span",
+					path, fd.Name.Name)
+			}
+			declared[fd.Name.Name] = src[lo : hi+1]
+		}
+		// The regex walk is kept as a CROSS-CHECK on the parse: a test the
+		// AST did not reach is a test a measurement citation would fail to
+		// resolve, silently, which is this guard's own failure mode.
+		for _, m := range testDeclLine.FindAllStringSubmatch(src, -1) {
+			if _, ok := declared[m[1]]; !ok {
+				return fmt.Errorf("%s declares %s and the AST walk did not see it",
+					path, m[1])
+			}
 		}
 		return nil
 	})
