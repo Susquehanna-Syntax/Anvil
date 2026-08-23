@@ -1148,8 +1148,65 @@ func TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual(t *testing.T) {
 	}
 }
 
-// TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize is the honest half of
-// turning a pipeline into a set.
+// TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual SHOWS the
+// other diagonal with a fixture, for the same reason the one above is shown.
+//
+// '+' is a SPACE in a query string and a literal plus everywhere else, and no
+// byte settles it, so sweepForms carries both readings. What it carries them
+// ACROSS is depth: plusToSpace is a step rather than a flag on a pipeline, so a
+// '+' already in the artifact can be read as a space while a '+' that only
+// appears after the next percent step is read as a plus. THAT IS THE DEPTH
+// AXIS AND IT IS NOT THE CROSS-PRODUCT, and sweepForms' doc used to describe
+// the '+' branch as though it were both.
+//
+// plusToSpace is a WHOLE-STRING pass. Every '+' present in one form takes the
+// same reading in the form that pass produces, so two '+' signs at the same
+// depth that need different readings are exactly the residual the reading
+// index has — the diagonal, on a different axis.
+//
+// IF THIS TEST EVER FAILS BECAUSE THE RESIDUAL CLOSED, THE FIX IS TO DELETE THE
+// BULLET, NOT THE TEST — the same rule as the reading-index fixture above.
+func TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual(t *testing.T) {
+	// The gap. Each of these needs one '+' of `pw=a+b+c` read as a space and
+	// the other as a literal plus, and no single whole-string pass does both.
+	for _, secret := range []string{"a b+c", "a+b c"} {
+		if _, hit := credentialIn([]byte("pw=a+b+c"), []Secret{mustSecret(t, secret)}); hit {
+			t.Fatalf("the sweep found %q in \"pw=a+b+c\", so two '+' signs at different "+
+				"readings in one form are no longer a residual. Delete that bullet from "+
+				"credentialIn's doc, from sweepForms' doc and from this file's header, "+
+				"and delete this test — a residual list that names a gap that closed is "+
+				"as wrong as one that omits a gap that is open", secret)
+		}
+	}
+	// The diagonal itself, which IS covered: every '+' one way, then every '+'
+	// the other way. Without these two rows the miss above could be a broken
+	// decoder rather than the off-diagonal.
+	for _, secret := range []string{"a b c", "a+b+c"} {
+		if _, hit := credentialIn([]byte("pw=a+b+c"), []Secret{mustSecret(t, secret)}); !hit {
+			t.Errorf("the sweep did not find %q in \"pw=a+b+c\". That is the diagonal — "+
+				"every '+' read the same way — and it is supposed to be covered, so this "+
+				"test is measuring a broken decoder rather than the off-diagonal", secret)
+		}
+	}
+	// And the DEPTH axis, which is what a step buys over a per-pipeline flag and
+	// is the claim sweepForms' doc actually makes. In each row one '+' is
+	// present in the artifact and the other only appears after a percent step,
+	// so the two take different readings on one trajectory.
+	for _, tc := range []struct{ in, secret string }{
+		{"A+B%2BC", "A B+C"},
+		{"A%2BB+C", "A+B C"},
+	} {
+		if _, hit := credentialIn([]byte(tc.in), []Secret{mustSecret(t, tc.secret)}); !hit {
+			t.Errorf("the sweep did not find %q in %q, where the two '+' signs live at "+
+				"different DEPTHS. That mixture is the whole reason plusToSpace is a step "+
+				"and not a flag on a pipeline, so losing it means sweepForms' doc claims "+
+				"something the traversal no longer does", tc.secret, tc.in)
+		}
+	}
+}
+
+// TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained is the honest
+// half of turning a pipeline into a set, on BOTH of the axes the budget binds.
 //
 // The old shape had an argument that a string under about 2 KiB always reached
 // its fixpoint: 2·len+specials strictly decreases on any pass that changes
@@ -1159,21 +1216,45 @@ func TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual(t *testing.T) {
 // the claim has been deleted from codedSweepWorkBytes' doc rather than
 // qualified.
 //
-// What can be demonstrated is asserted here instead, and it is the WORK BOUND —
-// the thing ruling 11 says to bound and disclose. The size of the set is
-// measured and logged, not capped: a cap would be a budget an encoder could
-// step outside by shaping an artifact to branch harder.
+// WHAT STOOD HERE INSTEAD WAS A TEST THAT COULD NOT FAIL. It asserted that the
+// returned set fits inside codedSweepWorkBytes — true by construction for every
+// possible input, because no decoder grows a form and every retained form was
+// charged at least its own length, so it could only ever have failed if the
+// constant it named changed. A construction argument belongs in the doc and it
+// is now in codedSweepWorkBytes' doc. What is asserted here is what a defect
+// could actually break:
+//
+//	NO DECODER GROWS A FORM. This is a premise the memory ceiling rests on, it
+//	is not otherwise checked anywhere, and it is one edit away from being false
+//	— an unresolved reference expanding to two runes, or any decoder that
+//	writes a replacement longer than the span it consumed, breaks it and voids
+//	the arithmetic in the doc.
+//
+//	ONE STEP RETURNS AT MOST codedSweepStepReadings READINGS. The other
+//	premise, and the one the ceiling's overspend term is made of: sweepForms
+//	charges the readings without re-checking the budget, so the last step can
+//	overspend by one full-length form per reading. Measured, 19 is REACHED, so
+//	this is a live edge and not slack.
+//
+//	THE DISCLOSED MEMORY FIGURE IS THE ONE THE CODE PRODUCES. The set is all
+//	live at once, so one 4 MiB artifact can hold 200 MiB. The band below is
+//	two-sided on purpose: sweepForms is deterministic, so drifting out of it in
+//	EITHER direction means the disclosed number went stale — upward is more
+//	memory than the doc admits, downward is a traversal that got shallower.
 //
 // The corpus is assembled out of nothing but escape fragments, which is the
 // shape that branches worst: every '%', '\' and '&' is a site where two
-// decoders disagree about what the bytes mean.
-func TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize(t *testing.T) {
+// decoders disagree about what the bytes mean. The size of the set stays a
+// MEASUREMENT and is logged rather than capped — a cap would be a budget an
+// encoder could step outside by shaping an artifact to branch harder.
+func TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0x11, 0x5e7))
 	fragments := []string{
 		"%", "\\", "&", "#", "+", ";", "a", "1", "3", "7", "5", "0",
 		"%25", "%2B", "%5C", "&#37", "&#1153", "&amp;", `A`, `\n`, "&#x25",
 	}
 	worst, worstBytes, worstIn := 0, 0, ""
+	widestStep := 0
 	for iter := 0; iter < 4000; iter++ {
 		var b strings.Builder
 		for n := 2 + rng.IntN(40); n > 0; n-- {
@@ -1184,28 +1265,109 @@ func TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize(t *testing.T) {
 		total := 0
 		for _, f := range forms {
 			total += len(f)
-		}
-		// THE ASSERTION. The traversal is charged for every pass it makes, so
-		// the set it returns cannot be larger than the budget it was allowed to
-		// spend. If this ever fails the budget is not a bound on anything.
-		if total > codedSweepWorkBytes {
-			t.Fatalf("iteration %d: sweepForms returned %d forms totalling %d bytes "+
-				"from a %d-byte seed, past the %d-byte work bound. The budget is the "+
-				"disclosed bound on this traversal, so a set that outgrows it means "+
-				"codedSweepWorkBytes' doc describes something the code does not do",
-				iter, len(forms), total, len(in), codedSweepWorkBytes)
+			// PREMISE ONE. A form longer than the seed means some decoder wrote
+			// more bytes than it consumed, which voids both the termination
+			// argument and the memory ceiling at once.
+			if len(f) > len(in) {
+				t.Fatalf("iteration %d: sweepForms grew a %d-byte seed %q into a "+
+					"%d-byte form %q. codedSweepWorkBytes' doc derives the retained-bytes "+
+					"ceiling from the fact that no decoder grows a form, so that ceiling "+
+					"is now void: find the decoder that expanded, and either fix it or "+
+					"re-derive and rewrite the ceiling", iter, len(in), in, len(f), f)
+			}
+			// PREMISE TWO. The overspend term of that ceiling is one
+			// full-length form per reading the final step returns, so a step
+			// that can return more readings than the constant says makes the
+			// ceiling too low by a whole artifact per extra reading.
+			if n := len(decodeStep(f)); n > codedSweepStepReadings {
+				t.Fatalf("iteration %d: decodeStep returned %d readings of %q, past the "+
+					"%d codedSweepStepReadings derives from referenceReadingsAt's bound of "+
+					"eight. sweepForms charges readings without re-checking the budget, so "+
+					"the retained-bytes ceiling in codedSweepWorkBytes' doc is now short by "+
+					"codedMaxArtifactBytes per extra reading: re-derive the constant and "+
+					"rewrite the ceiling", iter, n, f, codedSweepStepReadings)
+			} else if n > widestStep {
+				widestStep = n
+			}
 		}
 		if len(forms) > worst {
 			worst, worstBytes, worstIn = len(forms), total, in
 		}
 	}
-	// The corpus has to actually branch, or the assertion above is vacuous.
+	// The corpus has to actually branch, or the assertions above are vacuous.
 	if worst < 8 {
 		t.Fatalf("the widest candidate set this corpus produced was %d forms, which "+
 			"is not branching at all, so this test measures nothing", worst)
 	}
 	t.Logf("widest candidate set over 4000 generated strings: %d forms, %d bytes, "+
-		"from a %d-byte seed %q", worst, worstBytes, len(worstIn), worstIn)
+		"from a %d-byte seed %q; widest step %d readings",
+		worst, worstBytes, len(worstIn), worstIn, widestStep)
+
+	// And codedSweepStepReadings is REACHED, not merely allowed, or premise two
+	// is asserted about slack. The witness spells every reading out:
+	//
+	//	a '+', a percent escape and a backslash escape, for the three
+	//	single-decoder readings;
+	//
+	//	a digit run whose SEVEN prefixes each denote a character while the run
+	//	as a whole is over U+10FFFF, so the greedy reading is an eighth,
+	//	undecided one — that is the eight reading INDICES;
+	//
+	//	`&zz;`, a name the table cannot resolve, which is undecided at every
+	//	index. Without it the two unresolvedPolicy values would agree wherever
+	//	the reading is decided and decodeStep would dedup them away — the
+	//	witness needs a site that is undecided at EVERY index for the policies
+	//	to be sixteen distinct readings rather than nine;
+	//
+	//	and `&amp;`, which is decided at every index. Without it the literal
+	//	policy at index 7 leaves BOTH reference sites alone, produces the
+	//	witness itself, and decodeStep drops it — eighteen readings, not
+	//	nineteen. A step returns readings OTHER THAN its input, so the edge
+	//	needs a site that always moves.
+	const witness = `+%41\n&amp;&zz;&#11141110`
+	if n := len(decodeStep(witness)); n != codedSweepStepReadings {
+		t.Errorf("decodeStep(%q) returned %d readings, not the %d "+
+			"codedSweepStepReadings claims is the edge. A constant the code cannot "+
+			"reach is slack and the memory ceiling built on it is guesswork: if a step "+
+			"can now return MORE, the ceiling in codedSweepWorkBytes' doc is short by "+
+			"codedMaxArtifactBytes per extra reading; if it can only return fewer, "+
+			"re-derive the constant downward", witness, n, codedSweepStepReadings)
+	}
+
+	// And the memory figure at the artifact cap, on a fixture chosen because it
+	// branches wide while barely shrinking: '+' and '%25' and a '\\' each fork
+	// the step, and `&#0` and `&#1114111` are the reference shapes that cost
+	// most per byte.
+	const disclosedRetained = 209714969
+	tail := `%2B%25&#0\\&#1114111+`
+	body := strings.Repeat("z", codedMaxArtifactBytes-len(tail)) + tail
+	forms := sweepForms(body)
+	retained := 0
+	for _, f := range forms {
+		retained += len(f)
+		if len(f) > len(body) {
+			t.Fatalf("sweepForms grew a %d-byte artifact into a %d-byte form",
+				len(body), len(f))
+		}
+	}
+	ceiling := codedSweepWorkBytes + codedMaxArtifactBytes*(codedSweepStepReadings+1)
+	if retained > ceiling {
+		t.Fatalf("one %d-byte artifact retained %d bytes, past the %d-byte ceiling "+
+			"codedSweepWorkBytes' doc derives from the two premises above. The premises "+
+			"held, so the DERIVATION is wrong: re-derive it and rewrite the doc",
+			len(body), retained, ceiling)
+	}
+	if lo, hi := disclosedRetained*85/100, disclosedRetained*115/100; retained < lo || retained > hi {
+		t.Errorf("one %d-byte artifact ending in %q retained %d bytes in %d forms, "+
+			"outside the %d..%d band around the %d bytes codedSweepWorkBytes' doc and "+
+			"sweepForms' doc both disclose. sweepForms is deterministic, so this is not "+
+			"noise: re-measure it and rewrite BOTH docs and this constant rather than "+
+			"widening the band — upward is more memory than the docs admit, downward is "+
+			"a traversal that got shallower",
+			len(body), tail, retained, len(forms), lo, hi, disclosedRetained)
+	}
+	t.Logf("one %d-byte artifact: %d forms, %d bytes retained live (ceiling %d)",
+		len(body), len(forms), retained, ceiling)
 }
 
 // TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading is the other direction,

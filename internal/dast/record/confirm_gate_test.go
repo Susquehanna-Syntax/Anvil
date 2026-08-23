@@ -486,15 +486,61 @@ func TestOnlyConfirmedFindingsReachDastStatusFindings(t *testing.T) {
 // Types outside this module are not exempt: their KIND is still checked, so
 // an io.Reader field or a *bytes.Buffer field fails exactly as a local one
 // would.
+//
+// ===========================================================================
+// THE SUBJECT IS A ROUTE, NOT A TYPE, AND THE DEDUP KEY USED TO SAY OTHERWISE
+// ===========================================================================
+//
+// This walk used to mark seen[reflect.Type] on entry and return early on a
+// repeat. That answers "have I visited this TYPE" when the question this test
+// asks is "have I visited this ROUTE", and deduplicating by type merges two
+// distinct routes into one report. MEASURED against the previous shape:
+//
+//	struct{ Left, Right zzCarrier }, zzCarrier{ Payload []byte }
+//	  TWO routes to a raw body, ONE reported — the second is skipped
+//	  because zzCarrier was already marked.
+//	struct{ Head string; Body, Raw []byte }
+//	  TWO byte-sequence fields, ONE reported. Adding `Raw []byte` after
+//	  `Body` on Observation left the whole package GREEN.
+//
+// A guard that exists to stop a raw body reaching a consumer must not be
+// defeatable by putting the field second. There is no dedup here now.
+//
+// NOTHING IS LOST BY DROPPING IT, because the dedup was never what made this
+// terminate. GO'S OWN TYPE RULES DO: a struct may not contain itself, directly
+// or through arrays, so the part of the closure this walk DESCENDS INTO is
+// finite and acyclic by construction — and every kind that could reintroduce a
+// cycle (pointer, slice, map, interface, func, chan) is REPORTED and returned
+// from rather than followed. TestFindingTypeClosureHasNoRawBodyPath drives a
+// self-referential fixture to keep that from being a claim about today's
+// compiler.
+//
+// closureWalkNodeBudget bounds the one thing those rules leave open: struct
+// nesting that SHARES sub-types can have a route count exponential in its
+// depth, and without a dedup key nothing collapses those routes. EXHAUSTING
+// THE BUDGET IS ITSELF A REPORTED VIOLATION, so it is not room an attacker can
+// step outside — a type too large for this walk is a type this test refuses to
+// vouch for, which is the fail-closed direction.
+const closureWalkNodeBudget = 1 << 16
+
 func closureViolations(typ reflect.Type) []string {
 	var out []string
-	seen := map[reflect.Type]bool{}
+	budget := closureWalkNodeBudget
 	var walk func(path string, t reflect.Type)
 	walk = func(path string, t reflect.Type) {
-		if t == nil || seen[t] {
+		if t == nil {
 			return
 		}
-		seen[t] = true
+		budget--
+		if budget < 0 {
+			if budget == -1 {
+				out = append(out, fmt.Sprintf("the walk of %s exhausted its %d-node "+
+					"budget at %s: this type's field-type closure is too large to "+
+					"vouch for, and an unfinished walk is not a clean one",
+					typ, closureWalkNodeBudget, path))
+			}
+			return
+		}
 		switch t.Kind() {
 		case reflect.String, reflect.Bool,
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -583,6 +629,126 @@ func TestFindingTypeClosureHasNoRawBodyPath(t *testing.T) {
 			"return value and it is supposed to hold the body; a clean walk here means " +
 			"the body arrives some other way and this whole test is watching the wrong type")
 	}
+
+	// =====================================================================
+	// EVERY ROUTE, NOT EVERY TYPE. See closureViolations' header.
+	// =====================================================================
+	//
+	// The walk used to mark seen[reflect.Type] on entry, which silently
+	// skipped the SECOND route to a raw body anywhere in a closure. These
+	// two fixtures are the two spellings of that, and each reported ONE
+	// violation before the key changed.
+	for _, tc := range []struct {
+		name string
+		typ  reflect.Type
+		want []string
+		why  string
+	}{
+		{
+			name: "a shared struct type on two routes",
+			typ:  reflect.TypeOf(twoRouteCarrier{}),
+			want: []string{".Left.Payload", ".Right.Payload"},
+			why: "one TYPE, two ROUTES. Keying the walk by type answers the wrong " +
+				"question and reports only the route it happened to reach first",
+		},
+		{
+			name: "a second byte sequence beside the first",
+			typ:  reflect.TypeOf(twoBodyFields{}),
+			want: []string{".Body", ".Raw"},
+			why: "MEASURED: adding `Raw []byte` after `Body` on Observation left the " +
+				"whole package green. A guard against raw bodies that can be beaten " +
+				"by putting the field second is not a guard",
+		},
+	} {
+		got := closureViolations(tc.typ)
+		if len(got) != len(tc.want) {
+			t.Errorf("closureViolations(%s) found %d violation(s), want %d — %s:\n%s",
+				tc.name, len(got), len(tc.want), tc.why, strings.Join(got, "\n"))
+			continue
+		}
+		joined := strings.Join(got, "\n")
+		for _, w := range tc.want {
+			if !strings.Contains(joined, w) {
+				t.Errorf("closureViolations(%s) missed %s — %s:\n%s",
+					tc.name, w, tc.why, joined)
+			}
+		}
+	}
+
+	// THE MUTATION, RUN AGAINST EVERY TYPE THIS TEST VOUCHES FOR rather than
+	// against one of them. Each is doubled and given two byte sequences; a
+	// route-keyed walk must report twice whatever the clean type reports,
+	// plus both new routes. A type-keyed one reports the clean count plus
+	// one, whatever it is handed.
+	rawBytes := reflect.TypeOf([]byte(nil))
+	for _, base := range []reflect.Type{
+		reflect.TypeOf(Finding{}),
+		reflect.TypeOf(EvidenceRef{}),
+		reflect.TypeOf(Observation{}),
+		reflect.TypeOf(bodyCarrier{}),
+	} {
+		clean := len(closureViolations(base))
+		doubled := reflect.StructOf([]reflect.StructField{
+			{Name: "First", Type: base},
+			{Name: "Second", Type: base},
+			{Name: "Raw", Type: rawBytes},
+			{Name: "Also", Type: rawBytes},
+		})
+		got, want := len(closureViolations(doubled)), 2*clean+2
+		if got != want {
+			t.Errorf("a struct holding %s TWICE plus two []byte fields reports %d "+
+				"violation(s), want %d (2 x %d clean, plus both raw fields). Every "+
+				"route to a body has to be reported, not every distinct type",
+				base, got, want, clean)
+		}
+	}
+
+	// TERMINATION WITHOUT A DEDUP KEY, since dropping the key is what makes
+	// the two fixtures above work and "it still terminates" is the thing
+	// that claim rests on. bodyCarrier is self-referential through
+	// `Next *bodyCarrier`; the walk reports the pointer and does not follow
+	// it, which is why reaching here at all is the assertion.
+	if !strings.Contains(strings.Join(closureViolations(reflect.TypeOf(bodyCarrier{})), "\n"),
+		"bodyCarrier.Next is a ptr") {
+		t.Error("the self-referential field is not reported as a pointer. The walk " +
+			"terminates because every kind that could close a cycle is reported and " +
+			"NOT descended into; if that stops being true, removing the dedup key " +
+			"stops being safe")
+	}
+
+	// AND THE BUDGET FAILS CLOSED. Struct nesting that shares sub-types has
+	// a route count exponential in its depth, so the walk is bounded — and
+	// the bound has to REPORT rather than return quietly, or it is exactly
+	// the kind of ceiling an attacker steps outside.
+	wide := reflect.TypeOf(false)
+	for i := 0; i < 17; i++ {
+		wide = reflect.StructOf([]reflect.StructField{
+			{Name: "A", Type: wide},
+			{Name: "B", Type: wide},
+		})
+	}
+	over := closureViolations(wide)
+	if len(over) != 1 || !strings.Contains(over[0], "exhausted its") {
+		t.Errorf("a %d-route type with no forbidden kind in it reported %v; the node "+
+			"budget is supposed to report a violation when it runs out, because an "+
+			"unfinished walk is not a clean one", 1<<17, over)
+	}
+}
+
+// twoRouteCarrier and twoBodyFields are the two spellings of the dedup defect
+// closureViolations used to have. Each reported ONE violation while the walk
+// was keyed by reflect.Type; each has TWO routes to a raw response body.
+type payloadCarrier struct{ Payload []byte }
+
+type twoRouteCarrier struct {
+	Left  payloadCarrier
+	Right payloadCarrier
+}
+
+type twoBodyFields struct {
+	Head string
+	Body []byte
+	Raw  []byte
 }
 
 // oversizedStrings walks a VALUE and returns every reachable string longer
@@ -3499,11 +3665,56 @@ func statusForbidsABody(status int) bool {
 // a representation and not about the representation.
 func statusBodyIsAFragment(status int) bool { return status == 206 }
 
-// statusReportsTheRequestWasCarriedOut is conjunct (c): only the origin can
-// report that the request it was sent was performed. Every error status is
-// something a CDN, a proxy, a gateway or a WAF manufactures on its own.
+// statusReportsTheRequestWasCarriedOut is conjunct (c): the status reports
+// that THE ORIGIN CARRIED THE REQUEST OUT, so the body is that act's own
+// representation.
+//
+// ===========================================================================
+// IT USED TO BE `status >= 200 && status <= 299`. THAT IS A SHAPE, NOT A RULE.
+// ===========================================================================
+//
+// Conjuncts (a) and (b) were made to assert the rule last round and this one
+// was left as the range, which is why nobody could see that 202 sat on the
+// allowlist under a derivation ITS OWN RFC SEMANTICS CONTRADICT. The header
+// beside the map derived 202 as "accepting the request into processing is the
+// origin's act" — but the conjunct does not say "the origin acted", it says
+// THE REQUEST WAS CARRIED OUT, and RFC 9110 §15.3.3 says of a 202 that
+// "the request has been accepted for processing, but the processing has not
+// been completed" and that the response is "intentionally noncommittal". The
+// derivation swapped the conjunct for a weaker one in the space of a line.
+//
+// TWO STATUSES IN THE 200-299 RANGE FAIL THIS CONJUNCT, and the range could
+// see neither:
+//
+//	202 accepted    the request was NOT carried out. Its body describes a
+//	                status monitor, not the outcome, so a signature's
+//	                silence over it is silence about work that has not
+//	                happened yet. This is the one the range hid.
+//	203 non-        RFC 9110 §15.3.4: the payload "has been modified ... by
+//	    authoritative a transforming proxy". The status exists precisely to
+//	                say the bytes are NOT the origin's, which is the half of
+//	                this conjunct the range never tested at all.
+//
+// AND EVERY UNASSIGNED 2xx FAILS IT, for the reason shapeOf's default arm
+// refuses an operator it has not heard of: the rule is that THE STATUS ITSELF
+// establishes the fact, and a number with no registered semantics establishes
+// nothing. 299 used to satisfy this conjunct.
+//
+// So this is a table over the REGISTERED success statuses, each derived, with
+// no deny side to keep current — the same shape as the allowlist it judges.
 func statusReportsTheRequestWasCarriedOut(status int) bool {
-	return status >= 200 && status <= 299
+	switch status {
+	case 200, // RFC 9110 §15.3.1: the request succeeded.
+		201, // §15.3.2: one or more resources were created. The origin's act.
+		204, // §15.3.5: succeeded, no further content. Fails (a), not (c).
+		205, // §15.3.6: succeeded, reset the document view. Fails (a), not (c).
+		206, // §15.3.7: succeeded over a range. Fails (b), not (c).
+		207, // RFC 4918 §13: multi-status; each member status is the origin's.
+		208, // RFC 5842 §7.1: already enumerated in this response's own scope.
+		226: // RFC 3229 §10.4.1: the origin applied instance manipulations.
+		return true
+	}
+	return false
 }
 
 // statusSatisfiesTheMembershipRule is the rule itself, as one predicate: A
@@ -3560,7 +3771,13 @@ func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
 		{"body is a fragment", statusBodyIsAFragment,
 			[]int{206}, []int{200, 204, 205, 207}},
 		{"reports the request was carried out", statusReportsTheRequestWasCarriedOut,
-			[]int{200, 201, 202, 204, 206, 299}, []int{100, 199, 300, 302, 400, 403, 500}},
+			[]int{200, 201, 204, 205, 206, 207, 208, 226},
+			// 202 and 203 are the two the old `2xx` range could not see:
+			// a 202's processing has not been completed, and a 203's
+			// payload was modified by a transforming proxy. 209 and 299
+			// are unassigned, and an unregistered number establishes
+			// nothing about anything.
+			[]int{100, 199, 202, 203, 209, 299, 300, 302, 400, 403, 500}},
 	} {
 		for _, s := range c.holds {
 			if !c.pred(s) {
@@ -3591,9 +3808,12 @@ func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
 		switch {
 		case !statusReportsTheRequestWasCarriedOut(status):
 			t.Errorf("status %d is on the application allowlist and does not report that "+
-				"the request was carried out (conjunct c). Every error status is "+
-				"something a CDN, a proxy, a gateway or a WAF emits without reaching "+
-				"the application. Either the entry goes or the comment does", status)
+				"the ORIGIN CARRIED THE REQUEST OUT (conjunct c). Three ways to fail "+
+				"it: an error status is something a CDN, a proxy, a gateway or a WAF "+
+				"emits without reaching the application; a 202 says the processing has "+
+				"NOT been completed, so its body is a queue receipt rather than the "+
+				"outcome; a 203 says the payload was modified by a transforming proxy. "+
+				"Either the entry goes or the comment does", status)
 		case statusForbidsABody(status):
 			t.Errorf("status %d is on the application allowlist and CANNOT CARRY A BODY "+
 				"(conjunct a, RFC 9110). A signature's silence over a body the protocol "+
@@ -3645,6 +3865,16 @@ func TestTheApplicationAllowlistMatchesTheRuleItsCommentStates(t *testing.T) {
 			"0.000 marked KNOWN"},
 		{206, "a 206 body is a byte range chosen by whoever answered, so a non-match " +
 			"says nothing about the rest of the representation"},
+		{202, "RFC 9110 §15.3.3: a 202's processing HAS NOT BEEN COMPLETED and the " +
+			"response is intentionally noncommittal, so its body describes a status " +
+			"monitor rather than the outcome of the request. It sat here for a round " +
+			"under the derivation \"accepting the request into processing is the " +
+			"origin's act\", which is not conjunct (c) — conjunct (c) is that the " +
+			"request was CARRIED OUT — and the test could not see the difference " +
+			"while (c) was literally `2xx`"},
+		{203, "RFC 9110 §15.3.4: a 203 says the payload was modified by a TRANSFORMING " +
+			"PROXY, which is the exact negation of \"only the origin can have " +
+			"produced it\""},
 	} {
 		if IsApplicationResponseStatus(tc.status) {
 			t.Errorf("status %d is back on the application allowlist. It was removed "+
@@ -4193,26 +4423,46 @@ func generatorVocabularySize(t *testing.T, fn, varName string) int {
 // disclosed budget, because THE DISCLOSURE WAS NARROWER THAN THE RESIDUAL.
 //
 // ===========================================================================
-// ONE FACE WAS NAMED. THERE ARE FIVE.
+// ONE FACE WAS NAMED. THEN FIVE. THERE ARE NINE, AND THE WIDEST WAS MISSING.
 // ===========================================================================
 //
 // The header said the residual was "a pattern that spells ordinary text the
 // generator's vocabulary happens not to emit" and gave
 // `(?i)(error|warning|expired)` as the example — a gap in ONE list, the prose
-// word list. The corpus draws from five written-down vocabularies, and a
-// literal outside ANY of them is a literal it cannot see. MEASURED, one pair
-// of probes per list, with the structural control silent on every one of them
-// so it is the CORPUS that decides:
+// word list. The round after that disclosed five lists. Five was still
+// narrower than what a probe finds, and the list it left out is the biggest:
+// THE LIST OF FORMATS THE CORPUS CAN GENERATE AT ALL. buildBenignCorpus
+// crosses its length axis with four shape functions, so an ordinary XML
+// document, an ordinary PEM block and an ordinary multipart part are not
+// missing a token — they are absent as documents.
+//
+// MEASURED, with the structural control silent on every probe below so it is
+// the CORPUS that decides:
 //
 //	list                     inside (refused)          outside (accepted)
-//	benignWords              `invoice`                 `expired`
-//	benignHTML tags          `<div`, `<h2`             `<h1>`, `<table`,
+//	shapes (4)               —                         `<\?xml `,
+//	                                                   `-----BEGIN `,
+//	                                                   `Content-Disposition: `
+//	benignWords (33)         `invoice`                 `expired`
+//	benignProse enders (6)   `\. `, `; `               `! `
+//	benignHTML tags (13)     `<div`, `<h2`             `<h1>`, `<table`,
 //	                                                   `<button`, `<form `
-//	benignHTML classes       `class="row"`             `class="banner"`
-//	benignJSON keys          `"status":`               `"error_code":`,
+//	benignHTML classes (9)   `class="row"`             `class="banner"`
+//	benignHTML head literals `class="`, `<title>`      `id="`, `href="https`,
+//	                         `href="/static`           `/assets/`, `&amp;`
+//	benignJSON keys (14)     `"status":`               `"error_code":`,
 //	                                                   `"user_id":`
-//	benignStructural toks    `Content-Type: ...`       `X-Powered-By: `,
-//	                                                   `Set-Cookie: `
+//	benignJSON values (6)    `:null`, `\[\]`           `1\.0`, `0\.0`, `\[\{`
+//	benignStructural (45)    `Content-Type: ...`       `X-Powered-By: `,
+//	                                                   `Set-Cookie: `,
+//	                                                   `text/html`,
+//	                                                   `HTTP/1\.1 404`
+//
+// TWO OF THESE ARE WORTH READING TWICE, because they are not "a word the list
+// happens to lack" but whole classes of ordinary content the generator cannot
+// produce: NO HTML ENTITY IS EVER EMITTED (`&amp;` on a benign page is
+// invisible), and NO NUMBER EVER CARRIES A DECIMAL POINT, because every one is
+// printed with %d.
 //
 // A BACKSTOP IS ALLOWED A BUDGET; what it is not allowed is a budget stated
 // smaller than it is, because the next person sizes their trust to the
@@ -4220,6 +4470,12 @@ func generatorVocabularySize(t *testing.T, fn, varName string) int {
 // direction — a list that grows past its disclosed size, or an "outside" probe
 // the corpus starts catching.
 func TestTheCorpusResidualIsAsWideAsItsVocabularies(t *testing.T) {
+	// sizeNotASliceLiteral marks a vocabulary that is real and probed but
+	// is not a []string the AST helper can count — the HTML head is six
+	// literal WriteString lines. The probes are the disclosure for those;
+	// no number is claimed, because a number nothing checks is the kind of
+	// claim this file deletes rather than qualifies.
+	const sizeNotASliceLiteral = -1
 	for _, v := range []struct {
 		what      string
 		size      int
@@ -4227,21 +4483,42 @@ func TestTheCorpusResidualIsAsWideAsItsVocabularies(t *testing.T) {
 		inside    []string
 		outside   []string
 	}{
+		// THE WIDEST LIST FIRST. It is the set of formats that can be
+		// generated at all, and a response in any other format is
+		// something this corpus has never seen one byte of.
+		{"the corpus SHAPE list", generatorVocabularySize(t, "buildBenignCorpus", "shapes"), 4,
+			// One format marker per generated shape, to show the row is
+			// about which FORMATS exist rather than about tokens.
+			[]string{`<!doctype html>`, `HTTP/1\.1 `},
+			[]string{`<\?xml `, `-----BEGIN `, `Content-Disposition: `}},
 		{"benignWords (prose vocabulary)", len(benignWords()), 33,
 			[]string{`invoice`, `warehouse`},
 			[]string{`expired`, `warning`, `(?i)(error|warning|expired)`}},
+		{"benignProse sentence enders", generatorVocabularySize(t, "benignProse", "enders"), 6,
+			[]string{`\. `, `\.\n`, `; `},
+			// `!` is only ever written as `!\n` and `?` only as `? `.
+			[]string{`! `}},
 		{"benignHTML tag names", generatorVocabularySize(t, "benignHTML", "tags"), 13,
 			[]string{`<div`, `<h2`},
-			[]string{`<h1>`, `<table`, `<button`, `<form `}},
+			[]string{`<h1>`, `<table`, `<button`, `<form `, `<input `, `<br>`}},
 		{"benignHTML class values", generatorVocabularySize(t, "benignHTML", "classes"), 9,
 			[]string{`class="row"`, `class="card"`},
 			[]string{`class="banner"`, `class="checkout-total"`}},
+		{"benignHTML fixed head literals", sizeNotASliceLiteral, sizeNotASliceLiteral,
+			[]string{`class="`, `href="/static`, `<title>`, `charset="utf-8"`},
+			// No other attribute, no other path, and NO ENTITY AT ALL.
+			[]string{`id="`, `data-testid="`, `href="https`, `/assets/`, `&amp;`, `&nbsp;`}},
 		{"benignJSON key names", generatorVocabularySize(t, "benignJSON", "keys"), 14,
 			[]string{`"status":`, `"created_at":`},
 			[]string{`"error_code":`, `"user_id":`}},
+		{"benignJSON value kinds", sizeNotASliceLiteral, sizeNotASliceLiteral,
+			[]string{`:null`, `\[\]`, `:true`},
+			// %d for every number, and arrays of integers only.
+			[]string{`1\.0`, `0\.0`, `\[\{`}},
 		{"benignStructural tokens", generatorVocabularySize(t, "benignStructural", "toks"), 45,
-			[]string{`Content-Type: application/json`, `Cache-Control: no-store`},
-			[]string{`X-Powered-By: `, `Set-Cookie: `}},
+			[]string{`Content-Type: application/json`, `Cache-Control: no-store`,
+				`HTTP/1\.1 200 OK`},
+			[]string{`X-Powered-By: `, `Set-Cookie: `, `text/html`, `HTTP/1\.1 404`}},
 	} {
 		if v.size != v.disclosed {
 			t.Errorf("%s has %d entries and the corpus header discloses %d. The size of "+
@@ -4405,6 +4682,52 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"the concatenated unit under a ceiling"},
 		{`ZZZZZZZZ(?:([0-9])|([a-z])|([[:punct:]]))*`,
 			"three narrow branches, none content-bearing, union content-bearing"},
+
+		// THE SPELLING FAMILY. Every one of these is the SAME position
+		// with the SAME alphabet, written so that fewer and fewer of its
+		// branches are classes. They are here because the union used to
+		// be taken over classes ONLY — "a literal is not a class" — so
+		// respelling the punctuation as captured single-rune literals
+		// restored the evasion whole while the rule's words stayed the
+		// same. The last one contains no class at all.
+		{`anvil-probe-4f2a(?:([0-9A-Za-z])|( )|(<)|(>)|(/)|(")|(=)|(-)|(:)|(;)|(,)|(\.)|(!)|(@))*`,
+			"THE MEASURED ONE: ACCEPTED with quoted=0, matching 252 of the 321 bytes " +
+				"of an ordinary HTML document. Its non-capturing spelling was refused " +
+				"only because regexp/syntax MERGES the branches, so the guard's real " +
+				"dependency was a parser optimisation and not the stated rule"},
+		{`anvil-probe-4f2a(?:[0-9A-Za-z]| |<|>|/|"|=|-|:|;|,|\.|!|@)*`,
+			"the merged spelling of the same thing; it must not be the parser that " +
+				"decides this"},
+		{`anvil-probe-4f2a(?:([0-9A-Za-z])|[ <>/"=:;,.!@-])*`,
+			"half spelled and half a class: the union has to cross the two"},
+		{`anvil-probe-4f2a(?:([a-z])|( ))*`,
+			"the SMALLEST member of the family — one class, one spelled space. If a " +
+				"spelled rune is outside the union then lowercase prose is quotable " +
+				"without limit against sixteen bytes of footing"},
+		{`anvil-probe-4f2a(?:([a-z])|([ ]))*`,
+			"the space written as a one-rune CLASS. classShape reads `[ ]` as a " +
+				"literal, which is right — and is exactly why the literal has to be " +
+				"in the union too"},
+		{`anvil-probe-4f2a(?:(a)|(b)|(c)|(d)|(e)|(f)|(g)|(h)|(i)|(j)|(k)|(l)|(m)|` +
+			`(n)|(o)|(p)|(q)|(r)|(s)|(t)|(u)|(v)|(w)|(x)|(y)|(z)|( )|(,)|(\.))*`,
+			"NOT ONE CLASS ANYWHERE. Twenty-nine captured single-rune literals " +
+				"spelling the alphabet of English prose. Putting the literals into " +
+				"the union is not enough on its own here — every branch reports " +
+				"declared=0, so an aggregation that only promotes DECLARED positions " +
+				"has nothing to promote. An alternation is a position the pattern did " +
+				"not decide, whatever its branches are made of"},
+		{`anvil-probe-4f2a(?:(a)|(b)|(c)|(d)|(e)|(f)|(g)|(h)|(i)|(j)|(k)|(l)|(m)|` +
+			`(n)|(o)|(p)|(q)|(r)|(s)|(t)|(u)|(v)|(w)|(x)|(y)|(z)|( )|(,)|(\.)){0,400}`,
+			"the all-literal alternation under a CEILING: 400 undecided positions " +
+				"against sixteen bytes of footing, because the thinnest branch of a " +
+				"mixed alternation is what sets the footing"},
+		{`Z(?:err|, )*`,
+			"THE DISCLOSED PRICE of the two lines above, named in the control's " +
+				"header so it is not read as a regression. Every byte this can match " +
+				"is spelled, and it is refused anyway: a repeat of an undecided " +
+				"position over an alphabet that crosses letters into punctuation is " +
+				"an alphabet DECLARATION, not evidence about a response. If this ever " +
+				"starts compiling, the header's disclosure has to change with it"},
 	} {
 		_, err := refuseOverBroadPattern(tc.pattern)
 		if err == nil {
@@ -4434,7 +4757,11 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"two digit classes and literals; the union is digits and stays token-shaped"},
 		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`,
 			"a dotted quad: a repeat whose unit mixes a digit class with a SPELLED " +
-				"dot, and a spelled rune is not in the union"},
+				"dot. The dot IS in the union — ruling 12 put it there — and the " +
+				"union is still not content-bearing, because digits and a dot carry " +
+				"no letter to run from one token into the next. This is the case that " +
+				"separates 'the union holds the literals' from 'the union bans " +
+				"literals'"},
 		{`<h1[0-9A-Za-z]{0,400}`,
 			"the disclosed alnum residual; it is closed at extraction by property 1b " +
 				"and must not start being closed here, or the disclosure is wrong"},
@@ -4443,7 +4770,26 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"a content-bearing class CONCATENATED with a digit class. A union taken " +
 				"at the concatenation would poison the digit run and refuse this"},
 		{`(?i)(error|warning|expired)`,
-			"an alternation of LITERALS: spelled runes contribute nothing to a union"},
+			"an alternation of LITERALS whose union is LETTERS ONLY. Ruling 12 puts " +
+				"those letters in the union and marks the position undecided; " +
+				"contentBearingClass is still what decides, and a letters-only " +
+				"alphabet cannot run out of the token it declared. This is the " +
+				"disclosed word-list residual and it must stay open here, or the " +
+				"disclosure in the control's header is wrong"},
+		{`(?:GET|POST|PUT) /admin/[a-z]{1,20} ZZZZ`,
+			"an UNREPEATED alternation whose union crosses letters and a slash. " +
+				"Ruling 12 makes that one undecided position, and one undecided " +
+				"position against twelve spelled bytes is what R3 exists to allow"},
+		{`(?:(a)|(b)|(,))ZZZZZZZZ`,
+			"an all-literal alternation that is NOT repeated: one undecided position " +
+				"against eight bytes of footing. The bump is to ONE, not to the " +
+				"length of the longest branch, and a rule that refused this would be " +
+				"a ban on alternation rather than a quotation rule"},
+		{`ZZZZ(?:(a)|(b)|(,)){0,4}`,
+			"the same alternation under a SMALL ceiling: four undecided positions " +
+				"against four spelled bytes, R3 satisfied 1:1. The ceiling is the " +
+				"remedy R3's own message tells the author to reach for, so it has to " +
+				"work"},
 	} {
 		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
 			t.Errorf("refuseOverBroadPattern(%q) = %v. %s. The union is taken over what a "+
@@ -4496,6 +4842,56 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 	if sig.spelled != 1 {
 		t.Errorf("the residual fixture spells %d byte(s), want 1; it is supposed to be the "+
 			"worst ratio the pattern budget can buy", sig.spelled)
+	}
+
+	// PART 4: THE MEASUREMENT THE SPELLING FAMILY RESTS ON, KEPT LIVE.
+	//
+	// A refusal is only worth something if the thing refused really would
+	// have swallowed a document, and "matching 252 of 321 bytes" is the kind
+	// of number that ages into folklore. So the two headline evasions are
+	// compiled with regexp DIRECTLY — NewSignature refuses them now, which
+	// is the point — and run against an ordinary body here, so the figures
+	// quoted in this file and in the control's header are checked on every
+	// run rather than remembered.
+	const ordinaryHTML = `<!doctype html><html><head><title>Acme Store</title></head>` +
+		`<body><h1>anvil-probe-4f2a</h1><p>Welcome to the store, friend. Everything ` +
+		`is fine here; nothing is wrong.</p><ul><li>one</li><li>two</li><li>three</li>` +
+		`</ul><footer>copyright 2026 acme, inc. all rights reserved. contact: ` +
+		`sales@acme.example</footer></body></html>`
+	for _, tc := range []struct {
+		pattern   string
+		wantBody  int
+		wantMatch int
+		what      string
+	}{
+		{`anvil-probe-4f2a(?:([0-9A-Za-z])|( )|(<)|(>)|(/)|(")|(=)|(-)|(:)|(;)|(,)|` +
+			`(\.)|(!)|(@))*`, 321, 252,
+			"the capture-group respelling, which was ACCEPTED with quoted=0"},
+		{`anvil-probe-4f2a(?:[0-9A-Za-z]| |<|>|/|"|=|-|:|;|,|\.|!|@)*`, 321, 252,
+			"the merged spelling: identical behaviour, and it was refused only " +
+				"because regexp/syntax folds the branches into one class"},
+	} {
+		if len(ordinaryHTML) != tc.wantBody {
+			t.Fatalf("the ordinary-document fixture is %d bytes and the measurements "+
+				"quoted throughout this file assume %d", len(ordinaryHTML), tc.wantBody)
+		}
+		if _, err := refuseOverBroadPattern(tc.pattern); err == nil {
+			t.Errorf("refuseOverBroadPattern still accepts %q; part 1 above is the "+
+				"assertion, and this part only measures what acceptance would cost",
+				tc.pattern)
+		}
+		m := regexp.MustCompile(tc.pattern).FindStringIndex(ordinaryHTML)
+		if m == nil {
+			t.Errorf("%s does not match the ordinary document at all; the measurement "+
+				"behind the refusal has drifted and the refusal is now unmotivated",
+				tc.what)
+			continue
+		}
+		if got := m[1] - m[0]; got != tc.wantMatch {
+			t.Errorf("%s matches %d of the %d bytes of an ordinary document, and this "+
+				"file says %d. Move the number in the same diff that moves the fixture",
+				tc.what, got, len(ordinaryHTML), tc.wantMatch)
+		}
 	}
 }
 

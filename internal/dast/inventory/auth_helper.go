@@ -93,6 +93,20 @@
 //	TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual rather than
 //	asserted about.
 //
+//	TWO '+' SIGNS IN ONE FORM NEEDING DIFFERENT READINGS. THE SAME DIAGONAL,
+//	ON A DIFFERENT AXIS, AND ITS ABSENCE FROM THIS LIST WAS ITSELF THE DEFECT.
+//	'+' is a space in a query string and a literal plus everywhere else, and
+//	plusToSpace is a WHOLE-STRING pass, so every '+' present in one form takes
+//	the same reading in the form that pass produces. Across DEPTH the set does
+//	express the mixture — a '+' already there can be read as a space while a
+//	'+' that only appears after the next percent step is read as a plus — but
+//	the same-depth cross-product is not produced. MEASURED: the secret "a b+c"
+//	inside `pw=a+b+c` is NOT FOUND, while "a b c" and "a+b+c" in the same bytes
+//	are, and "A B+C" inside `A+B%2BC` is.
+//	TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual is the
+//	fixture, and it carries those control rows so the gap cannot be read as
+//	the whole mechanism.
+//
 //	A DEEPLY LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK. This
 //	bullet is here because its absence was itself a defect: the sweep re-ran
 //	its pipeline THREE TIMES and nothing said so, so percent-encoding applied
@@ -2924,6 +2938,22 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //	cross-product, which is exponential in the number of ambiguous sites; the
 //	provenance rule is what covers it.
 //
+//	TWO '+' SIGNS IN ONE FORM NEEDING DIFFERENT READINGS. THE SAME DIAGONAL AS
+//	THE BULLET ABOVE, ON THE '+' AXIS, AND IT WAS MISSING FROM THIS LIST WHILE
+//	sweepForms' DOC DESCRIBED THE '+' BRANCH AS EXPRESSING WHAT A PER-PIPELINE
+//	FLAG COULD NOT. That is true of DEPTH and false of the same-depth
+//	cross-product: plusToSpace is a whole-string pass, so the form it produces
+//	reads every '+' in its input the same way.
+//	SHOWN, NOT ASSERTED AWAY: the secret "a b+c" inside `pw=a+b+c` needs the
+//	first '+' read as a space and the second as a literal plus, and the sweep
+//	does not find it — while "a b c" and "a+b+c" in the same bytes are both
+//	found, and "A B+C" inside `A+B%2BC`, where the two '+' signs live at
+//	different depths, is found too.
+//	TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual is that
+//	fixture and it fails loudly if the residual closes. Closing it costs the
+//	per-site cross-product over every '+' in the artifact, which is exponential
+//	in their number; the provenance rule is what covers it.
+//
 //	A LAYERED ENCODING INSIDE AN ARTIFACT THAT DOES NOT SHRINK AS IT IS
 //	DECODED. This bullet was MISSING once, and its absence was the defect: the
 //	pipeline re-ran exactly three times, so url.QueryEscape applied four times
@@ -3024,6 +3054,82 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 // the whole body — backslash escaping at two bytes per byte, percent at three —
 // collapses it geometrically instead.
 //
+// # THE BOUND IS NAMED FOR BYTES SCANNED AND IT BINDS BYTES RETAINED TOO
+//
+// This constant is disclosed above as a bound on WORK, and it silently sets a
+// second ceiling as well. A bound disclosed on one dimension while binding on
+// another is the same defect as an undisclosed ceiling, so the other dimension
+// is measured here rather than left to be discovered. sweepForms RETAINS every
+// candidate it produces — that is what makes a pass return a set — and the
+// whole set is live at once while credentialIn iterates it.
+//
+// The ceiling is arithmetic rather than a cap, and it rests on two things, both
+// of which are ASSERTED rather than assumed because either one is a budget if
+// it is only asserted about.
+//
+//	NO DECODER GROWS A FORM. plusToSpace is length-preserving, decodePercent
+//	and decodeBackslash replace a multi-byte escape with the byte it denotes,
+//	and every character-reference reading spans at least as many bytes as the
+//	UTF-8 of the rune it produces — the tightest cases are `&#0` and `&a;`,
+//	three bytes in and the three bytes of U+FFFF out. So a retained form is
+//	never longer than the parent whose length paid for it.
+//
+//	ONE STEP RETURNS AT MOST codedSweepStepReadings = 19 READINGS: the three
+//	single-decoder ones, plus two unresolvedPolicy values times the at most
+//	EIGHT reading indices referenceReadingsAt's arithmetic allows. That matters
+//	because sweepForms checks the budget against the BASE passes before the
+//	step and then subtracts the readings' cost UNCHECKED, so the last step of a
+//	traversal can overspend, by at most one full-length form per reading.
+//
+// Hence, for a seed of length L — and L is the right variable, not the artifact
+// cap, for the reason two paragraphs down —
+//
+//	BYTES RETAINED ≤ codedSweepWorkBytes + L × (codedSweepStepReadings + 1)
+//
+// the last term being the final step's overspend plus the seed, which is the
+// one member nothing was charged for. THE OVERSPEND TERM IS NOT DECORATION AND
+// IT WAS MISSING FROM THE FIRST VERSION OF THIS PARAGRAPH: at half the
+// multiplier below, this file's own 4 MiB fixture retains 142606222 bytes
+// against a budget of 134217728, which the ceiling without that term declares
+// impossible.
+//
+// For an ARTIFACT the seed is credentialIn's b, which storeArtifacts refuses
+// past codedMaxArtifactBytes, so L ≤ 4194304 and
+//
+//	268435456 + 4194304 × 20 = 352321536 bytes (336 MiB)
+//
+// MEASURED, for ONE artifact at that cap:
+//
+//	pure filler, which does not branch     4194304 bytes retained,  1 form
+//	filler + `%2B%25&#0\\&#1114111+`     209714969 bytes retained, 50 forms, 0.18 s
+//	worst of 120 generated tails        239072831 bytes retained, 57 forms, 0.21 s
+//
+// So a 4 MiB artifact can hold 200 MiB live for the duration of one
+// credentialIn call. storeArtifacts sweeps artifacts one at a time and this
+// package starts no goroutine, so that is the peak rather than a per-artifact
+// increment — but it is the number to raise the multiplier against, not the
+// 4 MiB the artifact cap suggests.
+//
+// AND THE ARTIFACT CAP IS NOT THE ONLY WAY IN, WHICH IS WHY THE CEILING IS
+// WRITTEN OVER L. sweepOnly routes DRIVER-AUTHORED STRINGS through the same
+// credentialIn — AuthOutcome.Detail, LandedPath, an artifact Name — and
+// NOTHING BOUNDS THEIR LENGTH. MEASURED, a branching tail on a 64 MiB seed:
+// 17 forms, 1140850632 bytes retained — 1.06 GiB, 3.2× the artifact
+// ceiling, in 1.1 s — and note that this is FOUR TIMES codedSweepWorkBytes, so
+// it is the overspend term and not the budget doing it. At that length one step
+// costs more than the whole budget, the traversal makes exactly one, and the
+// readings of that one step are charged after the fact.
+//
+// That is stated rather than capped on purpose. A cap here would be a length
+// past which a string is NOT swept, which is a credential-shaped hole; the
+// driver is in-process code an operator supplies, so the bound that belongs on
+// its Detail belongs on the driver.
+//
+// TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained pins the middle
+// row and asserts BOTH premises above; if a decoder ever grows a form, or a
+// step ever returns a twentieth reading, the ceiling here is void and that test
+// is what says so rather than a reader discovering it in production.
+//
 // # The residual, disclosed because an absent one reads as completeness
 //
 // The budget bites on an artifact that does NOT shrink as it is decoded: plain
@@ -3050,15 +3156,21 @@ func credentialIn(b []byte, secrets []Secret) (int, bool) {
 //	decreases on every pass that changes anything, which still bounds the
 //	traversal's DEPTH at 3L — but the traversal is a set, and nothing in that
 //	argument bounds how many forms are reachable, so 3L² is no longer an upper
-//	bound on the work. What can be demonstrated instead is measured, not
-//	derived, by TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize: over
-//	four thousand generated strings assembled out of nothing but escape
-//	fragments — the shape that branches worst — the largest set observed is 476
-//	forms totalling 19515 bytes, from a 77-byte seed. The assertion that test
-//	makes is the WORK BOUND, that the set the traversal returns fits inside
-//	codedSweepWorkBytes, because the size of the set is a measurement and not a
-//	control: a cap on it would be a budget an encoder could step outside by
-//	shaping an artifact to branch harder.
+//	bound on the work. What replaced that claim is a MEASUREMENT: over four
+//	thousand generated strings assembled out of nothing but escape fragments —
+//	the shape that branches worst — the largest set observed is 476 forms
+//	totalling 19515 bytes, from a 77-byte seed. THE SIZE OF THE SET IS A
+//	MEASUREMENT AND NOT A CONTROL: a cap on it would be a budget an encoder
+//	could step outside by shaping an artifact to branch harder, so it is
+//	logged. What is ASSERTED about that corpus is the no-growth premise the
+//	section above rests on, in
+//	TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained. The
+//	assertion that stood there instead — that the returned set fits inside
+//	codedSweepWorkBytes — WAS TRUE BY CONSTRUCTION FOR EVERY POSSIBLE INPUT and
+//	is deleted: no growth plus the per-reading charge gives it, so it could
+//	only ever fail if the constant on the next line changed, and a test that
+//	cannot fail on a defect reports pass. The construction argument is a doc's
+//	job and it is now done in the doc.
 const codedSweepWorkBytes = 64 * codedMaxArtifactBytes
 
 // codedSweepStepPasses is how many passes over a form one step makes before it
@@ -3067,6 +3179,21 @@ const codedSweepWorkBytes = 64 * codedMaxArtifactBytes
 // path finds nothing to decode. It is an accounting constant — no behaviour
 // reads it — and it is here so that the budget charges what the step spends.
 const codedSweepStepPasses = 4
+
+// codedSweepStepReadings is the most readings one decodeStep can return: the
+// three single-decoder ones, plus each of the two unresolvedPolicy values at
+// each of the at most EIGHT reading indices referenceReadingsAt's arithmetic
+// permits. Dedup can only lower it.
+//
+// IT IS A DERIVED NUMBER, NOT A LIMIT — nothing enforces it, decodeStep returns
+// whatever the bytes produce, and if that ever exceeds this the code is right
+// and this constant is wrong. It exists because the retained-bytes ceiling at
+// codedSweepWorkBytes needs it: sweepForms charges the readings' cost WITHOUT
+// re-checking the budget, so the final step of a traversal can overspend by one
+// full-length form per reading it returns, and a ceiling that ignores that term
+// is not a ceiling. Measured, 19 is reached rather than merely allowed, and
+// TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained holds it shut.
+const codedSweepStepReadings = 3 + 2*8
 
 // sweepForms returns the SET of candidate readings of s that the sweep
 // searches. It is a set and not a string, and that is the whole of it.
@@ -3116,9 +3243,17 @@ const codedSweepStepPasses = 4
 // producing both answers rather than choosing:
 //
 //	'+' means SPACE in a query string and a literal plus everywhere else, and
-//	no byte settles it. Both are members; because they are separate steps
-//	rather than a flag on a pipeline, a trajectory may read one '+' as a space
-//	and a later one as a plus, which a per-pipeline flag could not express.
+//	no byte settles it. Both are members. WHAT THAT BUYS IS THE DEPTH AXIS AND
+//	NOT THE CROSS-PRODUCT, and the sentence that stood here did not separate
+//	them: because plusToSpace is a step rather than a flag on a pipeline, a
+//	trajectory may read a '+' present at one layer as a space and a '+' that
+//	only APPEARS at the next layer as a plus, which a per-pipeline flag could
+//	not express — measured, "A B+C" is found inside `A+B%2BC`. But plusToSpace
+//	is a WHOLE-STRING pass, so two '+' signs already present in the same form
+//	cannot take different readings in one candidate: "a b+c" inside `pw=a+b+c`
+//	is MISSED. That is the same diagonal as the reading index below, it is a
+//	disclosed residual in credentialIn's list and in this file's header, and
+//	TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual pins it.
 //
 //	`&commat;` is a character reference under one reading and seven literal
 //	characters under the other. Decoding it to a wildcard is what stops an
@@ -3160,6 +3295,15 @@ const codedSweepStepPasses = 4
 // it gets codedSweepWorkBytes/N form-visits. When the budget runs out the
 // traversal stops where it is and returns what it has — it never collapses the
 // set to make it fit.
+//
+// AND THE SAME BUDGET BOUNDS MEMORY, WHICH IS SAID HERE BECAUSE THE NAME OF
+// THE CONSTANT DOES NOT SAY IT. Everything this returns is RETAINED, and the
+// caller holds it all while it iterates: no decoder grows a form, so bytes
+// retained are bounded by codedSweepWorkBytes plus the final step's overspend
+// plus the seed, and measured, one 4 MiB artifact ending in
+// `%2B%25&#0\\&#1114111+` produces 50 forms and 209714969 live bytes in 0.18 s.
+// codedSweepWorkBytes' doc carries the arithmetic and the rest of the
+// measurements.
 //
 // The over-matching direction is the one that REFUSES an artifact rather than
 // the one that ships it.

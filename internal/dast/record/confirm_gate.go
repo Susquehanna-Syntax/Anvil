@@ -898,6 +898,33 @@ type Signature struct {
 // UNIT; those are the two nodes where one region of the response has more than
 // one alphabet.
 //
+// THE UNION IS OVER LITERALS AND CLASSES ALIKE, and reading it as "classes
+// only" is how the same evasion came back a round later. `consumes` used to
+// hold classes because "a literal is not a class" — so the punctuation was
+// respelled as captured single-rune literals and the whole thing was accepted
+// again with quoted=0, matching 252 of the 321 bytes of an ordinary document.
+// The non-capturing spelling was refused ONLY because regexp/syntax merges
+// alternated single runes into a class, which made the guard's real dependency
+// a parser optimisation rather than the rule it states. Two things close it,
+// and each is load-bearing on its own:
+//
+//	A SPELLED RUNE IS IN THE UNION. `(?:([a-z])|( ))*` is a class and a
+//	space, and the space is what turns a lowercase-token alphabet into
+//	prose. See spelledRunes.
+//	AN ALTERNATION IS AN UNDECIDED POSITION. Putting the literals in the
+//	union is not enough by itself, because quotation is promoted from
+//	DECLARED positions and an alternation whose every branch is a spelled
+//	rune declares none. Twenty-nine captured single-rune literals spelling
+//	the alphabet of English prose contain no class at all. So an alternation
+//	over an alphabet of more than one rune counts as at least one declared
+//	position. See the OpAlternate arm of shapeOf.
+//
+// The price is stated rather than hidden: a repeat of an alternation whose
+// union crosses letters into punctuation is now refused EVEN WHEN EVERY BRANCH
+// IS SPELLED, so `Z(?:err|, )*` no longer compiles. Its bytes are all spelled,
+// but a two-hundred-byte alphabet declaration is not evidence about a
+// response, and R3's remedy — give the repeat a ceiling — still applies.
+//
 // WHAT R3 STILL DOES NOT DECIDE, SO IT IS SAID RATHER THAN IMPLIED: a
 // CONCATENATION of differing narrow classes. A concatenation is a sequence of
 // positions, each with one alphabet, so its union is not any position's
@@ -948,10 +975,11 @@ type patternShape struct {
 	// quotationOverUnion.
 	declared int
 	// consumes is the UNION, as a rune-pair list in the shape
-	// regexp/syntax uses, of every multi-rune class a position in this
-	// sub-expression can draw from. Spelled runes are not in it — a literal
-	// is not a class, and counting it would make every pattern with a
-	// letter in it content-bearing.
+	// regexp/syntax uses, of every rune a position in this sub-expression
+	// can draw from — FROM CLASSES AND FROM SPELLED LITERALS ALIKE. See
+	// spelledRunes for why the literals are in it: a literal at an
+	// alternation position is an alphabet of one, and a union that leaves
+	// it out is a union over a REPRESENTATION rather than over the subject.
 	//
 	// IT IS WHY THIS STRUCT EXISTS RATHER THAN TWO INTS. quoted alone is a
 	// MAX over alternation branches, and a max over branches is not the
@@ -960,6 +988,15 @@ type patternShape struct {
 	// UNION, and the capture groups stop the parser merging the classes
 	// into one. The union is taken where the ambiguity is — at the
 	// alternation, and at a repeat's unit — not at the end.
+	//
+	// PUTTING LITERALS IN IT DOES NOT MAKE EVERY LETTERED PATTERN
+	// CONTENT-BEARING, which was the old comment's fear and the reason they
+	// were left out. contentBearingClass is what decides, it partitions
+	// printable ASCII into letter / digit / other, and a union of letters
+	// is not content-bearing. `(?i)(error|warning|expired)` still compiles;
+	// so does `(?:[0-9]{1,3}\.){3}` with its spelled dot. What changes is
+	// that a union crossing letters INTO punctuation is seen however it was
+	// spelled.
 	consumes []rune
 	// open reports that some path can consume a rune the pattern neither
 	// spells nor confines to printable ASCII. R2 refuses it outright, so
@@ -1065,6 +1102,71 @@ func unionRunes(a, b []rune) []rune {
 		lo, hi = p[0], p[1]
 	}
 	return append(out, lo, hi)
+}
+
+// spelledRunes is a SPELLED literal's contribution to a position's alphabet,
+// as a rune-pair list in the shape unionRunes and contentBearingClass consume.
+//
+// RULING 12, AND THE REASON THIS FUNCTION EXISTS AT ALL: a literal at an
+// alternation position is AN ALPHABET OF ONE, and a union that leaves it out
+// is not the alphabet of the position. `consumes` used to hold classes only,
+// on the reading that "a literal is not a class" — so spelling the punctuation
+// as captured single-rune literals restored the whole evasion:
+//
+//	MEASURED, and it is why this function exists:
+//	`anvil-probe-4f2a(?:([0-9A-Za-z])|( )|(<)|(>)|(/)|(")|(=)|(-)|(:)|(;)|(,)|(\.)|(!)|(@))*`
+//	was ACCEPTED with quoted=0 and then matched 252 of the 321 bytes of an
+//	ordinary HTML document. Its non-capturing spelling was refused only
+//	because regexp/syntax MERGES the branches into one class — so the
+//	guard's real dependency was a parser optimisation rather than the
+//	stated rule.
+//
+// ONLY PRINTABLE ASCII IS CARRIED, and that is a bound rather than a
+// convenience. contentBearingClass partitions printable ASCII and ignores
+// everything else, so a rune outside 0x20-0x7e could not change any verdict;
+// dropping it here is what keeps a normalised union at no more than 48 pairs
+// however many distinct runes a 1024-byte pattern spells.
+//
+// UNDER (?i) THE WHOLE FOLD ORBIT IS CARRIED, for the same reason
+// literalRuneBytes takes the orbit's shortest member: `(?i)K` can consume 'k',
+// and a position's alphabet must hold everything the position can consume.
+func spelledRunes(rs []rune, fold bool) []rune {
+	pairs := make([]rune, 0, len(rs)*2)
+	add := func(r rune) {
+		if r >= printableASCIILo && r <= printableASCIIHi {
+			pairs = append(pairs, r, r)
+		}
+	}
+	for _, r := range rs {
+		add(r)
+		if !fold {
+			continue
+		}
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			add(f)
+		}
+	}
+	return unionRunes(pairs, nil)
+}
+
+// alphabetIsAmbiguous reports whether a rune-pair list names more than one
+// rune — that is, whether a position drawing from it is a position the pattern
+// did not decide.
+//
+// It counts rather than measures length because unionRunes emits RANGES: one
+// pair can name ninety-five runes, and `len(runes) > 2` would miss it.
+func alphabetIsAmbiguous(runes []rune) bool {
+	n := 0
+	for i := 0; i+1 < len(runes); i += 2 {
+		if runes[i] > runes[i+1] {
+			continue
+		}
+		n += int(runes[i+1]-runes[i]) + 1
+		if n >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // quotationOverUnion is R3's aggregation, and it is the whole of ruling 11
@@ -1220,7 +1322,10 @@ func classShape(runes []rune) patternShape {
 	// A class naming exactly one rune is a literal with brackets round it,
 	// and reading it as anything else would let `[<][h][1]` evade R1.
 	if len(runes) == 2 && runes[0] == runes[1] {
-		return patternShape{minLiteral: literalRuneBytes(runes[0], false)}
+		return patternShape{
+			minLiteral: literalRuneBytes(runes[0], false),
+			consumes:   spelledRunes(runes[:1], false),
+		}
 	}
 	if openClass(runes) {
 		return patternShape{open: true}
@@ -1267,7 +1372,10 @@ func shapeOf(re *syntax.Regexp) patternShape {
 		for _, r := range re.Rune {
 			n = addShape(n, literalRuneBytes(r, fold))
 		}
-		return patternShape{minLiteral: n}
+		// consumes carries the spelled runes too. See spelledRunes: a
+		// literal at an alternation position is an alphabet of one, and a
+		// union that omits it is not the alphabet of the position.
+		return patternShape{minLiteral: n, consumes: spelledRunes(re.Rune, fold)}
 
 	case syntax.OpCharClass:
 		return classShape(re.Rune)
@@ -1320,6 +1428,30 @@ func shapeOf(re *syntax.Regexp) patternShape {
 			// consumes from all of them.
 			out.consumes = unionRunes(out.consumes, s.consumes)
 			out.open = out.open || s.open
+		}
+		// AN ALTERNATION IS A POSITION THE PATTERN DID NOT DECIDE, and
+		// that is true whether its branches are classes or spelled runes.
+		// declared is a max over branches, so an alternation every branch
+		// of which is a single spelled rune reports declared=0 — and then
+		// quotationOverUnion, which promotes DECLARED positions, has
+		// nothing to promote even when the union it just computed runs
+		// letters into punctuation. MEASURED before this line existed:
+		// `anvil-probe-4f2a(?:(a)|(b)|...|(z)|( )|(,)|(\.))*`, thirty-two
+		// captured single-rune literals and not one class, was ACCEPTED
+		// with quoted=0.
+		//
+		// One is a LOWER count than the number of positions some branches
+		// consume, and that is deliberate rather than an oversight: it is
+		// the number this node can justify from its own structure without
+		// a second traversal, and R3's arithmetic stays sound because
+		// minLiteral takes the MINIMUM over branches — a branch drawing
+		// from a class contributes zero footing, so a repeat of a mixed
+		// alternation is judged against the footing of its thinnest
+		// branch. What one buys is the whole of ruling 12 here: a repeat
+		// of an ambiguous position is a repeat of an ambiguous position,
+		// so `unboundedIfDeclaring` refuses it however it was spelled.
+		if len(re.Sub) > 1 && alphabetIsAmbiguous(out.consumes) {
+			out.declared = maxShape(out.declared, 1)
 		}
 		out.quoted = quotationOverUnion(out)
 		return out
@@ -1476,38 +1608,73 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // measured miss: 17 of 20 bounded-prefix HTML anchors passed this check.
 // Those all fail R2 now, on the pattern, whatever tag they name.
 //
-// THE BUDGET IS FIVE WRITTEN-DOWN LISTS, NOT ONE, and the disclosure used to
-// name only the first. Every generator below draws from a fixed vocabulary,
-// and a signature spelling something outside ANY of them is a signature this
-// corpus cannot see. MEASURED, one probe per list, all accepted by
-// NewSignature with nothing wrong with them:
+// THE BUDGET IS EVERY WRITTEN-DOWN LIST IN THESE GENERATORS, AND THERE ARE
+// NINE OF THEM. It was disclosed as one, then as five, and five was still
+// narrower than what a probe finds. A signature spelling anything outside ANY
+// of the lists is a signature this corpus cannot see. MEASURED, probes per
+// list, every "accepted" one below waved through by NewSignature with nothing
+// wrong with it:
 //
+//	the SHAPE list, 4 entries     THE WIDEST ONE, and it was never named.
+//	                              buildBenignCorpus crosses lengths with
+//	                              exactly four generators — prose, HTML,
+//	                              JSON, structural — so no XML document, no
+//	                              PEM block and no multipart part is ever
+//	                              generated. `<\?xml `, `-----BEGIN ` and
+//	                              `Content-Disposition: ` are all accepted.
+//	                              Every ordinary response in a format this
+//	                              list does not name is invisible to the
+//	                              backstop entirely, not merely at the token
+//	                              level.
 //	benignWords, 33 entries       `(?i)(error|warning|expired)` — the
 //	                              originally-disclosed face. It confirms a
 //	                              SQL-injection candidate at confidence
 //	                              1.000 against an ordinary page carrying
 //	                              the word "expired".
+//	benignProse enders, 6 pairs   prose ends a sentence with one of six
+//	                              fixed pairs, so `!` is only ever followed
+//	                              by a newline and `?` only by a space:
+//	                              `! ` is accepted while `\. ` and `; ` are
+//	                              refused.
 //	benignHTML tags, 13 entries   `<h1>`, `<table`, `<button`, `<form ` are
 //	                              accepted; `<div` and `<h2` are refused.
 //	                              The difference between those two groups is
 //	                              nothing but the list.
-//	benignJSON keys, 14 entries   `"error_code":` and `"user_id":` are
-//	                              accepted; `"status":` is refused.
-//	benignStructural toks,        `X-Powered-By: ` and `Set-Cookie: ` are
-//	  45 entries                  accepted. The list carries one status
-//	                              line and three response headers, and
-//	                              every other header ever sent is outside
-//	                              it.
 //	benignHTML classes, 9         reachable the same way, through
 //	                              `class="..."` values the generator never
 //	                              emits.
+//	benignHTML's fixed head       the document skeleton is six literal
+//	                              lines, so the only attributes that ever
+//	                              appear are lang, charset, rel, href, src
+//	                              and class, and the only paths are
+//	                              /static/site.css and /static/app.js.
+//	                              `id="`, `data-testid="`, `href="https`,
+//	                              `/assets/` and `&amp;` are accepted —
+//	                              NO HTML ENTITY IS EVER EMITTED — while
+//	                              `class="`, `href="/static` and `<title>`
+//	                              are refused.
+//	benignJSON keys, 14 entries   `"error_code":` and `"user_id":` are
+//	                              accepted; `"status":` is refused.
+//	benignJSON value kinds, 6     the switch has six arms and every number
+//	                              is printed with %d, so NO DECIMAL POINT
+//	                              EVER FOLLOWS A DIGIT and an array only
+//	                              ever holds integers: `1\.0`, `0\.0` and
+//	                              `\[\{` are accepted; `:null` and `\[\]`
+//	                              are refused.
+//	benignStructural toks,        `X-Powered-By: `, `Set-Cookie: `,
+//	  45 entries                  `text/html` and `HTTP/1\.1 404` are
+//	                              accepted. The list carries ONE status
+//	                              line and ONE content type, and every other
+//	                              header and media type ever sent is outside
+//	                              it.
 //
 // TestTheCorpusResidualIsAsWideAsItsVocabularies drives all of these, so the
 // disclosure fails when it stops being true rather than aging quietly.
 //
 // A BACKSTOP IS ALLOWED A BUDGET. A control is not, which is why the control
-// is somewhere else now — and why the honest statement of this one is "five
-// vocabularies" rather than "a word list".
+// is somewhere else now — and why the honest statement of this one is "nine
+// vocabularies, the widest of which is the list of formats it can generate at
+// all" rather than "a word list".
 //
 // A Signature must fire on NONE of these bodies. What they are is "responses
 // with nothing wrong with them", and an oracle that cannot tell one of those
@@ -1560,19 +1727,28 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 //	BUILDING IT, once, at package initialisation: 3.3 ms, allocating the
 //	1 MiB ceiling body and about 200 KiB of shorter ones.
 //
-//	SCANNING IT, once per NewSignature call: 25 us for an ordinary oracle —
+//	SCANNING IT, once per NewSignature call: 27 us for an ordinary oracle —
 //	one that matches nothing, so it pays for the whole corpus rather than
-//	stopping early. The structural control that runs before it costs 1.0 us
-//	of that, so the corpus is 96% of what a signature costs to compile.
+//	stopping early. The structural control that runs before it costs 2.3 us
+//	of that, so the corpus is 91% of what a signature costs to compile.
+//
+// THE CONTROL GOT 1.3 us MORE EXPENSIVE WHEN RULING 12 LANDED, and the number
+// is moved rather than left: putting spelled runes into `consumes` means every
+// OpLiteral allocates a rune-pair list and unions it, so a pattern that is
+// mostly literal now pays per rune. It was 972 ns. It buys the closure of an
+// evasion that a capture group and a re-spelling walked straight through, and
+// 2.3 us against a 27 us compile is not a cost anyone will notice — but a
+// benchmark block that still said 972 would be a measurement of a tree that no
+// longer exists.
 //
 // MEASURED ON THIS TREE, NOT ESTIMATED, by BenchmarkBenignCorpusBuild,
 // BenchmarkNewSignature and BenchmarkRefuseOverBroadPattern in
 // confirm_gate_test.go — go1.26.5, AMD Ryzen 5 9600X, windows/amd64:
 //
 //	go test -run XXX -bench 'BenignCorpus|NewSignature|RefuseOverBroad' -benchtime 200x ./internal/dast/record/
-//	BenchmarkBenignCorpusBuild-12          200    3317198 ns/op
-//	BenchmarkNewSignature-12               200      24971 ns/op
-//	BenchmarkRefuseOverBroadPattern-12     200        972 ns/op
+//	BenchmarkBenignCorpusBuild-12          200    3394635 ns/op
+//	BenchmarkNewSignature-12               200      26681 ns/op
+//	BenchmarkRefuseOverBroadPattern-12     200       2292 ns/op
 //
 // THE FIGURE THAT USED TO BE HERE WAS NOT A MEASUREMENT OF THIS PACKAGE. It
 // cited a cmd/anvil test run as evidence that the init cost was harmless, and
@@ -1683,6 +1859,11 @@ func benignPhrase(r *benignRNG, words int) string {
 // cannot refuse a pattern anchored on a capital letter, and "an upper-case
 // letter appears in a response" is not an oracle.
 func benignProse(r *benignRNG, n int) string {
+	// enders is a WRITTEN-DOWN VOCABULARY like every other list in these
+	// generators, and it is named rather than inlined so the disclosure can
+	// count it. It is six pairs, so `!` is only ever followed by a newline
+	// and `?` only by a space: MEASURED, `! ` is accepted by NewSignature.
+	enders := []string{". ", ".\n", "? ", "!\n", ", ", "; "}
 	var b strings.Builder
 	b.Grow(n + 64)
 	for b.Len() < n {
@@ -1697,7 +1878,7 @@ func benignProse(r *benignRNG, n int) string {
 				b.WriteByte(' ')
 			}
 		}
-		b.WriteString(r.pick([]string{". ", ".\n", "? ", "!\n", ", ", "; "}))
+		b.WriteString(r.pick(enders))
 	}
 	return b.String()
 }
@@ -2094,13 +2275,29 @@ type Observation struct {
 //	                representation describing the request's status and the
 //	                new resource. (b) whole. (c) creating the resource is
 //	                the origin's act. ON.
-//	202 accepted    (a) §15.3.3: the representation describes the request's
-//	                current status. (b) whole. (c) accepting the request
-//	                into processing is the origin's act. ON.
 //
 // WHAT THE RULE THREW OFF THIS ROUND, and this is the entry a reader should
-// check hardest, because both were on the list under the rule above and
-// NEITHER SATISFIED IT:
+// check hardest, because it was on the list under the rule above and DID NOT
+// SATISFY IT:
+//
+//	202 accepted    FAILS (c), and it failed it while carrying a derivation
+//	                that read as if it passed. The old entry said "accepting
+//	                the request into processing is the origin's act" — which
+//	                is true, and is not conjunct (c). CONJUNCT (c) IS THAT
+//	                THE REQUEST WAS CARRIED OUT, and RFC 9110 §15.3.3 says
+//	                the opposite of a 202 in its own words: "the request has
+//	                been accepted for processing, but the processing has not
+//	                been completed", and the response is "intentionally
+//	                noncommittal". Its body describes a STATUS MONITOR, not
+//	                the outcome. A signature's silence over a queue receipt
+//	                is silence about work that has not happened yet, so a
+//	                rejection built on it disproves nothing. It survived a
+//	                round because the test's conjunct (c) was still
+//	                literally `2xx`, which admits every success status and
+//	                distinguishes none of them.
+//
+// WHAT THE RULE THREW OFF THE ROUND BEFORE, kept because re-adding either is
+// still a deliberate act against a written argument:
 //
 //	204 no content  FAILS (a). §15.3.5: a 204 cannot contain a message body.
 //	                MEASURED, and the measurement is the argument: a 204
@@ -2231,7 +2428,6 @@ func applicationResponseStatuses() map[int]string {
 	return map[int]string{
 		200: "ok",
 		201: "created",
-		202: "accepted",
 	}
 }
 

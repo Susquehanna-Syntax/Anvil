@@ -1927,11 +1927,38 @@ than a pipeline does, so `codedSweepWorkBytes` was raised from `4 *` to `64 *`
 qualified.** It was derived from `3L` passes on ONE trajectory; `2·len +
 specials` still bounds the traversal's depth at `3L`, but nothing in that
 argument bounds how many forms are reachable, so `3L²` is not an upper bound on
-the work of a set. What is asserted instead is the work bound itself —
-`TestTheCandidateSetIsBoundedByWorkAndNotByACapOnItsSize` — and the size of the
-set is measured and logged rather than capped: over four thousand generated
-strings built out of nothing but escape fragments, the widest set observed is
-**476 forms totalling 19515 bytes from a 77-byte seed**.
+the work of a set. The size of the set is measured and logged rather than
+capped: over four thousand generated strings built out of nothing but escape
+fragments, the widest set observed is **476 forms totalling 19515 bytes from a
+77-byte seed**.
+
+**The same bound binds MEMORY, and its name does not say so.** `sweepForms`
+RETAINS every candidate, and `credentialIn` holds the whole set while it
+iterates. What stood here and in the code was a bound disclosed on bytes
+SCANNED while it silently set a ceiling on bytes LIVE — the same defect as an
+undisclosed ceiling. Measured, for ONE artifact at the 4 MiB cap: pure filler
+retains 4194304 bytes in 1 form; filler ending in `%2B%25&#0\\&#1114111+`
+retains **209714969 bytes in 50 forms in 0.18 s**; the worst of 120 generated
+tails retains **239072831 bytes in 57 forms**. So a 4 MiB artifact can hold
+**200 MiB live**. The ceiling is arithmetic —
+`codedSweepWorkBytes + L × (codedSweepStepReadings + 1)`, 336 MiB at the
+artifact cap — and BOTH of its premises are now asserted rather than assumed by
+`TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained`: that no decoder
+grows a form, and that one step returns at most 19 readings. The old assertion
+in that test — that the returned set fits inside `codedSweepWorkBytes` — was
+**true by construction for every possible input** and is DELETED: with a decoder
+deliberately made to grow forms, the widest set the corpus produced was 19644
+bytes against a 268435456-byte bound, so it reported pass on a live defect. The
+construction argument now lives in `codedSweepWorkBytes`' doc, where it belongs.
+
+**`sweepOnly`'s seed is not capped by anything.** Driver-authored strings —
+`AuthOutcome.Detail`, `LandedPath`, an artifact `Name` — go through the same
+`credentialIn` with no length limit, so `L` is whatever the driver returns.
+Measured: a 64 MiB seed retains **1140850632 bytes (1.06 GiB) in 1.1 s**, four
+times `codedSweepWorkBytes`, because at that length the traversal affords one
+step and the readings of that step are charged after the fact. Not capped on
+purpose: a length past which a string is NOT swept is a credential-shaped hole,
+and the driver is in-process code an operator supplies.
 
 **The diagonal of the reading cross-product.** A step asks
 `decodeEntitiesReading` for the k-th reading of the whole string, so every
@@ -1947,9 +1974,22 @@ loudly if it ever closes, so this list cannot go stale in the other direction
 either. Closing it costs the full cross-product, exponential in the number of
 ambiguous sites.
 
-Neither is on the U-list, because neither needs an edit anyone is forbidden to
-make — they are a CPU bound and a combinatorial bound, each with a stated
-consequence, and the provenance rule is what covers the consequence.
+**The same diagonal on the `'+'` axis.** `plusToSpace` is a WHOLE-STRING pass,
+so every `'+'` present in one form takes the same reading in the form that pass
+produces. This one was **missing from every residual list** while
+`sweepForms`' doc described the `'+'` branch as expressing what a per-pipeline
+flag could not — true of DEPTH, false of the same-depth cross-product. **Shown
+with a fixture**: the secret `"a b+c"` inside `pw=a+b+c` needs the first `'+'`
+read as a space and the second as a literal plus, and the sweep does not find
+it, while `"a b c"` and `"a+b+c"` in the same bytes are both found and
+`"A B+C"` inside `A+B%2BC` — two `'+'` signs at different DEPTHS — is found
+too. `TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual` pins it
+in both directions.
+
+None of these is on the U-list, because none needs an edit anyone is forbidden
+to make — they are a CPU bound, a memory bound and two combinatorial bounds,
+each with a stated consequence, and the provenance rule is what covers the
+consequence.
 
 ---
 
