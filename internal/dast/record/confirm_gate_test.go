@@ -3506,8 +3506,8 @@ func TestAssertNotSilentlyCleanSeesUnconfirmedAndRefusedAndNotOnlyOne(t *testing
 // — it returned non-zero zero times.
 //
 // THE REASON THIS PARAGRAPH USED TO GIVE FOR THAT WAS FALSE IN BOTH HALVES,
-// AND IT WAS THE SECOND COPY OF A SENTENCE CORRECTED 1,331 LINES AWAY IN
-// confirm_gate.go WHILE THIS ONE STOOD. The withdrawn wording is quoted and
+// AND IT WAS THE SECOND COPY OF A SENTENCE CORRECTED IN confirm_gate.go WHILE
+// THIS ONE STOOD. The withdrawn wording is quoted and
 // refuted once, at assertRejectionIsDecisive, and it is entry 1 of
 // withdrawnPhrasings so that neither copy can be corrected without the other:
 // TestNoWithdrawnPhrasingSurvivesAsLiveProse fails on the wording itself, in
@@ -7957,14 +7957,23 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // confirm_gate.go or confirm_gate_test.go", which overstates the window in
 // two directions and MEASURING IT IS THE ONLY WAY TO KNOW BY HOW MUCH:
 //
-//	176 of the two files' 5,964 comment lines carry a comparison operator in
+//	184 of the two files' 6,211 comment NODES carry a comparison operator in
 //	their RAW text. The scanner counts 40 of them, inside 20 claim
-//	paragraphs. The other 136 are not seen, and NONE of them is unexplained:
-//	118 are banner rules, where a line of equals signs is literally a row of
+//	paragraphs. The other 144 are not seen, and NONE of them is unexplained:
+//	126 are banner rules, where a line of equals signs is literally a row of
 //	`==` and commentProse blanks it, and 18 are operators inside backticks or
 //	double quotes, which commentProse removes. There is no third cause.
 //	The counts are produced, not remembered, by
 //	the_window_is_exactly_what_commentProse_leaves.
+//
+// THE UNIT IS THE ast.Comment NODE, AND THIS PARAGRAPH USED TO CALL IT A LINE
+// WHILE PRINTING THE NODE COUNT. The two are not the same number. Every `//`
+// comment is one node on one line, so for almost all of these two files they
+// agree — but the two block comments in confirm_gate_test.go share a SINGLE
+// line, so the nodes run one ahead of the physical lines they sit on: 6,211
+// against 6,210. A count reported under the wrong unit is the same defect this
+// whole section was built to catch, one unit further down, so both figures are
+// now measured and both are pinned.
 //
 // A BLANKED LINE ALSO SPLITS A PARAGRAPH, which is why the banner arm is
 // worth stating rather than waving at: a rule of equals signs between a claim
@@ -7973,9 +7982,13 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // direction is the one the corrected sentence names — an operator that does
 // not survive commentProse is an operator this guard never had.
 //
-// IT ALSO READS BLOCK COMMENTS, not only `//` ones; there are 2 such lines in
-// the two files. The old sentence excluded them in prose while the code read
-// them, which is the smaller half of the same error.
+// IT ALSO READS BLOCK COMMENTS, not only `//` ones. There are exactly 2 of
+// them in the two files and they occupy ONE line between them: the two inline
+// argument labels in the call decide's precedence table is driven through. An
+// older sentence excluded block comments in prose while the code read them,
+// and the sentence that corrected it called them "2 such lines" — the same
+// node-for-line substitution, on the smallest population in the file, where it
+// is off by a factor of two.
 //
 // IT DOES NOT SEE, and each of these is a real hole:
 //
@@ -8765,7 +8778,16 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			quoted  = "the operator is inside backticks or double quotes"
 			unknown = "NO CAUSE THIS TEST KNOWS ABOUT"
 		)
-		var lines, block, rawOps, seen int
+		// NODES AND LINES ARE DIFFERENT UNITS AND THIS TEST USED TO
+		// REPORT ONE UNDER THE OTHER'S NAME. Every `//` comment is one
+		// ast.Comment on one line, so for nearly all of this package the
+		// two agree — but a block comment is ONE node however many lines
+		// it spans, and two of them can share a line, which is exactly
+		// what confirm_gate_test.go does with the two inline argument
+		// labels in decide's precedence table. So both are counted, and
+		// both are pinned.
+		var nodes, block, rawOps, seen int
+		physical, blockPhysical := map[string]bool{}, map[string]bool{}
 		cause := map[string]int{}
 		for name, f := range files {
 			if !owned[name] {
@@ -8784,9 +8806,19 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			}
 			for _, g := range f.Comments {
 				for _, c := range g.List {
-					lines++
-					if !strings.HasPrefix(c.Text, "//") {
+					nodes++
+					lo := fset.Position(c.Pos()).Line
+					hi := fset.Position(c.End()).Line
+					isBlock := !strings.HasPrefix(c.Text, "//")
+					if isBlock {
 						block++
+					}
+					for n := lo; n <= hi; n++ {
+						key := fmt.Sprintf("%s:%d", name, n)
+						physical[key] = true
+						if isBlock {
+							blockPhysical[key] = true
+						}
 					}
 					raw := strings.TrimPrefix(strings.TrimSpace(c.Text), "//")
 					if !relationOp.MatchString(raw) {
@@ -8812,19 +8844,22 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				}
 			}
 		}
-		t.Logf("%d comment lines (%d of them block comments); %d carry an operator "+
-			"in raw text; %d are scanned; unseen by cause: %v",
-			lines, block, rawOps, seen, cause)
+		t.Logf("%d comment nodes on %d physical lines (%d block-comment nodes "+
+			"on %d line(s)); %d nodes carry an operator in raw text; "+
+			"%d are scanned; unseen by cause: %v",
+			nodes, len(physical), block, len(blockPhysical), rawOps, seen, cause)
 		for _, tc := range []struct {
 			what string
 			got  int
 			want int
 		}{
-			{"comment lines in the two owned files", lines, 5964},
-			{"block-comment lines among them", block, 2},
-			{"lines whose RAW text carries an operator", rawOps, 176},
+			{"comment NODES in the two owned files", nodes, 6211},
+			{"physical LINES those nodes occupy", len(physical), 6210},
+			{"block-comment NODES among them", block, 2},
+			{"physical lines those block comments occupy", len(blockPhysical), 1},
+			{"comment NODES whose RAW text carries an operator", rawOps, 184},
 			{"of those, lines the scan opens", seen, 40},
-			{"unseen because " + banners, cause[banners], 118},
+			{"unseen because " + banners, cause[banners], 126},
 			{"unseen because " + quoted, cause[quoted], 18},
 			{"unseen for any other reason", cause[unknown], 0},
 		} {
@@ -9379,10 +9414,19 @@ func declaredIdentsInPackage(t *testing.T, fset *token.FileSet) (map[string]bool
 // consecutive rounds were each sent to correct a false sentence and each left
 // exactly one behind, and the fifth left THE SAME ONE: the wording in entry 1
 // below was corrected at length in confirm_gate.go and stood verbatim, at a
-// different line wrapping, 1,331 lines away in confirm_gate_test.go. A false
-// sentence that exists in two files was being half-corrected, and a human
-// sweep cannot stop that, because the second copy is only findable by
-// somebody who already knows about the first.
+// different line wrapping, in confirm_gate_test.go. A false sentence that
+// exists in two files was being half-corrected, and a human sweep cannot stop
+// that, because the second copy is only findable by somebody who already knows
+// about the first.
+//
+// THIS PARAGRAPH USED TO PUT THE TWO COPIES "1,331 lines away" FROM EACH
+// OTHER, and so did the paragraph on
+// TestARejectionThatCouldNotHaveDisprovedAnythingIsRefused. It was not a
+// measurement of anything: the copies are in DIFFERENT FILES, and a line count
+// between two files does not reproduce, so neither figure could be checked by
+// the reader it was written for. What does reproduce is the part that mattered
+// — the two copies were wrapped differently — and cases 1 and 2 below are the
+// two wrappings, run on every invocation.
 //
 // The registry turns that into a mechanical fact: once a wording is entered
 // here it cannot be asserted anywhere in this package again, so correcting
@@ -9444,6 +9488,22 @@ var withdrawnPhrasings = []withdrawnPhrasing{
 //	OUTSIDE   the wording appears in the file but in no comment — a string
 //	          literal. It FAILS: a refusal message restating a withdrawn
 //	          sentence is the same defect wearing a different hat.
+//
+// THE REGISTRY'S OWN DECLARATION IS EXEMPT FROM BOTH ARMS, and it has to be,
+// because withdrawnPhrasings holds every withdrawn wording as a string
+// literal and the OUTSIDE arm reads string literals. The two entries that
+// shipped first escaped only because their text is written as a line-wrapped
+// concatenation, which no rule anywhere required — `" + "` lands in the middle
+// of the sentence and the needle stops matching. AN AUTHOR WRITING ENTRY THREE
+// AS ONE STRING LITERAL WOULD HAVE TURNED THIS TEST RED ON ITS OWN CONTENTS,
+// with a message telling them a refusal message was restating a retracted
+// claim. That was a precondition dressed up as a weakness, so it is a
+// precondition no more: scanWithdrawn locates the withdrawnPhrasings
+// declaration in whatever file it is reading and blanks that byte range out of
+// the raw arm, and skips comments inside it. The registry is the DEFINITION of
+// the withdrawn text and definitions are not assertions. Its doc comment is
+// not exempt — a GenDecl's span starts at the `var` keyword — because a doc
+// comment is prose like any other. Cases 8, 9 and 10 assert all three.
 //
 // Matching is done on COLLAPSED prose: comment markers are replaced by spaces
 // and every run of whitespace becomes one space. That is the whole mechanism,
@@ -9623,6 +9683,41 @@ func TestNoWithdrawnPhrasingSurvivesAsLiveProse(t *testing.T) {
 				"number is not the withdrawn sentence, and a check that fired here " +
 				"would be unusable",
 		},
+		{
+			name: "8_a_registry_entry_written_as_one_unbroken_literal",
+			src: "package p\n" +
+				"type withdrawnPhrasing struct{ text string }\n" +
+				"var withdrawnPhrasings = []withdrawnPhrasing{\n" +
+				"\t{text: \"" + sentence + "\"},\n" +
+				"}\n",
+			why: "THE PRECONDITION, REMOVED. The two shipped entries escape the OUTSIDE " +
+				"arm only because their text happens to be a line-wrapped " +
+				"concatenation; written as one literal, an entry used to report itself " +
+				"as a refusal message restating a retracted claim. The registry is the " +
+				"definition of the wording and is now blanked before the raw arm reads " +
+				"anything",
+		},
+		{
+			name: "9_the_same_literal_in_a_variable_that_is_not_the_registry",
+			src: "package p\n" +
+				"var refusalText = \"" + sentence + "\"\n",
+			wantOutside: 1,
+			why: "THE CONTROL ON CASE 8. What is exempt is the declaration named " +
+				"withdrawnPhrasings, not string literals in general; a refusal message " +
+				"carrying the same sentence is still the defect the comment was",
+		},
+		{
+			name: "10_a_doc_comment_on_the_registry_asserting_the_sentence",
+			src: "package p\n" +
+				"type withdrawnPhrasing struct{ text string }\n" +
+				"\n" +
+				"// " + sentence + "\n" +
+				"var withdrawnPhrasings = []withdrawnPhrasing{}\n",
+			wantLive: 1,
+			why: "THE EXEMPTION STOPS AT THE `var` KEYWORD. A GenDecl's position is its " +
+				"token, so the doc comment above the registry is prose like any other " +
+				"and asserting a withdrawn sentence there still fails",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sfset := token.NewFileSet()
@@ -9694,10 +9789,28 @@ func occurrencesOf(hay, needle string) (total, quoted int) {
 // less everything the comments hold — rather than by walking string literals,
 // so a form of literal nobody thought of still lands somewhere countable
 // instead of vanishing.
+//
+// THE REGISTRY'S OWN DECLARATION IS BLANKED FIRST, from both arms, for the
+// reason the caller's doc gives: withdrawnPhrasings stores each withdrawn
+// wording as a string literal, so without this a registry entry written as one
+// unbroken literal reports itself as a restatement. Blanking is done with
+// spaces so byte offsets keep lining up, and the collapse afterwards folds the
+// run into one space.
 func scanWithdrawn(fset *token.FileSet, f *ast.File, src, needle string) (
 	live []int, quoted, outside int) {
+	span := registryDeclSpan(fset, f, len(src))
+	inSpan := func(p token.Pos) bool {
+		if span == nil {
+			return false
+		}
+		off := fset.Position(p).Offset
+		return off >= span[0] && off < span[1]
+	}
 	inComments := 0
 	for _, g := range f.Comments {
+		if inSpan(g.Pos()) {
+			continue
+		}
 		total, q := occurrencesOf(collapseProse(g.Text()), needle)
 		inComments += total
 		quoted += q
@@ -9705,6 +9818,609 @@ func scanWithdrawn(fset *token.FileSet, f *ast.File, src, needle string) (
 			live = append(live, fset.Position(g.Pos()).Line)
 		}
 	}
-	rawTotal, _ := occurrencesOf(collapseProse(src), needle)
+	raw := src
+	if span != nil {
+		raw = src[:span[0]] + strings.Repeat(" ", span[1]-span[0]) + src[span[1]:]
+	}
+	rawTotal, _ := occurrencesOf(collapseProse(raw), needle)
 	return live, quoted, rawTotal - inComments
+}
+
+// registryDeclSpan is the byte range of the withdrawnPhrasings declaration in
+// f, or nil if this file does not declare it.
+//
+// The range runs from the `var` keyword, NOT from the doc comment above it: a
+// GenDecl's own position is its token, and exempting the doc would exempt the
+// one part of the registry that is prose.
+func registryDeclSpan(fset *token.FileSet, f *ast.File, srcLen int) []int {
+	for _, d := range f.Decls {
+		g, ok := d.(*ast.GenDecl)
+		if !ok || g.Tok != token.VAR {
+			continue
+		}
+		for _, sp := range g.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, n := range vs.Names {
+				if n.Name != "withdrawnPhrasings" {
+					continue
+				}
+				lo := fset.Position(g.Pos()).Offset
+				hi := fset.Position(g.End()).Offset
+				if lo < 0 || hi > srcLen || hi <= lo {
+					return nil
+				}
+				return []int{lo, hi}
+			}
+		}
+	}
+	return nil
+}
+
+// ===========================================================================
+// D.32 — A NAME IN PROSE MUST RESOLVE TO A DECLARATION
+// ===========================================================================
+
+// proseNameException is one camel-case name this package's prose uses on
+// purpose that NOTHING IN THIS MODULE DECLARES OR SPELLS, together with the
+// reason it is allowed to stand.
+//
+// THE REGISTRY IS AN ALLOWLIST AND THAT IS THE WHOLE DIFFERENCE FROM THE ONE
+// ABOVE IT. withdrawnPhrasings is a denylist keyed on wording: it makes a
+// half-corrected sentence impossible and it finds nothing new, because a
+// paraphrase is invisible to it. Six rounds each corrected the sentence they
+// were pointed at and left one behind, and the sixth left a false ATTRIBUTION
+// rather than a false wording — a doc crediting a constructor that has never
+// existed. The registry behaved exactly as designed and the defect walked
+// past it.
+//
+// A name is not a wording. It either resolves to something a reader can go and
+// read or it does not, and that question needs no list of sentences somebody
+// remembered to write down. So the rule is the general one — every camel-case
+// name in these two files' comments must resolve — and the exceptions are
+// enumerated here, where a new dangling name fails by default and a deliberate
+// one is a visible, reviewed entry.
+type proseNameException struct {
+	// name is the token as it appears in prose.
+	name string
+	// why is the reason a reader will not find it in the tree. An entry
+	// without one is refused: the registry is a review record, not a
+	// silencer.
+	why string
+}
+
+// proseNamesWithNoDeclaration is every such name in confirm_gate.go and
+// confirm_gate_test.go, grouped by why the tree does not hold it.
+//
+// EVERY ENTRY IS PINNED IN BOTH DIRECTIONS by
+// TestEveryNameInProseResolvesToADeclaration: an entry whose name has stopped
+// appearing in the two files is a stale exemption and fails, and an entry
+// whose name the module has since declared is an exemption that now hides a
+// real resolution and fails too. Neither can go quietly vacuous.
+var proseNamesWithNoDeclaration = []proseNameException{
+	// ----------------------------------------------------------------
+	// NAMES THIS PACKAGE ONCE HAD, OR NEVER HAD. These four are the
+	// reason the sweep exists; every other group below is the tokenizer
+	// being honest about what it cannot tell apart.
+	// ----------------------------------------------------------------
+	{
+		name: "newEvidenceRef",
+		why: "NEVER DECLARED, ANYWHERE, EVER — and it is the defect this whole " +
+			"guard was built for. Two paragraphs credited an EvidenceRef " +
+			"constructor by that name. One was withdrawn at length and the other " +
+			"stood underneath the withdrawal, in live prose, for six rounds. Both " +
+			"surviving mentions now narrate a name that does not exist, which is " +
+			"the only honest way to say so, and entry 2 of withdrawnPhrasings " +
+			"keeps the retracted sentence itself from coming back",
+	},
+	{
+		name: "spanTruncatedFrom",
+		why: "DELETED BY RENAME. It is the field spanOverBroadBytes replaced, and " +
+			"the rename was the fix rather than a tidy-up — truncating an " +
+			"over-broad match still inlines a raw body prefix. Both mentions are " +
+			"about the removal. A reader who goes looking for it should find " +
+			"nothing, and finding nothing is the point",
+	},
+	{
+		name: "IndecisiveRejectionCount",
+		why: "DELETED METHOD. Ledger carried it, a sweep of ConfirmAll measured it " +
+			"unreachable from production, and assertRejectionIsDecisive states the " +
+			"same invariant where it can fire. All three mentions are about its " +
+			"replacement",
+	},
+	{
+		name: "defensiveStatuses",
+		why: "DELETED VARIABLE. It was the four-status denylist that the " +
+			"application-answered allowlist inverted, and it is named once, in the " +
+			"paragraph explaining the inversion",
+	},
+
+	// ----------------------------------------------------------------
+	// SYNTHETIC NAMES — invented for a worked example or a template, and
+	// declared nowhere on purpose.
+	// ----------------------------------------------------------------
+	{
+		name: "TestY",
+		why: "SYNTHETIC. The measurement half of the citation template, standing " +
+			"for whatever test an author is about to name. A real test called TestY " +
+			"would make the template unreadable",
+	},
+	{
+		name: "zzCarrier",
+		why: "SYNTHETIC. A two-field struct in the worked example of how the " +
+			"closure walker marks a type it has already seen. It exists to be " +
+			"walked in prose and nowhere else",
+	},
+	{
+		name: "AloneAreACleanScan",
+		why: "A MISSPELLING, QUOTED SO THE CORRECTION IS CHECKABLE. It is the tail " +
+			"of a test name as a stale plan line spells it; no test has ever been " +
+			"declared with that ending",
+	},
+
+	// ----------------------------------------------------------------
+	// FRAGMENTS OF SOMETHING LARGER. The tokenizer splits on word
+	// boundaries, and these are pieces of a command line or of a pattern
+	// rather than names anybody wrote.
+	// ----------------------------------------------------------------
+	{
+		name: "BenignCorpus",
+		why: "A FRAGMENT OF A COMMAND LINE. It is one alternative inside the -bench " +
+			"regex of the reproduction command for the benchmark figures. The " +
+			"declared names that regex selects, BenchmarkBenignCorpusBuild and " +
+			"buildBenignCorpus, both resolve on their own lines",
+	},
+	{
+		name: "RefuseOverBroad",
+		why: "A FRAGMENT OF THE SAME COMMAND LINE, selecting " +
+			"BenchmarkRefuseOverBroadPattern, which resolves on the line above it",
+	},
+	{
+		name: "zA",
+		why: "A FRAGMENT OF A CHARACTER CLASS. It is the middle of `[a-zA-Z]` and " +
+			"of `[0-9a-zA-Z]`, which this file quotes as regex specimens on nearly " +
+			"every page. A tokenizer cannot tell a specimen from a name, and this " +
+			"is the shape of that cost",
+	},
+	{
+		name: "eyJ",
+		why: "A LITERAL, NOT A NAME. The three bytes every JWT begins with, and the " +
+			"literal footing of the pattern the over-broad rule is worked through",
+	},
+
+	// ----------------------------------------------------------------
+	// WORDS THAT ARE NOT NAMES AT ALL, but that carry an internal
+	// capital.
+	// ----------------------------------------------------------------
+	{
+		name: "KiB",
+		why:  "A UNIT. Binary kibibytes, in the body-cap and corpus arithmetic",
+	},
+	{
+		name: "MiB",
+		why:  "A UNIT. Binary mebibytes, in the same arithmetic",
+	},
+	{
+		name: "BASE64URL",
+		why: "A SHOUTED WORD, not a name. The digit-then-capital inside it reads to " +
+			"camelCased as a name boundary, which is the one place that rule is " +
+			"looser than the English it is trying to skip",
+	},
+	{
+		name: "GitHub",
+		why:  "A PROPER NOUN, in the provenance of a real-world secret pattern",
+	},
+	{
+		name: "GitLab",
+		why:  "A PROPER NOUN, in the same list",
+	},
+	{
+		name: "OpenAI",
+		why:  "A PROPER NOUN, in the same list",
+	},
+	{
+		name: "ModSecurity",
+		why: "A PROPER NOUN. The WAF that ships the two configurable block statuses " +
+			"the answered-as-application allowlist has to reason about",
+	},
+}
+
+// TestEveryNameInProseResolvesToADeclaration is ruling 18, mechanised.
+//
+// ===========================================================================
+// WHAT IT DOES
+// ===========================================================================
+//
+// It reads every comment in confirm_gate.go and confirm_gate_test.go, pulls
+// out every camel-case token, and requires each one to be a name this module
+// actually holds. A token that is not, and is not registered in
+// proseNamesWithNoDeclaration, FAILS.
+//
+// THE UNIVERSE IS DECLARED-OR-SPELLED, and the second half is a deliberate
+// widening with a measured price. Declared alone is every function, method,
+// type, constant, variable and field name in the module. That set does not
+// hold OpAlternate, SelectorExpr, MatchString or WriteString, all of which
+// this file's prose names correctly and a reader can go and read: they are
+// declared in the standard library and SPELLED by this module's code. So the
+// universe is both, and a name in prose must be a name the module's own syntax
+// tree spells somewhere. moduleNameUniverse returns the two sets separately so
+// the widening is counted on every run rather than assumed.
+//
+// THE TOKEN RULE IS A LOWER-TO-UPPER TRANSITION and nothing else. bodyHash has
+// one, hash does not, MEASURED does not, and Finding does not either. That
+// last one is a real hole rather than an oversight and it is asserted below: a
+// single capitalised word is a sentence opener as often as it is a type, and a
+// sweep that read them would fire on the first word of half the paragraphs in
+// this file. Underscores are separators rather than name characters, so a
+// subtest name like the_window_is_exactly_what_commentProse_leaves contributes
+// commentProse and a pile of English.
+//
+// ===========================================================================
+// WHAT IT CANNOT SEE — MEASURED, NOT CONCEDED
+// ===========================================================================
+//
+// Each of these is driven against a synthetic source by the reach table below,
+// so the disclosure is produced rather than remembered.
+//
+//	A FALSE ATTRIBUTION TO A NAME THAT DOES EXIST. Rewrite the defect this
+//	    guard was built for as "e came from NewSignature" and it passes
+//	    clean: NewSignature is a real declaration in this very file, and
+//	    nothing here reads what it does. This is the ceiling on the whole
+//	    idea. What the sweep buys is that the name a paragraph credits is now
+//	    a name a reader can go and check, which is where checking has to
+//	    start. Case 4.
+//	A FALSE ATTRIBUTION TO A SINGLE-WORD NAME. "came from decide", "came
+//	    from Finding" — no case boundary, no token, no check. Case 5.
+//	A FALSE ATTRIBUTION IN ENGLISH. "the value came from the constructor"
+//	    names nothing at all, so there is nothing to resolve. Case 6.
+//	A REGISTERED NAME IN A BRAND NEW FALSE SENTENCE. Once newEvidenceRef is
+//	    an entry in the registry it may be written anywhere in these two
+//	    files, including into a fresh claim that it constructs something. The
+//	    registry exempts the NAME, not the sentence; the sentence is
+//	    withdrawnPhrasings' job, and only for wordings somebody has entered.
+//	A NAME IN A STRING LITERAL. Comments only. A refusal message naming a
+//	    dead function is out of reach here, where the withdrawn-phrasing scan
+//	    would see it. Case 7.
+//	ANY FILE OTHER THAN THE TWO. Package-wide would be free to read, but
+//	    coverage.go and coverage_test.go are outside this packet's write
+//	    scope, and a red test nobody may fix is a red test somebody disables.
+//	    Widening it is one entry in owned below.
+//
+// A NAME INSIDE A QUOTATION IS NOT EXEMPT, unlike the withdrawn-phrasing scan.
+// A retracted sentence quoted in order to be refuted is history, but a name
+// quoted out of one is still a name a reader will go looking for, so the
+// registry is where a quoted dead name gets its disposition. Case 3 asserts
+// it, and both quoted mentions of newEvidenceRef are registered for exactly
+// that reason.
+func TestEveryNameInProseResolvesToADeclaration(t *testing.T) {
+	owned := []string{"confirm_gate.go", "confirm_gate_test.go"}
+
+	declared, spelled := moduleNameUniverse(t)
+	universe := map[string]bool{}
+	for n := range declared {
+		universe[n] = true
+	}
+	widened := 0
+	for n := range spelled {
+		if !universe[n] {
+			universe[n] = true
+			widened++
+		}
+	}
+	if widened == 0 {
+		t.Fatal("the spelled half of the universe adds nothing, so the walk is " +
+			"collecting only declarations and the disclosure above describes a " +
+			"widening that is not happening")
+	}
+	t.Logf("module universe: %d declared, %d spelled-only, %d total",
+		len(declared), widened, len(universe))
+
+	// The positive control on the universe, in both halves. A walk that
+	// silently returned an empty or partial set would exempt everything.
+	for _, must := range []string{
+		"matchQuotesMoreThanItSpells", "spanOverBroadBytes", "buildBenignCorpus",
+	} {
+		if !declared[must] {
+			t.Fatalf("the module walk cannot see the declaration of %s, so it is "+
+				"reading the wrong tree and every name in prose would resolve for "+
+				"the wrong reason", must)
+		}
+	}
+	for _, must := range []string{"OpAlternate", "MatchString"} {
+		if declared[must] || !spelled[must] {
+			t.Fatalf("%s is supposed to be spelled by this module and declared "+
+				"outside it; declared=%v spelled=%v. The widening this test "+
+				"discloses is not the widening it is doing",
+				must, declared[must], spelled[must])
+		}
+	}
+
+	registered := map[string]string{}
+	for i, e := range proseNamesWithNoDeclaration {
+		if e.name == "" || e.why == "" {
+			t.Fatalf("registry entry %d has an empty name or an empty reason. An "+
+				"exemption nobody justified is a silencer", i+1)
+		}
+		if _, dup := registered[e.name]; dup {
+			t.Fatalf("registry entry %d repeats %s; two reasons for one name means "+
+				"one of them is not being read", i+1, e.name)
+		}
+		if universe[e.name] {
+			t.Errorf("registry entry %d exempts %s, and this module now declares or "+
+				"spells that name. The exemption is hiding a real resolution: delete "+
+				"the entry.\nIt was registered because: %s", i+1, e.name, e.why)
+		}
+		registered[e.name] = e.why
+	}
+
+	seen := map[string]int{}
+	total := 0
+	for _, name := range owned {
+		for tok, lines := range proseNamesIn(t, name, "") {
+			total += len(lines)
+			seen[tok] += len(lines)
+			if universe[tok] {
+				continue
+			}
+			if _, ok := registered[tok]; ok {
+				continue
+			}
+			t.Errorf("%s:%v names %s in a comment, and nothing in this module "+
+				"declares or spells it.\n"+
+				"A paragraph crediting a mechanism a reader cannot go and read is "+
+				"worse than one crediting nothing, because it stops them looking. "+
+				"Either name what the code actually does, or enter %s in "+
+				"proseNamesWithNoDeclaration with the reason the tree does not hold "+
+				"it.", name, lines, tok, tok)
+		}
+	}
+	if total < 500 {
+		t.Fatalf("only %d camel-case name occurrences were found across the two "+
+			"files; these files name their own machinery on nearly every page and "+
+			"a sweep finding this few is not reading them", total)
+	}
+	for name, why := range registered {
+		if seen[name] == 0 {
+			t.Errorf("%s is registered as a name with no declaration and it does not "+
+				"appear in either owned file any more. A stale exemption is one "+
+				"nobody can review: delete it.\nIts reason was: %s", name, why)
+		}
+	}
+	t.Logf("%d camel-case name occurrences across %d files; %d distinct; "+
+		"%d registered exceptions", total, len(owned), len(seen), len(registered))
+
+	// ===================================================================
+	// THE MECHANISM AND ITS REACH, DRIVEN. Every line of the disclosure
+	// above is a claim about this scan, so each is put to a synthetic
+	// source rather than trusted: the catch first, then every hole under
+	// it. wantDangling is the set of camel-case names in the source that
+	// the universe does not hold.
+	// ===================================================================
+	for _, tc := range []struct {
+		name         string
+		src          string
+		wantDangling []string
+		why          string
+	}{
+		{
+			name: "1_the_attribution_this_guard_was_built_for",
+			src: "package p\n" +
+				"// Constructed reports whether e came from newEvidenceRef.\n" +
+				"func f() {}\n",
+			wantDangling: []string{"newEvidenceRef"},
+			why: "THE DEFECT, REPLANTED. Six rounds of human sweeping walked past " +
+				"this sentence; the scan takes it every time, and it knows nothing " +
+				"about evidence, constructors or this package",
+		},
+		{
+			name: "2_a_fresh_dangling_name_nobody_has_ever_seen",
+			src: "package p\n" +
+				"// The bound is re-checked by assertSpanFootingIsSane on every\n" +
+				"// Finding the gate assembles.\n" +
+				"func f() {}\n",
+			wantDangling: []string{"assertSpanFootingIsSane"},
+			why: "THE POINT OF AN ALLOWLIST. This name was invented for this case and " +
+				"no denylist could have held it. withdrawnPhrasings is keyed on " +
+				"wording and would not have blinked",
+		},
+		{
+			name: "3_a_dangling_name_inside_a_quotation",
+			src: "package p\n" +
+				"// The withdrawn sentence read \"and newEvidenceRef bounds its\n" +
+				"// span\", which credited a function that does not exist.\n" +
+				"func f() {}\n",
+			wantDangling: []string{"newEvidenceRef"},
+			why: "NO QUOTATION EXEMPTION, asserted rather than described. A reader " +
+				"chasing a name does not stop at the quotation marks, so the registry " +
+				"is where a quoted dead name gets its disposition",
+		},
+		{
+			name: "4_the_same_claim_credited_to_a_name_that_exists",
+			src: "package p\n" +
+				"// Constructed reports whether e came from NewSignature.\n" +
+				"func f() {}\n",
+			why: "THE CEILING, MEASURED. Every bit as false as case 1 — Constructed " +
+				"reads two fields and NewSignature builds signatures — and clean " +
+				"here, because the name resolves. This scan checks that a citation " +
+				"can be followed, never that it is true",
+		},
+		{
+			name: "5_the_same_claim_credited_to_a_single_word_name",
+			src: "package p\n" +
+				"// The span bound is applied by decide rather than by extractSpan.\n" +
+				"func f() {}\n",
+			why: "THE TOKEN RULE'S HOLE. decide is a real declaration and the sentence " +
+				"is false about it, and a one-word name has no case boundary, so " +
+				"nothing here would have looked even if it had been invented",
+		},
+		{
+			name: "6_the_same_claim_with_no_name_in_it_at_all",
+			src: "package p\n" +
+				"// The value can only have come from the constructor, which is\n" +
+				"// what bounds it.\n" +
+				"func f() {}\n",
+			why: "PROSE THAT NAMES NOTHING RESOLVES NOTHING. This is the shape the " +
+				"withdrawn sentence had before somebody gave it a name, and it is " +
+				"invisible to every mechanical check in this file",
+		},
+		{
+			name: "7_a_name_in_a_string_literal_rather_than_a_comment",
+			src: "package p\n" +
+				"func f() string { return \"built by newEvidenceRef\" }\n",
+			why: "COMMENTS ONLY. The withdrawn-phrasing scan reads literals by " +
+				"difference and this one does not, so a refusal message naming a dead " +
+				"function is out of reach here",
+		},
+		{
+			name: "8_the_control",
+			src: "package p\n" +
+				"// extractSpan bounds the match and matchQuotesMoreThanItSpells\n" +
+				"// decides whether spanOverBroadBytes is set.\n" +
+				"func f() {}\n",
+			why: "three real names in one sentence. A scan that fired here would be " +
+				"unusable and would be switched off within a round",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := map[string]bool{}
+			for _, n := range tc.wantDangling {
+				want[n] = true
+			}
+			got := map[string]bool{}
+			for tok := range proseNamesIn(t, "synthetic.go", tc.src) {
+				if !universe[tok] {
+					got[tok] = true
+				}
+			}
+			for n := range want {
+				if !got[n] {
+					t.Errorf("the scan did not report %s as dangling. %s\nsource:\n%s",
+						n, tc.why, tc.src)
+				}
+			}
+			for n := range got {
+				if !want[n] {
+					t.Errorf("the scan reported %s as dangling and this case expects "+
+						"nothing of the sort. %s\nsource:\n%s", n, tc.why, tc.src)
+				}
+			}
+		})
+	}
+}
+
+// camelWord is an identifier-shaped run. Underscores are NOT part of one: a
+// subtest name is words joined by them, and splitting there is what lets a
+// mention of the_window_is_exactly_what_commentProse_leaves resolve
+// commentProse instead of failing on the whole token.
+var camelWord = regexp.MustCompile(`[A-Za-z][A-Za-z0-9]*`)
+
+// camelCased is the lower-to-upper transition that separates a NAME from a
+// word. See TestEveryNameInProseResolvesToADeclaration for what it costs at
+// each end.
+var camelCased = regexp.MustCompile(`[a-z0-9][A-Z]`)
+
+// camelNamesInComment is every camel-case token in one comment's text.
+func camelNamesInComment(text string) []string {
+	var out []string
+	for _, w := range camelWord.FindAllString(text, -1) {
+		if camelCased.MatchString(w) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// proseNamesIn maps every camel-case name in filename's COMMENTS to the lines
+// carrying it. An empty src means read the file from disk; a non-empty one is
+// a synthetic source parsed under that name.
+func proseNamesIn(t *testing.T, filename, src string) map[string][]int {
+	t.Helper()
+	pfset := token.NewFileSet()
+	var from any
+	if src != "" {
+		from = src
+	}
+	f, err := parser.ParseFile(pfset, filename, from,
+		parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing %s for the names in its prose: %v", filename, err)
+	}
+	out := map[string][]int{}
+	for _, g := range f.Comments {
+		for _, c := range g.List {
+			line := pfset.Position(c.Pos()).Line
+			for _, w := range camelNamesInComment(c.Text) {
+				out[w] = append(out[w], line)
+			}
+		}
+	}
+	return out
+}
+
+// moduleNameUniverse is every name this module DECLARES and every name its
+// code SPELLS, returned separately so the second set's contribution can be
+// counted rather than assumed.
+//
+// Declarations are functions, methods, types, constants, variables and fields
+// — the same shapes declaredIdentsInPackage collects, module-wide instead of
+// package-wide. Spellings are every ast.Ident node, which is what brings in a
+// standard-library name this package's code reaches through a selector.
+//
+// LOCAL BINDINGS ARE IN THE SPELLED SET, since a short variable declaration
+// carries an ast.Ident like any other. That is a widening rather than a
+// decision, and it is why the spelled half is disclosed and counted.
+func moduleNameUniverse(t *testing.T) (declared, spelled map[string]bool) {
+	t.Helper()
+	declared, spelled = map[string]bool{}, map[string]bool{}
+	root := filepath.Join("..", "..", "..")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") {
+			return nil
+		}
+		mfset := token.NewFileSet()
+		f, perr := parser.ParseFile(mfset, path, nil, parser.SkipObjectResolution)
+		if perr != nil {
+			return fmt.Errorf("parsing %s for the names it holds: %w", path, perr)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.FuncDecl:
+				declared[v.Name.Name] = true
+			case *ast.ValueSpec:
+				for _, id := range v.Names {
+					declared[id.Name] = true
+				}
+			case *ast.TypeSpec:
+				declared[v.Name.Name] = true
+			case *ast.Field:
+				for _, id := range v.Names {
+					declared[id.Name] = true
+				}
+			case *ast.Ident:
+				spelled[v.Name] = true
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the module for the names it holds: %v", err)
+	}
+	if len(declared) < 1000 {
+		t.Fatalf("the module walk found %d declared names, which is not this "+
+			"module. Every name in prose would resolve, or fail, for the wrong "+
+			"reason", len(declared))
+	}
+	return declared, spelled
 }

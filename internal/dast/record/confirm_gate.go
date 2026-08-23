@@ -203,36 +203,49 @@
 // research/23-dast-signal-sources.md Risk #2.
 //
 // ===========================================================================
-// GATE 3: regexp/syntax IS NOT ON inertImports, AND THIS FILE IMPORTS IT
+// GATE 3: regexp/syntax IS ON inertImports, AND THIS IS THE REVIEW RECORD
 // ===========================================================================
 //
 // refuseOverBroadPattern decides over-broadness on the PARSED pattern, which
-// needs regexp/syntax. That path is not on gate 3's inert allowlist in
-// internal/dast/authz/egress_chokepoint_test.go, so
-// TestGate3NoSocketIsConstructedOutsideTheKernel FAILS on this file and on its
-// test — by design, because gate 3 is an allowlist and the failure mode of a
-// new import is a red build rather than a silent widening:
+// needs regexp/syntax. Gate 3 is an allowlist, so that import turned the build
+// RED the moment it landed -- which is the review the gate exists to force.
 //
-//	gate03 refused (gate03.socket_constructed_inside_dast_outside_kernel):
-//	2 socket construction(s) inside the DAST tree but outside .../dast/authz.
-//	  internal/dast/record/confirm_gate.go import "regexp/syntax"
-//	  internal/dast/record/confirm_gate_test.go import "regexp/syntax"
+// THE WIDENING WAS MADE, and this paragraph is what a reviewer reads instead of
+// re-deriving it. The line is at internal/dast/authz/egress_chokepoint_test.go
+// in inertImports, added by the orchestrator on review rather than by the
+// packet that needed it, because a packet that widens the allowlist in the same
+// diff that needs it has reviewed itself. Gate 3 is green:
 //
-// (Line numbers are omitted on purpose: they move with every edit above, and a
-// citation that rots is worse than one a reader has to grep for.)
+//	gate 3: 110 files scanned, 10 egress site(s), all inside the kernel or
+//	on the allowlist
 //
-// THE EDIT IS ONE LINE AND IS NOT MADE HERE. Widening that allowlist is the
-// review gate 3 exists to force, and a packet that widens it in the same diff
-// that needs it has reviewed itself. It is reported to the orchestrator, the
-// same way encoding/base64 was in internal/dast/inventory/auth_helper.go.
+// THE SENTENCES THIS REPLACED WERE FALSE IN FOUR PLACES, and they are recorded
+// here because the way they became false is worth more than the correction.
+// They said regexp/syntax was NOT on the allowlist, that
+// TestGate3NoSocketIsConstructedOutsideTheKernel FAILED on this file "by
+// design", that the edit "IS NOT MADE HERE", and that it stood reported for
+// review -- and they carried an indented gate03-refused block that no longer
+// reproduces without deleting the allowlist line first.
 //
-// The justification a reviewer needs, stated so the decision can be made
-// without re-deriving it: regexp/syntax is the PARSER AND COMPILER behind
-// `regexp`, which is already on inertImports. It has no dialer, no listener,
-// no transport and no I/O of any kind — it turns a string into a tree and a
-// tree into a program. Every package in this repository that imports `regexp`
-// already links it transitively; gate 3 attributes by import line rather than
-// transitively, which is why the line is needed at all.
+// Every one of them was TRUE WHEN WRITTEN. The packet reported the widening
+// instead of making it, which was correct; the orchestrator then made it, in
+// the SAME COMMIT. Nobody was wrong and the paragraph was false on arrival,
+// because a sentence about a pending decision rots the instant the decision
+// lands. It then stood through nine commits and six fix rounds, in a doc that
+// go doc renders first, about the control deciding which packages may hold
+// egress capability.
+//
+// encoding/base64 in internal/dast/inventory/auth_helper.go is the OPEN case
+// this one used to be compared to. It is still open, and naming the two as the
+// same state -- which the withdrawn text did -- is the specific error to avoid
+// when this paragraph is next edited.
+//
+// THE JUSTIFICATION, kept because it is the review record: regexp/syntax is the
+// PARSER AND COMPILER behind `regexp`, which is already on inertImports. It has
+// no dialer, no listener, no transport and no I/O of any kind -- it turns a
+// string into a tree and a tree into a program. Every package here that imports
+// `regexp` already links it transitively; gate 3 attributes by import line
+// rather than transitively, which is why the line was needed at all.
 package record
 
 import (
@@ -2825,9 +2838,33 @@ func (e EvidenceRef) SpanDroppedBytes() int { return e.spanDroppedBytes }
 // empty one that this field reports zero for.
 func (e EvidenceRef) SpanOverBroadBytes() int { return e.spanOverBroadBytes }
 
-// Constructed reports whether e came from newEvidenceRef. The zero value has
-// no hash, and a Finding with no body hash is a Finding nothing was observed
-// for.
+// Constructed reports the CONJUNCTION OF TWO FIELDS: sealed is set, and
+// bodyHash is not empty. It does not inspect provenance, and there is no
+// constructor for it to inspect — every EvidenceRef in production is a
+// composite literal written inside ConfirmFinding, at the two sites the
+// re-probe loop owns, and each one sets `sealed: true` beside a hashBody
+// result.
+//
+// So what the predicate actually means is "some code that could see a response
+// body filled this in", not "this came from function X". The two halves fail
+// independently and both are measured:
+//
+//	sealed FALSE — the zero value, which is everything a caller outside
+//	    package record can build, and any in-package literal that omits the
+//	    field. TestEvidenceRefZeroValueAssertsNothing drives the zero value.
+//	bodyHash EMPTY — not reachable from ConfirmFinding, because hashBody
+//	    never returns "": a nil body hashes to the SHA-256 of the empty
+//	    string rather than to nothing. That is deliberate, hashBody's doc
+//	    says why, and the same test pins it.
+//
+// A Finding with no body hash would be a Finding nothing was observed for, and
+// the second half is what makes that unrepresentable.
+//
+// THIS COMMENT USED TO CREDIT A FUNCTION CALLED newEvidenceRef, which is the
+// same false attribution the EvidenceRef type doc above withdraws — restated
+// in live prose underneath its own retraction. Nothing in this file has ever
+// declared that name. TestEveryNameInProseResolvesToADeclaration is the guard
+// that makes a repeat mechanical rather than a matter of somebody noticing.
 func (e EvidenceRef) Constructed() bool { return e.sealed && e.bodyHash != "" }
 
 // ---------------------------------------------------------------------------
