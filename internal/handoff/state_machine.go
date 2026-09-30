@@ -1,29 +1,29 @@
 // Package handoff implements the claim/lease protocol for the single
-// `handoff` table defined by internal/store/schema.sql (step R.4).
+// `handoff` table defined by internal/store/schema.sql.
 //
 // WHAT THIS PACKAGE IS, AND WHY THERE IS ONLY ONE OF IT.
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G9: "Area 40 owns the table and the
-// claim/lease protocol." O.3 no longer writes a migration and no longer
+// The handoff-table ruling: "The record area owns the table and the
+// claim/lease protocol." The handoff adapter no longer writes a migration and no longer
 // defines a second lease API — internal/scanctl/handoff.go becomes a thin
 // adapter over this package. So this package deliberately serves both shapes
 // the plan asks for, over one table and one state column:
 //
-//   - R.7's packet shape:  Claim(fingerprint, workerID) (Handle, error),
+//   - The claim protocol's packet shape:  Claim(fingerprint, workerID) (Handle, error),
 //     returning ErrAlreadyClaimed on a losing race.
-//   - O.3's lease shape:   AcquireLease / RenewLease / ReleaseLease /
+//   - The handoff adapter's lease shape:   AcquireLease / RenewLease / ReleaseLease /
 //     ReclaimExpired.
 //
 // Claim is AcquireLease narrowed to one fingerprint. They share one query,
 // one CAS update and one state machine; there is no second code path and no
 // second notion of "claimed".
 //
-// TWO CLOCKS, NEVER CONFLATED (plan/00-SPINE.md S1, research/08 §4).
+// TWO CLOCKS, NEVER CONFLATED (the spine's corrected-requirements table, research/08 §4).
 //
 //	handoff.lease_expires_at            15–30 min (Options.Lease, default 20m),
 //	                                    heartbeat-renewed, governs ONE consumer
 //	                                    attempt. Expiry is handled by
 //	                                    ReclaimExpired: requeue or exhaust.
-//	audit_record.claim_timeout_seconds  default 8h, already materialised by R.6
+//	audit_record.claim_timeout_seconds  default 8h, already materialised by the sealer
 //	                                    as audit_record.deadline_at. It governs
 //	                                    how long an UNCLAIMED finding stays
 //	                                    eligible. Expiry is handled by
@@ -31,13 +31,14 @@
 //	                                    tmpfs packet unlinked, ROW KEPT.
 //
 // "8 hours" is a CLAIM TIMEOUT. It is not a deletion policy and it is not a
-// confidentiality control (S1, and research/08 §A: "the same exploitable
-// detail persists in the database indefinitely by design"). Nothing in this
-// package deletes a `handoff`, `finding` or `finding_state_event` row, and
-// nothing in it claims that unlinking a packet destroys anything beyond the
-// link itself — see DropPacket for why no stronger claim would be true.
+// confidentiality control (the spine's corrected-requirements table, and
+// research/08 §A: "the same exploitable detail persists in the database
+// indefinitely by design"). Nothing in this package deletes a `handoff`,
+// `finding` or `finding_state_event` row, and nothing in it claims that
+// unlinking a packet destroys anything beyond the link itself — see DropPacket
+// for why no stronger claim would be true.
 //
-// WHAT A LEASE GRANTS (plan/00-SPINE.md S7). "May act on this finding", and
+// WHAT A LEASE GRANTS (the spine's safety section). "May act on this finding", and
 // nothing else. It is not merge authority, not widened scope, and not a
 // verdict.
 //
@@ -50,15 +51,15 @@
 // rule can be enforced rather than described.
 //
 // WHAT ARBITRATES A CLAIM, AND A DELIBERATE DEVIATION FROM THE PACKET TEXT.
-// The R.7 packet names `renameat2(..., RENAME_NOREPLACE)` and OFD locks as the
+// The claim protocol names `renameat2(..., RENAME_NOREPLACE)` and OFD locks as the
 // claim primitives. This implementation arbitrates the claim with a single
 // conditional UPDATE against `handoff` instead, for three reasons:
 //
 //  1. research/08's own Recommendation §1 makes SQLite the buffer ("mechanism
 //     #5, primary pick") and the file queue "the file-facing veneer over #5".
 //     A rename-arbitrated claim plus a `state` column is two sources of truth
-//     for one fact — exactly the defect §6 G9/G10 closed when they deleted the
-//     second table.
+//     for one fact — exactly the defect the handoff-table and one-ledger
+//     rulings closed when they deleted the second table.
 //  2. renameat2 and F_OFD_SETLK have no binding in the standard library.
 //     Reaching them needs golang.org/x/sys, which is an indirect dependency
 //     today; promoting it is a go.mod edit this packet may not make.
@@ -104,14 +105,14 @@ const DefaultReaperInterval = 5 * time.Minute
 // ExhaustedState is where a finding lands when its lease expires for the last
 // time — attempts have reached max_attempts and no retry remains.
 //
-// The thirteen handoff.state literals are frozen by §6 and contain no generic
-// `failed`; research/08's pseudocode says `state='failed'` because it was
-// written before the enum was frozen. Of the two failure literals that do
-// exist, HandoffStateFailedFormat is specifically a defect in the packet's
-// format, which a crashed consumer is not. So an exhausted attempt is recorded
-// as HandoffStateFailedValidation: the attempt did not produce a validated
-// fix. This is a mapping decision, made once, here, rather than at each call
-// site.
+// The thirteen handoff.state literals are frozen by the shared-vocabulary
+// review and contain no generic `failed`; research/08's pseudocode says
+// `state='failed'` because it was written before the enum was frozen. Of the
+// two failure literals that do exist, HandoffStateFailedFormat is specifically
+// a defect in the packet's format, which a crashed consumer is not. So an
+// exhausted attempt is recorded as HandoffStateFailedValidation: the attempt
+// did not produce a validated fix. This is a mapping decision, made once, here,
+// rather than at each call site.
 const ExhaustedState = record.HandoffStateFailedValidation
 
 // timeLayout is the on-disk timestamp format for every column this package
@@ -130,8 +131,8 @@ const timeLayout = "2006-01-02T15:04:05.000000000Z"
 func formatTime(t time.Time) string { return t.UTC().Format(timeLayout) }
 
 // parseTime reads a stored timestamp. It accepts any RFC 3339 spelling, not
-// just timeLayout's, because audit_record.deadline_at is written by R.6 and
-// schema_migration.applied_at by R.5; this package must read their formats
+// just timeLayout's, because audit_record.deadline_at is written by the sealer and
+// schema_migration.applied_at by the migration runner; this package must read their formats
 // without dictating them.
 func parseTime(field, s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339, s)
@@ -171,7 +172,7 @@ var (
 	ErrLeaseLost = errors.New("handoff: lease is no longer held")
 
 	// ErrRecordVersionChanged means audit_record.audit_version moved under the
-	// lease. Per plan/00-SPINE.md S6 a version bump re-cuts the work queue, so
+	// lease. Per the spine's record section a version bump re-cuts the work queue, so
 	// the work unit the Handle describes no longer exists. It implies
 	// ErrLeaseLost.
 	ErrRecordVersionChanged = errors.New("handoff: audit record version changed under the lease")
@@ -182,7 +183,7 @@ var (
 
 	// ErrNoDynamicEvidence means a requires_dynamic_confirmation finding was
 	// released as 'validated' on an audit whose DAST half produced no
-	// reproduction. plan/00-SPINE.md S7: only a DAST reproduction that now
+	// reproduction. The spine's safety section: only a DAST reproduction that now
 	// FAILS earns "verified fixed"; a clean static rescan does not. See
 	// checkDynamicEvidence.
 	ErrNoDynamicEvidence = errors.New("handoff: 'validated' requires dynamic evidence for this finding")
@@ -349,7 +350,7 @@ type Queue struct {
 
 // New returns a Queue over an already-migrated store. It does not create,
 // alter or migrate any table: internal/store/schema.sql owns `handoff` and
-// declares itself a frozen interface (§6 G9).
+// declares itself a frozen interface (the handoff-table ruling).
 func New(db *sql.DB, opts Options) (*Queue, error) {
 	if db == nil {
 		return nil, errors.New("handoff: New requires a non-nil *sql.DB")
@@ -517,7 +518,7 @@ type EnqueueRequest struct {
 	// start — NOT the `audit_record_id` rowid. It is required, because it is
 	// the first component of IdempotencyKey and the key is what the coding
 	// agent writes into a git trailer; a rowid there would be a value no other
-	// process can interpret (CRITIQUE-02 F7).
+	// process can interpret (the sealing, claims and masking review's finding F7).
 	//
 	// It is supplied by the caller rather than read from the store because
 	// `audit_record` has no column for it. That gap is reported to the
@@ -672,14 +673,14 @@ func (q *Queue) DisposeContext(ctx context.Context, handoffID int64, to record.H
 // and the two must be computed the same way or the trailer proves nothing.
 //
 // auditID IS `anvil/auditId`, NOT `audit_record.audit_record_id`. That
-// distinction is the whole of CRITIQUE-02 F7: this function used to hash the
-// autoincrement rowid, which is not the audit identity by any definition. The
-// consequences were concrete — the exported value "the coding agent writes into
-// a git trailer" was an internal database rowid, which is not a portable
-// identity and means nothing outside one copy of one database file, and two
-// competing leases on one finding carried DIFFERENT keys, so the downstream
-// duplicate-suppression the Handle doc promises could not have caught the
-// double grant either.
+// distinction is the whole of the sealing, claims and masking review's finding
+// F7: this function used to hash the autoincrement rowid, which is not the
+// audit identity by any definition. The consequences were concrete — the
+// exported value "the coding agent writes into a git trailer" was an internal
+// database rowid, which is not a portable identity and means nothing outside
+// one copy of one database file, and two competing leases on one finding
+// carried DIFFERENT keys, so the downstream duplicate-suppression the Handle
+// doc promises could not have caught the double grant either.
 //
 // The components are joined by a NUL byte so that no two different triples can
 // produce the same input string by shifting a boundary.

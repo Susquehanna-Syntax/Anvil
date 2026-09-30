@@ -1,10 +1,10 @@
-// Per-half sealing: the state machine behind plan/00-SPINE.md S1's "one audit
-// identity, two independently-sealed halves, a re-entrant consumer" (step
-// R.6).
+// Per-half sealing: the state machine behind the spine's "one audit
+// identity, two independently-sealed halves, a re-entrant consumer" (the
+// sealer).
 //
 // # What this file owns
 //
-// Three things that plan/40-record-and-storage.md keeps deliberately apart and
+// Three things that plan/design/record-and-store.md keeps deliberately apart and
 // that every previous draft of this design conflated:
 //
 //  1. The PER-HALF SEAL — `run.properties["anvil/status"]` (a HalfStatus) and
@@ -18,7 +18,7 @@
 //     claim_timeout_seconds`, computed ONCE in BeginAudit and never
 //     recomputed by anything in this file.
 //
-// R.6's forbidden actions name the conflation this file must not commit:
+// The sealer's forbidden actions name the conflation this file must not commit:
 // "Do not conflate `anvil/sealedAt` (per-half completion) with
 // `anvil/deadline.deadlineAt` (the claim-timeout clock) — they are
 // independent clocks with independent semantics." Sealing a half a week late
@@ -27,10 +27,10 @@
 //
 // # `sealed` is the hard read gate
 //
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G5: "`sealed` is load-bearing: R.6
+// The half-status ruling: "`sealed` is load-bearing: the sealer
 // makes it the hard read gate ('do not allow a consumer to read a half's
-// results before that half's `status` equals `sealed`'), so O.2 keying
-// transitions on `complete` means the gate never opens." Area O's `complete`
+// results before that half's `status` equals `sealed`'), so the controller's state wiring keying
+// transitions on `complete` means the gate never opens." the control plane's `complete`
 // is struck; HalfStatusSealed — and no other token, not HalfStatusFailed, not
 // HalfStatusTimedOut, not HalfStatusSkipped — opens ReadHalf.
 //
@@ -41,8 +41,8 @@
 // nothing further, so the audit-level State may advance. Exactly ONE of them
 // is READABLE (sealed): the consumer may look at that half's results.
 //
-// So a Tier S install with no `anvil-dast` artifact (plan/00-SPINE.md
-// S9-AMENDED) reaches StateBothSealed — its DAST half is terminally
+// So a Tier S install with no `anvil-dast` artifact (plan/design/spine.md
+// the two-artifact split) reaches StateBothSealed — its DAST half is terminally
 // HalfStatusSkipped with DastStatusNotRun — while `dastReady` stays false
 // forever, because there are no DAST results to read. Collapsing the two
 // notions either wedges every SAST-only audit in StateSastSealed (the
@@ -71,7 +71,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Errors — every refusal is typed, per R.6's stop condition
+// Errors — every refusal is typed, per the sealer's stop condition
 // ---------------------------------------------------------------------------
 
 // Sentinel causes. Every error this file returns wraps exactly one of these,
@@ -82,7 +82,7 @@ var (
 	ErrUnknownAudit = errors.New("record: unknown audit")
 
 	// ErrDuplicateAudit: BeginAudit was called twice for one audit id.
-	// Re-beginning would recompute DeadlineAt, which R.6 forbids.
+	// Re-beginning would recompute DeadlineAt, which the sealer forbids.
 	ErrDuplicateAudit = errors.New("record: audit already begun")
 
 	// ErrInvalidAuditConfig: the AuditConfig cannot produce a legal
@@ -157,7 +157,7 @@ func (e *SealingError) Error() string {
 func (e *SealingError) Unwrap() error { return e.Err }
 
 // ReadGateError is the refusal a consumer gets when it reaches for a half
-// that has not sealed. R.6's stop condition: "a consumer attempting to read
+// that has not sealed. The sealer's stop condition: "a consumer attempting to read
 // an unsealed half is rejected with a typed error, not a partial/zero-value
 // result."
 //
@@ -218,7 +218,7 @@ const (
 	SealProvenanceOriginGone SealProvenanceFault = "origin_gone"
 
 	// SealProvenanceStale: the origin is still there and no longer reads the
-	// way it did at minting. THIS is CRITIQUE O.4's defect: a seal minted
+	// way it did at minting. THIS is the controller-core review's defect: a seal minted
 	// legitimately and held across a state change.
 	SealProvenanceStale SealProvenanceFault = "stale"
 )
@@ -345,15 +345,17 @@ func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
 // Four independent authors have now derived that answer locally instead of
 // calling one gate, and each got a different arm wrong:
 //
-//	CRITIQUE-02 M2 — ReadPacket checked neither arm.
-//	CRITIQUE-02 M3 — Sealer.Inspect handed out HalfSeals with no state at all,
-//	                 so Readable() said true on an audit ReadHalf refused.
-//	CRITIQUE-03 B1 — the GitHub projection consulted neither arm and published
-//	                 an unsealed half's results to a third party.
-//	CRITIQUE-03 M1 — readpath.go's readOrder and ManifestFromLog checked the
-//	                 status arm only, so an EXPIRED audit was fully readable and
-//	                 handed a coding agent actionable task cards against a claim
-//	                 window that had already closed.
+//   - the sealing, claims and masking review's finding M2: ReadPacket checked
+//     neither arm;
+//   - its finding M3: Sealer.Inspect handed out HalfSeals with no state at all,
+//     so Readable() said true on an audit ReadHalf refused;
+//   - the queue and read-path review's finding B1: the GitHub projection
+//     consulted neither arm and published an unsealed half's results to a
+//     third party;
+//   - its finding M1: readpath.go's readOrder and ManifestFromLog checked the
+//     status arm only, so an EXPIRED audit was fully readable and handed a
+//     coding agent actionable task cards against a claim window that had
+//     already closed.
 //
 // The pattern, not any one of those four, is the defect. So the question is
 // answered in exactly ONE function body — halfReadRefusal — and every other
@@ -363,7 +365,7 @@ func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
 //	HalfSeal.Readable the same answer as a bool, for a caller that must branch.
 //	Sealer.ReadHalf   the in-memory consumer gate.
 //	Sealer.ReadyForConsumption
-//	                  the per-half form R.4's handoff rows key on.
+//	                  the per-half form the store schema's handoff rows key on.
 //	readpath.go / taskcard.go / sarif_github.go
 //	                  the record-side callers, via halfSealOfRun.
 //
@@ -386,7 +388,7 @@ func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
 //	  compared against StateExpired, or a status against HalfStatusSealed,
 //	  anywhere outside halfReadRefusal without an allowlisted reason. It
 //	  replaced a check that required BOTH arms in one body — which is why it
-//	  could not see CRITIQUE-03 M1, whose defect was one arm.
+//	  could not see the queue and read-path review's finding M1, whose defect was one arm.
 //
 // The last two carry negative controls that re-introduce the historical
 // defects on every run, because a guard that has never been seen to fail has
@@ -395,7 +397,7 @@ func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
 // A FOURTH THING WATCHES IT, AND IT IS NOT A TEST. All three guards above ask
 // whether the gate was CALLED. None of them can ask whether it was called
 // about a seal worth believing — that is dataflow, and readpath_test.go's
-// KNOWN LIMITS recorded it as open (adversary attack 14) until CRITIQUE O.4
+// KNOWN LIMITS recorded it as open (adversary attack 14) until the controller-core review
 // found it happening by accident in a consumer. So the gate now checks its own
 // input: HalfSeal carries unexported provenance, and HalfReadGate refuses any
 // seal that no producer minted or that its origin has since moved past. That
@@ -433,7 +435,7 @@ func IsReadableHalfStatus(s HalfStatus) bool { return s == HalfStatusSealed }
 // # Provenance is a STALENESS check, not merely a construction check
 //
 // A seal minted legitimately ten minutes ago and held across a state change is
-// the defect that actually occurred (CRITIQUE O.4 on internal/scanctl: a
+// the defect that actually occurred (the controller-core review on internal/scanctl: a
 // HalfSeal built from caller-held fields with no refresh path). Recording
 // "a producer made this" would not have caught it. So prov holds a LIVE HANDLE
 // on the object the seal was minted from, plus the facts as they read at
@@ -712,14 +714,14 @@ func HalfReadGate(auditID string, h HalfSeal) error {
 //
 // It exists so that no reader of a record ever has to remember that the second
 // arm of the gate lives on a different object from the first. That is exactly
-// the mistake CRITIQUE-03 M1 records: `run.Properties.Status` is right there
-// and `l.Properties.State` is one dereference further away, so three of four
-// call sites reached for the near one and stopped.
-// It is ALSO one of the two legitimate producers of seal provenance: the value
-// it returns carries a live handle on (l, run), so a consumer that keeps this
-// seal and reads with it after the record has moved on is refused as stale
-// rather than answered truthfully about a snapshot. See the seal-provenance
-// section above.
+// the mistake the queue and read-path review's finding M1 records:
+// `run.Properties.Status` is right there and `l.Properties.State` is one
+// dereference further away, so three of four call sites reached for the near
+// one and stopped. It is ALSO one of the two legitimate producers of seal
+// provenance: the value it returns carries a live handle on (l, run), so a
+// consumer that keeps this seal and reads with it after the record has moved on
+// is refused as stale rather than answered truthfully about a snapshot. See the
+// seal-provenance section above.
 func halfSealOfRun(l *SARIFLog, run *Run) HalfSeal {
 	seal := projectRun(l, run)
 	seal.prov = &sealProvenance{
@@ -780,11 +782,12 @@ type HalfSeal struct {
 	// stood when the seal was observed. It is carried so that Readable() can
 	// answer the WHOLE read-gate question rather than half of it.
 	//
-	// CRITIQUE-02 F6: ReadHalf refuses an expired audit and Inspect handed out
-	// the same HalfSeal values with no state check at all, so
-	// Inspect(...).Sast.Readable() said true on an audit ReadHalf refused.
-	// Readable() is exported and is what a caller branches on; two exported
-	// readiness paths giving two answers is a gate that is only advisory.
+	// The sealing, claims and masking review's finding F6: ReadHalf refuses an
+	// expired audit and Inspect handed out the same HalfSeal values with no
+	// state check at all, so Inspect(...).Sast.Readable() said true on an audit
+	// ReadHalf refused. Readable() is exported and is what a caller branches
+	// on; two exported readiness paths giving two answers is a gate that is
+	// only advisory.
 	//
 	// A hand-constructed HalfSeal leaves this empty, which is not StateExpired
 	// and therefore does not silently suppress a real seal — the zero value
@@ -830,7 +833,7 @@ func (h HalfSeal) Readable() bool { return !halfReadRefusal(h).refused() }
 // exactly those inputs and nothing that would let a caller state the derived
 // value directly.
 type DastOutcome struct {
-	// TierInstalled is plan/00-SPINE.md S9-AMENDED's split: `anvil` ships
+	// TierInstalled is the two-artifact split: `anvil` ships
 	// with no network-probing capability compiled in and `anvil-dast` is a
 	// separately installed artifact. False here is the common case and is
 	// the ONLY route to DastStatusNotRun.
@@ -841,7 +844,7 @@ type DastOutcome struct {
 	TierInstalled bool
 
 	// Provenance is the target's boot/reachability outcome, from the target
-	// lifecycle harness (area D). Required when TierInstalled; ignored
+	// lifecycle harness (the dynamic tier). Required when TierInstalled; ignored
 	// otherwise.
 	Provenance TargetProvenance
 
@@ -875,11 +878,11 @@ type AuditConfig struct {
 	//
 	// It is a CLAIM timeout — how long an unclaimed finding stays eligible —
 	// not a deletion policy and not a confidentiality control
-	// (plan/00-SPINE.md S1 correction #5).
+	// (the spine's corrected-requirements table correction #5).
 	ClaimTimeoutSeconds int
 
 	// DastEnabled is false in the core `anvil` distribution artifact
-	// (plan/00-SPINE.md S9-AMENDED). When false, BeginAudit immediately and
+	// (the two-artifact split). When false, BeginAudit immediately and
 	// terminally seals the DAST half as HalfStatusSkipped /
 	// DastStatusNotRun, so the audit can reach StateBothSealed with no DAST
 	// worker in the process to seal it. Without that, every SAST-only audit
@@ -923,7 +926,7 @@ type AuditSeal struct {
 // ComputeDeadline returns `scan_run.started_at + claim_timeout_seconds`, the
 // one and only formula for `audit_record.deadline_at`.
 //
-// R.6's forbidden actions: "Do not compute `deadline_at` from any write
+// The sealer's forbidden actions: "Do not compute `deadline_at` from any write
 // timestamp — it must be `scan_run.started_at + claim_timeout_seconds`,
 // computed once and never recomputed." Anchoring it to the last write makes
 // the timeout unbounded for a chatty scan, which quietly defeats the reaper.
@@ -939,13 +942,13 @@ func ComputeDeadline(startedAt time.Time, claimTimeoutSeconds int) time.Time {
 // audit-level DastStatus. It is pure, so the mapping can be tested value by
 // value without a Sealer.
 //
-// THE ORDER OF THESE RULES IS THE POINT. plan/00-SPINE.md S6: "a target that
+// THE ORDER OF THESE RULES IS THE POINT. The spine's record section: "a target that
 // failed to boot must be distinguishable from 'scanned clean'". The
 // provenance checks therefore run BEFORE the sealed/failed branch, so a half
 // that sealed with zero findings against a target that never booted reports
 // DastStatusTargetBootFailed and not DastStatusCompletedClean.
 //
-//  1. tier not installed          -> not_run              (the S9-AMENDED common case)
+//  1. tier not installed          -> not_run              (the two-artifact split common case)
 //  2. status running              -> running
 //  3. provenance boot_failed
 //     or build_failed             -> target_boot_failed
@@ -968,14 +971,14 @@ func ComputeDeadline(startedAt time.Time, claimTimeoutSeconds int) time.Time {
 // RULE 8 WAS THE HOLE, AND IT IS NOW CLOSED. The previously frozen nine-value
 // enum had no "the DAST half broke" literal, so this function mapped a
 // HalfStatusFailed half against a cleanly-booted target onto
-// DastStatusCompletedPartial. That was wrong in the same way S6 says a failed
-// target must not read as "scanned clean": a half that CRASHED is not a half
-// that COVERED PART of the surface, and merging them makes DastCoverage
-// uninterpretable — 31 of 50 endpoints reads as a deliberate scope when in
-// fact the scanner died. plan/IMPLEMENTATION-PLAN.md §6 was amended with a
-// tenth literal, DastStatusCompletedFailed, and rule 8 now uses it. Rules 3-5
-// still run first, so this value is reachable ONLY for a genuine mid-scan
-// failure against TargetProvenanceBootedClean.
+// DastStatusCompletedPartial. That was wrong in the same way the spine's record
+// section says a failed target must not read as "scanned clean": a half that
+// CRASHED is not a half that COVERED PART of the surface, and merging them
+// makes DastCoverage uninterpretable — 31 of 50 endpoints reads as a deliberate
+// scope when in fact the scanner died. The shared-vocabulary review was amended
+// with a tenth literal, DastStatusCompletedFailed, and rule 8 now uses it.
+// Rules 3-5 still run first, so this value is reachable ONLY for a genuine
+// mid-scan failure against TargetProvenanceBootedClean.
 func DeriveDastStatus(status HalfStatus, o DastOutcome) (DastStatus, error) {
 	if err := ValidateHalfStatus(string(status)); err != nil {
 		return "", err
@@ -1155,7 +1158,7 @@ func (a *audit) publish() *auditFacts {
 // it was built to defend, and it fails OPEN — the direction where a consumer
 // reads a half it may not read and nothing says a word.
 //
-// The re-verification of R.6 found two mutations that could skip it, both the
+// The re-verification of the sealer found two mutations that could skip it, both the
 // same shape: assign the half's fields, then run a FALLIBLE derivation, then
 // return its error before ever reaching the publish. They were
 // Sealer.SealHalf's DAST branch and Sealer.SealDastIfDeadlineDue. Neither was
@@ -1320,7 +1323,7 @@ func (s *Sealer) BeginAudit(cfg AuditConfig) (AuditSeal, error) {
 	if _, exists := s.audits[cfg.AuditID]; exists {
 		return AuditSeal{}, &SealingError{
 			Op: "BeginAudit", AuditID: cfg.AuditID,
-			Reason: "already begun; re-beginning would recompute deadline_at, which R.6 forbids",
+			Reason: "already begun; re-beginning would recompute deadline_at, which the sealer forbids",
 			Err:    ErrDuplicateAudit,
 		}
 	}
@@ -1328,7 +1331,7 @@ func (s *Sealer) BeginAudit(cfg AuditConfig) (AuditSeal, error) {
 	// The DAST half's starting status is decided HERE, in the composite
 	// literal, rather than assigned afterwards. When the DAST tier is not
 	// installed the half is terminally skipped and never sealed, so SealedAt
-	// stays nil and the read gate stays shut — see plan/00-SPINE.md S9-AMENDED.
+	// stays nil and the read gate stays shut — see the two-artifact split.
 	//
 	// It is a literal and not an assignment because assignment to a
 	// fact-bearing field belongs to the mutation funnel above, and construction
@@ -1526,10 +1529,10 @@ func (s *Sealer) SealHalf(auditID string, half Half, status HalfStatus) error {
 // ReadyForConsumption reports, per half, whether a consumer may read that
 // half's results now. An unknown audit reports (false, false).
 //
-// This is the gate plan/IMPLEMENTATION-PLAN.md §6 ruling G9 wires the handoff
+// This is the gate the handoff-table ruling wires the handoff
 // table to: `handoff.consumption_class = 'static_only'` rows become claimable
 // when sastReady is true, and `'requires_dynamic_confirmation'` rows must
-// wait for dastReady. plan/00-SPINE.md S7: "Only a DAST reproduction that now
+// wait for dastReady. The spine's safety section: "Only a DAST reproduction that now
 // fails earns 'verified fixed'."
 //
 // dastReady stays false for a DAST-disabled audit even after it reaches
@@ -1554,7 +1557,7 @@ func (s *Sealer) ReadyForConsumption(auditID string) (sastReady, dastReady bool)
 // — running, failed, timed_out, skipped — is refused with a *ReadGateError,
 // as is any read of an expired audit, whose payload the reaper has dropped.
 //
-// A consumed audit is still readable: plan/00-SPINE.md S1 requires a
+// A consumed audit is still readable: the spine's corrected-requirements table requires a
 // RE-ENTRANT consumer, so taking the record once must not shut the gate.
 //
 // On refusal the returned HalfSeal is the zero value and carries no
@@ -1659,7 +1662,7 @@ func (s *Sealer) ExpireIfDue(auditID string) (bool, error) {
 //
 // Clock 3 — `dast_deadline_seconds`, the clock that forces a
 // never-terminating DAST half terminal — had a substrate here (AuditConfig
-// stores it, AuditSeal reports it) and NO due-check. CRITIQUE O.4 blocker 2
+// stores it, AuditSeal reports it) and NO due-check. The controller-core review's blocker 2
 // found the consequence: the only due-check lived in a caller, over a caller-
 // OWNED field, and was moved by plain field assignment. Clock 2 shrugged the
 // same probe off precisely because the Sealer holds its own copy.
@@ -1693,7 +1696,7 @@ func ComputeDastDeadline(startedAt time.Time, dastDeadlineSeconds *int) (time.Ti
 //
 // A caller that needs to display or compare the DAST deadline should derive it
 // here rather than keep its own field: a kept field is a field something can
-// assign to, and CRITIQUE O.4 blocker 2 is what that costs.
+// assign to, and the controller-core review's blocker 2 is what that costs.
 func (s AuditSeal) DastDeadlineAt() (time.Time, bool) {
 	return ComputeDastDeadline(s.StartedAt, s.DastDeadlineSeconds)
 }
@@ -1714,7 +1717,7 @@ func (s AuditSeal) DastDeadlineAt() (time.Time, bool) {
 // found nothing to do is not a failure.
 //
 // It does NOT touch clock 2. Forcing a DAST timeout does not move DeadlineAt by
-// one nanosecond, and R.6's forbidden actions are what say so.
+// one nanosecond, and the sealer's forbidden actions are what say so.
 func (s *Sealer) SealDastIfDeadlineDue(auditID string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1762,14 +1765,14 @@ func (s *Sealer) SealDastIfDeadlineDue(auditID string) (bool, error) {
 // taken from Inspect and kept across a seal, a consumption or an expiry is
 // refused as stale when it is finally used. That is deliberate — an
 // arbitrarily old snapshot answering "yes, readable" for a live audit is
-// CRITIQUE O.4's defect. Re-Inspect at the point of use.
+// the controller-core review's defect. Re-Inspect at the point of use.
 //
 // Inspect is a DIAGNOSTIC: it deliberately still reports the true status of an
 // expired audit's halves, because "this audit expired holding a sealed SAST
 // half" is exactly what an operator needs to see. What it does not do any more
 // is claim those halves are readable — every HalfSeal it hands out carries the
 // audit state, so Readable() honours the expiry arm of the read gate that
-// ReadHalf enforces. See CRITIQUE-02 F6.
+// ReadHalf enforces. See the sealing, claims and masking review's finding F6.
 func (s *Sealer) Inspect(auditID string) (AuditSeal, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1782,7 +1785,7 @@ func (s *Sealer) Inspect(auditID string) (AuditSeal, bool) {
 }
 
 // Forget drops an audit from the in-memory tracker. The durable row in
-// `audit_record` is unaffected — plan/40-record-and-storage.md is explicit
+// `audit_record` is unaffected — plan/design/record-and-store.md is explicit
 // that the reaper drops the payload and never the row.
 //
 // Any HalfSeal already handed out for this audit stops being readable at this
@@ -1821,7 +1824,7 @@ func (s *Sealer) lookup(op, auditID string) (*audit, error) {
 // version the facts were published at, so an AuditSeal taken from Inspect and
 // kept across a seal, a consumption or an expiry stops being readable at the
 // moment the audit moves, rather than continuing to answer for the audit as it
-// was. That is the O.4 defect, in this package's own shape.
+// was. That is the controller-core review defect, in this package's own shape.
 func (a *audit) halfSeal(half Half) HalfSeal {
 	if half != HalfDast {
 		half = HalfSast
@@ -1897,7 +1900,7 @@ func RecordDastOutcome(auditID string, o DastOutcome) error {
 
 // SealHalf seals one half on the default Sealer.
 //
-// This is R.6's mandated signature, taking `half` and `status` as strings
+// This is the sealer's mandated signature, taking `half` and `status` as strings
 // because it is the boundary a scan controller calls across. Both are
 // validated against contract.go's frozen enums before anything is mutated, so
 // a bare literal that is not an enum member is rejected here rather than

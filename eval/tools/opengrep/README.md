@@ -1,7 +1,7 @@
 # `eval/tools/opengrep` — the deterministic recall tier, pinned
 
-Anvil step **M0.7** (`plan/10-milestone0-evaluation.md`). Acquires and invokes the recall-tier
-stand-in that INSTR-01 (candidates-per-scan, `plan/00-SPINE.md` S2) measures against:
+Anvil's **opengrep acquisition** (`plan/design/evaluation.md`). Acquires and invokes the recall-tier
+stand-in that the candidates-per-scan instrument (the spine's affordability rule) measures against:
 
 | | Pick | Licence | Pin |
 |---|---|---|---|
@@ -10,7 +10,7 @@ stand-in that INSTR-01 (candidates-per-scan, `plan/00-SPINE.md` S2) measures aga
 
 Licence findings, quoted from the LICENSE file bodies, are in [`LICENSES.md`](LICENSES.md). The pins
 themselves are in [`MANIFEST.toml`](MANIFEST.toml). **Read `LICENSES.md` section 4 before reading any
-INSTR-01 number** — the MIT rule corpus is two rules, and that changes what a candidate count means.
+the candidates-per-scan instrument number** — the MIT rule corpus is two rules, and that changes what a candidate count means.
 
 ## Use
 
@@ -29,7 +29,7 @@ python -m pytest tests -q                     # unit tests; smoke tests skip if 
 from anvil_opengrep import OpengrepRunner
 
 result = OpengrepRunner().scan("/path/to/repo")
-print(result.candidate_count)                 # the INSTR-01 quantity
+print(result.candidate_count)                 # the candidates-per-scan instrument quantity
 for finding in result.findings:
     print(finding.rule_id, finding.candidate_key)
 ```
@@ -38,14 +38,14 @@ for finding in result.findings:
 
 ## Subprocess only, never linked
 
-opengrep is an OCaml CLI with **zero bindings in any language** (`plan/00-SPINE.md` S12), so
+opengrep is an OCaml CLI with **zero bindings in any language** (the spine's Go control-plane decision), so
 `subprocess.run` is not a stylistic choice — it is the only mechanism that exists. `runner.py` contains
 no FFI, no `ctypes`, no dynamic load. `manifest.py` refuses to load a manifest whose
 `engine.linkage` is anything other than `"subprocess"`, so the invariant fails at load time rather
-than in review. This is the same line `plan/30-lane-b-detection.md` B.1 holds on the Go side.
+than in review. This is the same line the opengrep runner's design holds on the Go side.
 
 The LGPL obligation that *does* attach — shipping the compiled binary inside a distributed container
-image is conveyance — is out of scope here and assigned to B.2. See `LICENSES.md` section 1.
+image is conveyance — is out of scope here and assigned to the rule vendoring. See `LICENSES.md` section 1.
 
 ## Failing loudly
 
@@ -61,14 +61,14 @@ something was missing:
 | no SARIF written, or unparseable | `OpengrepOutputError` |
 | `--config` naming an S5-excluded repo | `ForbiddenRuleSource` |
 
-The reason is narrow and specific. INSTR-01 reads candidate counts as a measurement. If a missing
+The reason is narrow and specific. The candidates-per-scan instrument reads candidate counts as a measurement. If a missing
 binary could produce "0 candidates", a broken install and a genuinely clean repo would be recorded
 identically, and the experiment would be quietly worthless. So `ScanResult.findings == ()` means
 exactly one thing: the pinned engine ran the pinned rules over the target and matched nothing.
 
-## S5 hard exclusions, enforced in code
+## The spine's hard exclusions, enforced in code
 
-`plan/00-SPINE.md` S5 excludes `opengrep/opengrep-rules` (archived, `NOASSERTION`, LGPL-2.1 +
+The spine's exclusion list excludes `opengrep/opengrep-rules` (archived, `NOASSERTION`, LGPL-2.1 +
 Commons Clause) and every Semgrep-maintained ruleset (internal business use only).
 `manifest.assert_rule_source_permitted()` runs against the manifest at load time **and** against
 whatever `ruleset_path` a caller actually hands `OpengrepRunner`, because an exclusion enforced only
@@ -98,11 +98,11 @@ is the coverage finding from `LICENSES.md` section 4 in executable form.
 ## Layout
 
 ```
-MANIFEST.toml            pins: release tag, per-asset sha256, ruleset commit + blob SHAs, S5 exclusions
+MANIFEST.toml            pins: release tag, per-asset sha256, ruleset commit + blob SHAs, the spine's hard exclusions
 LICENSES.md              licence findings quoted from LICENSE bodies; the coverage finding
 smoke.py                 end-to-end driver
 anvil_opengrep/
-  manifest.py            parse + validate the pins; the S5 guard
+  manifest.py            parse + validate the pins; the hard-exclusion guard
   acquire.py             pinned fetch + checksum verification (nothing runs on import)
   runner.py              subprocess wrapper; SARIF 2.1.0 parsing
   fixtures.py            materializes the sample repo

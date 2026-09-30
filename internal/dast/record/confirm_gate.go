@@ -1,4 +1,4 @@
-// confirm_gate.go is plan/50-dast.md D.27: the finding confirmation gate.
+// confirm_gate.go is the finding confirmation gate (plan node confirm).
 //
 // It is the packet that decides WHAT ANVIL CLAIMS TO HAVE FOUND. Everything
 // below exists because one of three things is true, and each is stated here
@@ -9,7 +9,7 @@
 // 1. UNCONFIRMED IS A THIRD OUTCOME, NOT A LOW SCORE
 // ===========================================================================
 //
-// The Coverage Reporting Contract (plan/50-dast.md:1156) says of `confidence`:
+// The Coverage Reporting Contract (plan/design/dynamic-tier.md:1156) says of `confidence`:
 // "oracle-less classes (authorization, IDOR, business logic) are tagged
 // `unconfirmed` rather than asserted or dropped."
 //
@@ -52,7 +52,7 @@
 // 2. EVIDENCE IS EXTRACTED, NOT CARRIED
 // ===========================================================================
 //
-// plan/00-SPINE.md S7: "The DAST response body is the highest-risk injection
+// The spine's safety section: "The DAST response body is the highest-risk injection
 // channel... Hash-and-reference by default; inline only a regex-extracted
 // evidence span." A raw response body that reaches a record is a raw response
 // body that reaches a coding agent's prompt.
@@ -95,7 +95,7 @@
 //   - The evidence span is withheld ENTIRELY when the regex match runs past
 //     MaxSpanBytes, rather than truncated to it. A 512-byte prefix of an
 //     arbitrary response body is a raw body arriving through the one channel
-//     S7 sanctions, so an over-long match yields NO span rather than a
+//     the spine's safety section sanctions, so an over-long match yields NO span rather than a
 //     shorter one. See EvidenceRef.spanOverBroadBytes and extractSpan, which
 //     also states what that rule does NOT claim.
 //   - AND A MATCH WHOSE UNSPELLED PART IS BIGGER THAN BOTH MaxUnspelledBytes
@@ -188,17 +188,17 @@
 // the same shape engines.Driver gives a nil Issuer, and for the same reason.
 //
 // IT DOES NOT DECIDE dast_status. record.DeriveDastStatus owns that mapping
-// and Summary.DeriveDastStatus (coverage.go, D.26) is the only caller area D
-// gets. What this file supplies is the one number that mapping needs and the
-// one assertion that stops it lying: Ledger.FindingCountForStatus() counts
-// CONFIRMED findings only — "no finding reaches dast_status: findings without
-// having passed a re-probe confirmation step" — and
-// Ledger.AssertNotSilentlyClean() refuses to let a caller read a zero
-// confirmed count as "scanned clean" while unconfirmed or refused candidates
-// are sitting in the ledger.
+// and Summary.DeriveDastStatus (coverage.go, coverage reporting) is the only
+// caller the dynamic tier gets. What this file supplies is the one number that
+// mapping needs and the one assertion that stops it lying:
+// Ledger.FindingCountForStatus() counts CONFIRMED findings only — "no finding
+// reaches dast_status: findings without having passed a re-probe confirmation
+// step" — and Ledger.AssertNotSilentlyClean() refuses to let a caller read a
+// zero confirmed count as "scanned clean" while unconfirmed or refused
+// candidates are sitting in the ledger.
 //
-// Sources: plan/50-dast.md D.27 (lines 869-907) and the Coverage Reporting
-// Contract (lines 1142-1160); plan/00-SPINE.md S7; research/15-dast-tooling-
+// Sources: the confirmation gate's design (lines 869-907) and the Coverage Reporting
+// Contract (lines 1142-1160); the spine's safety section; research/15-dast-tooling-
 // landscape.md (ZAP's 88 phantom SQL-injection findings);
 // research/23-dast-signal-sources.md Risk #2.
 //
@@ -289,7 +289,7 @@ var (
 	// is a claim that Anvil looked and could not decide; this is the claim
 	// that Anvil did not look. Collapsing them would make a scan with no
 	// egress indistinguishable from a scan that found undecidable things,
-	// which is the plan/00-SPINE.md S6 failure mode one level down.
+	// which is the spine's record section failure mode one level down.
 	ErrNotReprobed = errors.New("dastrecord: the candidate was not re-probed, so it was not confirmed")
 
 	// ErrSignatureMatchesEverything is returned by NewSignature for a
@@ -333,7 +333,7 @@ var (
 // MaxSpanBytes is the length limit on the regex-extracted evidence span, and
 // it is simultaneously the length limit on EVERY string a Finding can hold.
 //
-// The two are deliberately one constant. plan/50-dast.md D.27's validation
+// The two are deliberately one constant. The confirmation gate's design validation
 // requirement is "a reflection-based test confirming no Finding-reachable
 // field can hold a value longer than the regex-extracted-span length limit
 // (proving raw-body inlining is structurally impossible, not just avoided by
@@ -361,7 +361,7 @@ const MaxFieldBytes = MaxSpanBytes
 // gives 2q <= L <= MaxSpanBytes and therefore q <= MaxSpanBytes/2 = 256. 256
 // is not a new number: it is the ceiling on inlined quotation this package has
 // published since the R-rules section was written, and it is the one half of
-// that section's old "q <= L/2 <= 256" that survived ruling 15 — see the
+// that section's old "q <= L/2 <= 256" that survived the both-directions ruling — see the
 // withdrawal there, and matchQuotesMoreThanItSpells for the proof that the
 // floor does not raise it. The ceiling is driven over real matches rather than
 // on paper: ENFORCED BY extractSpan,
@@ -379,7 +379,7 @@ const MaxFieldBytes = MaxSpanBytes
 // ENFORCED BY MaxUnspelledBytes,
 // MEASURED BY TestTheUnspelledFloorIsExactlyHalfTheSpanBound.
 //
-// WHY THE FLOOR IS THIS AND NOT MaxSpanBytes ITSELF. Ruling 15 names
+// WHY THE FLOOR IS THIS AND NOT MaxSpanBytes ITSELF. The both-directions ruling names
 // MaxSpanBytes as "what this package already permits to be inlined", and
 // MaxSpanBytes does bound the whole span — but a span is the pattern's own
 // literals PLUS the response, and the quantity the over-broadness invariant is
@@ -424,7 +424,7 @@ const MaxAttempts = 16
 // reason="reproduced_on_every_attempt" — from ONE observation. That is not a
 // weaker version of the flake detection DefaultAttempts=3 exists for, it is
 // the flake detection removed while the reason string goes on claiming it
-// ran. A caller under a time budget (D.31 wiring is exactly that caller) is
+// ran. A caller under a time budget (the dynamic tier exit gate wiring is exactly that caller) is
 // the one most likely to set it, and it is the one place where the saving is
 // invisible in the output.
 //
@@ -660,7 +660,7 @@ func (o Outcome) Valid() bool {
 // CountsAsFinding reports whether a finding with this outcome may drive
 // record.DastStatusCompletedFindings.
 //
-// Only OutcomeConfirmed does. plan/50-dast.md D.27: "No finding reaches
+// Only OutcomeConfirmed does. The confirmation gate's design: "No finding reaches
 // dast_status: findings without having passed a re-probe confirmation step."
 func (o Outcome) CountsAsFinding() bool { return o == OutcomeConfirmed }
 
@@ -669,7 +669,7 @@ func (o Outcome) CountsAsFinding() bool { return o == OutcomeConfirmed }
 // ---------------------------------------------------------------------------
 
 // Reason is the logged reason attached to every Finding. "Demotes/drops with
-// a logged reason" is D.27's wording; this is the log, on the value itself,
+// a logged reason" is the confirmation gate's wording; this is the log, on the value itself,
 // where it cannot be separated from the decision it explains.
 type Reason string
 
@@ -706,7 +706,7 @@ const (
 	// where the floor comes from, and decide()'s rule 2 for the precedence.
 	//
 	// WHY THIS OUTCOME AND NOT ANOTHER, since the choice is the whole
-	// content of ruling 14's third paragraph:
+	// content of the on-the-match ruling's third paragraph:
 	//
 	// CONFIRMED is wrong. A confirmation is the claim "the oracle fired on
 	// this response". A match that runs past BOTH the floor and its own
@@ -908,7 +908,7 @@ type Signature struct {
 // spells"; the match check says the unspelled part must be inside
 // MaxUnspelledBytes OR inside the footing. Below the floor a match may quote
 // far more than it spells and still confirm — `Z[0-9A-Za-z]*` with s=1 and
-// L=201 does, MEASURED, at confidence 1.000. Ruling 15 chose that weakening
+// L=201 does, MEASURED, at confidence 1.000. The both-directions ruling chose that weakening
 // deliberately and priced it; see MaxUnspelledBytes and the residual section
 // of matchQuotesMoreThanItSpells.
 //
@@ -1060,7 +1060,7 @@ type Signature struct {
 // TestTheQuotationRuleBoundsWhatAnInlinedSpanCanCarry drives the inequality
 // over real matches rather than restating it.
 //
-// THE "AT MOST HALF" HALF OF THIS PARAGRAPH IS WITHDRAWN BY RULING 15 and the
+// THE "AT MOST HALF" HALF OF THIS PARAGRAPH IS WITHDRAWN BY THE BOTH-DIRECTIONS RULING and the
 // sentence is kept so the withdrawal is visible: it read "AT MOST HALF OF ANY
 // INLINED SPAN IS BODY THE PATTERN DID NOT SPELL, AND NEVER MORE THAN 256
 // BYTES OF IT". The second clause is still true and is now the whole claim.
@@ -1182,7 +1182,7 @@ type Signature struct {
 //	the pattern did not decide, over an alphabet of more than one rune,
 //	counts as at least one declared position. See promoteUndecidedPositions.
 //
-// RULING 13 IS WHERE THAT SECOND RULE IS ASKED OF THE RIGHT THING, and it is
+// THE DENOTED-LANGUAGE RULING IS WHERE THAT SECOND RULE IS ASKED OF THE RIGHT THING, and it is
 // the correction the round before this one needed. The rule used to be spelled
 // as a test on the AST NODE — `re.Op == OpAlternate` — and an alternation is
 // not the only way to write one. `x?` denotes `(?:|x)`, a repeat with a zero
@@ -1215,7 +1215,7 @@ type Signature struct {
 // a signature accepted for the same reason costs a false confirmation at
 // confidence 1.000.
 //
-// The price is stated rather than hidden, and ruling 13 widened it. A repeat
+// The price is stated rather than hidden, and the denoted-language ruling widened it. A repeat
 // whose unit's alphabet crosses letters into punctuation is refused EVEN WHEN
 // EVERY BYTE IT CAN MATCH IS SPELLED, whenever that unit is undecided:
 //
@@ -1241,7 +1241,7 @@ type Signature struct {
 // body it spells one byte of; 128 copies is 1025 bytes and does not compile at
 // all.
 //
-// WHAT HAPPENS TO THAT 255-BYTE MATCH IS A DISCLOSED RESIDUAL AND RULING 15
+// WHAT HAPPENS TO THAT 255-BYTE MATCH IS A DISCLOSED RESIDUAL AND THE BOTH-DIRECTIONS RULING
 // CHANGED IT. This sentence used to read "extractSpan inlines ZERO bytes of
 // that 255-byte match and reports all 255 as SpanOverBroadBytes", and that is
 // no longer true. 254 of the 255 bytes are unspelled, 254 is inside
@@ -1340,7 +1340,7 @@ type patternShape struct {
 	// so that `consumes`, which is a union over the whole sub-expression, is
 	// NOT any single position's alphabet.
 	//
-	// RULING 13, AND THE REASON THIS IS A FIELD RATHER THAN AN OPERATOR
+	// THE DENOTED-LANGUAGE RULING, AND THE REASON THIS IS A FIELD RATHER THAN AN OPERATOR
 	// TEST. The promotion this drives used to ask `re.Op == OpAlternate`.
 	// An OPTIONAL sub-expression is an alternation with the empty string —
 	// `x?` denotes `(?:|x)` — and a concatenation of optionals denotes the
@@ -1493,7 +1493,7 @@ func unionRunes(a, b []rune) []rune {
 // spelledRunes is a SPELLED literal's contribution to a position's alphabet,
 // as a rune-pair list in the shape unionRunes and contentBearingClass consume.
 //
-// RULING 12, AND THE REASON THIS FUNCTION EXISTS AT ALL: a literal at an
+// THE RE-KEYING RULING, AND THE REASON THIS FUNCTION EXISTS AT ALL: a literal at an
 // alternation position is AN ALPHABET OF ONE, and a union that leaves it out
 // is not the alphabet of the position. `consumes` used to hold classes only,
 // on the reading that "a literal is not a class" — so spelling the punctuation
@@ -1555,7 +1555,7 @@ func alphabetIsAmbiguous(runes []rune) bool {
 	return false
 }
 
-// quotationOverUnion is R3's aggregation, and it is the whole of ruling 11
+// quotationOverUnion is R3's aggregation, and it is the whole of the branch-at-the-step ruling
 // applied to a regex walk: THE UNION IS TAKEN WHERE THE AMBIGUITY IS.
 //
 // A sub-expression's `quoted` is a max over the branches it was built from,
@@ -1729,7 +1729,7 @@ func classShape(runes []rune) patternShape {
 	return patternShape{declared: 1, consumes: unionRunes(runes, nil), positions: 1}
 }
 
-// promoteUndecidedPositions is RULING 13, and it is the whole of it: a
+// promoteUndecidedPositions is THE DENOTED-LANGUAGE RULING, and it is the whole of it: a
 // sub-expression whose denoted language can put more than one rune at a
 // consumable position holds at least one position the pattern did not decide,
 // and R3 counts undecided positions.
@@ -1744,7 +1744,7 @@ func classShape(runes []rune) patternShape {
 //	Z(?:[a,]?)*      a one-rune class in an optional in a star
 //	Z(?:(?:a|,)?)*   an alternation in an optional in a star
 //	Z(?:a?,?)*       a concatenation of optionals in a star — no OpAlternate
-//	                 anywhere in the tree, and ACCEPTED until ruling 13
+//	                 anywhere in the tree, and ACCEPTED until the denoted-language ruling
 //
 // THE BUMP IS TO ONE and not to the number of positions the sub-expression
 // could actually fill. One is what a node can justify from its own structure
@@ -1772,11 +1772,11 @@ func promoteUndecidedPositions(s patternShape) patternShape {
 	return s
 }
 
-// shapeOf walks a parsed pattern and applies ruling 13's promotion to what the
+// shapeOf walks a parsed pattern and applies the denoted-language ruling's promotion to what the
 // walk found.
 //
 // THE PROMOTION IS APPLIED HERE, ONCE, TO EVERY NODE, rather than in the arms
-// that happen to produce ambiguity. That is the correction ruling 13 asked for:
+// that happen to produce ambiguity. That is the correction the denoted-language ruling asked for:
 // an arm-by-arm promotion is an enumeration of operators, and seven rounds of
 // enumeration each closed one spelling and left the next one open. See
 // promoteUndecidedPositions.
@@ -1910,7 +1910,7 @@ func shapeWalk(re *syntax.Regexp) patternShape {
 		// so it is inlined and CONFIRMS — which is exactly the residual
 		// this arm's own header discloses at
 		// TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes.
-		// Ruling 15's floor is what admits it; running past the footing
+		// The both-directions ruling's floor is what admits it; running past the footing
 		// alone has not been disqualifying since that floor landed.
 		// TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes
 		// drives both measurements.
@@ -2330,7 +2330,7 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // THE COST, MEASURED RATHER THAN ASSERTED. Two costs exist and they are
 // different things. EVERY FIGURE IN THIS SECTION IS A READING OF ONE RUN ON
 // ONE MACHINE, NOT A PROPERTY OF THIS CODE, and the run is identified at the
-// foot of the section: the tree that landed ruling 12, on the machine and Go
+// foot of the section: the tree that landed the re-keying ruling, on the machine and Go
 // version named there. A timing is the one measurement here that cannot be
 // pinned as an equality — pinning it would pin the hardware — so it takes the
 // other treatment and says which tree it came off. Nothing re-measures these
@@ -2345,7 +2345,7 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 //	stopping early. The structural control that runs before it costs 2.3 us
 //	of that, so the corpus is 91% of what a signature costs to compile.
 //
-// THE CONTROL GOT 1.3 us MORE EXPENSIVE WHEN RULING 12 LANDED, and the number
+// THE CONTROL GOT 1.3 us MORE EXPENSIVE WHEN THE RE-KEYING RULING LANDED, and the number
 // is moved rather than left: putting spelled runes into `consumes` means every
 // OpLiteral allocates a rune-pair list and unions it, so a pattern that is
 // mostly literal now pays per rune. It was 972 ns. It buys the closure of an
@@ -2354,7 +2354,7 @@ func refuseOverBroadPattern(pattern string) (spelled int, err error) {
 // benchmark block that still said 972 would be a measurement of a tree that no
 // longer exists.
 //
-// MEASURED, NOT ESTIMATED, ON THE TREE THAT LANDED RULING 12 — which is the
+// MEASURED, NOT ESTIMATED, ON THE TREE THAT LANDED THE RE-KEYING RULING — which is the
 // last tree on which anything in this section was timed — by
 // BenchmarkBenignCorpusBuild, BenchmarkNewSignature and
 // BenchmarkRefuseOverBroadPattern in confirm_gate_test.go, under go1.26.5 on
@@ -2795,7 +2795,7 @@ type EvidenceRef struct {
 	// longer than MaxSpanBytes, or its unspelled part ran past BOTH
 	// MaxUnspelledBytes and the pattern's own footing. The second used to
 	// be written here as "carried more bytes the pattern did not spell
-	// than bytes it did", which is ruling 15's floor left out: a match
+	// than bytes it did", which is the both-directions ruling's floor left out: a match
 	// carrying 200 unspelled bytes against 1 spelled sets this field to
 	// ZERO and is inlined whole. MEASURED on `Z[0-9A-Za-z]*`. They are
 	// recorded the same way on
@@ -2806,7 +2806,7 @@ type EvidenceRef struct {
 	// This field replaced one called spanTruncatedFrom, and the rename is
 	// the fix rather than a tidy-up. Truncating an over-broad match to
 	// MaxSpanBytes still inlines a raw body prefix — 512 verbatim bytes of
-	// whatever the target sent, through the one channel spine S7 sanctions.
+	// whatever the target sent, through the one channel the spine's safety section sanctions.
 	// A signature whose match runs past the span budget is not extracting
 	// evidence, it is quoting the response, so the answer is to produce no
 	// span at all and record how long the match was. The match still
@@ -2818,7 +2818,7 @@ type EvidenceRef struct {
 }
 
 // BodyHash returns the hex SHA-256 of the response body the span came from.
-// This is the "hash-and-reference by default" half of spine S7.
+// This is the "hash-and-reference by default" half of the spine's safety section.
 func (e EvidenceRef) BodyHash() string { return e.bodyHash }
 
 // ExtractedSpan returns the bounded, printable-ASCII regex match.
@@ -3196,9 +3196,9 @@ type Reprober interface {
 // offered a field to sit in.
 //
 // The fields are exported because a caller must be able to build one from an
-// engines.Finding (D.14) or a ZAP alert (D.15) without this package importing
-// either. Nothing here is trusted for being exported: NewGate's ConfirmFinding
-// validates every field before the first probe leaves.
+// engines.Finding (the nuclei driver) or a ZAP alert (the ZAP driver) without
+// this package importing either. Nothing here is trusted for being exported:
+// NewGate's ConfirmFinding validates every field before the first probe leaves.
 type RawFinding struct {
 	// Engine is which engine produced the candidate ("nuclei", "zap").
 	Engine string
@@ -3293,7 +3293,7 @@ func (c RawFinding) Validate() (RefuseReason, error) {
 // EVERY FIELD IS UNEXPORTED AND EVERY FIELD IS A VALUE. There is no exported
 // field to assign a body to, no pointer or slice through which one could be
 // reached, and consequently no way for a consumer to hold a Finding that
-// carries a raw response body. That is D.27's "this gate's output type must
+// carries a raw response body. That is the confirmation gate's "this gate's output type must
 // make 'the model reads the raw body' a type error, not a discipline
 // problem", and it is checked mechanically by
 // TestFindingTypeClosureHasNoRawBodyPath.
@@ -3426,7 +3426,7 @@ func (f Finding) IndecisiveAttempts() int { return f.indecisive }
 // literal footing.
 //
 // THAT IS NARROWER THAN "QUOTED MORE THAN IT SPELLS", which is what this
-// accessor's doc claimed before ruling 15's floor landed. A match quoting 200
+// accessor's doc claimed before the both-directions ruling's floor landed. A match quoting 200
 // bytes against 1 spelled is inside the floor, so it is NOT counted here and
 // the finding confirms. MEASURED on `Z[0-9A-Za-z]*`; the cost is disclosed at
 // MaxUnspelledBytes.
@@ -3617,7 +3617,7 @@ const MaxRefusalMessageBytes = 2048
 
 // quarantine renders a foreign error WITHOUT QUOTING IT.
 //
-// This is spine S7's "hash-and-reference by default" applied to the error
+// This is the spine's "hash-and-reference by default" applied to the error
 // channel, and for the identical reason: the Reprober's error text is written
 // on the far side of gate 3, an unparseable-response error routinely contains
 // the response, and a refusal message is read by a human and increasingly by
@@ -3689,7 +3689,7 @@ type GateConfig struct {
 	DefenceSignature Signature
 }
 
-// Gate is D.27: the finding confirmation gate.
+// Gate is the finding confirmation gate.
 type Gate struct {
 	reprober Reprober
 	attempts int
@@ -3780,7 +3780,7 @@ func (g *Gate) ReproberWired() bool { return g.Constructed() && g.reprober != ni
 // Step 4's attempt-selection rule is ENFORCED BY confirmAgainst,
 // MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne,
 // and the name in that citation is the TEST HELPER rather than this function
-// because ruling 17's aptness check reads the cited test's syntax tree, and
+// because the syntax-tree ruling's aptness check reads the cited test's syntax tree, and
 // that test's code names confirmAgainst and never names ConfirmFinding.
 // confirmAgainst is four lines whose middle one is g.ConfirmFinding, so it is
 // an honest first stop for a reader; a citation naming this function would be
@@ -3874,7 +3874,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 		span, dropped, overBroad, matchLen, matched := extractSpan(obs.Body, candidate.Signature)
 		if matched {
 			matches++
-			// RULING 14'S CHECK, ON THE MATCH THAT ACTUALLY HAPPENED. It
+			// THE ON-THE-MATCH RULING'S CHECK, ON THE MATCH THAT ACTUALLY HAPPENED. It
 			// is counted here and decided in decide() rather than being
 			// short-circuited, because "how many attempts did this" is a
 			// fact worth reporting on the Finding even when a
@@ -3988,15 +3988,16 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     disproves nothing, so this class can never reach OutcomeRejected.
 //
 //  2. A MATCH'S UNSPELLED PART RAN PAST BOTH MaxUnspelledBytes AND THE
-//     SIGNATURE'S OWN FOOTING. This is ruling 14 as ruling 15 floored it, and
-//     it is where the over-broadness guarantee actually lives — on the match,
-//     where it is one comparison between two integers in hand, rather than on
-//     the pattern, where it is an incomplete static analysis that nine rounds
-//     of spellings walked past. See matchQuotesMoreThanItSpells.
+//     SIGNATURE'S OWN FOOTING. This is the on-the-match ruling as the
+//     both-directions ruling floored it, and it is where the over-broadness
+//     guarantee actually lives — on the match, where it is one comparison
+//     between two integers in hand, rather than on the pattern, where it is an
+//     incomplete static analysis that nine rounds of spellings walked past. See
+//     matchQuotesMoreThanItSpells.
 //
 //     THE HEADING USED TO BE THE PRE-FLOOR PREDICATE WORN AS A TITLE — "a
 //     match quoted more of the response than the signature spells" — which
-//     names a rule this gate stopped applying at ruling 15 and which rule 7
+//     names a rule this gate stopped applying at the both-directions ruling and which rule 7
 //     below already corrects in its own words. `Z[0-9A-Za-z]*` against `Z`
 //     plus 200 alphanumerics quotes 200 unspelled bytes against 1 spelled and
 //     does NOT arrive here; it arrives at rule 7, confirmed.
@@ -4062,7 +4063,7 @@ func (g *Gate) ConfirmFinding(ctx context.Context, candidate RawFinding) (*Findi
 //     OutcomeConfirmed.
 //
 //     "INSIDE ITS OWN FOOTING" IS WHAT THIS LINE USED TO SAY AND IT IS
-//     MEASURABLY FALSE SINCE RULING 15. `Z[0-9A-Za-z]*` against `Z` plus 200
+//     MEASURABLY FALSE SINCE THE BOTH-DIRECTIONS RULING. `Z[0-9A-Za-z]*` against `Z` plus 200
 //     lowercase bytes has s=1 and L=201, runs 200 bytes past its footing,
 //     and arrives HERE: outcome confirmed, reason
 //     reproduced_on_every_attempt, overQuoted=0, confidence 1.000. The floor
@@ -4199,7 +4200,7 @@ func (l Ledger) CandidateCount() int { return len(l.findings) + len(l.refusals) 
 // FindingCountForStatus is the number Summary.DeriveDastStatus takes, and it
 // counts CONFIRMED findings only.
 //
-// plan/50-dast.md D.27: "No finding reaches dast_status: findings without
+// The confirmation gate's design: "No finding reaches dast_status: findings without
 // having passed a re-probe confirmation step — a first-seen finding from an
 // engine is provisional until confirmed." An unconfirmed finding is by
 // definition one that did not pass that step, and a rejected one failed it.
@@ -4227,9 +4228,10 @@ func (l Ledger) FindingCountForStatus() int { return l.ConfirmedCount() }
 //
 // It is an error rather than a different status because choosing the status
 // is not this packet's call: record.DeriveDastStatus owns the mapping and
-// Summary.DeriveDastStatus (D.26) is area D's only door to it. What this can
-// do is make the caller handle the case explicitly, which is the same shape
-// coverage.go's ErrCoverageNotComputable uses and for the same reason.
+// Summary.DeriveDastStatus (coverage reporting) is the dynamic tier's only door
+// to it. What this can do is make the caller handle the case explicitly, which
+// is the same shape coverage.go's ErrCoverageNotComputable uses and for the
+// same reason.
 //
 // It mirrors engines.ScanResult.AssertNotSilentlyEmpty one layer up: that one
 // separates "no findings" from "nothing probed"; this one separates "no
@@ -4276,7 +4278,7 @@ func (l Ledger) String() string {
 // Extraction — the only code that touches a body
 // ---------------------------------------------------------------------------
 
-// hashBody is the "hash-and-reference by default" half of spine S7. A nil
+// hashBody is the "hash-and-reference by default" half of the spine's safety section. A nil
 // body hashes to the SHA-256 of the empty string rather than to "", so a
 // Finding always carries a hash and EvidenceRef.Constructed() stays a
 // meaningful predicate.
@@ -4300,7 +4302,7 @@ func hashBody(body []byte) string {
 //     "(?s).{1,512}" or "[\s\S]" matches the response body itself; cutting
 //     that match down to the budget hands back a VERBATIM 512-BYTE PREFIX OF
 //     THE RESPONSE, which is raw-body inlining arriving through the one
-//     channel plan/00-SPINE.md S7 sanctions. So the answer is not a shorter
+//     channel the spine's safety section sanctions. So the answer is not a shorter
 //     prefix, it is no prefix. matched stays TRUE — the oracle fired, and
 //     whether the oracle fired is a different question from whether its match
 //     is safe to show. NewSignature refuses most such patterns up front; this
@@ -4375,7 +4377,7 @@ func hashBody(body []byte) string {
 //     NO SPAN, so the key id itself is not inlined. The finding is still
 //     CONFIRMED and still carries the body hash". The first half was true.
 //     THE SECOND HALF WAS NOT, and it was the justification carrying the
-//     whole trade: ruling 14 made this same comparison decide the outcome, so
+//     whole trade: the on-the-match ruling made this same comparison decide the outcome, so
 //     the AKIA match did not yield a span AND did not confirm — a reproduced
 //     AWS key exposure never reached dast_status findings at all. RUN IT;
 //     TestEveryRealOracleConfirmsAGenuineHit does, oracle by oracle.
@@ -4394,7 +4396,7 @@ func hashBody(body []byte) string {
 //     TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells is the sweep and
 //     it runs the boundary on both arms.
 //
-//     RULING 14 MADE THIS COMPARISON DECIDE THE OUTCOME AS WELL AS THE SPAN,
+//     THE ON-THE-MATCH RULING MADE THIS COMPARISON DECIDE THE OUTCOME AS WELL AS THE SPAN,
 //     and that is why the arithmetic moved into matchQuotesMoreThanItSpells
 //     rather than staying inline here. For nine rounds this function was the
 //     only thing that asked it, and it asked it about INLINING only — so a
@@ -4447,7 +4449,7 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 	return b.String(), dropped, 0, len(match), true
 }
 
-// matchQuotesMoreThanItSpells IS RULING 14'S INVARIANT, and it is one
+// matchQuotesMoreThanItSpells IS THE ON-THE-MATCH RULING'S INVARIANT, and it is one
 // comparison between two integers that are both in hand.
 //
 // ===========================================================================
@@ -4484,7 +4486,7 @@ func extractSpan(body []byte, sig Signature) (span string, dropped, overBroad, m
 // from MaxSpanBytes.
 //
 // ===========================================================================
-// RULING 15: WHY THE RATIO ALONE WAS WRONG BELOW THE FLOOR
+// THE BOTH-DIRECTIONS RULING: WHY THE RATIO ALONE WAS WRONG BELOW THE FLOOR
 // ===========================================================================
 //
 // `matchLen - spelled <= spelled` was the whole rule for one round, and it is
@@ -4639,7 +4641,7 @@ func matchQuotesMoreThanItSpells(matchLen, spelled int) bool {
 // the end-to-end path that reaches the two indecisive routes is
 // ENFORCED BY ConfirmFinding,
 // MEASURED BY TestARateLimitedReprobeIsNotADisproof. That second citation used
-// to name decide as well; it now names its caller, because under ruling 17 the
+// to name decide as well; it now names its caller, because under the syntax-tree ruling the
 // cited test has to REFERENCE the enforcer and that test drives a whole gate —
 // ConfirmFinding is the identifier its code names, and decide is a step inside
 // the call it makes.
@@ -4708,7 +4710,7 @@ func printable(s string, n int) string {
 	return b.String()
 }
 
-// assertFindingStringsBounded is the runtime half of D.27's "no
+// assertFindingStringsBounded is the runtime half of the confirmation gate's "no
 // Finding-reachable field can hold a value longer than the
 // regex-extracted-span length limit".
 //
@@ -4744,7 +4746,7 @@ func assertFindingStringsBounded(f Finding) error {
 	} {
 		if len(s.value) > MaxSpanBytes {
 			return fmt.Errorf("%w: the assembled Finding's %s is %d bytes and the bound is "+
-				"%d. plan/00-SPINE.md S7 forbids inlining a response body; a field over "+
+				"%d. The spine's safety section forbids inlining a response body; a field over "+
 				"the span limit is how one would arrive",
 				ErrRefused, s.name, len(s.value), MaxSpanBytes)
 		}

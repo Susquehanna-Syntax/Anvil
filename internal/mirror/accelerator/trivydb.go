@@ -1,5 +1,5 @@
 // Package accelerator is Anvil's OPTIONAL warm-start cache for package-range
-// matching. This is step A.11 of plan/20-lane-a-ingestion-sca.md.
+// matching. This is the accelerator (plan node accelerator).
 //
 // # ANVIL MUST WORK CORRECTLY WITHOUT THIS PACKAGE. THAT IS THE DESIGN.
 //
@@ -128,15 +128,15 @@
 //     namespace) and the resulting 6h → 24h cadence cut, which is why
 //     DefaultMinRefreshInterval is 24h and why 429 is a first-class outcome.
 //
-//   - Cross-host redirects are refused outright (spine S7), with no allowlist
+//   - Cross-host redirects are refused outright (the spine's safety section), with no allowlist
 //     and no opt-out. Real ghcr.io redirects blob GETs to
 //     pkg-containers.githubusercontent.com, so a pull against the real registry
 //     is expected to be REFUSED by that rule. That refusal is the rule working
 //     rather than a defect, and the operator's route is a pull-through cache
 //     that serves its own blobs — which is Aqua's own post-outage advice and
 //     what RegistryBase is for. It is stated here because no test can observe
-//     it: S7 forbids the network at test time, so the mock registry does not
-//     model the redirect the real one issues.
+//     it: the spine's safety section forbids the network at test time, so the
+//     mock registry does not model the redirect the real one issues.
 package accelerator
 
 import (
@@ -379,7 +379,7 @@ type Config struct {
 
 	// HTTPClient lets a test supply httptest's client. Nil means a bounded
 	// default. Either way the client is COPIED and given a redirect policy
-	// that refuses cross-host hops, per spine S7.
+	// that refuses cross-host hops, per the spine's safety section.
 	HTTPClient *http.Client
 
 	// Now is the clock, for freshness tests. Nil means time.Now.
@@ -524,7 +524,7 @@ func (c Config) normalise() (Config, error) {
 }
 
 // parseEndpoint is the scope rule applied to ONE configured url, and it is the
-// same rule internal/ingest/poller applies per S7: https, a host, no inline
+// same rule internal/ingest/poller applies per the spine's safety section: https, a host, no inline
 // credentials. It runs on the configured endpoint before any socket opens, and
 // again on anything third-party content later names.
 //
@@ -1356,7 +1356,7 @@ func (rc *registryClient) origin() string {
 	return rc.base.String() + "/" + rc.repo
 }
 
-// httpClient copies the caller's client and installs the S7 redirect policy.
+// httpClient copies the caller's client and installs the spine's safety section redirect policy.
 // http.Client has no unexported state, so the copy is safe, and copying means
 // the caller's client is not mutated by having been passed in.
 //

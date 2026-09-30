@@ -1,14 +1,14 @@
-# CRITIQUE-02 — Critic Gate 2 (R.10): sealing, handoff/claim, masking
+# Review: sealing, the claim protocol and secrets masking
 
 **Verdict: FAIL.** Two of the five required verdicts fail, on defects reproduced by executed tests,
 not by reading.
 
 > ## SAME-FAMILY CRITIC. READ THIS BEFORE QUOTING THE VERDICT.
 >
-> `plan/00-ROUTING.md` originally required a **different model family** for this gate, precisely so a
+> `plan/design/routing.md` originally required a **different model family** for this gate, precisely so a
 > shared blind spot could not survive review. The owner withdrew external routes on 2026-08-07
 > because running them copies private files to a third party (see the OWNER DECISION block at the top
-> of `00-ROUTING.md`). This critique was therefore produced by a critic of the **same family as the
+> of `routing.md`). This critique was therefore produced by a critic of the **same family as the
 > implementer**.
 >
 > A later reader must not record this as a cross-family review. The guarantee obtained here is
@@ -21,7 +21,7 @@ not by reading.
 
 ## 1. The five required verdicts
 
-| # | Verdict required by the R.10 packet | Result |
+| # | Verdict required by this review | Result |
 |---|---|---|
 | (a) | Lease vs. claim-timeout independence | **PASS** |
 | (b) | No secure-deletion claims present | **PASS** |
@@ -77,7 +77,7 @@ single-threaded reproduction only.
 
 ### F1 — BLOCKER. Two live leases on one finding at one record version.
 
-`plan/40-record-and-storage.md` and this package's own doc make the reclaim/idempotency key
+`plan/design/record-and-store.md` and this package's own doc make the reclaim/idempotency key
 **(fingerprint, record version)**. The durable table does not enforce that key. `schema.sql` declares
 `UNIQUE (finding_id, audit_record_id)`, and a re-scan produces a *new* `audit_record` row (its
 `scan_run_id` is `UNIQUE`), each with `audit_version` defaulting to 1. So one fingerprint gets one
@@ -115,7 +115,7 @@ quote anticipates; the outcome is the one it forbids.
 Aggravating: the two competing leases carry **different** `idempotency_key` values (see F7), so the
 downstream duplicate-suppression the `Handle` doc promises cannot catch it either.
 
-The queue re-cut that would mark the stale row `superseded` is R.11, which does not exist yet, and
+The queue re-cut, which would mark the stale row `superseded`, does not exist yet, and
 even once it does there is a window. The invariant must be enforced where it is claimed — one live
 lease per `(fingerprint, record version)` — not left to a later step's punctuality.
 
@@ -128,11 +128,11 @@ lease per `(fingerprint, record version)` — not left to a later step's punctua
 
 `eligibleFrom` gates on `a.state IN ('sast_sealed','both_sealed')` for `static_only` and
 `a.state = 'both_sealed'` for `requires_dynamic_confirmation`. `'consumed'` is in neither set, and
-`'consumed'` is a legal `audit_record.state` (`ck_audit_record_state`) that R.6's `Sealer.Consume`
+`'consumed'` is a legal `audit_record.state` (`ck_audit_record_state`) that the sealer's `Sealer.Consume`
 sets.
 
-R.6 is explicit in the other direction — `sealing.go:775`: *"A consumed audit is still readable:
-plan/00-SPINE.md S1 requires a RE-ENTRANT consumer, so taking the record once must not shut the
+The sealer is explicit in the other direction — `sealing.go:775`: *"A consumed audit is still readable:
+The spine's corrected-requirements table requires a RE-ENTRANT consumer, so taking the record once must not shut the
 gate."* The queue shuts it.
 
 Reproduced:
@@ -151,7 +151,7 @@ One `audit_record` fans out to many `handoff` rows. The first consumption pass m
 `consumed` therefore strands **every sibling finding still in `ready`** — permanently unclaimable,
 then swept to `'expired'` by `ExpireClaimTimeouts` at the deadline. The row is kept (so this is not
 data *deletion*), but the finding is never handed to an agent in this scan. That is silent work loss
-on the exact axis S1 names.
+on the exact axis the spine's corrected-requirements table names.
 
 No test in `handoff_test.go` ever sets `record.StateConsumed` — `grep -n "StateConsumed"
 internal/handoff/handoff_test.go` returns nothing. The gap is untested, not merely unhandled.
@@ -190,7 +190,7 @@ passwords — is applied only to `webRequest.target`, never to these.
 --- FAIL: TestProbeTargetRepoURLCredentialSurvives (0.00s)
 ```
 
-This is the R.10 packet's named Forbidden action: a design that *"leaves any code path capable of
+This is this review's named Forbidden action: a design that *"leaves any code path capable of
 persisting an unmasked secret."* It is not the documented body-only limitation — `mask.go:106-114`
 disclaims *shape-based body scanning*, which is a different thing. `repoUrl` and `repro.curl` are
 structured fields with a known credential position, exactly what structural masking is for.
@@ -203,7 +203,7 @@ structured fields with a known credential position, exactly what structural mask
 
 ### F4 — MAJOR. `AssertMasked`, the enforceable sink gate, is weaker than `Mask` and fails open on the URL surface.
 
-`mask.go:996` justifies `AssertMasked` as S7's *"enforce in code, not documentation"*: a sink *"can
+`mask.go:996` justifies `AssertMasked` as the spine's *"enforce in code, not documentation"*: a sink *"can
 call it and refuse the record rather than trusting that some earlier step remembered to mask."* It
 checks headers, parameters and body caps. It never checks `webRequest.target` — which `Mask` **does**
 mask.
@@ -239,7 +239,7 @@ lease ownership. `WritePacket` likewise materialises a packet for an audit that 
 ```
 
 The claim gate correctly refuses the same fingerprint one line earlier. The packet is called a cache,
-but it is a cache *of the payload*, and R.6's read gate means nothing if the bytes are reachable
+but it is a cache *of the payload*, and the sealer's read gate means nothing if the bytes are reachable
 beside it. (Credit where due: expiry **does** unlink the packet — `TestProbePacketReadAfterExpiry`
 passes.)
 
@@ -261,7 +261,7 @@ values with no state check at all, and `HalfSeal.Readable()` is exported.
 `ReadyForConsumption` checks `StateExpired`; `Inspect` does not. Two exported readiness paths, two
 answers. Note also the structural point for verdict (d): `ReadHalf` returns no results at all —
 `HalfSeal` is `{Half, Status, SealedAt}`, all of which `Inspect` hands out ungated — so as
-implemented the gate is advisory, and R.13 will have to re-implement it over the actual results
+implemented the gate is advisory, and the read path will have to re-implement it over the actual results
 rather than inherit it.
 
 ### F7 — MAJOR. `IdempotencyKey` is keyed on a rowid, so it does not survive the case it is documented to survive.
@@ -317,7 +317,7 @@ requiring it non-zero-valued (an `*int`), would close it.
 --- FAIL: TestProbeValidatedWithoutDynamicEvidence (0.01s)
 ```
 
-On the S7 question the packet actually asks — *does a lease grant more than "may act on this
+On the spine's safety section question the packet actually asks — *does a lease grant more than "may act on this
 finding"?* — the answer is **no**, and that part is clean: `Handle` carries no merge field, no scope
 field and no verdict field, nothing in either package merges anything, and `state_machine.go:40-44`
 states the limit correctly. But `state_machine.go` also says *"Only a DAST reproduction that now
@@ -374,7 +374,7 @@ These were probed and held.
   second sweep matches nothing and a resurrected OOM-killed holder gets `ErrLeaseLost` rather than
   overwriting its successor. Attempt arithmetic is consistent: incremented at claim, compared
   `attempts >= max_attempts` in the reaper and `attempts < max_attempts` in the eligibility query, so
-  exactly one retry with the default of 2 and no infinite re-lease (the §6 G10 failure).
+  exactly one retry with the default of 2 and no infinite re-lease (the failure the one-ledger ruling names).
 - **(b) No secure-deletion claim anywhere.** `SECRETS.md` §2 is an explicit denial, §4 names the
   LUKS2/fscrypt alternative, §8 is a claim-to-source table. `DropPacket`'s doc says plainly it is
   *"an unlink, not an erasure"*. `TestNoSecureDeletionClaimOrCall` (`handoff_test.go:1229`) is a real
@@ -411,8 +411,8 @@ These were probed and held.
   only the definitions. The store writer that would call it is a later step. So "masking runs before
   both sinks" is today a property of intent, not of the tree; it will need re-verification when the
   writer lands. F3 and F4 are failures of the masker itself and stand independently of that.
-- Whether R.11's queue re-cut is intended to `Dispose(..., superseded)` every stale row of a bumped
-  audit is not stated in anything R.6–R.8 owns. F1 is a defect regardless — the invariant must not
+- Whether the queue re-cut is intended to `Dispose(..., superseded)` every stale row of a bumped
+  audit is not stated in anything the sealer, the claim protocol or secrets masking owns. F1 is a defect regardless — the invariant must not
   depend on another step's timeliness — but the intended division of labour should be confirmed by
   the orchestrator before F1 is fixed, so the fix lands in the right packet.
 
@@ -420,10 +420,10 @@ These were probed and held.
 
 ## 8. Recommendation
 
-Re-route **R.7** (F1, F2, F7, F9, F10) and **R.8** (F3, F4), and take F6/F8 back to **R.6**. F5 spans
-R.6 and R.7 and needs an owner assigned before it is fixed.
+Re-route **the claim protocol** (F1, F2, F7, F9, F10) and **secrets masking** (F3, F4), and take F6/F8 back to **the sealer**. F5 spans
+the sealer and the claim protocol and needs an owner assigned before it is fixed.
 
-Per the R.10 packet: *"All five verdicts PASS, or R.6/R.7/R.8/R.9 rerouted and re-reviewed."* Two
+Per this review: *"All five verdicts PASS, or the sealer, the claim protocol, secrets masking and the retention document rerouted and re-reviewed."* Two
 verdicts fail. Reroute.
 
-R.9 (`SECRETS.md`) is the one reviewed artifact with no findings against it.
+The retention document (`SECRETS.md`) is the one reviewed artifact with no findings against it.

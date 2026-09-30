@@ -1,4 +1,4 @@
-// Package engines holds Anvil's probe-engine drivers. This file is D.14: the
+// Package engines holds Anvil's probe-engine drivers. This file is the nuclei driver: the
 // Nuclei driver.
 //
 // # What this driver is for, stated as the failure it prevents
@@ -25,10 +25,11 @@
 //
 // # This driver holds no socket, and cannot
 //
-// plan/00-SPINE.md S7 says no model ever holds a network handle. D.9's gate 3
-// extends that to the whole dynamic tier: any socket constructed inside
-// internal/dast outside internal/dast/authz fails the build, with no allowlist
-// and no code path that can add one (CheckGate3EgressChokePoint, tier 1).
+// The spine's safety section says no model ever holds a network handle. The
+// build-time guard's gate 3 extends that to the whole dynamic tier: any socket
+// constructed inside internal/dast outside internal/dast/authz fails the build,
+// with no allowlist and no code path that can add one
+// (CheckGate3EgressChokePoint, tier 1).
 //
 // That is not an obstacle this file works around. It is the reason the file is
 // shaped the way it is. Fire() produces a RequestProposal, runs it through the
@@ -65,19 +66,19 @@
 //
 // # What this driver assumes about template provenance: NOTHING
 //
-// Templates are supply-chain input. D.17 owns pinning them — a commit SHA for
-// `nuclei-templates`, diffed before promotion (plan/50-dast.md, Pinned
+// Templates are supply-chain input. Template pinning owns pinning them — a commit SHA for
+// `nuclei-templates`, diffed before promotion (plan/design/dynamic-tier.md, Pinned
 // Versions And Licences). This file owns NOT TRUSTING THEM, and it does not
-// depend on D.17 having run:
+// depend on template pinning having run:
 //
 //   - Every template is analysed structurally before it is admitted, and the
 //     analysis is an ALLOWLIST of top-level keys. A template carrying a key
 //     nobody enumerated is rejected, not skipped and not partially loaded.
 //   - The `code:` protocol is rejected AT LOAD TIME with its own named
-//     reason, per spine S5. So are `javascript:`, `flow:`, `headless:` and
+//     reason, per the spine's exclusion list. So are `javascript:`, `flow:`, `headless:` and
 //     `self-contained:`, for reasons stated at protocolAllowlist.
 //   - Every admitted template carries a SHA-256 of its exact bytes. That is
-//     the value D.17 pins against; this file computes and reports it so a
+//     the value template pinning pins against; this file computes and reports it so a
 //     pin can be checked, and enforces its own allowlist regardless of
 //     whether one was.
 //   - No signature is verified here. Upstream templates carry a trailing
@@ -124,7 +125,7 @@ const MaxEvidenceBytes = 4096
 // # and NOT because reimplementing it was preferable
 //
 // MEASURED, not assumed: importing internal/ingest/sanitize from this package
-// fails D.9's tier-wide gate 2 check. `go test -run
+// fails the build-time guard's tier-wide gate 2 check. `go test -run
 // TestGate2NoDastPackageReachesTheInferenceLayer ./internal/dast/authz/`
 // reported, verbatim:
 //
@@ -137,7 +138,7 @@ const MaxEvidenceBytes = 4096
 // internal/dast may link only the standard library, the DAST tree, and
 // kernelImportAllowlist — one entry, internal/record — because a DAST package
 // that links what the KERNEL may not link puts it in the same process as the
-// network handles. Widening it is an edit to phase0_build.go, which is D.9's
+// network handles. Widening it is an edit to phase0_build.go, which is the build-time guard's
 // write scope and not this packet's.
 //
 // So the scrub below is DELIBERATELY SMALLER than sanitize's: it removes the
@@ -275,7 +276,7 @@ const maxRedactedIdentifierBytes = 64
 // FAILED an allowlist or a lookup — a template id the engine invented, a
 // digest that matches nothing admitted, an origin nobody enumerated. Those
 // strings reach an operator's terminal, the gate-21 audit and, downstream, a
-// prompt-bound agent (plan/00-SPINE.md S6, S7). Length is its own payload and
+// prompt-bound agent (the spine's record and safety sections). Length is its own payload and
 // so is a bidi override, so neither reaches the message.
 //
 // # Why this is a copy of the kernel's redactUntrusted and not a call to it
@@ -358,10 +359,10 @@ const EngineName = "nuclei"
 // InstallHint is printed inside every engine-absent error. It names the
 // artefact and how to obtain it.
 //
-// It carries NO VERSION LITERAL and NO DIGEST. plan/50-dast.md's Pinned
+// It carries NO VERSION LITERAL and NO DIGEST. plan/design/dynamic-tier.md's Pinned
 // Versions And Licences table pins the Nuclei engine as "Go SDK, pin at build
 // time" and `nuclei-templates` "by commit SHA, diffed before promotion
-// (D.17)"; neither names a number, so neither does this constant. Inventing
+// (template pinning)"; neither names a number, so neither does this constant. Inventing
 // one here would put a version into an error message that no build ever
 // produced.
 const InstallHint = "the Nuclei Go SDK (MIT) is not in this module's dependency graph and no " +
@@ -449,11 +450,11 @@ func (e *EngineUnavailableError) ExitCode() int { return ExitCodeArtefactAbsent 
 // the specific thing an integration lane must prove.
 type Engine interface {
 	// ExecuteCallbackWithCtx runs the plan and calls cb once per result.
-	// Named for the SDK entry point plan/50-dast.md D.14 nominates; the
+	// Named for the SDK entry point the nuclei driver's design nominates; the
 	// types are Anvil's.
 	ExecuteCallbackWithCtx(ctx context.Context, plan RunPlan, cb func(EngineResult) error) error
 
-	// WithPDCPUpload mirrors the SDK option plan/50-dast.md D.14 forbids
+	// WithPDCPUpload mirrors the SDK option the nuclei driver's design forbids
 	// outright: "Never call WithPDCPUpload(scanID, teamID)".
 	//
 	// IT IS ON THIS INTERFACE PRECISELY SO THAT ITS ABSENCE FROM THE CALL
@@ -497,7 +498,7 @@ type RunPlan struct {
 	// that over every constructor rather than over one.
 	interactsh bool
 	// pdcpUpload records whether cloud upload is enabled. Same shape, same
-	// reason, and plan/50-dast.md D.14 forbids the SDK call outright.
+	// reason, and the nuclei driver's design forbids the SDK call outright.
 	pdcpUpload bool
 	sealed     bool
 }
@@ -550,7 +551,7 @@ func (p RunPlan) Targets() []TargetSpec { return cloneTargetSpecs(p.targets) }
 func (p RunPlan) Templates() []Template { return cloneTemplates(p.templates) }
 
 // InteractshEnabled reports whether out-of-band interaction is on. It is
-// always false: plan/50-dast.md D.14 requires interactsh/OAST off by default
+// always false: the nuclei driver's design requires interactsh/OAST off by default
 // and this package provides no way to turn it on.
 func (p RunPlan) InteractshEnabled() bool { return p.interactsh }
 
@@ -679,7 +680,7 @@ const (
 
 	// --- named refusals: enumerated so the message is right ---
 
-	// ProtocolCode is the `code:` protocol. Spine S5 hard exclusion.
+	// ProtocolCode is the `code:` protocol. The spine's hard exclusion.
 	ProtocolCode Protocol = "code"
 	// ProtocolJavaScript runs JS inside the engine.
 	ProtocolJavaScript Protocol = "javascript"
@@ -695,7 +696,7 @@ const (
 //
 // # An allowlist, matched by identity
 //
-// plan/50-dast.md D.14 requires that `code:` templates be REJECTED AT LOAD
+// The nuclei driver's design requires that `code:` templates be REJECTED AT LOAD
 // TIME rather than skipped at match time. The obvious implementation is a
 // check for the string "code". That is a denylist of one, and a denylist
 // loses: `javascript:` executes, `flow:` executes, `headless:` drives a
@@ -704,10 +705,11 @@ const (
 // kernel's HTTP-shaped RequestIntent cannot describe, and `file:` reads the
 // local disk. None of those contains the substring "code".
 //
-// So the question is inverted, the same way D.9 inverted gate 3's scanner: a
-// template is admitted only if EVERY top-level key it declares is on this
-// list. A protocol nobody has heard of — one that ships in a future template
-// schema — is refused by default, and no one has to have remembered it.
+// So the question is inverted, the same way the kernel's build-time guard
+// inverted gate 3's scanner: a template is admitted only if EVERY top-level key
+// it declares is on this list. A protocol nobody has heard of — one that ships
+// in a future template schema — is refused by default, and no one has to have
+// remembered it.
 //
 // # Why the executable list is exactly one entry
 //
@@ -749,7 +751,7 @@ const (
 	// RejectedTemplate.Valid refuses it.
 	RejectUnspecified RejectionReason = ""
 
-	// RejectCodeProtocol is the spine S5 hard exclusion, by name.
+	// RejectCodeProtocol is the spine's hard exclusion, by name.
 	RejectCodeProtocol RejectionReason = "code_protocol_hard_exclusion"
 	// RejectExecutesCode covers `javascript:` and `flow:`.
 	RejectExecutesCode RejectionReason = "template_executes_code"
@@ -774,7 +776,7 @@ const (
 	RejectDuplicateKey RejectionReason = "duplicate_top_level_key"
 	// RejectMissingID / RejectBadID / RejectMissingInfo are the identity
 	// checks. A template with no usable id cannot be attributed in a
-	// finding or pinned by D.17.
+	// finding or pinned by template pinning.
 	RejectMissingID   RejectionReason = "missing_id"
 	RejectBadID       RejectionReason = "malformed_id"
 	RejectMissingInfo RejectionReason = "missing_info"
@@ -818,8 +820,8 @@ func (r RejectionReason) Recognised() bool {
 //
 // The specific entries are redundant against RejectProtocolNotAllowlisted —
 // the allowlist already refuses every one of them — and they are kept for the
-// same reason D.2 kept gate 2's inference denylist alongside its allowlist:
-// so the failure spine S5 names produces a message that says so, instead of
+// same reason the kernel core kept gate 2's inference denylist alongside its allowlist:
+// so the failure the spine's exclusion list names produces a message that says so, instead of
 // "this key is not on the allowlist". Both refuse.
 func reasonForProtocol(p Protocol) RejectionReason {
 	switch p {
@@ -838,7 +840,7 @@ func reasonForProtocol(p Protocol) RejectionReason {
 
 // RejectedTemplate is one template that did not load, and why.
 //
-// It is RETURNED, not logged and dropped. plan/50-dast.md D.14's validation
+// It is RETURNED, not logged and dropped. The nuclei driver's design validation
 // requires a `code:` template to be "rejected at LoadTemplates time and never
 // reach Fire"; a rejection nobody can see is indistinguishable from a file
 // that was never there.
@@ -894,7 +896,7 @@ func (t Template) Path() string { return t.path }
 // Digest is the lowercase hex SHA-256 of the template's exact bytes as they
 // were read from disk — before any normalisation this loader applies.
 //
-// This is the value D.17 pins against. It is computed here, and reported
+// This is the value template pinning pins against. It is computed here, and reported
 // here, so that a pin can be checked against what was actually loaded rather
 // than against what a manifest claims was loaded.
 func (t Template) Digest() string { return t.digest }
@@ -1198,7 +1200,7 @@ func loadOne(abs, rel string) (Template, *RejectedTemplate) {
 func protocolRejectionDetail(p Protocol) string {
 	switch p {
 	case ProtocolCode:
-		return "plan/00-SPINE.md S5 excludes the `code:` protocol outright — 251 such " +
+		return "The spine's exclusion list excludes the `code:` protocol outright — 251 such " +
 			"templates exist upstream. It is a hard exclusion, not a tunable, and it is " +
 			"applied HERE, at load, so the template never reaches Fire"
 	case ProtocolJavaScript, ProtocolFlow:
@@ -1518,12 +1520,13 @@ type ProposalFacts struct {
 //
 // # It cannot make itself, and that is checked by reflection elsewhere
 //
-// plan/50-dast.md exit criterion 19 requires that this type have "zero methods
+// plan/design/dynamic-tier.md exit criterion 19 requires that this type have "zero methods
 // or fields capable of performing network I/O, proven by reflection/static
-// analysis (D.29, D.30)". Every field below is a string, an int, an enum
-// string or an authz value type. There is no interface field, no func field,
-// no io.Reader, no channel and no pointer. A proposal is a description of a
-// request and holds nothing that could issue one.
+// analysis (the DAST model role, the DAST-model review)". Every field below is
+// a string, an int, an enum string or an authz value type. There is no
+// interface field, no func field, no io.Reader, no channel and no pointer. A
+// proposal is a description of a request and holds nothing that could issue
+// one.
 type RequestProposal struct {
 	spec      TargetSpec
 	origin    authz.RequestOrigin
@@ -1750,7 +1753,7 @@ type Config struct {
 	Engine Engine
 }
 
-// Driver is D.14: the Nuclei driver.
+// Driver is the Nuclei driver.
 type Driver struct {
 	mu       sync.Mutex
 	cfg      Config
@@ -1994,7 +1997,7 @@ func (d *Driver) Run(ctx context.Context, cb func(EngineResult, Template) error)
 		// SCRUB BEFORE THE CALLER SEES IT. This is the only route an
 		// EngineResult takes out of the driver, the prose on it was written
 		// by a process outside Anvil, and where it is heading is a record and
-		// eventually an agent's context (plan/00-SPINE.md S6, S7). It is
+		// eventually an agent's context (the spine's record and safety sections). It is
 		// scrubbed before the nil-callback check so that Coverage.Evidence
 		// records what the engine sent whether or not anybody was listening.
 		clean, stats := scrubEngineResult(r)
@@ -2091,7 +2094,7 @@ type Coverage struct {
 	// Evidence is the merged report from every external string this driver
 	// passed through scrub. Non-zero counts mean engine-authored prose
 	// carried invisible or bidirectional characters — worth surfacing, since
-	// plan/00-SPINE.md S7 puts prompt-injection defence at ingest.
+	// the spine's safety section puts prompt-injection defence at ingest.
 	Evidence EvidenceStats
 }
 

@@ -1,17 +1,17 @@
-// Package record aggregates area D's per-tier inventory facts into the
+// Package record aggregates the dynamic tier's per-tier inventory facts into the
 // record-level coverage fields internal/record freezes: `dast_coverage`
 // (record.DastCoverage), `endpoint_coverage`, `server_line_coverage` and
 // `inventory_provenance`, plus the two target fields `target_provenance`
 // (record.TargetProvenance) and `target.provisioning`
 // (record.TargetProvisioning).
 //
-// This is plan/50-dast.md D.26. It produces THE NUMBER AN OPERATOR TRUSTS, so
+// This is coverage reporting (plan node coverage). It produces THE NUMBER AN OPERATOR TRUSTS, so
 // every design decision below is about the number looking better than the
 // evidence behind it.
 //
 // # It declares no record enum and it derives no status by hand
 //
-// plan/50-dast.md:1149's five-value `dast_status` enum is STALE.
+// plan/design/dynamic-tier.md:1149's five-value `dast_status` enum is STALE.
 // internal/record/contract.go owns the ten-value anvil/dastStatus vocabulary
 // and internal/record/contract_test.go rejects the plan's literals by name.
 // Nothing here writes a status literal: Summary.DeriveDastStatus calls
@@ -19,11 +19,11 @@
 // exactly one place and this package supplies only the one bit it is qualified
 // to supply — PartialCoverage.
 //
-// Likewise plan/50-dast.md:1150's `target_provenance` {ephemeral_manifest,
+// Likewise plan/design/dynamic-tier.md:1150's `target_provenance` {ephemeral_manifest,
 // live_url_authorized} is stale: those two literals are
 // record.TargetProvisioning, a SEPARATE FIELD from record.TargetProvenance's
-// boot/reachability outcome (plan/IMPLEMENTATION-PLAN.md section 6, rulings
-// G4+G7). Both travel through Summary and neither is merged into the other.
+// boot/reachability outcome (the first plan's target-provenance split). Both
+// travel through Summary and neither is merged into the other.
 //
 // # The four ways the fraction lies, and what is done about each
 //
@@ -34,11 +34,11 @@
 // confirmations.
 //
 //  1. THE NUMERATOR INFLATED. Watched by everyone, and already structurally
-//     defended by D.22: only an endpoint Anvil OBSERVED through the kernel is
-//     confirmed. This package re-runs D.22's two evidence assertions
+//     defended by route confirmation: only an endpoint Anvil OBSERVED through the kernel is
+//     confirmed. This package re-runs route confirmation's two evidence assertions
 //     (AssertEveryConfirmationHasEvidence, its converse) as part of
 //     Summarize, so a numerator that cannot be traced to kernel-admitted
-//     requests never reaches a record. plan/50-dast.md:632-635 calls Tier 1
+//     requests never reaches a record. plan/design/dynamic-tier.md:632-635 calls Tier 1
 //     routes "confirmed"; that is overridden — a document is not an
 //     observation.
 //
@@ -52,8 +52,8 @@
 //     double-count across tiers; that direction is pessimistic and therefore
 //     the acceptable one.
 //
-//     b. An unsupported language (D.21). It hides an UNKNOWN number of
-//     endpoints, so D.21 deliberately adds nothing to its floor and returns
+//     b. An unsupported language (non-Go route extraction). It hides an UNKNOWN number of
+//     endpoints, so non-Go route extraction deliberately adds nothing to its floor and returns
 //     an error from AssertDenominatorIsComplete instead. Consumed here as
 //     QualifierUnsupportedLanguage, direction Overstates.
 //
@@ -61,7 +61,7 @@
 //     direction, its own qualifier.
 //
 //  3. THE DENOMINATOR INFLATED by duplicates, so coverage goes DOWN. Nobody
-//     investigates that either. D.22's merge is the defence: the union is
+//     investigates that either. Route confirmation's merge is the defence: the union is
 //     keyed on (method, canonical path) using the package's single
 //     canonicalizer, and an endpoint named by three tiers is ONE row with
 //     three provenances. That is why InventoryProvenanceMix is a mix whose
@@ -69,7 +69,7 @@
 //     checks the mix against the per-endpoint rows rather than against a
 //     second tally of the same list.
 //
-//  4. GRAPHQL COLLAPSE, the deflation D.22 hands over as OperationCount().
+//  4. GRAPHQL COLLAPSE, the deflation route confirmation hands over as OperationCount().
 //     THE DECISION, and the reason: OperationCount does NOT become the
 //     denominator. record.ValidateDastCoverage checks EndpointCoverage
 //     against ProbedCount/InventoryUnionCount, and ProbedCount is confirmed
@@ -102,8 +102,8 @@
 // value is REFUSED rather than quietly dropped, because dropping it and
 // keeping it are both wrong and only a refusal makes the caller decide.
 //
-// Sources: plan/50-dast.md D.26 (lines 833-869) and the Coverage Reporting
-// Contract (lines 1142-1160); plan/00-SPINE.md S6; internal/record/contract.go
+// Sources: coverage reporting's design (lines 833-869) and the Coverage Reporting
+// Contract (lines 1142-1160); the spine's record section; internal/record/contract.go
 // (DastCoverage, InventoryProvenance, TargetProvenance, TargetProvisioning);
 // research/22-attack-surface-discovery.md lines 364-374 and Risk #4;
 // research/23-dast-signal-sources.md Risk #1.
@@ -155,7 +155,7 @@ var (
 	// summary cannot be reconstructed from the per-endpoint rows.
 	//
 	// inventory_provenance is per-route and is "aggregated to a record-level
-	// summary in D.26. This is what makes the SAST->DAST handoff auditable."
+	// summary in coverage reporting. This is what makes the SAST->DAST handoff auditable."
 	// A summary nobody can decompose is a claim, not evidence.
 	ErrMixDoesNotDecompose = errors.New("dastrecord: the provenance summary does not decompose into its rows")
 )
@@ -286,9 +286,9 @@ const (
 	// QualifierUnset is the zero value and names nothing.
 	QualifierUnset QualifierReason = ""
 
-	// QualifierUnsupportedLanguage: D.21 found source in a language with no
+	// QualifierUnsupportedLanguage: non-Go route extraction found source in a language with no
 	// extractor. Its endpoints are absent from the union by an UNKNOWN
-	// amount, which is why D.21 refuses to add one to its own floor.
+	// amount, which is why non-Go route extraction refuses to add one to its own floor.
 	QualifierUnsupportedLanguage QualifierReason = "unsupported_language_present"
 
 	// QualifierUnionTruncated: the merge hit its coded endpoint bound.
@@ -475,8 +475,8 @@ func sortQualifiers(qs []Qualifier) {
 // became confirmations", and that question is answerable from these rows and
 // from nothing else in the record.
 type ProvenanceRow struct {
-	// Method and Path identify the endpoint, canonicalized by D.20's single
-	// canonicalizer during the merge. Path is already redacted by D.22 when
+	// Method and Path identify the endpoint, canonicalized by Go route extraction's single
+	// canonicalizer during the merge. Path is already redacted by route confirmation when
 	// it reaches any string this package composes; it is carried verbatim
 	// here because a row is data for a caller, not a log line.
 	Method string
@@ -492,7 +492,7 @@ type ProvenanceRow struct {
 	// pointed at it.
 	Confirmed bool
 
-	// Outcome is D.22's ConfirmOutcome as a string — why the endpoint is or
+	// Outcome is route confirmation's ConfirmOutcome as a string — why the endpoint is or
 	// is not confirmed. It is what turns "40 static_extraction candidates,
 	// 0 confirmed" from a mystery into a diagnosis.
 	Outcome string
@@ -539,13 +539,13 @@ func SortRows(rs []ProvenanceRow) {
 type TierName string
 
 const (
-	// TierRuntimeSpec is D.18, Tier 0.
+	// TierRuntimeSpec is the runtime spec probe, Tier 0.
 	TierRuntimeSpec TierName = "tier0_runtime_spec"
-	// TierRepoSpec is D.19, Tier 1.
+	// TierRepoSpec is the repo spec reader, Tier 1.
 	TierRepoSpec TierName = "tier1_repo_spec"
-	// TierGoExtraction is D.20, the Go half of Tier 2.
+	// TierGoExtraction is Go route extraction, the Go half of Tier 2.
 	TierGoExtraction TierName = "tier2_go_extraction"
-	// TierOtherExtraction is D.21, the non-Go half of Tier 2.
+	// TierOtherExtraction is non-Go route extraction, the non-Go half of Tier 2.
 	TierOtherExtraction TierName = "tier2_other_extraction"
 )
 
@@ -602,12 +602,12 @@ type Inputs struct {
 	// ServerLineCoverage may be present at all.
 	Mode ScanMode
 
-	// Union is D.22's merge-and-confirm result: the denominator and the
+	// Union is route confirmation's merge-and-confirm result: the denominator and the
 	// numerator both come from it.
 	//
 	// NIL IS A LEGAL AND MEANINGFUL VALUE: it says the DAST half never
 	// produced an inventory — a manifest-absent skip, a target that never
-	// booted, a half that died before D.22. It yields DeterminacyUnknown and
+	// booted, a half that died before route confirmation. It yields DeterminacyUnknown and
 	// a Coverage() that refuses, never a 0.0.
 	Union *inventory.ConfirmResult
 
@@ -630,10 +630,10 @@ type Inputs struct {
 	// incremental scan is refused rather than dropped.
 	ServerLineCoverage *float64
 
-	// Provenance is the target's boot/reachability outcome (D.1, D.10). It
-	// is what record.DeriveDastStatus consults FIRST, which is what keeps a
-	// target that never booted from reading as "scanned clean". Required;
-	// the empty value is refused.
+	// Provenance is the target's boot/reachability outcome (the target
+	// manifest, target provisioning). It is what record.DeriveDastStatus
+	// consults FIRST, which is what keeps a target that never booted from
+	// reading as "scanned clean". Required; the empty value is refused.
 	Provenance rec.TargetProvenance
 
 	// Provisioning is which provisioning path was taken —
@@ -706,7 +706,7 @@ func (s Summary) Rows() []ProvenanceRow { return cloneRows(s.rows) }
 // denominator, in tier order, including tiers that did not run.
 func (s Summary) TierContributions() []TierContribution { return cloneContributions(s.tiers) }
 
-// MergedEndpointCount is the size of D.22's union: distinct (method, canonical
+// MergedEndpointCount is the size of route confirmation's union: distinct (method, canonical
 // path) addresses. It is NOT the whole denominator.
 func (s Summary) MergedEndpointCount() int { return s.merged }
 
@@ -718,8 +718,8 @@ func (s Summary) UnrepresentedCount() int { return s.unrepresented }
 // InventoryUnionCount is endpoint_coverage's DENOMINATOR: the merged union
 // plus the unrepresented surface.
 //
-// It is deliberately LARGER than D.22's endpoint count. Every per-tier
-// DenominatorFloor documents itself as "the smallest number of endpoints D.26
+// It is deliberately LARGER than route confirmation's endpoint count. Every per-tier
+// DenominatorFloor documents itself as "the smallest number of endpoints coverage reporting
 // may use"; publishing the merge alone would go below all four floors at once,
 // and a denominator below its floor is the shrink that makes coverage look
 // better for free.
@@ -733,7 +733,7 @@ func (s Summary) ConfirmedCount() int { return s.confirmed }
 // counted here: it was certainly not confirmed.
 func (s Summary) CandidateCount() int { return s.InventoryUnionCount() - s.confirmed }
 
-// OperationCount is D.22's second number: distinct (endpoint, operation)
+// OperationCount is route confirmation's second number: distinct (endpoint, operation)
 // pairs. Reported BESIDE the endpoint count, never substituted into the
 // denominator. See the package doc, decision 4.
 func (s Summary) OperationCount() int { return s.operations }
@@ -742,7 +742,7 @@ func (s Summary) OperationCount() int { return s.operations }
 //
 // It is here so a reader can compare it against ConfirmedCount and see how
 // many requests bought how many confirmations. It is NEVER part of
-// endpoint_coverage — plan/50-dast.md:1152, in bold.
+// endpoint_coverage — plan/design/dynamic-tier.md:1152, in bold.
 func (s Summary) RequestsIssued() int { return s.issued }
 
 // TargetAnswered is how many confirmation probes the TARGET answered, whatever
@@ -898,9 +898,9 @@ func (s Summary) AssertCoverageIsComputable() error {
 //
 // NOTHING HERE WRITES A STATUS LITERAL. record.DeriveDastStatus owns the
 // mapping and record.DastStatus owns the vocabulary; this method supplies the
-// two facts area D is qualified to supply — the target's provenance and
+// two facts the dynamic tier is qualified to supply — the target's provenance and
 // whether coverage was partial — and lets the record decide. That is what
-// keeps plan/50-dast.md:1149's stale five-value enum out of the record, and it
+// keeps plan/design/dynamic-tier.md:1149's stale five-value enum out of the record, and it
 // is why a manifest-absent skip cannot be equal-compared to a clean run: they
 // arrive at different literals through a total function.
 func (s Summary) DeriveDastStatus(tierInstalled bool, half rec.HalfStatus, findingCount int) (rec.DastStatus, error) {
@@ -927,9 +927,9 @@ func (s Summary) DeriveDastStatus(tierInstalled bool, half rec.HalfStatus, findi
 // apart into the per-route facts it was aggregated from.
 //
 // The contract says inventory_provenance is per-route and is "aggregated to a
-// record-level summary in D.26. This is what makes the SAST->DAST handoff
+// record-level summary in coverage reporting. This is what makes the SAST->DAST handoff
 // auditable." An aggregate nobody can decompose is a claim, not evidence — so
-// this recomputes the mix from Rows() and compares it against the mix D.22
+// this recomputes the mix from Rows() and compares it against the mix route confirmation
 // computed independently from its own endpoint list. Two computations that
 // agree is a check; one computation restated is not.
 func (s Summary) AssertMixDecomposes() error {
@@ -1007,7 +1007,7 @@ func (s Summary) AssertDenominatorDecomposes() error {
 		// exists to make coverage honest.
 		//
 		// Not reachable today: Floor and Routes are both non-negative and
-		// D.22's own assertions keep Routes <= Floor. Stated as an
+		// route confirmation's own assertions keep Routes <= Floor. Stated as an
 		// assertion anyway, because "the arithmetic makes the decomposition
 		// mean something" is the claim this method exists to make, and an
 		// unstated invariant is one refactor from being untrue.
@@ -1063,7 +1063,7 @@ func (s Summary) String() string {
 // Summarize
 // ---------------------------------------------------------------------------
 
-// Summarize aggregates the tier results and D.22's union into one Summary.
+// Summarize aggregates the tier results and route confirmation's union into one Summary.
 //
 // The order of what it does is the point:
 //
@@ -1074,7 +1074,7 @@ func (s Summary) String() string {
 //     consults it BEFORE the half's own status and a missing one would let a
 //     never-booted target reach a "clean" reading
 //  3. if there is no union, stop: DeterminacyUnknown, no fraction
-//  4. re-run D.22's own numerator assertions, so a confirmation with no
+//  4. re-run route confirmation's own numerator assertions, so a confirmation with no
 //     kernel-admitted request behind it never reaches a record
 //  5. cross-check that the tier results are the ones that produced the union
 //  6. build the per-(endpoint, provenance) rows and tally the mix from them
@@ -1187,11 +1187,11 @@ func Summarize(in Inputs) (Summary, error) {
 	s.qualifiers = quals
 	s.determinacy = determinacyOf(quals)
 
-	// The mix this package publishes must agree with the one D.22 computed
+	// The mix this package publishes must agree with the one route confirmation computed
 	// from its own endpoint list. They are computed from different data —
 	// rows here, endpoints there — so agreement is evidence.
 	if err := sameMix("inventory_provenance", u.InventoryProvenanceMix(), s.mix); err != nil {
-		return Summary{}, fmt.Errorf("%w: the rows this package built disagree with D.22's "+
+		return Summary{}, fmt.Errorf("%w: the rows this package built disagree with route confirmation's "+
 			"own mix: %w", ErrRefused, err)
 	}
 	if err := s.AssertMixDecomposes(); err != nil {
@@ -1317,7 +1317,7 @@ func collectTiers(in Inputs) ([]TierContribution, int, bool, []Qualifier, error)
 				Detail: string(TierOtherExtraction) + ": extraction stopped at a coded bound",
 			})
 		}
-		// D.21's whole packet. An unsupported language hides an UNKNOWN
+		// the whole point of non-Go route extraction. An unsupported language hides an UNKNOWN
 		// number of endpoints, so it adds nothing to any floor and instead
 		// returns an error that a caller computing coverage has to handle in
 		// code. This is that line of code.
@@ -1346,7 +1346,7 @@ func unsealed(name TierName, ctor string) error {
 		"coverage look better", ErrUnconstructed, name, ctor)
 }
 
-// unionQualifiers collects everything D.22's own assertions say about the
+// unionQualifiers collects everything route confirmation's own assertions say about the
 // union, plus the GraphQL collapse.
 func unionQualifiers(u inventory.ConfirmResult) []Qualifier {
 	var quals []Qualifier

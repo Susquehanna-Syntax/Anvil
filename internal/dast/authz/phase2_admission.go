@@ -29,24 +29,24 @@
 // ===========================================================================
 //
 // Gates 8, 9 and 10 are registered. Each is genuinely a function of
-// (target, scope, attestation, clock) — plan/00-SPINE.md S7's four inputs —
+// (target, scope, attestation, clock) — the spine's four inputs —
 // because the canonical form, the pinned address and the run's mode all live
 // inside those four values. They are also three of the five gates gate 13
 // re-runs on every request and every redirect hop (kernel.go's
 // revalidationChain — gates 4, 5, 8, 9 and 10), so after this packet
 // Revalidate is fully implemented.
 //
-// GATE 11 IS NOT REGISTERED AND CANNOT BE, for the same structural reason D.4
+// GATE 11 IS NOT REGISTERED AND CANNOT BE, for the same structural reason run initiation
 // could not register gate 7, and the accounting is repeated here rather than
 // referred to:
 //
 //   - robots.txt is a property of an ORIGIN and a PATH. A gateFunc receives no
 //     path (a Target is scheme, host, port and pinned address) and no fetched
-//     document. Widening gateFunc to carry one is a change to D.2's contract
-//     and to S7, and it is the same widening gate 12 exists to prevent.
+//     document. Widening gateFunc to carry one is a change to the kernel core's contract
+//     and to the spine's safety section, and it is the same widening gate 12 exists to prevent.
 //   - Threading the policy through package-level state written at run
 //     initiation would make Decide a function of ambient mutable state, which
-//     is the S7 violation wearing a hat.
+//     is a safety-section violation wearing a hat.
 //   - Registering a gate 11 that permits whenever the four inputs are well
 //     formed would be a gate that has never refused anything — the exact shape
 //     internal/SKIPPED-CONTROLS.md records this repository shipping twice.
@@ -56,12 +56,12 @@
 //	AT RUN INITIATION   NarrowScopeToRobots takes the sealed Scope and the
 //	                    fetched robots.txt BYTES — as data, the same shape
 //	                    FetchSecurityTxt takes — and returns a NARROWER Scope.
-//	                    plan/50-dast.md:1032's row says a restrictive
+//	                    plan/design/dynamic-tier.md:1032's row says a restrictive
 //	                    robots.txt "REMOVES PATHS FROM SCOPE" and a permissive
 //	                    one "adds nothing", which is a scope transformation and
 //	                    is implemented as one. It cannot widen: see types.go's
 //	                    SCOPE NARROWING block.
-//	PER REQUEST         CheckGate11RobotsDeny, called by D.6's Governor on
+//	PER REQUEST         CheckGate11RobotsDeny, called by per-request enforcement's Governor on
 //	                    every request and every redirect hop with the origin's
 //	                    determined policy and the path about to be requested.
 //	                    This is where "we did not look" is refused.
@@ -73,16 +73,16 @@
 // can make without deciding to.
 //
 // GATE 12 IS NOT A GATE AND CANNOT BECOME ONE. security.txt resolves a
-// reporting channel and never grants permission (RFC 9116; plan/00-SPINE.md
-// S7). SecurityTxtResult embeds ReportingChannelOnly, appears in no signature
+// reporting channel and never grants permission (RFC 9116; the spine's safety
+// section). SecurityTxtResult embeds ReportingChannelOnly, appears in no signature
 // reachable from Decide, and registerInto refuses to register gate 12 at all.
 //
 // ===========================================================================
 // UNTRUSTED BYTES
 // ===========================================================================
 //
-// robots.txt and security.txt are fetched FROM THE TARGET. plan/00-SPINE.md S6
-// marks them `anvil/trust: untrusted` and S7 names the response body "the
+// robots.txt and security.txt are fetched FROM THE TARGET. The spine's record section
+// marks them `anvil/trust: untrusted` and the spine's safety section names the response body "the
 // highest-risk field — up to 32 KB of attacker-controlled bytes fed to a
 // repo-credentialed agent". Nothing parsed out of either document is
 // interpolated into a Detail string. Where an operator needs to see a value it
@@ -186,7 +186,7 @@ const (
 )
 
 // Gate 12 reasons. They are AUDIT tokens, not rulings: gate 12 is in no chain
-// and mints no Ruling. D.7 writes the reporting-channel outcome to the audit
+// and mints no Ruling. The disclosure phase writes the reporting-channel outcome to the audit
 // log under one of these.
 const (
 	ReasonSecurityTxtAbsent    Reason = "gate12.security_txt_absent"
@@ -230,7 +230,7 @@ const (
 	maxRobotsPatternBytes = 512
 	// maxRequestPathBytes bounds a request path gate 11 judges.
 	maxRequestPathBytes = 4096
-	// maxSecurityTxtBytes bounds a fetched security.txt. plan/00-SPINE.md S7
+	// maxSecurityTxtBytes bounds a fetched security.txt. The spine's safety section
 	// puts the DAST response body at "up to 32 KB of attacker-controlled
 	// bytes"; a reporting-channel document needs a small fraction of that.
 	maxSecurityTxtBytes = 16 << 10
@@ -280,7 +280,7 @@ const (
 // scope file has to contain anyway, because ScopeEntry.Validate rejects a host
 // that is not already canonical.
 //
-// # IPv6 literals are refused, and that is D.2's contract rather than a choice
+// # IPv6 literals are refused, and that is the kernel core's contract rather than a choice
 //
 // NewTarget rejects a canonical host containing ':' (types.go), so an IPv6
 // literal cannot be carried in a Target at all. Canonicalize therefore refuses
@@ -313,7 +313,7 @@ func Canonicalize(raw string) (string, error) {
 	// What deleting one actually costs is the ATTRIBUTION: every refusal here
 	// carries a distinct gateNN.slug token, which is a bounded, validated value
 	// that reaches gate 21's audit log and can be counted and alerted on, unlike
-	// the offending host itself (untrusted input, plan/00-SPINE.md S6). An
+	// the offending host itself (untrusted input, the spine's record section). An
 	// operator reading "gate08.host_double_percent_encoded" learns something
 	// that "gate08.host_has_a_character_outside_the_allowlist" does not tell
 	// them. TestCanonicalizeRefusalsAreDistinctlyAttributed asserts the token
@@ -383,7 +383,7 @@ func Canonicalize(raw string) (string, error) {
 	//    an IPv4-mapped IPv6 literal UNWRAPS to the same dotted quad, so that
 	//    "::ffff:169.254.169.254" and "169.254.169.254" cannot compare
 	//    differently against gate 10's reserved ranges; any other IPv6 literal
-	//    is refused because D.2's Target cannot carry one.
+	//    is refused because the kernel core's Target cannot carry one.
 	if addr, perr := netip.ParseAddr(s); perr == nil {
 		unmapped := addr.Unmap()
 		if unmapped.Is6() {
@@ -458,13 +458,13 @@ func Canonicalize(raw string) (string, error) {
 
 // canonRefuse mints Canonicalize's typed refusal.
 //
-// It returns D.2's *GateFailure rather than a bare fmt.Errorf, so that the
+// It returns the kernel core's *GateFailure rather than a bare fmt.Errorf, so that the
 // SPECIFIC canonicalization failure survives as a validated gateNN.slug token
 // all the way to the audit row. That matters because the one thing gate 8 must
 // NOT put in the audit is the offending host: it is `anvil/trust: untrusted`
-// input (plan/00-SPINE.md S6) and, per S7, the response-body class of bytes is
-// what must never reach a message an agent will read. A token can say what went
-// wrong without carrying any of it.
+// input (the spine's record section) and, per the spine's safety section, the
+// response-body class of bytes is what must never reach a message an agent will
+// read. A token can say what went wrong without carrying any of it.
 //
 // Every Detail assembled here is Anvil-authored and interpolates only lengths,
 // offsets and literal punctuation — never a byte of the input.
@@ -555,7 +555,7 @@ func asciiFold(s string) string {
 // foldAndStrip is the ONLY divergence between a literal host and its canonical
 // form that gate 8 tolerates.
 //
-// plan/50-dast.md gate 8's fail-closed behaviour is "Reject if canonical form
+// plan/design/dynamic-tier.md gate 8's fail-closed behaviour is "Reject if canonical form
 // diverges from literal form unexpectedly; log both". This function is what
 // "unexpectedly" means, made decidable: a scope author who wrote
 // "www.example.com" anticipated that "WWW.Example.com." would match it, and
@@ -637,13 +637,13 @@ func NormalizePort(scheme Scheme, raw string) (uint16, error) {
 //
 // # It is also the bound on Target.literal
 //
-// D.3's critic observed that Target.literal is unbounded and unvalidated, that
+// The kernel-types review observed that Target.literal is unbounded and unvalidated, that
 // every gate can read it back through Target.Literal(), and that
-// plan/00-SPINE.md S7 names the response body as "up to 32 KB of
+// the spine's safety section names the response body as "up to 32 KB of
 // attacker-controlled bytes". Canonicalize bounds the literal at
 // maxRawHostBytes and refuses every byte outside printable ASCII, so a Target
 // carrying a 40 KB literal does not reach gate 9 — it is refused here. That
-// does not repair NewTarget, which is in D.2's write scope and still accepts
+// does not repair NewTarget, which is in the kernel core's write scope and still accepts
 // such a value; it means the ADMISSION PATH does not.
 func gate8Canonicalize(target Target, _ Scope, _ Attestation, _ Clock) Ruling {
 	if !target.Constructed() {
@@ -675,7 +675,7 @@ func gate8Canonicalize(target Target, _ Scope, _ Attestation, _ Clock) Ruling {
 			"the canonical form diverges from the literal form by more than case folding "+
 				"and a trailing dot. Percent-encoding, bracketed address syntax and "+
 				"IPv4-mapped IPv6 form all name a host that the scope author did not "+
-				"write, and plan/50-dast.md gate 8 refuses a divergence the author would "+
+				"write, and plan/design/dynamic-tier.md gate 8 refuses a divergence the author would "+
 				"not have anticipated. Write the target the way the scope file spells it")
 	}
 	return permit(Gate8Canonicalize, ReasonTargetCanonicalAndPinned,
@@ -736,8 +736,8 @@ func systemLookup(ctx context.Context, host string) ([]netip.Addr, error) {
 // address that does get pinned is chosen deterministically (sorted) rather
 // than by answer order, which is attacker-controlled.
 //
-// It returns netip.Addr rather than the net.IP in plan/50-dast.md D.5's
-// expected-output line, because Target.pinned is a netip.Addr (D.2, types.go)
+// It returns netip.Addr rather than the net.IP in per-target admission's design
+// expected-output line, because Target.pinned is a netip.Addr (the kernel core, types.go)
 // and a second address type in the kernel is a second set of comparison rules —
 // net.IP compares 4-byte and 16-byte forms of one address as different bytes,
 // which is the exact failure the IPv4-mapped unwrap exists to prevent.
@@ -871,7 +871,7 @@ func pinTargetWith(ctx context.Context, lookup lookupFunc, scheme Scheme, litera
 	if expected := foldAndStrip(literalHost); expected != canon {
 		return Target{}, gateFailed(Gate8Canonicalize, ReasonCanonicalDivergence,
 			"the canonical form diverges from the literal form by more than case folding and "+
-				"a trailing dot. plan/50-dast.md gate 8: reject if the canonical form "+
+				"a trailing dot. plan/design/dynamic-tier.md gate 8: reject if the canonical form "+
 				"diverges from the literal form unexpectedly, and log both.",
 			"literal:   "+redactUntrusted(literalHost),
 			"canonical: "+redactUntrusted(canon))
@@ -926,7 +926,7 @@ func pinTargetWith(ctx context.Context, lookup lookupFunc, scheme Scheme, litera
 		return Target{}, gateFailed(Gate9ResolveAndPin, ReasonPinDisagreesWithHost,
 			"the kernel canonicalized and pinned this target and its own Target constructor "+
 				"still refused the result. That is a disagreement between gate 8's "+
-				"canonical form and D.2's floor, and it refuses rather than being "+
+				"canonical form and the kernel core's floor, and it refuses rather than being "+
 				"reconciled.",
 			"host: "+redactUntrusted(canon))
 	}
@@ -946,10 +946,10 @@ func pinTargetWith(ctx context.Context, lookup lookupFunc, scheme Scheme, litera
 // that a Decision minted an Authorization for, against this exact target,
 // pinned address included.
 //
-// The socket itself is not constructed here. plan/50-dast.md D.2's forbidden
+// The socket itself is not constructed here. The kernel core's design forbidden
 // actions are explicit — "No net.Dial, http.Client, or any socket-construction
 // call anywhere in this package (that is Phase 3's job, gated)" — so Phase 2
-// produces the address and D.6's request layer opens the connection to it.
+// produces the address and per-request enforcement's request layer opens the connection to it.
 func PinnedDialAddress(auth Authorization, target Target) (netip.AddrPort, error) {
 	if err := RequireAuthorization(auth, target); err != nil {
 		return netip.AddrPort{}, err
@@ -1011,7 +1011,7 @@ func gate9ResolveAndPin(target Target, scope Scope, _ Attestation, _ Clock) Ruli
 	// direction only.
 	//
 	// research/20 gate 9 asks for the resolved address to be "in an allowed
-	// CIDR", and D.2's ScopeEntry carries hosts and ports and no CIDR, so the
+	// CIDR", and the kernel core's ScopeEntry carries hosts and ports and no CIDR, so the
 	// allow half of that sentence is not expressible against this contract
 	// (reported to the orchestrator rather than approximated). The deny half
 	// is: a scope that names an address on its deny list denies every hostname
@@ -1021,7 +1021,7 @@ func gate9ResolveAndPin(target Target, scope Scope, _ Attestation, _ Clock) Ruli
 	// THERE IS DELIBERATELY NO `if e.Validate() != nil { continue }` HERE, and
 	// no wildcard skip either. Both would be the wrong direction on a DENY
 	// list: skipping an entry this package considers malformed is how a deny
-	// entry silently stops existing, which is exactly the shape D.3's critic
+	// entry silently stops existing, which is exactly the shape the kernel-types review
 	// demonstrated by mutating a deny entry's Ports through the live backing
 	// array that DenyEntries hands out. An entry naming this address on this
 	// port denies it whether or not the entry is otherwise well formed, and
@@ -1062,7 +1062,7 @@ func portIn(ports []uint16, want uint16) bool {
 
 // The reserved ranges, as untyped string CONSTANTS.
 //
-// plan/50-dast.md D.5's forbidden actions: "The reserved-range denylist (gate
+// Per-target admission's forbidden actions: "The reserved-range denylist (gate
 // 10) must be an unexported Go `const`/package-level slice with no
 // config-loader path that can append, remove, or shadow an entry." A const is
 // the strongest form Go offers — it cannot be reassigned at run time by any
@@ -1211,7 +1211,7 @@ func scopeEnumeratesAddress(scope Scope, addr netip.Addr, port uint16) bool {
 	//
 	// The Validate skip, unlike gate 9's deny walk, IS the safe direction on an
 	// ALLOW list: an entry this package considers malformed must not be the
-	// thing that lets a lab run reach loopback. D.3's critic's mutation — a
+	// thing that lets a lab run reach loopback. The kernel-types review's mutation — a
 	// port set to 0 through the live backing array AllowEntries hands out —
 	// therefore removes reach here rather than adding it, and
 	// TestGate10LabEnumerationIgnoresAMalformedAllowEntry demonstrates it.
@@ -1230,7 +1230,7 @@ func scopeEnumeratesAddress(scope Scope, addr netip.Addr, port uint16) bool {
 
 // gate10ReservedRanges is gate 10 in the admission chain.
 //
-// plan/50-dast.md gate 10: "Non-configurable reserved-range denylist in
+// plan/design/dynamic-tier.md gate 10: "Non-configurable reserved-range denylist in
 // `external` mode... **No — a compiled constant, not a config key.** Only `lab`
 // mode may reach these, only for addresses explicitly enumerated in scope."
 //
@@ -1254,7 +1254,7 @@ func gate10ReservedRanges(target Target, scope Scope, _ Attestation, _ Clock) Ru
 	// .Constructed() is true exactly when its ModeDeclaration is declared, and
 	// a declared ModeDeclaration returns a valid mode — so the branch could
 	// never be the only thing refusing anything, and a mutation deleting it
-	// stayed green. It is gone rather than commented, the same way D.4 removed
+	// stayed green. It is gone rather than commented, the same way run initiation removed
 	// two subsumed branches in phase1_run.go.
 	//
 	// The lab arm below is written as `mode == ModeLab` and the refusal is the
@@ -1328,7 +1328,7 @@ const (
 //
 // # The asymmetry, which is the whole gate
 //
-// plan/50-dast.md gate 11: "Robots/ToS deny signals as additional denies only.
+// plan/design/dynamic-tier.md gate 11: "Robots/ToS deny signals as additional denies only.
 // Restrictive `robots.txt`/no-scan statement removes paths from scope;
 // permissive adds nothing. No — asymmetric by design." research/20 gives the
 // reason: Van Buren fn.8 left the legal weight of non-code limits open, so a
@@ -1520,7 +1520,7 @@ func ParseRobotsTxt(canonicalHost string, port uint16, body []byte) RobotsPolicy
 // A RobotsPolicy owns a []string. Copying the struct copies the slice HEADER,
 // so a policy stored inside a sealed Scope would share its patterns with
 // whatever the caller still holds, and rewriting "/admin" to "/zzz" through
-// that alias would put the admin tree back in scope. That is the D.3 aliasing
+// that alias would put the admin tree back in scope. That is the kernel-types review aliasing
 // escalation cloneScopeEntries exists for, in a different field.
 func (p RobotsPolicy) clone() RobotsPolicy {
 	out := p
@@ -1649,7 +1649,7 @@ func validRequestPath(p string) bool {
 // ADDITIONAL deny.
 //
 // It is not registered into the admission chain and cannot be — see this file's
-// header for the three ways out and why two of them are worse. D.6 calls it per
+// header for the three ways out and why two of them are worse. Per-request enforcement calls it per
 // request, with the origin's determined policy and the path about to be
 // requested.
 //
@@ -1737,14 +1737,14 @@ const (
 
 // RobotsDocument is one origin's fetched robots.txt, AS DATA.
 //
-// This is deliberately the same shape D.5 gave gate 12's SecurityTxtDocument:
+// This is deliberately the same shape per-target admission gave gate 12's SecurityTxtDocument:
 // the fetch happens OUTSIDE the kernel, through the egress chokepoint, and the
 // bytes arrive here as an inert value. The kernel performs no I/O, so gate 11
 // does not need a widened signature, a context, an http.Client or a package
 // -level cache to exist — the three routes that were rejected when gate 11 was
 // last considered as a gateFunc.
 //
-// Body is `anvil/trust: untrusted` (plan/00-SPINE.md S6). Nothing parsed out of
+// Body is `anvil/trust: untrusted` (the spine's record section). Nothing parsed out of
 // it is interpolated into a Detail string except through redactUntrusted.
 type RobotsDocument struct {
 	// Host is the origin's canonical host, as Canonicalize produces it.
@@ -1764,7 +1764,7 @@ type RobotsDocument struct {
 //
 // # Why this is not a gateFunc, and is not in admissionChain
 //
-// plan/50-dast.md:1032's gate 11 row says a restrictive robots.txt "REMOVES
+// plan/design/dynamic-tier.md:1032's gate 11 row says a restrictive robots.txt "REMOVES
 // PATHS FROM SCOPE" and a permissive one "adds nothing". That is a description
 // of a scope transformation, not of an admission predicate, and the three
 // things that made gate 11 unimplementable as a gateFunc all dissolve when it
@@ -1819,7 +1819,7 @@ type RobotsDocument struct {
 // today. The same is true of Scope.PermitsPath and Scope.RobotsPolicyFor: both
 // are exercised by tests and by nothing else. So gate 11's run-initiation half
 // is implemented and tested but NOT YET ENFORCED IN PRODUCTION, and the only
-// thing enforcing robots.txt on a live run remains D.6's per-request
+// thing enforcing robots.txt on a live run remains per-request enforcement's per-request
 // CheckGate11RobotsDeny.
 //
 // That is a real gap and not a stylistic one — a control that runs in zero
@@ -1973,7 +1973,7 @@ const (
 //     TestAdmissionInputClosureIsClosed walks Decide's four parameter types
 //     transitively and fails on any type that satisfies it.
 //  2. It appears in no function signature reachable from Decide, Adjudicate or
-//     gateFunc. gateFunc's four parameters are declared in D.2's write scope,
+//     gateFunc. gateFunc's four parameters are declared in the kernel core's write scope,
 //     not this one, so a Phase 2 packet cannot widen them.
 //  3. registerInto (kernel.go) refuses to register gate 12 as a gate
 //     implementation at all, with a message saying why.
@@ -1998,9 +1998,9 @@ type SecurityTxtResult struct {
 //
 // # Why it takes bytes rather than fetching them
 //
-// plan/50-dast.md D.2's forbidden actions bind this whole package: "No
+// The kernel core's forbidden actions bind this whole package: "No
 // net.Dial, http.Client, or any socket-construction call anywhere in this
-// package (that is Phase 3's job, gated)." So the HTTP GET is D.6's, and this
+// package (that is Phase 3's job, gated)." So the HTTP GET is per-request enforcement's, and this
 // function is the part that has to be right: the parse, the precedence, the
 // expiry, and the bounds on a document that came from the target.
 func FetchSecurityTxt(docs []SecurityTxtDocument, clock Clock) SecurityTxtResult {
@@ -2043,9 +2043,9 @@ func FetchSecurityTxt(docs []SecurityTxtDocument, clock Clock) SecurityTxtResult
 // parseSecurityTxt parses one document.
 //
 // Every value that survives is bounded and charset-restricted. The document is
-// `anvil/trust: untrusted` (plan/00-SPINE.md S6) and its contents reach the
-// audit log, which is read by humans and by tooling and — per S7 — must never
-// become a channel for attacker-authored bytes.
+// `anvil/trust: untrusted` (the spine's record section) and its contents reach the
+// audit log, which is read by humans and by tooling and — per the spine's
+// safety section — must never become a channel for attacker-authored bytes.
 func parseSecurityTxt(loc SecurityTxtLocation, body []byte, clock Clock) SecurityTxtResult {
 	malformed := SecurityTxtResult{status: SecurityTxtStatusMalformed, location: loc, sealed: true}
 	if len(body) == 0 || len(body) > maxSecurityTxtBytes {
@@ -2324,7 +2324,7 @@ func (r SecurityTxtResult) AuditEvidence() []string {
 // These three are also three of the five gates in kernel.go's
 // revalidationChain, which gate 13 re-runs on every request and every redirect
 // hop; the other two are gate 4 (scope membership) and gate 5 (a LIVE
-// attestation), both registered by D.4. After this packet that chain is fully
+// attestation), both registered by run initiation. After this packet that chain is fully
 // implemented, so a redirect to a host outside scope, or to a reserved
 // address, is refused on the hop rather than only on the first request —
 // research/20 names that omission (ZAP issue #2546) "the single most likely way

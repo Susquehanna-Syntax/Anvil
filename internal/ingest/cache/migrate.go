@@ -1,4 +1,4 @@
-// Opening and migrating the Lane A ingestion cache (step A.2).
+// Opening and migrating the Lane A ingestion cache.
 //
 // Three properties are load-bearing here and each has a test in
 // cache_test.go:
@@ -7,7 +7,7 @@
 //     PROVES `PRAGMA journal_mode` came back `wal` and refuses the handle
 //     otherwise. A poller writing while the comparator reads is the normal
 //     case for this file, and rollback-journal mode serialises them; more to
-//     the point, A.2's Forbidden actions say "Do not open the DB outside WAL
+//     the point, the ingestion cache's Forbidden actions say "Do not open the DB outside WAL
 //     mode", and a DSN parameter that silently failed to apply would satisfy
 //     the letter of that while breaking it in fact.
 //
@@ -18,7 +18,7 @@
 //     open against the checksum this binary carries; a mismatch is a refusal,
 //     never a re-run and never a skip.
 //
-//  3. FTS5 is proved by USE, not by a version number. plan/00-SPINE.md S12
+//  3. FTS5 is proved by USE, not by a version number. The spine's Go control-plane decision
 //     calls modernc.org/sqlite's FTS5 support "orchestrator-verified", but a
 //     dependency bump can drop a build-time feature with no signal at all.
 //     CheckFTS5 creates a real FTS5 table, writes a real row and runs a real
@@ -27,7 +27,7 @@
 // WHAT IS DELIBERATELY ABSENT: the pre-migration `VACUUM INTO` snapshot gate
 // that internal/store's Migrate enforces. That gate exists because the store
 // of record cannot be rebuilt — losing it loses evidence. This cache is a
-// rederivable projection of public feeds: A.8's bootstrap reconstructs it, so
+// rederivable projection of public feeds: the bulk bootstrap reconstructs it, so
 // demanding a snapshot of it would only teach operators to pass a junk
 // directory. The asymmetry is deliberate and is the practical difference
 // between the two databases.
@@ -48,7 +48,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // driverName is the database/sql driver the cache opens through. It is a
@@ -192,7 +192,7 @@ func connectionPragmas() []string {
 //
 // It refuses an in-memory database. That is not squeamishness: `:memory:` and
 // `mode=memory` cannot be put into WAL journal mode at all, so an in-memory
-// cache would quietly violate A.2's "do not open the DB outside WAL mode" and
+// cache would quietly violate the ingestion cache's "do not open the DB outside WAL mode" and
 // would also drop the file the whole design is built around shipping —
 // research/06 §5 ships the cache as a single `anvil-cache.sqlite` "so it can
 // itself be distributed, mirrored, or snapshotted without a build step".
@@ -282,7 +282,7 @@ func CheckWAL(ctx context.Context, db *sql.DB) error {
 	}
 	if !strings.EqualFold(mode, "wal") {
 		return fmt.Errorf("%w: journal_mode is %q. The cache is polled and read concurrently, and "+
-			"A.2 forbids opening it outside WAL mode", ErrNotWAL, mode)
+			"the ingestion cache forbids opening it outside WAL mode", ErrNotWAL, mode)
 	}
 	return nil
 }
@@ -339,7 +339,7 @@ func CheckFTS5(ctx context.Context, db *sql.DB) error {
 	create := "CREATE VIRTUAL TABLE temp." + ftsProbeTable +
 		" USING fts5(probe, content='', contentless_delete=1, tokenize='porter unicode61')"
 	if _, err := conn.ExecContext(ctx, create); err != nil {
-		return fmt.Errorf("%w: creating a probe FTS5 table failed. plan/00-SPINE.md S12 depends on "+
+		return fmt.Errorf("%w: creating a probe FTS5 table failed. The spine's Go control-plane decision depends on "+
 			"modernc.org/sqlite bundling FTS5; if this build does not, the advisory index cannot "+
 			"exist and no retrieval path over this cache works: %w", ErrNoFTS5, err)
 	}
@@ -384,7 +384,7 @@ func CheckFTS5(ctx context.Context, db *sql.DB) error {
 // touches nothing, so calling Migrate on every start is correct and cheap.
 //
 // It is idempotent on an empty file and on a file already at the latest
-// version, which is A.2's stop condition.
+// version, which is the ingestion cache's stop condition.
 func Migrate(ctx context.Context, db *sql.DB) ([]int, error) {
 	migrations, err := Migrations()
 	if err != nil {

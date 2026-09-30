@@ -1,17 +1,17 @@
-// Package repo is Lane A's repository SCA collector (plan/20-lane-a-ingestion-sca.md
-// step A.10): it runs Trivy over a repository that is already on disk and
+// Package repo is Lane A's repository SCA collector (plan node repocollector;
+// design in plan/design/lane-a.md): it runs Trivy over a repository that is already on disk and
 // turns Trivy's JSON report into Lane A findings.
 //
 // # No model, ever
 //
-// plan/00-SPINE.md S1: Lane A is "deterministic, zero inference — SBOM/host
+// The spine's corrected-requirements table: Lane A is "deterministic, zero inference — SBOM/host
 // package matching by version comparator". CVE/OSV/GHSA describe vulnerable
 // PACKAGE VERSIONS, and a comparator answers that exactly and for free. There
 // is no inference in this package and none may be added to it.
 //
 // # One fingerprint, and it is not this package's
 //
-// plan/00-SPINE.md S6 permits exactly one fingerprint algorithm, anvil-fp/v1,
+// The spine's record section permits exactly one fingerprint algorithm, anvil-fp/v1,
 // owned by internal/record and specified in internal/record/FINGERPRINT-SPEC.md.
 // This package computes NO digest of its own: Finding.Fingerprint delegates
 // to record.Sca and there is no other hashing anywhere in these files. Two
@@ -45,8 +45,8 @@
 // Trivy is Apache-2.0 (research/13 row C25, verified from the LICENSE body;
 // research/12 S6). This package INVOKES it as a subprocess and vendors none
 // of its code, so no §4 NOTICE duty attaches at source checkout. The duty
-// attaches when a release artifact bakes the binary in — that is step O.17's
-// call, not this package's, and this comment exists so O.17 finds the fact
+// attaches when a release artifact bakes the binary in — that is the container image's
+// call, not this package's, and this comment exists so the container image finds the fact
 // rather than re-deriving it.
 package repo
 
@@ -69,11 +69,12 @@ import (
 // ---------------------------------------------------------------------------
 
 // DetectionPriority is Trivy's documented false-positive / false-negative
-// knob. This is TRIVY'S vocabulary, not an Anvil enum: plan/IMPLEMENTATION-PLAN.md
-// §6 reserves enum ownership to internal/record for values that cross Anvil's
-// areas, and these three literals never leave this package's argument vector.
-// They are declared as constants for the same reason internal/ingest/cache
-// declares CollectorRepoSCA — so a caller writes a constant, not a literal.
+// knob. This is TRIVY'S vocabulary, not an Anvil enum: plan/design/first-plan.md
+// The shared-vocabulary review reserves enum ownership to internal/record for
+// values that cross Anvil's areas, and these three literals never leave this
+// package's argument vector. They are declared as constants for the same reason
+// internal/ingest/cache declares CollectorRepoSCA — so a caller writes a
+// constant, not a literal.
 //
 // research/12 §"The mitigation has a cost" [S15]: `comprehensive` "aims to
 // detect more vulnerabilities, potentially including some that might be false
@@ -132,12 +133,12 @@ type Config struct {
 	DetectionPriority DetectionPriority
 
 	// SkipDBUpdate stops Trivy from fetching its vulnerability database as a
-	// side effect of scanning. TRUE BY DEFAULT, and that default is the A.11
-	// routing rule: plan/20's A.10 Forbidden actions bar invoking Trivy "in
+	// side effect of scanning. TRUE BY DEFAULT, and that default is the accelerator
+	// routing rule: the repo collector's design in plan/design/lane-a.md bars invoking Trivy "in
 	// any mode that fetches its DB from a redistributable-unclear mirror
-	// without going through A.11's consume-only accelerator", and
+	// without going through the consume-only accelerator", and
 	// research/06 records that neither the Trivy-DB nor the Grype-DB
-	// publisher states redistribution terms. A.11 populates CacheDir; this
+	// publisher states redistribution terms. The accelerator populates CacheDir; this
 	// package only reads it.
 	SkipDBUpdate bool
 
@@ -149,20 +150,20 @@ type Config struct {
 
 	// DBRepository names the OCI repository a DB update may pull from. It is
 	// REQUIRED whenever SkipDBUpdate is false — an update with no named
-	// source is exactly the unrouted fetch A.10 forbids, so Validate refuses
+	// source is exactly the unrouted fetch the repo collector forbids, so Validate refuses
 	// it with ErrDBUpdateUnrouted rather than defaulting to Aqua's registry.
 	DBRepository string
 
-	// CacheDir is the Trivy cache directory, normally the one A.11's
-	// accelerator warmed. Empty means Trivy's own default location.
+	// CacheDir is the Trivy cache directory, normally the one the accelerator
+	// warmed. Empty means Trivy's own default location.
 	CacheDir string
 
 	// RequiredVersion, when set, is the exact release tag the resolved binary
 	// must report; a mismatch is ErrVersionMismatch before any scan runs.
 	//
-	// There is deliberately NO DEFAULT LITERAL here. plan/20's Pinned
+	// There is deliberately NO DEFAULT LITERAL here. plan/design/lane-a.md's Pinned
 	// Versions table requires pinning "the exact release tag used by
-	// internal/collector/repo", and spine S8's compliance mechanics require
+	// internal/collector/repo", and the spine's compliance mechanics require
 	// reading artefact bodies rather than trusting metadata. No Trivy release
 	// was available to verify on the host that wrote this file, so writing a
 	// version literal here would be a fabricated pin — worse than an absent
@@ -216,7 +217,7 @@ func (c Config) Validate() error {
 	}
 	if !c.SkipDBUpdate && strings.TrimSpace(c.DBRepository) == "" {
 		return fmt.Errorf(
-			"%w: SkipDBUpdate is false but no DBRepository is configured. A.11's consume-only "+
+			"%w: SkipDBUpdate is false but no DBRepository is configured. The accelerator's consume-only "+
 				"accelerator is the only sanctioned source, and research/06 records that the "+
 				"Trivy-DB publisher states no redistribution terms",
 			ErrDBUpdateUnrouted)
@@ -235,7 +236,8 @@ func (c Config) timeout() time.Duration {
 }
 
 // Runner returns the CLI runner this configuration describes. It is the
-// fallback path S12 requires stay reachable; see the Runner interface.
+// fallback path the spine's Go control-plane decision requires stay reachable;
+// see the Runner interface.
 func (c Config) Runner() Runner {
 	return CLIRunner{Binary: c.Binary, MaxOutputBytes: c.MaxOutputBytes}
 }
@@ -275,8 +277,8 @@ var ErrUnusableReport = errors.New("repo: trivy report is unusable")
 // trivyReport is the subset of Trivy's JSON report this collector reads.
 // Fields absent here are ignored by encoding/json, which is intended: this
 // struct is a contract with a tool that has no API stability guarantee (spine
-// S12), so it names only what it needs and gates on SchemaVersion for the
-// rest.
+// the spine's Go control-plane decision), so it names only what it needs and
+// gates on SchemaVersion for the rest.
 type trivyReport struct {
 	SchemaVersion int           `json:"SchemaVersion"`
 	CreatedAt     string        `json:"CreatedAt"`
@@ -334,7 +336,7 @@ const (
 	// class this collector emits findings from.
 	classLangPkgs = "lang-pkgs"
 	// classOSPkgs is an operating-system package database. A repository scan
-	// should not produce one, and if it does the row belongs to A.9's host
+	// should not produce one, and if it does the row belongs to the host
 	// collector — internal/ingest/cache's `finding` table CHECKs that a
 	// `host` row is never remediable_by_agent, and emitting an OS package as
 	// `repo-sca` would launder exactly that constraint. Counted, never
@@ -351,8 +353,8 @@ const (
 // internal/ingest/cache/schema.go declares (collector, source, source_id,
 // package, installed_version, ecosystem, remediable_by_agent, anvil_trust)
 // plus the three the anvil-fp/v1 SCA tier hashes (advisory id, purl, manifest
-// path). It is NOT a second record format: A.19 owns emission into the
-// canonical SARIF-shaped record, and the fields here exist so A.19 has
+// path). It is NOT a second record format: record emission owns emission into the
+// canonical SARIF-shaped record, and the fields here exist so record emission has
 // something to emit FROM.
 type Finding struct {
 	// Collector is always cache.CollectorRepoSCA. Present as a field rather
@@ -367,7 +369,7 @@ type Finding struct {
 
 	// DataSourceID and DataSourceName are Trivy's own attribution for where
 	// the advisory came from ("ghsa", "osv", "redhat"). They map onto the
-	// cache `finding.source` column, and A.17's comparator is what reconciles
+	// cache `finding.source` column, and the comparator is what reconciles
 	// them against the advisory rows Lane A ingested itself.
 	DataSourceID   string
 	DataSourceName string
@@ -406,12 +408,13 @@ type Finding struct {
 
 	// RemediableByAgent is true only when a fixed version is known.
 	//
-	// plan/00-SPINE.md S6 makes this field required and S7 makes it false for
-	// every host finding; a repository dependency is the one class the coding
-	// agent CAN act on — by bumping a version. When the publisher names no
-	// fixed version there is no bump to make, and claiming otherwise sends
-	// the agent after a patch that does not exist. Reported, not silently
-	// implied: Coverage.NoFixedVersion counts these.
+	// The spine's record section makes this field required and the spine's
+	// safety section makes it false for every host finding; a repository
+	// dependency is the one class the coding agent CAN act on — by bumping a
+	// version. When the publisher names no fixed version there is no bump to
+	// make, and claiming otherwise sends the agent after a patch that does not
+	// exist. Reported, not silently implied: Coverage.NoFixedVersion counts
+	// these.
 	//
 	// Trivy's own `Status` field ("fixed", "affected", "will_not_fix",
 	// "fix_deferred", "end_of_life") is deliberately NOT consulted. It is a
@@ -436,7 +439,7 @@ type Finding struct {
 	Trust record.Trust
 
 	// Title, Description and References are external prose, sanitised at
-	// ingest (plan/00-SPINE.md S7: "sanitize at ingest, not at prompt time")
+	// ingest (the spine's safety section: "sanitize at ingest, not at prompt time")
 	// and carrying their trust level inline.
 	Title       record.TrustedString
 	Description record.TrustedString
@@ -446,7 +449,7 @@ type Finding struct {
 	PrimaryURL string
 
 	// PublishedDate and LastModifiedDate are Trivy's verbatim strings, kept
-	// unparsed: A.19 owns the record's time fields and a second date parser
+	// unparsed: record emission owns the record's time fields and a second date parser
 	// here would be a second source of truth for staleness.
 	PublishedDate    string
 	LastModifiedDate string
@@ -456,7 +459,7 @@ type Finding struct {
 // produces, and the reasoning is the part worth keeping.
 //
 // internal/ingest/cache declares FindingTrustDefault = record.TrustAnvilGenerated,
-// because A.17's comparator output is Anvil's own conclusion. A TRIVY finding
+// because the comparator output is Anvil's own conclusion. A TRIVY finding
 // is not: the conclusion, the severity, the title and the description were all
 // written outside Anvil, by a third-party tool over third-party advisory data.
 // record.Trust's own documentation settles it — "the question TrustLevel
@@ -484,7 +487,7 @@ func (f Finding) ScaInput(targetID string) record.ScaInput {
 // Fingerprint returns the canonical anvil-fp/v1 digest for this finding.
 //
 // It is one line, and that is the point: this package computes no digest of
-// its own and must never gain one (plan/00-SPINE.md S6, one fingerprint).
+// its own and must never gain one (the spine's record section, one fingerprint).
 // Every error comes from record's own field validation — an empty target id, a
 // missing advisory id, a purl that is not a purl — and is returned rather than
 // papered over, because a finding that cannot be identified cannot be tracked
@@ -497,7 +500,7 @@ func (f Finding) Fingerprint(targetID string) (string, error) {
 // Coverage — the answer to "was that a clean repo, or did nothing run?"
 // ---------------------------------------------------------------------------
 
-// Coverage reports what the scan actually covered. plan/20 exit criterion 20
+// Coverage reports what the scan actually covered. plan/design/lane-a.md exit criterion 20
 // requires that "every match run reports coverage, never silent 'clean'",
 // including the zero-findings case; this is that report for the collector
 // half, and it is populated on every successful parse.
@@ -519,7 +522,7 @@ type Coverage struct {
 	VulnerabilitiesReported int
 	FindingsEmitted         int
 
-	// SkippedOSPackages counts os-pkgs-class entries: A.9's territory, never
+	// SkippedOSPackages counts os-pkgs-class entries: the host collector's territory, never
 	// emitted here. See classOSPkgs.
 	SkippedOSPackages int
 	// SkippedOtherClass counts entries from any class this collector does not
@@ -614,7 +617,7 @@ type ScanResult struct {
 	Findings []Finding
 
 	// Coverage is populated on every successful parse, including the
-	// zero-findings case (plan/20 exit criterion 20).
+	// zero-findings case (plan/design/lane-a.md exit criterion 20).
 	Coverage Coverage
 
 	// SchemaVersion, ArtifactName, ArtifactType and CreatedAt are Trivy's own
@@ -636,7 +639,7 @@ type ScanResult struct {
 	// Sanitization is the merged report from every external string this run
 	// passed through sanitize.Sanitize. Non-zero counts mean advisory prose
 	// carried invisible or hidden-markup characters — worth surfacing, since
-	// plan/00-SPINE.md S7 puts prompt-injection defence at ingest.
+	// the spine's safety section puts prompt-injection defence at ingest.
 	Sanitization sanitize.SanitizeStats
 }
 
@@ -665,11 +668,11 @@ func (r ScanResult) AssertNotSilentlyEmpty() error {
 // ---------------------------------------------------------------------------
 
 // ScanRepo scans the repository rooted at path with DefaultConfig and returns
-// Lane A findings. It is the signature plan/20 A.10 names.
+// Lane A findings. It is the signature the repo collector's design names.
 //
 // It shells out to the Trivy binary. It does not link Trivy's `pkg/`
-// packages, and per spine S12 no future version may make a native path the
-// sole one — see the Runner interface.
+// packages, and per the spine's Go control-plane decision no future version may
+// make a native path the sole one — see the Runner interface.
 func ScanRepo(ctx context.Context, path string) (ScanResult, error) {
 	return DefaultConfig().ScanRepo(ctx, path)
 }
@@ -682,10 +685,10 @@ func (c Config) ScanRepo(ctx context.Context, path string) (ScanResult, error) {
 // ScanRepoWith runs the collector over path using an explicit Runner.
 //
 // This is the seam a native Trivy path would attach to, and the seam tests use
-// to exercise parsing without a binary on the host. Both matter: spine S12
-// requires the CLI path stay available under a native one, and a collector
-// whose parser can only be tested by installing a scanner is a collector whose
-// parser does not get tested.
+// to exercise parsing without a binary on the host. Both matter: the spine's Go
+// control-plane decision requires the CLI path stay available under a native
+// one, and a collector whose parser can only be tested by installing a scanner
+// is a collector whose parser does not get tested.
 func (c Config) ScanRepoWith(ctx context.Context, path string, runner Runner) (ScanResult, error) {
 	args, err := BuildArgs(c, path)
 	if err != nil {
@@ -858,7 +861,7 @@ func toFinding(v trivyVulnItem, r trivyResult, canonicalTarget string) (Finding,
 		return anomaly(AnomalyUnsanitizedIdentity, err.Error())
 	}
 
-	// Prose is sanitised. plan/00-SPINE.md S7: "sanitize at ingest, not at
+	// Prose is sanitised. The spine's safety section: "sanitize at ingest, not at
 	// prompt time." sanitize.Ingest is the entry point that also stamps the
 	// trust level, so a caller cannot sanitise and then forget to classify.
 	title, s := sanitize.Ingest(v.Title)
@@ -963,7 +966,7 @@ func severityToLevel(severity string) record.Level {
 // Trivy reports lockfile targets relative to the scanned directory, but an
 // absolute path has been observed for some target types; a caller that stored
 // one would fingerprint the same finding differently on a machine with a
-// different checkout path. Exported because A.19 may need to re-derive it from
+// different checkout path. Exported because record emission may need to re-derive it from
 // a stored report.
 func RelativeManifestPath(root, target string) string {
 	t := target

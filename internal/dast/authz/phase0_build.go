@@ -1,4 +1,4 @@
-// Phase 0 of plan/50-dast.md's Authorization Gate Sequence: build and
+// Phase 0 of plan/design/dynamic-tier.md's Authorization Gate Sequence: build and
 // packaging. Gates 1, 2 and 3, plus the one function that can turn DAST on.
 //
 // ===========================================================================
@@ -11,9 +11,9 @@
 // not be sent".
 //
 // Each gate here is a named function that takes MEASURED FACTS and returns a
-// typed GateResult, so that D.9's build-time test can drive it and CI can fail
+// typed GateResult, so that the build-time guard's test can drive it and CI can fail
 // on it. They deliberately do not measure anything themselves: measuring means
-// shelling out to `go list` and walking the tree, which is D.9's job and which
+// shelling out to `go list` and walking the tree, which is the build-time guard's job and which
 // would make these functions untestable without a toolchain. The split also
 // means the gates cannot lie about their own inputs.
 //
@@ -38,13 +38,13 @@
 // GATE 1 IS THE TWO-ARTIFACT SPLIT, NOT A CONFIG KEY
 // ===========================================================================
 //
-// plan/50-dast.md's gate 1 row was written against the original spine S9,
-// which modelled DAST as `dast.enabled=false` inside one binary. That model
-// was AMENDED. plan/00-SPINE.md S9-AMENDED and plan/IMPLEMENTATION-PLAN.md 2.2
-// both rule that a boolean inside a shipped binary does not address the
-// concern the gate exists for — UK CMA s.3A(2) supply exposure — "because a
-// config flag inside a single shipped binary still supplies the probing
-// capability to everyone who installs it."
+// plan/design/dynamic-tier.md's gate 1 row was written against the spine's
+// original hardware-tier table, which modelled DAST as `dast.enabled=false`
+// inside one binary. That model was AMENDED. The two-artifact split and the
+// first plan's two-artifact ruling both rule that a boolean inside a shipped
+// binary does not address the concern the gate exists for — UK CMA s.3A(2)
+// supply exposure — "because a config flag inside a single shipped binary still
+// supplies the probing capability to everyone who installs it."
 //
 // Anvil therefore ships `anvil` (core, no network-probing capability compiled
 // in) and `anvil-dast`. Gate 1 checks the split, and the split is already
@@ -147,7 +147,7 @@ func (g ImportGraph) Deps() []string {
 }
 
 // EgressCallSite is one place in the tree where a socket or an HTTP client is
-// constructed, as reported by D.9's repo-wide lint.
+// constructed, as reported by the build-time guard's repo-wide lint.
 type EgressCallSite struct {
 	// Package is the full import path of the package the site is in.
 	Package string
@@ -165,7 +165,7 @@ func (s EgressCallSite) String() string {
 	return fmt.Sprintf("%s:%d %s (package %s)", s.File, s.Line, s.Symbol, s.Package)
 }
 
-// EgressScan is the result of D.9's repo-wide scan for socket construction.
+// EgressScan is the result of the build-time guard's repo-wide scan for socket construction.
 //
 // FilesScanned is part of the measurement and not decoration: a scan that
 // looked at zero files finds zero violations, and "we found nothing" and "we
@@ -241,7 +241,7 @@ func (e allowEntry) covers(pkg string) bool {
 //
 // # Why an allowlist and not a denylist of inference packages
 //
-// D.2's forbidden actions and plan/00-SPINE.md S7 both phrase gate 2 as a
+// The kernel core's forbidden actions and the spine's safety section both phrase gate 2 as a
 // denylist: no imports from "any package path containing /inference/, /model/
 // or /llm/". A denylist of three substrings is defeated by naming a package
 // anything else — internal/dast/engine, internal/agent, internal/reasoning —
@@ -250,29 +250,29 @@ func (e allowEntry) covers(pkg string) bool {
 // known, so it can be enumerated.
 //
 // The denylist is kept as well, and runs first, purely so that the specific
-// failure S7 names produces a message that says "you imported the inference
+// failure the spine's safety section names produces a message that says "you imported the inference
 // layer" instead of "this package is not on the allowlist". Both refuse.
 //
 // # Amending this list is a reviewed act
 //
-// It lives in D.2's write scope on purpose: widening the kernel's dependency
+// It lives in the kernel core's write scope on purpose: widening the kernel's dependency
 // surface should require editing the kernel's own build gate, in a diff whose
-// whole subject is that widening. D.7 (the gate-21 audit sink, which will need
-// a durable store) and D.9 are the two packets expected to need an entry; see
-// the note in D.2's report.
+// whole subject is that widening. The disclosure phase (the gate-21 audit sink, which will need
+// a durable store) and the kernel's build-time guard are the two packets
+// expected to need an entry; see the note in the kernel core's report.
 var kernelImportAllowlist = []allowEntry{
 	{
 		path:   modulePath + "/internal/record",
 		prefix: false,
 		why: "gate 21's audit rows are part of Anvil's audit record, and the record " +
 			"package is the single owner of the frozen enums " +
-			"(plan/IMPLEMENTATION-PLAN.md section 6 ruling: 'area 40 owns every shared " +
+			"(the first plan's shared-vocabulary ruling: 'the record area owns every shared " +
 			"enum ... no other area may declare one'). It has no non-stdlib dependencies " +
 			"of its own, so admitting it does not widen the surface further.",
 	},
 }
 
-// inferenceLayerMarkers is the denylist S7 names verbatim. It is redundant
+// inferenceLayerMarkers is the denylist the spine's safety section names verbatim. It is redundant
 // against kernelImportAllowlist and is kept for the message it produces.
 //
 // RESIDUAL RISK, STATED RATHER THAN PAPERED OVER: on its own this list catches
@@ -285,7 +285,7 @@ var inferenceLayerMarkers = []string{"/inference/", "/model/", "/llm/"}
 //
 // # The two tiers, and why only one of them has an allowlist
 //
-// Gate 3's requirement, from D.9's forbidden actions, is that the lint "cover
+// Gate 3's requirement, from the build-time guard's forbidden actions, is that the lint "cover
 // the whole repo, not just the DAST package, since the point is proving no
 // other package can bypass the kernel either." But Anvil's static half
 // legitimately fetches things — advisory feeds, vulnerability databases — and
@@ -304,8 +304,8 @@ var inferenceLayerMarkers = []string{"/inference/", "/model/", "/llm/"}
 // MEASURED, not assumed, on 2026-08-22 by grepping the tree for net.Dial,
 // http.Client, http.Get, http.Post, http.DefaultClient, http.NewRequest,
 // net.Listen and tls.Dial across all non-test .go files. Three packages
-// matched, all of them Lane A ingestion or mirror code. D.9 owns the lint that
-// keeps this list honest.
+// matched, all of them Lane A ingestion or mirror code. The kernel's build-time
+// guard owns the lint that keeps this list honest.
 var nonKernelEgressAllowlist = []allowEntry{
 	{
 		path:   modulePath + "/internal/ingest/bootstrap",
@@ -373,10 +373,11 @@ func isStdlibPackage(p string) bool {
 // That is a vacuous positive, and it is written down rather than papered over.
 // The gate is not fabricated a consumer to satisfy it — a consumer invented to
 // make a gate green is the exact shape internal/SKIPPED-CONTROLS.md records
-// this repository shipping twice. D.9 owns the real positive control: once
-// cmd/anvil-dast links the kernel, gate 1 needs BOTH graphs — anvil-dast MUST
-// contain internal/dast/authz and anvil MUST NOT — so that the split is proved
-// by a difference between two measurements rather than by the absence of one.
+// this repository shipping twice. The kernel's build-time guard owns the real
+// positive control: once cmd/anvil-dast links the kernel, gate 1 needs BOTH
+// graphs — anvil-dast MUST contain internal/dast/authz and anvil MUST NOT — so
+// that the split is proved by a difference between two measurements rather than
+// by the absence of one.
 func CheckGate1DastShipsDisabled(core ImportGraph) GateResult {
 	return gate1(core, zeroValuesThatWouldAuthorize())
 }
@@ -413,9 +414,9 @@ func gate1(core ImportGraph, zeroValueFaults []string) GateResult {
 	}
 	if len(violations) > 0 {
 		return gateFailed(g, ReasonCoreArtifactReachesDAST, fmt.Sprintf(
-			"%s reaches %d DAST package(s) through its import graph. plan/00-SPINE.md "+
-				"S9-AMENDED splits Anvil into two artifacts precisely so that the core "+
-				"binary supplies no probing capability; plan/IMPLEMENTATION-PLAN.md 2.2 "+
+			"%s reaches %d DAST package(s) through its import graph. plan/design/spine.md "+
+				"The two-artifact split splits Anvil into two artifacts precisely so that the core "+
+				"binary supplies no probing capability; the first plan's two-artifact ruling "+
 				"rules that a config flag inside one binary does not do that. Move the "+
 				"code to %s rather than gating it behind a flag or a build tag.",
 			CoreBinaryPackage, len(violations), DastBinaryPackage), violations...)
@@ -513,13 +514,13 @@ func zeroValuesThatWouldAuthorize() []string {
 // closure contains nothing but the standard library and the explicitly
 // allowlisted packages.
 //
-// plan/00-SPINE.md S7: "The authorization kernel is a pure function of (target,
+// The spine's safety section: "The authorization kernel is a pure function of (target,
 // scope, attestation, clock), compiled separately from the model runtime, with
 // a build-time test that fails if the dependency graph inverts. No model ever
 // holds a network handle."
 //
-// D.9 owns the test that MEASURES the graph and fails the build. This function
-// owns what that test asserts.
+// The kernel's build-time guard owns the test that MEASURES the graph and fails
+// the build. This function owns what that test asserts.
 func CheckGate2KernelCompiledSeparately(kernel ImportGraph) GateResult {
 	const g = Gate2KernelCompiledSeparately
 
@@ -534,9 +535,9 @@ func CheckGate2KernelCompiledSeparately(kernel ImportGraph) GateResult {
 			KernelPackage, kernel.Root()))
 	}
 
-	// The denylist runs first so that the specific failure S7 names gets the
-	// specific message. It is redundant against the allowlist below, which is
-	// what actually holds.
+	// The denylist runs first so that the specific failure the spine's safety
+	// section names gets the specific message. It is redundant against the
+	// allowlist below, which is what actually holds.
 	var inference []string
 	for _, dep := range kernel.Deps() {
 		if isStdlibPackage(dep) {
@@ -556,7 +557,7 @@ func CheckGate2KernelCompiledSeparately(kernel ImportGraph) GateResult {
 	if len(inference) > 0 {
 		return gateFailed(g, ReasonKernelImportsInference, fmt.Sprintf(
 			"the authorization kernel reaches %d inference-layer package(s). "+
-				"plan/00-SPINE.md S7 requires the kernel to be compiled separately from "+
+				"The spine's safety section requires the kernel to be compiled separately from "+
 				"the model runtime and states the reason plainly: no model ever holds a "+
 				"network handle. A kernel that links the model runtime has no boundary "+
 				"left to enforce.", len(inference)), inference...)
@@ -667,7 +668,7 @@ func CheckGate3EgressChokePoint(scan EgressScan) GateResult {
 			"%d socket construction(s) inside the DAST tree but outside %s. There is no "+
 				"allowlist for this and no code path that can add one. Every outbound "+
 				"connection in the dynamic tier goes through the kernel, because "+
-				"plan/00-SPINE.md S7 requires that no model ever holds a network handle "+
+				"The spine's safety section requires that no model ever holds a network handle "+
 				"and a socket the kernel did not open is a handle it did not authorize. "+
 				"Route it through Adjudicate and RequireAuthorization.",
 			len(insideDast), KernelPackage), insideDast...)
@@ -700,14 +701,14 @@ func CheckGate3EgressChokePoint(scan EgressScan) GateResult {
 //
 // # It has a consumer, and that is what makes it a gate
 //
-// D.3's critic reached Adjudicate without ever calling this function, which
+// The kernel-types review reached Adjudicate without ever calling this function, which
 // made gate 1 decorative: a write nothing reads is a comment. Adjudicate now
 // takes a DastEnablement and refuses when it is not enabled, when it was minted
 // against a different scope hash, or when it was minted under a different
 // attestation. TestAdjudicateRefusesWithoutAnEnablement is the test that a
 // caller who skips this function gets nothing.
 //
-// The artifact check is the one that carries plan/00-SPINE.md S9-AMENDED: the
+// The artifact check is the one that carries the two-artifact split: the
 // core binary can never enable DAST, whatever its configuration says, because
 // `anvil` is the artifact with no probing capability compiled in and gate 2's
 // import-graph assertion is what makes that true rather than claimed.
@@ -723,8 +724,8 @@ func EnableDAST(
 		// The only artifact that may probe.
 	case ArtifactCore:
 		return DastEnablement{}, fmt.Errorf("enable dast: %w: %q is the core artifact and "+
-			"has no network-probing capability compiled in. plan/00-SPINE.md S9-AMENDED "+
-			"and plan/IMPLEMENTATION-PLAN.md 2.2 split the distribution precisely so that "+
+			"has no network-probing capability compiled in. The two-artifact split "+
+			"and the first plan's two-artifact ruling split the distribution precisely so that "+
 			"this cannot be turned on by configuration; install %q instead",
 			ErrRefused, ArtifactCore, ArtifactDAST)
 	default:

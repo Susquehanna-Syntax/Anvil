@@ -1,8 +1,8 @@
-// This file is D.15: the ZAP driver.
+// This file is the ZAP driver.
 //
-// It shares package `engines` with D.14 (nuclei.go) DELIBERATELY AND
+// It shares package `engines` with the nuclei driver (nuclei.go) DELIBERATELY AND
 // COMPLETELY. Every type that describes a request, an authorization, a
-// finding or an absence is D.14's, reused rather than re-declared:
+// finding or an absence is the nuclei driver's, reused rather than re-declared:
 // TargetSpec, RequestProposal, AdmittedRequest, Issuer, ProbeResult, Finding,
 // scrub, ExitCodeArtefactAbsent and ErrEngineUnavailable. A second engine that
 // invented its own seam would be a second contract that can disagree with the
@@ -13,11 +13,11 @@
 // EngineUnavailableError (its message hard-codes nuclei's InstallHint),
 // Coverage (its ProbedNothing is template-shaped and ZAP has no templates),
 // and ScanResult.AssertNotSilentlyEmpty (its absence message names nuclei by
-// const). Each of those is a nuclei.go edit that is outside D.15's write
+// const). Each of those is a nuclei.go edit that is outside the ZAP driver's write
 // scope, so this file declares a sibling and says so rather than quietly
 // producing a message that names the wrong engine.
 //
-// # The one structural difference from D.14, and it is the whole file
+// # The one structural difference from the nuclei driver, and it is the whole file
 //
 // Nuclei is driven in-process through an interface: the driver proposes a
 // request, the kernel gates it, and an Issuer supplied from outside
@@ -42,7 +42,7 @@
 //
 // # Redirects, which is the specific thing this packet was told to get right
 //
-// plan/50-dast.md's gate 13 is named after the bug ZAP shipped: issue #2546,
+// plan/design/dynamic-tier.md's gate 13 is named after the bug ZAP shipped: issue #2546,
 // scope treated as a job-level property rather than a per-request one, so a
 // mid-scan redirect walked out of scope. An http.Client with a nil
 // CheckRedirect follows up to ten hops silently; ZAP's own client follows too.
@@ -161,10 +161,10 @@
 //
 // # The open question this packet was told to answer, answered by NOT guessing
 //
-// plan/50-dast.md:1253 records ZAP's JVM memory footprint as unquantified
+// plan/design/dynamic-tier.md:1253 records ZAP's JVM memory footprint as unquantified
 // (research 15's own gap), and notes it decides whether tier M hardware
-// (spine S9, 32 GB / 8 core) accommodates a scheduled full scan alongside SAST
-// and the coding agent.
+// (the spine's hardware-tier table, 32 GB / 8 core) accommodates a scheduled
+// full scan alongside SAST and the coding agent.
 //
 // IT IS STILL UNQUANTIFIED AND THIS FILE STATES NO NUMBER. There is no ZAP on
 // this host to run and no Docker to run `docker stats` against, so any figure
@@ -189,7 +189,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Identity, the absence contract, and what is shared with D.14
+// Identity, the absence contract, and what is shared with the nuclei driver
 // ---------------------------------------------------------------------------
 
 // ZapEngineName is the probe engine this driver wraps.
@@ -197,7 +197,7 @@ const ZapEngineName = "zap"
 
 // ZapInstallHint is printed inside every ZAP-absent error.
 //
-// It carries NO VERSION LITERAL. plan/50-dast.md's Pinned Versions And
+// It carries NO VERSION LITERAL. plan/design/dynamic-tier.md's Pinned Versions And
 // Licences table (line 1215) pins ZAP's ADD-ONS — Automation Framework +
 // Authentication Helper, OpenAPI, GraphQL, SOAP, gRPC — but names no version
 // for the ZAP core itself, so neither does this constant. Inventing one would
@@ -234,7 +234,7 @@ var (
 //
 // # Why this is a second type and not EngineUnavailableError
 //
-// It reports ExitCodeArtefactAbsent — D.14's constant, not a second one — and
+// It reports ExitCodeArtefactAbsent — the nuclei driver's constant, not a second one — and
 // it unwraps to ErrEngineUnavailable, so `errors.Is(err, ErrEngineUnavailable)`
 // and a type assertion to `interface{ ExitCode() int }` both work across the
 // two drivers. THAT is the shared contract, and zap_test.go asserts it holds
@@ -245,7 +245,7 @@ var (
 // here would print "the Nuclei Go SDK is not in this module's dependency
 // graph" to an operator whose actual problem is a missing JVM application.
 // Giving EngineUnavailableError a Hint field is the better fix and it is an
-// edit to nuclei.go, which D.15 may not write — see notes to the orchestrator.
+// edit to nuclei.go, which the ZAP driver may not write — see notes to the orchestrator.
 type ZapUnavailableError struct {
 	// Name is the engine that is missing, always ZapEngineName.
 	Name string
@@ -261,11 +261,11 @@ func (e *ZapUnavailableError) Error() string {
 		e.Name, e.Detail, ZapInstallHint, ExitCodeArtefactAbsent)
 }
 
-// Unwrap ties this to D.14's sentinel so one errors.Is covers both engines.
+// Unwrap ties this to the nuclei driver's sentinel so one errors.Is covers both engines.
 func (e *ZapUnavailableError) Unwrap() error { return ErrEngineUnavailable }
 
 // ExitCode reports the process exit code a wrapping command must use. It is
-// D.14's constant, deliberately: one code across Anvil for "the engine or the
+// the nuclei driver's constant, deliberately: one code across Anvil for "the engine or the
 // ruleset is not present".
 func (e *ZapUnavailableError) ExitCode() int { return ExitCodeArtefactAbsent }
 
@@ -311,7 +311,7 @@ type ZapRunOutcome struct {
 //  3. Give ZAP NO network access other than the proxy the plan names. The
 //     plan's env.proxy block routes ZAP's HTTP through Anvil's chokepoint; a
 //     runner that also leaves ZAP able to dial directly has reintroduced the
-//     bypass the proxy exists to close. On Linux this is D.11's netns; on a
+//     bypass the proxy exists to close. On Linux this is network containment's netns; on a
 //     host without one it is unenforced, and U5 records that.
 //
 // Obligations 1 and 3 are STATED HERE AND ENFORCED NOWHERE IN THIS FILE.
@@ -944,8 +944,9 @@ func NewZapAutomationPlan(f ZapPlanFacts) (ZapAutomationPlan, error) {
 // generate. It exists because the Verify call at the end is otherwise
 // UNTESTABLE: every negative test for Verify forges a plan and calls Verify
 // directly, so deleting the constructor's call would leave the whole suite
-// green while shipping unverified documents. This is the same device D.9 uses
-// for gate 1's zero-value survey, and for the same reason.
+// green while shipping unverified documents. This is the same device the
+// kernel's build-time guard uses for gate 1's zero-value survey, and for the
+// same reason.
 func newZapAutomationPlan(render func(ZapPlanFacts) (string, error), f ZapPlanFacts) (ZapAutomationPlan, error) {
 	if !f.Spec.Constructed() {
 		return ZapAutomationPlan{}, fmt.Errorf("engines: %w: the plan names a destination "+
@@ -998,11 +999,11 @@ func newZapAutomationPlan(render func(ZapPlanFacts) (string, error), f ZapPlanFa
 //
 // # Why this is a strings.Builder and not text/template
 //
-// plan/50-dast.md D.15 says "a Go-templated zap.yaml generator". This is a
+// The ZAP driver's design says "a Go-templated zap.yaml generator". This is a
 // deliberate deviation and the reason is measured, not stylistic:
 // nuclei_test.go's TestThisPackageConstructsNoSocket enumerates every import
 // this package may carry, `text/template` is not on it, and nuclei_test.go is
-// outside D.15's write scope. Adding the import turns a green suite red in a
+// outside the ZAP driver's write scope. Adding the import turns a green suite red in a
 // file this packet may not edit.
 //
 // The substantive point is unaffected and arguably improved. text/template's
@@ -1047,7 +1048,7 @@ func renderZapPlan(f ZapPlanFacts) (string, error) {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
-	w("# Generated by Anvil (D.15). Do not edit: this file is regenerated from")
+	w("# Generated by Anvil (the ZAP driver). Do not edit: this file is regenerated from")
 	w("# internal/dast/engines/zap.go and re-verified on every construction.")
 	w("#")
 	w("# env.proxy is REQUIRED and is the whole containment story: ZAP is given no")
@@ -1368,7 +1369,7 @@ func (p ZapAutomationPlan) YAML() string { return p.yaml }
 // It is the ZAP analogue of a Nuclei template digest: the identity a finding
 // is attributed to. A request that claims to come from this scan carries this
 // digest, and ZapDriver.Fire refuses one that carries a different value —
-// which is the same by-identity-never-by-position rule D.14's Lookup enforces.
+// which is the same by-identity-never-by-position rule the nuclei driver's Lookup enforces.
 func (p ZapAutomationPlan) Digest() string { return p.digest }
 
 // Caps returns the four bounded caps this plan was rendered from.
@@ -1469,7 +1470,7 @@ func (i ZapInvocation) PlanYAML() string { return i.planYAML }
 
 // zapProposalOrigins is the allowlist of origins this driver will propose.
 //
-// It is NARROWER than D.14's, which is narrower than the kernel's, and the
+// It is NARROWER than the nuclei driver's, which is narrower than the kernel's, and the
 // narrowing is the point:
 //
 //	OriginInitial            ZAP's first request to the target
@@ -1483,8 +1484,8 @@ func (i ZapInvocation) PlanYAML() string { return i.planYAML }
 // and NOT:
 //
 //	OriginTemplateURL        this driver has no templates
-//	OriginBrowserFetch       needs the Client Spider, which is D.23 and not
-//	                         this packet. When D.23 lands it must widen this
+//	OriginBrowserFetch       needs the Client Spider, which is the crawl and not
+//	                         this packet. When the crawl lands it must widen this
 //	                         list, and widening it is the review that widening
 //	                         should be.
 //	OriginWebSocketUpgrade   no job in the generated plan makes one
@@ -1564,12 +1565,12 @@ type ZapProposalFacts struct {
 	Attempt   int
 }
 
-// NewZapRequestProposal builds D.14's sealed RequestProposal from ZAP facts.
+// NewZapRequestProposal builds the nuclei driver's sealed RequestProposal from ZAP facts.
 //
 // It reuses RequestProposal rather than declaring a second proposal type, so
-// that plan/50-dast.md exit criterion 19 — "zero methods or fields capable of
+// that plan/design/dynamic-tier.md exit criterion 19 — "zero methods or fields capable of
 // performing network I/O, proven by reflection" — is proved once for both
-// engines by the test D.14 already wrote.
+// engines by the test the nuclei driver already wrote.
 func NewZapRequestProposal(f ZapProposalFacts) (RequestProposal, error) {
 	if !f.Plan.Constructed() {
 		return RequestProposal{}, fmt.Errorf("engines: %w: the proposal names no automation "+
@@ -1586,10 +1587,10 @@ func NewZapRequestProposal(f ZapProposalFacts) (RequestProposal, error) {
 	}
 	if !allowed {
 		return RequestProposal{}, fmt.Errorf("engines: %w: this driver does not propose "+
-			"requests of origin %q. D.15 generates an active-scan plan and nothing else: "+
+			"requests of origin %q. The ZAP driver generates an active-scan plan and nothing else: "+
 			"there is no template, no headless browser, no WebSocket job and no "+
 			"out-of-band callback in it, so there is no request of those origins for it "+
-			"to propose. D.23's Client Spider is what widens this",
+			"to propose. The crawl's Client Spider is what widens this",
 			ErrRefused, redactIdentifier(string(f.Origin)))
 	}
 	id, err := zapRuleIdentity(f.RuleID)
@@ -1636,17 +1637,17 @@ type ZapConfig struct {
 	// Runner is the ZAP process seam. A nil Runner is legal to construct and
 	// produces *ZapUnavailableError at Autorun.
 	Runner ZapRunner
-	// Issuer is the egress layer, shared with D.14. A nil Issuer is legal to
+	// Issuer is the egress layer, shared with the nuclei driver. A nil Issuer is legal to
 	// construct and produces ErrNoEgress at Fire.
 	Issuer Issuer
 }
 
-// ZapDriver is D.15: the ZAP driver.
+// ZapDriver is the ZAP driver.
 //
-// # It is trigger-agnostic, and that is D.15's instruction rather than an
+// # It is trigger-agnostic, and that is the ZAP driver's instruction rather than an
 // # oversight
 //
-// plan/50-dast.md D.15 forbidden actions: "Do not run ZAP in the always-on
+// The ZAP driver's forbidden actions: "Do not run ZAP in the always-on
 // /incremental path — it is gated to scheduled full scans only, enforced by
 // the caller's trigger-policy check, not by this driver refusing to run (the
 // driver itself should be trigger-agnostic; the gating is a config/scheduling
@@ -1741,7 +1742,7 @@ func (d *ZapDriver) count(f func(*ZapCoverage)) {
 // Fire routes one request ZAP made through the kernel and, only if the kernel
 // admits it, issues it.
 //
-// It is the same order as D.14's Fire, with one substitution: where the Nuclei
+// It is the same order as the nuclei driver's Fire, with one substitution: where the Nuclei
 // driver looks the proposal's template up in its admitted set, this one checks
 // the proposal's digest against the plan it rendered. Both are "attributed by
 // identity, never by position", and both exist for the same reason — without
@@ -1870,7 +1871,7 @@ func (d *ZapDriver) Fire(ctx context.Context, p RequestProposal, now authz.Clock
 //	                         resulting finding list is byte-identical to a
 //	                         clean target's.
 //
-// It does NOT increment RequestsIssued, for the same reason D.14's Run does
+// It does NOT increment RequestsIssued, for the same reason the nuclei driver's Run does
 // not: this driver does not observe what ZAP put on the wire, and counting a
 // request it did not see would invent the one number
 // ZapScanResult.AssertNotSilentlyEmpty rests on. The requests are counted
@@ -1960,7 +1961,7 @@ func (d *ZapDriver) Result() ZapScanResult {
 
 // ZapCoverage is what actually ran.
 //
-// # Why this is not D.14's Coverage
+// # Why this is not the nuclei driver's Coverage
 //
 // Coverage.ProbedNothing is `TemplatesAdmitted == 0 || RequestsIssued == 0`,
 // and ZAP has no templates. Embedding it would make ProbedNothing true for

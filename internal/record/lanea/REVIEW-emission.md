@@ -1,13 +1,13 @@
-# REVIEW-A.20 — independent review of A.19 record emission
+# Review: Lane A record emission
 
 **Verdict: FAIL.** One blocker, two majors, three minors.
 
-**This was a SAME-FAMILY critic.** The packet routes A.20 to OpenCode `openai/gpt-5.5`; that route is
-withdrawn per the OWNER DECISION block atop `plan/00-ROUTING.md`. This review was performed by a Claude
-subagent — the same family that wrote A.19 — and therefore carries none of the independence the
+**This was a SAME-FAMILY critic.** The packet routes this review to OpenCode `openai/gpt-5.5`; that route is
+withdrawn per the OWNER DECISION block atop `plan/design/routing.md`. This review was performed by a Claude
+subagent — the same family that wrote record emission — and therefore carries none of the independence the
 cross-family guard was written to buy. Do **not** record this as "cross-family critic: PASS". To
 compensate, every claim below is backed by a probe I wrote and ran against the committed code, not by
-reading A.19's own tests. Nine probes were written; six passed, three failed. The probes were deleted
+reading record emission's own tests. Nine probes were written; six passed, three failed. The probes were deleted
 after the run and the tree is unmodified apart from this file.
 
 Reviewed at `74dee08` + untracked `internal/record/lanea/`, Go 1.26.5, Windows.
@@ -20,7 +20,7 @@ Reviewed at `74dee08` + untracked `internal/record/lanea/`, Go 1.26.5, Windows.
 
 **On the literal question asked by the packet: no. This part is earned.**
 
-I probed the bytes rather than the struct, per A.9's lesson. For a host `MatchResult` whose own
+I probed the bytes rather than the struct, per the host collector's lesson. For a host `MatchResult` whose own
 `RemediableByAgent` field asserts `true`, I marshalled every shape that leaves this package and walked
 the decoded JSON for any key matching `remediable`:
 
@@ -84,7 +84,7 @@ where it surfaced in the emitted JSON:
 All ten are covered by `Trust.Default = untrusted`, which `emit.go:1192-1198` enforces on the emitted
 value rather than trusting the contract — and that enforcement is load-bearing, because
 `ValidateResultTrust`'s external-pointer loop (`contract.go:2092`) iterates
-`Result.ExternalStringPointers()`, which is **empty** for an SCA/host result. A.19 states this
+`Result.ExternalStringPointers()`, which is **empty** for an SCA/host result. Record emission states this
 explicitly at `emit.go:1180-1191` instead of implying the contract covers it. That is the right call
 and it is unusual to see stated rather than assumed.
 
@@ -93,7 +93,7 @@ The one `anvil_generated` label is on `/properties/anvil~1reasoning`, and it is 
 base-10 integer, the guard is driven RED by `TestComposeReasoningRefusesAnExternalString` including
 near-misses (`"+3600"`, `"3600.0"`, Arabic-Indic digits), and my injection probe confirmed the marker
 never reaches the reasoning string. `anvil_generated` on the advisory row is refused
-(`emit.go:797-802`). This is not the defect area B shipped.
+(`emit.go:797-802`). This is not the defect Lane B shipped.
 
 Two residual gaps, both minor, at findings 4 and 5.
 
@@ -119,10 +119,10 @@ choice is pinned against the frozen corpus rather than against the map, which is
 
 The frozen contract defines the field it is filling (`contract.go:1631-1634`):
 
-> `StalenessSeconds` is S6's `staleness_seconds`: **record-assembly time minus AsOf**. Carried
+> `StalenessSeconds` is the spine's `staleness_seconds`: **record-assembly time minus AsOf**. Carried
 > explicitly so a consumer never has to know the assembly clock.
 
-A.19 fills it with something else. `AdvisoryRow.StalenessSeconds` is documented at `emit.go:375-378` as
+Record emission fills it with something else. `AdvisoryRow.StalenessSeconds` is documented at `emit.go:375-378` as
 "`advisory.staleness_seconds`, the age ingestion stamped at write time … carried through unmodified",
 and that column is defined by `internal/ingest/delta/delta.go:1158-1180` as *the age of the DATA at
 write time* — publisher lag, measured against `Last-Modified` at the instant of the last successful
@@ -132,7 +132,7 @@ data was current".
 
 So two producers now write one named field under two different definitions. That is the same class of
 defect as two `/v1` fingerprint algorithms under one name, in the freshness dimension instead of the
-identity dimension, and S6's "defined once" rule is the rule it breaks.
+identity dimension, and the spine's "defined once" rule is the rule it breaks.
 
 The consequence is exactly the one the priority list names. A 304 or a failed poll writes nothing
 (`delta.go:857-861`), so during an outage both columns freeze. I built that state and read the emitted
@@ -154,7 +154,7 @@ a one-day SLO, and says so in the prose a human reads. `BeyondFreshnessSLO()` �
 machine-readable SLO statement on the crossing artifact — is wrong by a factor of 504. Both errors
 point the same way: fresher than reality.
 
-**A.19's Validation item 2 is therefore not met.** The packet requires "a test asserting a stale
+**Record emission's Validation item 2 is therefore not met.** The packet requires "a test asserting a stale
 advisory produces a Record that surfaces that staleness rather than silently reporting clean". The test
 that claims it, `TestStaleAdvisorySurfacesItsStalenessRatherThanReportingClean` (`emit_test.go:487`),
 sets `a.StalenessSeconds = 21*24*3600` **on the input row** and asserts that value appears on the
@@ -173,10 +173,10 @@ PROBE5b: fixture as_of is 52.3 days old; emitted stalenessSeconds = 3600;
          SLO = 86400; beyondFreshnessSlo = false
 ```
 
-**Note for whoever fixes this:** it cannot be fixed inside the package as currently shaped. A.19's
+**Note for whoever fixes this:** it cannot be fixed inside the package as currently shaped. Record emission's
 "this package reads no clock" property (`emit.go:104-110`, pinned by `TestThisPackageReadsNoClock`) is
 a good property and I would not trade it away, but it means the assembly-relative age must arrive as an
-input. The minimal shape is for `AdvisoryRow` to carry the scan's `as_of` — the value O.2 already holds
+input. The minimal shape is for `AdvisoryRow` to carry the scan's `as_of` — the value the controller's state wiring already holds
 — or for the caller to supply `StalenessSeconds` already computed as `scanAsOf − (row.as_of −
 row.staleness_seconds)`. Either way the emitted `asOf` should be *when the data was current*
 (`row.as_of − row.staleness_seconds`), not the write instant, or the two fields will keep disagreeing
@@ -200,7 +200,7 @@ PROBE8 apk: EMITTED, remediableByAgent(top)=true nested=true detectorKind=sca
 
 `record.Validate` accepts all three, because from the record's point of view they are ordinary SCA
 findings. The coding agent is handed "bump `openssl` in `Dockerfile`" as actionable work against an
-`apt` package. That is the same authorization defect S7 exists to prevent, arriving through the
+`apt` package. That is the same authorization defect the spine's safety section exists to prevent, arriving through the
 collector label rather than through the collector.
 
 It is not reachable *today*: `internal/collector/repo/trivy.go:771-782` refuses Trivy's `os-pkgs`
@@ -241,7 +241,7 @@ The consequence is contained: `record.Validate` refuses the assembled log —
 
 ```
 runs[0]: results[0]: anvil/remediableByAgent must be false for a host finding
-(00-SPINE.md S7: the host agent is read-only)
+(the spine's safety section: the host agent is read-only)
 ```
 
 — and `CardsFromLog` clamps again at `taskcard.go:550`. So this is not an authorization hole. It is a
@@ -256,7 +256,7 @@ with itself.
 ## 4. MINOR — the advisory excerpt's bound and sanitisation are asserted, never checked
 
 `emit.go:392-396` claims the excerpt is "pre-trimmed (<= `record.MaxAdvisoryExcerptTokens`), already
-sanitised by A.3 at ingest". Nothing verifies either, and `excerpt()` (`emit.go:1097-1102`) copies the
+sanitised by the sanitizer at ingest". Nothing verifies either, and `excerpt()` (`emit.go:1097-1102`) copies the
 string through. Probe:
 
 ```
@@ -320,7 +320,7 @@ the finding is still emitted as report-only rather than dropped. I would keep al
 
 # Gate
 
-Finding 1 blocks A.21. The conformance harness would otherwise pin the wrong `staleness_seconds`
+Finding 1 blocks the Lane A exit gate. The conformance harness would otherwise pin the wrong `staleness_seconds`
 semantics into a two-run byte-identity assertion, at which point correcting it becomes a change to a
 frozen conformance expectation rather than a change to one field. Findings 2 and 3 should land in the
 same pass; 4, 5 and 6 can follow.

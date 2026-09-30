@@ -1,4 +1,4 @@
-// Package drift is A.16: what Anvil does when a feed changes shape underneath
+// Package drift is drift handling: what Anvil does when a feed changes shape underneath
 // it, and what it does when a publisher takes an advisory back.
 //
 // ===========================================================================
@@ -10,7 +10,7 @@
 //
 // Those are the same rule seen from two sides. research/06 Risk #3 states the
 // first half — "on an unknown minor version, ingest raw and set
-// parse_degraded=1 rather than dropping the record" — and plan/00-SPINE.md S6
+// parse_degraded=1 rather than dropping the record" — and the spine's record section
 // states the second by making `parse_degraded` a REQUIRED field of the record
 // rather than an optional diagnostic. A parser that skips a field it does not
 // recognise and emits the record anyway produces a finding that looks complete
@@ -61,7 +61,7 @@
 //     that field sits in a LOAD-BEARING path: `/cveMetadata`, which decides
 //     identity and retraction, or an `affected` subtree, which is the version
 //     range Lane A's whole reason for existing is answered from
-//     (plan/00-SPINE.md S1). An unrecognised field in prose, credits or
+//     (the spine's corrected-requirements table). An unrecognised field in prose, credits or
 //     taxonomy mappings is REPORTED, and does not by itself make the version
 //     comparator's answer wrong.
 //
@@ -74,7 +74,7 @@
 // WHAT THIS PACKAGE DOES NOT DO
 // ===========================================================================
 //
-//   - It does not fetch, and it holds no clock of its own. A.7 polls, A.14
+//   - It does not fetch, and it holds no clock of its own. The poller polls, delta ingestion
 //     syncs, and Tombstoner takes its clock as a field so a test does not have
 //     to sleep.
 //   - It does not sanitize on the parse path. delta.Decode does that field by
@@ -82,7 +82,7 @@
 //     fallback record's identifiers, and the values it reads back out of the
 //     cache on the tombstone path).
 //   - It does not compute a fingerprint, derive one, or compare against one.
-//     anvil-fp/v1 is internal/record's and is the only one (S6).
+//     anvil-fp/v1 is internal/record's and is the only one (the spine's record section).
 package drift
 
 import (
@@ -102,7 +102,7 @@ import (
 
 var (
 	// ErrDrift is satisfied by every error this package originates, so a
-	// caller can tell "A.16 declined" from "the database failed" without
+	// caller can tell "Drift handling declined" from "the database failed" without
 	// listing every sentinel below.
 	ErrDrift = errors.New("drift")
 
@@ -143,7 +143,7 @@ func refuse(sentinel error, format string, args ...any) error {
 
 // Record is internal/ingest/delta's Record, ALIASED.
 //
-// It is `=` and not a new struct on purpose. A.14 owns the decoded-advisory
+// It is `=` and not a new struct on purpose. Delta ingestion owns the decoded-advisory
 // shape and the only sanctioned write path for it (delta.Apply); a struct
 // declared here would be convertible, plausible, and one refactor away from
 // being written to the cache by a second route with a subtly different set of
@@ -160,14 +160,14 @@ type Record = delta.Record
 //
 // It is Lane-A-local vocabulary with no counterpart among the record
 // contract's six frozen enums, so declaring it here does not violate
-// plan/IMPLEMENTATION-PLAN.md §6's single-owner rule. It exists so that a
+// the shared-vocabulary review's single-owner rule. It exists so that a
 // caller switches on a constant rather than comparing version strings it
 // re-derived.
 type Branch string
 
 const (
 	// BranchCVE50, BranchCVE51 and BranchCVE52 are the CVE Record Format
-	// versions this parser has been written against. A.16's packet names
+	// versions this parser has been written against. Drift handling's packet names
 	// exactly these three as known.
 	BranchCVE50 Branch = "cve-5.0"
 	BranchCVE51 Branch = "cve-5.1"
@@ -367,7 +367,7 @@ const maxWalkNodes = 20000
 
 // Report is what the parser understood about one document and what it did not.
 //
-// It is the "carrying which fields were not understood" half of A.16. A bare
+// It is the "carrying which fields were not understood" half of drift handling. A bare
 // degraded bool would say a record is incomplete without saying in what way,
 // which is a status nobody can act on and therefore a status everybody learns
 // to ignore.
@@ -476,7 +476,7 @@ func (r *Report) add(c Code) {
 // Parse
 // ---------------------------------------------------------------------------
 
-// ParseVersioned is the narrow entry point A.16's packet names: bytes in, one
+// ParseVersioned is the narrow entry point drift handling's design names: bytes in, one
 // record and the degraded flag out.
 //
 // It cannot report WHICH fields it did not understand and it cannot report an
@@ -625,7 +625,7 @@ func decodeOne(feedID string, raw []byte) (Record, error) {
 // It is deliberately minimal. Reconstructing severity or version ranges here
 // would be the third decoder the package comment refuses to write, and a
 // half-reconstructed record is exactly the "looks complete and is not" outcome
-// A.16 exists to prevent. What survives is enough for the record to be found
+// drift handling exists to prevent. What survives is enough for the record to be found
 // again and re-parsed by a later build that understands the shape.
 func fallbackRecord(feedID string, doc map[string]any, dataVersion string, raw []byte) (Record, error) {
 	meta, _ := doc["cveMetadata"].(map[string]any)
@@ -800,7 +800,7 @@ func sortedKeys(m map[string]bool) []string {
 //   - /cveMetadata decides WHICH advisory this is and whether it has been
 //     retracted. A field nobody understands there can change the identity or
 //     the state of the row.
-//   - the `affected` subtrees are the version ranges. plan/00-SPINE.md S1:
+//   - the `affected` subtrees are the version ranges. The spine's corrected-requirements table:
 //     "CVE/OSV/GHSA describe vulnerable PACKAGE VERSIONS, and a version
 //     comparator answers that exactly and for free." An unrecognised key there
 //     is a range that may not mean what the comparator read.
@@ -860,7 +860,7 @@ func isLoadBearing(path string) bool {
 //     REPORT LINE on a 5.0 document. It never costs a dropped record, and
 //     outside a load-bearing subtree it never even sets parse_degraded.
 //   - 5.2's additive set is EMPTY. This parser was written against 5.1's key
-//     set and accepts 5.2 as a known version on A.16's packet's authority; a
+//     set and accepts 5.2 as a known version on the authority of drift handling's design; a
 //     key that exists only in 5.2 is therefore reported as unrecognised. That
 //     is the loud outcome and it is the intended one — the alternative,
 //     accepting an unenumerated key set for a version nobody enumerated, is

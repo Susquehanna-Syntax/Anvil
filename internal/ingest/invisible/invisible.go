@@ -22,7 +22,7 @@
 // the sanitizer. NEITHER DEFEAT WAS A NEW IDEA. They were the same idea aimed
 // at whichever list happened not to name the character.
 //
-// plan/IMPLEMENTATION-PLAN.md §6 closed ten instances of exactly this class:
+// The shared-vocabulary review closed ten instances of exactly this class:
 // two areas naming the same vocabulary from their own side and drifting apart.
 // The fix there was one owner per definition, and it is the fix here. This
 // package is the owner. internal/ingest/sanitize and internal/ingest/license
@@ -102,7 +102,7 @@ import "unicode"
 // The derived tables
 // ---------------------------------------------------------------------------
 
-// zeroWidthBidiTable is the block plan/10-lane-a-*.md A.3 names: U+200B-U+200F
+// zeroWidthBidiTable is the block the sanitizer's design names: U+200B-U+200F
 // (zero-width space, ZWNJ, ZWJ, LRM, RLM), U+202A-U+202E (the legacy bidi
 // embedding and override controls, of which U+202E RIGHT-TO-LEFT OVERRIDE is
 // the classic "Trojan Source" character) and U+2066-U+2069 (the isolate
@@ -257,7 +257,7 @@ var (
 // Kind is which component of the class a code point belongs to. It exists so
 // that a consumer can COUNT the components separately without owning their
 // membership: internal/ingest/sanitize reports one counter per Kind, and
-// plan/10-lane-a-*.md A.3 forbids dropping a rune without a count.
+// The sanitizer's design forbids dropping a rune without a count.
 type Kind int
 
 const (

@@ -1,4 +1,4 @@
-// Tests for plan step D.17.
+// Tests for template pinning.
 //
 // The packet's stated validation is one sentence: "Test with a synthetic
 // upstream diff containing a new `code:` template asserting it is flagged and
@@ -39,7 +39,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // TestSplit_DASTBinaryActuallyLinksTheDASTTier is the POSITIVE half of the
-// S9-AMENDED two-artifact split, and it exists because until this file landed
+// the two-artifact split, and it exists because until this file landed
 // the split was satisfied by emptiness in both directions.
 //
 // TestSplit_CoreBinaryHasNoDASTCapability (../anvil/split_test.go) asserts
@@ -113,7 +113,7 @@ func TestSplit_DASTBinaryActuallyLinksTheDASTTier(t *testing.T) {
 
 	if len(coreSide) != 0 {
 		t.Fatalf("cmd/anvil reaches %d %s package(s):\n  %s\nThe core binary must ship with "+
-			"no network-probing capability compiled in (plan/00-SPINE.md S9-AMENDED).",
+			"no network-probing capability compiled in (the two-artifact split).",
 			len(coreSide), tier, strings.Join(coreSide, "\n  "))
 	}
 }
@@ -137,7 +137,7 @@ http:
 }
 
 // codeTemplate is the poisoning shape: a `code:` block, which
-// plan/00-SPINE.md S5 excludes outright.
+// the spine's exclusion list excludes outright.
 func codeTemplate(id string) string {
 	return fmt.Sprintf(`id: %s
 info:
@@ -155,7 +155,7 @@ http:
 `, id)
 }
 
-// headlessTemplate is refused by the loader but is NOT a spine S5 hard
+// headlessTemplate is refused by the loader but is NOT a spine hard
 // exclusion, so it must be reported without blocking.
 func headlessTemplate(id string) string {
 	return fmt.Sprintf(`id: %s
@@ -422,7 +422,7 @@ func TestPinSourceForm_RoundTripsTheValues(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestArchivedLicenceBodyMatchesThePin runs in the ordinary `go test ./...`
-// lane, which is the lane CI runs. plan/00-SPINE.md S8 says licence decisions
+// lane, which is the lane CI runs. The spine's licence section says licence decisions
 // are made from FILE BODIES; this asserts the body is present, is the body the
 // pin's digest names, and is actually the licence the pin claims -- not a
 // stub, not a placeholder, and not a guessed SPDX identifier over an absent
@@ -758,7 +758,7 @@ func TestDiff_KeysOnIdentityNotPath(t *testing.T) {
 	}
 }
 
-// TestDiff_NewCodeProtocolTemplateBlocksPromotion is plan/50-dast.md D.17's
+// TestDiff_NewCodeProtocolTemplateBlocksPromotion is template pinning's design
 // stated validation, verbatim: a synthetic upstream diff containing a new
 // `code:` template, asserted to be flagged and blocked from auto-promotion.
 func TestDiff_NewCodeProtocolTemplateBlocksPromotion(t *testing.T) {
@@ -1230,7 +1230,7 @@ func TestNewGitSource_RefusesANonHTTPSRepository(t *testing.T) {
 // TestGitSource_MaterialiseRefusesAnythingButAFullSHA never runs git: the
 // refusal happens before any subprocess, which is the point. `git checkout
 // main` in a job whose whole purpose is to pin by SHA is the exact failure
-// plan/50-dast.md D.17's Forbidden actions name.
+// template pinning's design forbids.
 func TestGitSource_MaterialiseRefusesAnythingButAFullSHA(t *testing.T) {
 	g := &gitSource{repository: pinnedRepository, git: "definitely-not-a-real-binary"}
 	dest := filepath.Join(t.TempDir(), "out")
@@ -1493,7 +1493,7 @@ func TestCLI_CodeTemplateBlocksPromotionEndToEnd(t *testing.T) {
 	}
 }
 
-// TestCLI_CleanDiffStillRequiresAnExplicitApproval is D.17's Forbidden action:
+// TestCLI_CleanDiffStillRequiresAnExplicitApproval is template pinning's Forbidden action:
 // no automatic promotion on a clean diff.
 func TestCLI_CleanDiffStillRequiresAnExplicitApproval(t *testing.T) {
 	work := t.TempDir()

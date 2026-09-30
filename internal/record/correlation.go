@@ -1,4 +1,4 @@
-// Correlation policy — LINK, NEVER MERGE (step R.12).
+// Correlation policy — LINK, NEVER MERGE.
 //
 // # What this file owns
 //
@@ -33,7 +33,7 @@
 // contract.go's own validateCorrelation before it is emitted, and a link that
 // fails it is dropped rather than downgraded. There is deliberately no second
 // notion of "sufficient" here: a second copy of a rule is a second definition,
-// which is how plan/IMPLEMENTATION-PLAN.md §6's ten defects happened.
+// which is how the shared-vocabulary review's ten defects happened.
 // MinCorrelationSignals, CorrelationSignal and
 // CorrelationSignal.SufficientForVerified are consumed, never re-derived.
 //
@@ -48,19 +48,19 @@
 // CorrelationSignalRouteTable, CorrelationSignalParameterName and
 // CorrelationSignalCweMatch signals below.
 //
-// This is plan/40-record-and-storage.md, Open Questions #1, and R.12's packet
+// This is plan/design/record-and-store.md, Open Questions #1, and correlation's design
 // forbids this step from attempting to resolve it. It is flagged, not settled.
-// plan/00-SPINE.md S8 already names the patent and explicitly declines to
+// The spine's licence section already names the patent and explicitly declines to
 // resolve it via the Apache-2.0 licence choice. research/18 Risk #1's
 // instruction is verbatim: "Escalate to the owner; do not assume this is
 // fine." Open Questions #1 additionally requires escalation to the owner
-// BEFORE this file's output ships in a release. R.15's critic verifies that
+// BEFORE this file's output ships in a release. The queue and read-path review verifies that
 // this flag exists; it does not resolve it either.
 //
 // # Untrusted bytes never reach the output
 //
 // The strongest signal available, CorrelationSignalResponseStackTrace, is read
-// out of the DAST half's response body — which plan/00-SPINE.md S7 names the
+// out of the DAST half's response body — which the spine's safety section names the
 // highest-risk field in the system, "up to 32 KB of attacker-controlled bytes
 // fed to a repo-credentialed agent". So:
 //
@@ -77,8 +77,8 @@
 //
 // Sources: research/18-unified-audit-record.md ("Correlation policy — link,
 // never merge"; Table 2 — correlation signals, cost, and how each one fails;
-// the annotated record's anvil/correlation block); plan/00-SPINE.md S7;
-// plan/40-record-and-storage.md (Open Questions #1).
+// the annotated record's anvil/correlation block); the spine's safety section;
+// plan/design/record-and-store.md (Open Questions #1).
 //
 // (Free-floating file comment: contract.go carries the package doc.)
 package record
@@ -113,7 +113,8 @@ const CorrelationMethodV1 = "anvil-correlate/v1"
 // by failure mode, and nothing finer should be read into the exact values:
 //
 //   - responseStackTrace and rerunFlip are the two that name the static locus
-//     or re-observe the behaviour, and are the only two S7 lets set Verified.
+//     or re-observe the behaviour, and are the only two the spine's safety
+//     section lets set Verified.
 //   - routeTable and callGraphReach tie a route to a symbol. Table 2 records
 //     that both degrade on dynamic dispatch, reverse-proxy rewrites and
 //     middleware fan-out.
@@ -187,7 +188,7 @@ type Evidence struct {
 	Reachability []Reachability
 
 	// RerunFlips are post-patch re-runs of a recorded reproduction. Only a
-	// flip from FAILING to PASSING may set Verified (plan/00-SPINE.md S7:
+	// flip from FAILING to PASSING may set Verified (the spine's safety section:
 	// "Only a DAST reproduction that now fails earns 'verified fixed.' A clean
 	// SAST rescan does not.").
 	RerunFlips []RerunFlip
@@ -334,7 +335,7 @@ type Cluster struct {
 	//
 	// This can UNDER-claim — a stack-trace-verified pair joined by an
 	// unverified third finding reports false — and that is the intended
-	// direction. plan/00-SPINE.md S7 gates "verified fixed" on this bit, so an
+	// direction. The spine's safety section gates "verified fixed" on this bit, so an
 	// over-claim is a correctness failure and an under-claim is a lost
 	// opportunity. Per-finding verification is narrower still and is computed
 	// by CorrelationFor from the incident links only.
@@ -588,14 +589,14 @@ func sharedCWE(s, d *findingView) (string, bool) {
 //
 // Table 2: "Response leaks File \"app/db.py\", line 412 ... near zero cost,
 // regex over a body Anvil already stores." It is one of the two signals
-// plan/00-SPINE.md S7 lets set verified:true.
+// the spine's safety section lets set verified:true.
 //
 // THE THREAT THIS DOES NOT DEFEND AGAINST, stated rather than hidden: the
-// response body is attacker-controlled (S7 names it the highest-risk field in
-// the system). A target that can print arbitrary bytes can print a fabricated
-// stack trace naming any path in the repository, and thereby manufacture the
-// signal that promotes a link to Verified. The mitigations applied here are
-// partial and are not a fix:
+// response body is attacker-controlled (the spine's safety section names it the
+// highest-risk field in the system). A target that can print arbitrary bytes
+// can print a fabricated stack trace naming any path in the repository, and
+// thereby manufacture the signal that promotes a link to Verified. The
+// mitigations applied here are partial and are not a fix:
 //
 //   - The match must be against a full repository-relative path or a full
 //     fully-qualified symbol of at least minLocusTokenLen characters. A bare
@@ -749,7 +750,7 @@ func handlerReachesSink(s *findingView, handlers routeMatch, ev Evidence) bool {
 // rerunFlipped reports whether a recorded reproduction of the DAST finding was
 // re-run after a patch and flipped from failing to passing.
 //
-// plan/00-SPINE.md S7: "Only a DAST reproduction that now fails earns 'verified
+// The spine's safety section: "Only a DAST reproduction that now fails earns 'verified
 // fixed.' A clean SAST rescan does not." An entry whose Flipped is false — a
 // run that still fails, a run that errored, a run never performed — is not a
 // weaker signal, it is no signal.
@@ -810,7 +811,7 @@ func noisyOr(signals []SignalWeight) float64 {
 // verificationOf reports whether the signal set earns Verified, and names the
 // signals that did. It asks CorrelationSignal.SufficientForVerified and
 // nothing else — there is no threshold on confidence here, and there must
-// never be one: plan/00-SPINE.md S7 makes verification a question about the
+// never be one: the spine's safety section makes verification a question about the
 // KIND of evidence, and a confidence float cannot answer it.
 func verificationOf(signals []SignalWeight) (bool, string) {
 	var names []string
@@ -863,7 +864,7 @@ func caveatFor(signals []SignalWeight, verified bool, linkCount int) string {
 		parts = append(parts,
 			"not verified: no "+string(CorrelationSignalResponseStackTrace)+
 				" or "+string(CorrelationSignalRerunFlip)+
-				" signal; confidence alone never qualifies and a clean SAST rescan never qualifies (00-SPINE.md S7)")
+				" signal; confidence alone never qualifies and a clean SAST rescan never qualifies (the spine's safety section)")
 	}
 	if onlyWeakNonCwe(signals) {
 		parts = append(parts,
@@ -1183,7 +1184,7 @@ func isDecimal(s string) bool {
 // annotated record in research/18 writes as "POST /api/login") and falling
 // back to the SARIF-native webRequest.
 //
-// NOTE, per CRITIQUE-01 BLOCKER 2: CanonicalRouteTemplate performs no
+// NOTE, per the contract-and-fingerprint review's BLOCKER 2: CanonicalRouteTemplate performs no
 // segment templating today, so a concrete "/api/users/12345/orders" and a
 // declared "/api/users/{id}/orders" will simply FAIL to match. That is the
 // conservative direction — a missing link, never a wrong one — and this file

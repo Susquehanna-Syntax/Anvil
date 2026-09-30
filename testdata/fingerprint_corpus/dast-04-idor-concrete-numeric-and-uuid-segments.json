@@ -1,7 +1,7 @@
 {
   "id": "dast-04-idor-concrete-numeric-and-uuid-segments",
   "tier": "dast",
-  "description": "An insecure-direct-object-reference finding whose observed route carries BOTH a concrete numeric id and a concrete UUID. This is the fixture CRITIQUE-01 said the corpus was missing: dast-01 through dast-03 all arrived pre-templated, so no fixture could tell whether CanonicalRouteTemplate templated anything at all. Every mutation below is a different concrete instance of the SAME defect and must produce the SAME digest.",
+  "description": "An insecure-direct-object-reference finding whose observed route carries BOTH a concrete numeric id and a concrete UUID. This is the fixture the contract-and-fingerprint review said the corpus was missing: dast-01 through dast-03 all arrived pre-templated, so no fixture could tell whether CanonicalRouteTemplate templated anything at all. Every mutation below is a different concrete instance of the SAME defect and must produce the SAME digest.",
   "input": {
     "target_id": "t-0003",
     "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
@@ -19,7 +19,7 @@
     "authenticated_as": "user 4192",
     "observed_status_flip": "403 -> 200",
     "observed_at": "2026-08-08T16:41:09Z",
-    "comment": "The numeric id and the UUID are volatile in the strongest sense: the next scan against a freshly seeded ephemeral target will observe different ones for the same defect. If they were hashed, every scan would open a new finding and 'verified fixed' could never be proved - which is precisely why plan/00-SPINE.md S7's fix-verification gate depends on this tier."
+    "comment": "The numeric id and the UUID are volatile in the strongest sense: the next scan against a freshly seeded ephemeral target will observe different ones for the same defect. If they were hashed, every scan would open a new finding and 'verified fixed' could never be proved - which is precisely why the spine's fix-verification gate depends on this tier."
   },
   "hashed_fields": [
     "t-0003",
@@ -35,7 +35,7 @@
   "mutations": [
     {
       "name": "different_numeric_id",
-      "description": "THE mutation the R.3 ruling demands. A second scan lands on user 98765 instead of user 12345; it is the same defect and must keep the same identity. Without route templating this input produced a different digest and the finding was reported resolved and re-opened as new.",
+      "description": "THE mutation the contract-and-fingerprint review's ruling demands. A second scan lands on user 98765 instead of user 12345; it is the same defect and must keep the same identity. Without route templating this input produced a different digest and the finding was reported resolved and re-opened as new.",
       "input": {
         "target_id": "t-0003",
         "rule_id_versioned": "nuclei:idor-object-reference@2026.07.1",
@@ -191,8 +191,8 @@
     }
   ],
   "notes": [
-    "This fixture exists because of CRITIQUE-01 blocker 2: 'All three DAST fixtures arrive already templated, so the corpus cannot detect this. There is no test anywhere that feeds a concrete numeric or UUID segment.'",
-    "route_template is a DERIVED field. Area 40 owns the fingerprint, so area 40 canonicalises: area D emits whatever route it observed and CanonicalRouteTemplate templates it. Pushing templating to the producer would give the field two owners and let two producers emit three digests for one defect.",
+    "This fixture exists because of the contract-and-fingerprint review's blocker 2: 'All three DAST fixtures arrive already templated, so the corpus cannot detect this. There is no test anywhere that feeds a concrete numeric or UUID segment.'",
+    "route_template is a DERIVED field. The record area owns the fingerprint, so the record area canonicalises: the dynamic tier emits whatever route it observed and CanonicalRouteTemplate templates it. Pushing templating to the producer would give the field two owners and let two producers emit three digests for one defect.",
     "The placeholder token is <VAR>, frozen. Angle brackets cannot appear unencoded in a URI path (RFC 3986), so no literal segment can collide with it, and <VAR> is itself recognised as an already-templated segment, which makes the function idempotent.",
     "The templating rules are conservative on purpose. Over-templating merges two distinct routes into one identity and loses a finding on upsert; under-templating only leaves a volatile route un-merged, which a producer can still fix by emitting '{id}' itself. The exact predicates and their length thresholds are in internal/record/FINGERPRINT-SPEC.md section 6.",
     "Note the deliberate NON-mutations: '/api/v1/users/me/orders/...' and '/api/v1/users/12345/invoices/...' are DIFFERENT routes and must produce different digests. TestCanonicalRouteTemplateDoesNotOverTemplate in fingerprint_test.go pins the segments that must survive untouched."

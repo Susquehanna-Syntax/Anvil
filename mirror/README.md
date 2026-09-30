@@ -6,14 +6,14 @@ This directory is two things at once, and keeping them apart is the whole point:
 |---|---|---|---|---|
 | `LICENSE-MANIFEST.toml` | the **pin** — per feed: canonical licence URL, expected sha256, claimed SPDX id | Anvil | yes | no, but nothing is admitted without it |
 | `tier<N>/<dir>/LICENSE.full.txt` | the **evidence** — the publisher's own verbatim licence text | the publisher | **no** | yes |
-| `tier<N>/LICENSE-NOTES.md`, `tier2/<dir>/LICENSE` | Anvil's **record** — provenance, the S8 manual override, the quoted operative sentence | Anvil | yes | **no** |
+| `tier<N>/LICENSE-NOTES.md`, `tier2/<dir>/LICENSE` | Anvil's **record** — provenance, the manual licence override, the quoted operative sentence | Anvil | yes | **no** |
 
 ## A fresh clone admits no feed at all. That is deliberate.
 
 Clone Anvil, run `internal/ingest/license`, and every feed is refused with
 `ErrUnpinnedLicenseBody`. Nothing is broken.
 
-`plan/00-SPINE.md` S8 requires a gate that reads "LICENSE file bodies, never API
+The spine's licence section requires a gate that reads "LICENSE file bodies, never API
 metadata", and the reason for that rule is that **the body is the publisher's
 evidence**. The first cut of this gate read only the files in the third row of
 that table — Anvil prose, committed alongside the very feed rows it was

@@ -1,4 +1,4 @@
-// semver.go is step O.7: computing the semantic-version bump that a git tag
+// semver.go is semver bump classification: computing the semantic-version bump that a git tag
 // represents, so that a policy rule's `matchSemverBump` key has something
 // TRUSTWORTHY to match against.
 //
@@ -23,9 +23,10 @@
 // THE FOOTGUN, AND WHY THIS FILE IS STRICTER THAN THE HEURISTIC IT WAS GIVEN
 // ---------------------------------------------------------------------------
 //
-// O.7's packet suggests detecting the shallow-checkout footgun AFTER the fact:
-// treat a `git describe` failure as ErrShallowCheckout when `.git/shallow`
-// exists. That heuristic has a hole, and the hole is the dangerous direction.
+// Semver bump classification's packet suggests detecting the shallow-checkout
+// footgun AFTER the fact: treat a `git describe` failure as ErrShallowCheckout
+// when `.git/shallow` exists. That heuristic has a hole, and the hole is the
+// dangerous direction.
 //
 // A shallow checkout does not necessarily make `git describe` FAIL. `--depth 3`
 // on the fixture in semver_test.go still reaches `v1.1.1`, so a post-hoc check
@@ -118,7 +119,7 @@ var (
 
 	// ErrGit reports that git itself could not be run or failed for a reason
 	// this file does not model. The underlying stderr is wrapped in, never
-	// discarded: "git error" with no text is the failure mode O.7's packet
+	// discarded: "git error" with no text is the failure mode semver bump classification's design
 	// forbids.
 	ErrGit = errors.New("policy: git invocation failed")
 )
@@ -296,7 +297,7 @@ func classifyCore(prev, next semver) BumpKind {
 // isShallowRepository reports whether repoPath's history is truncated.
 //
 // Two mechanisms, in order, because the first is authoritative and the second
-// is what O.7's packet names:
+// is what semver bump classification's design names:
 //
 //  1. `git rev-parse --is-shallow-repository`, which git answers correctly for
 //     worktrees, submodules and separate git dirs alike.
@@ -455,7 +456,7 @@ func exitStatus(err error) (int, bool) {
 }
 
 // gitError wraps a git failure with the command, the repository and git's own
-// stderr. O.7's packet forbids a bare "git error"; this is why the stderr is
+// stderr. Semver bump classification's packet forbids a bare "git error"; this is why the stderr is
 // carried all the way out.
 func gitError(err error, what, repoPath, stderr string) error {
 	if stderr == "" {
@@ -561,7 +562,7 @@ func parseSemver(tag string) (semver, error) {
 // because those three bare words are ALSO the BumpKind tokens engine.go owns,
 // and TestSemverFileDeclaresNoSecondBumpVocabulary -- correctly -- cannot tell a
 // component label from a forked enum. Two vocabularies sharing three words is
-// exactly the collision plan/IMPLEMENTATION-PLAN.md section 6 is about, so the
+// exactly the collision the first plan's shared-vocabulary review is about, so the
 // one that is not the enum gets the longer spelling.
 var coreComponentNames = [3]string{"major version", "minor version", "patch version"}
 

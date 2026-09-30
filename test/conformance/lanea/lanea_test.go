@@ -1,4 +1,4 @@
-// Package lanea_test is Lane A's end-to-end conformance harness (A.21).
+// Package lanea_test is Lane A's end-to-end conformance harness (the Lane A exit gate).
 //
 // ===========================================================================
 // WHAT THIS HARNESS IS FOR, AND WHY IT IS NOT SEVEN UNIT TESTS IN A TRENCHCOAT
@@ -66,7 +66,7 @@
 //	(RefusalNoPurl) and says so deliberately: "this package will not
 //	synthesise one — the namespace (debian vs ubuntu, redhat vs fedora) comes
 //	from os-release". The host collector HAS os-release and does not build one.
-//	So no host finding can be emitted today. A.19's own tests do not see it
+//	So no host finding can be emitted today. Record emission's own tests do not see it
 //	because their host fixtures supply a purl.
 //	PROVEN BY: TestLaneAChain/emission, which runs the real host inventory
 //	shape through and captures the refusal.
@@ -405,7 +405,7 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 			"NOASSERTION, and the gate did not record that the body overrode the metadata")
 	}
 	if !kev.NoteRequired || strings.TrimSpace(kev.ManualNote) == "" {
-		t.Error("exit criterion 10: a metadata disagreement did not make spine S8's manual note mandatory")
+		t.Error("exit criterion 10: a metadata disagreement did not make the manual licence note mandatory")
 	}
 	led.proven(linkLicenceGate, fmt.Sprintf(
 		"license.Resolve admitted all %d rows against a PINNED, digest-matched licence body "+
@@ -477,7 +477,7 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 
 	assertCacheInvariants(t, db)
 	led.proven(linkCache, fmt.Sprintf(
-		"A.8 upserted %d records and A.14 upserted %d into one migrated FTS5 cache; every advisory "+
+		"The bulk bootstrap upserted %d records and delta ingestion upserted %d into one migrated FTS5 cache; every advisory "+
 			"row carries a licence declaration, the REJECTED record is tombstoned rather than "+
 			"deleted and left the FTS index, and the unknown dataVersion is persisted with "+
 			"parse_degraded=1", bootstrapped, deltaUpserts))
@@ -556,7 +556,7 @@ func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.Mat
 	lookup := advisoryLookup(t, db, feeds)
 	e := lanea.Emitter{
 		TargetID: "anvil-conformance-target",
-		// REQUIRED, and deliberately not defaultable. A.20 found that
+		// REQUIRED, and deliberately not defaultable. The emission review found that
 		// staleness_seconds was being copied from the cache column (the
 		// PUBLISHER lag) rather than computed as the contract quantity,
 		// record-assembly time minus AsOf -- so a twenty-one-day-old cache
@@ -637,7 +637,7 @@ func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.Mat
 //
 // "No host record is remediable" is a weak claim if NO record is ever
 // remediable, and today none produced by a collector is: internal/collector/repo
-// reports only lang-pkgs findings (it skips os-pkgs as A.9's territory), and
+// reports only lang-pkgs findings (it skips os-pkgs as the host collector's territory), and
 // internal/match implements deb, rpm and apk only. The two halves of the SCA
 // path have disjoint domains, so no repository finding survives the comparator.
 //
@@ -1011,7 +1011,7 @@ func repoPackageRecords(scan repo.ScanResult) []match.PackageRecord {
 // The cache as an advisory source
 // ---------------------------------------------------------------------------
 
-// cacheSource is internal/match's AdvisorySource read straight off the A.2
+// cacheSource is internal/match's AdvisorySource read straight off the ingestion cache
 // cache.
 //
 // IT IS TEST-ONLY AND ITS EXISTENCE IS A FINDING. internal/match defines the
@@ -1106,7 +1106,7 @@ func assertStoredStringsAreSanitized(t *testing.T, db *sql.DB) {
 	if n := count(t, db, `SELECT count(*) FROM advisory_fts WHERE advisory_fts MATCH ?`, "mishandles"); n != 1 {
 		t.Errorf("the sanitized description of the injection fixture matches %d rows for a word it "+
 			"contains, want 1; a zero-width character left inside a word breaks tokenisation, which "+
-			"is the retrieval failure spine S7's ingest-time sanitisation prevents", n)
+			"is the retrieval failure the spine's ingest-time sanitisation prevents", n)
 	}
 	if n := count(t, db, `SELECT count(*) FROM advisory_fts WHERE advisory_fts MATCH ?`, "anvilinjectionprobe"); n != 0 {
 		t.Errorf("the HTML comment carrying an injected instruction is still searchable in %d rows; "+
@@ -1194,7 +1194,7 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 	}
 
 	// SEAM 3, asserted. The repository collector reports lang-pkgs findings —
-	// it skips os-pkgs as A.9's territory — and the comparator implements OS
+	// it skips os-pkgs as the host collector's territory — and the comparator implements OS
 	// package schemes only. The two halves of the SCA path have DISJOINT
 	// DOMAINS, so no repository finding can ever become a record. What the
 	// comparator does right is refuse it COUNTABLY rather than returning a
@@ -1216,7 +1216,7 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 		t.Errorf("no entry in CoverageReport.Refusals names the ecosystem that was refused: %+v",
 			cov.Refusals)
 	}
-	// THIS WAS A LOGGED FINDING AND IS NOW AN ASSERTION. A.21 reported that
+	// THIS WAS A LOGGED FINDING AND IS NOW AN ASSERTION. The Lane A exit gate reported that
 	// EcosystemsRefused — documented as "the list an operator uses to decide
 	// what to implement next" — was populated only from
 	// RefusalUnsupportedEcosystem, so a record carrying a purl (every repo-SCA
@@ -1228,7 +1228,7 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 	if cov.PackagesRefusedScheme > 0 && len(cov.EcosystemsRefused) == 0 {
 		t.Errorf("%d package(s) were refused for an unimplemented scheme and "+
 			"CoverageReport.EcosystemsRefused is EMPTY. The count is visible and the thing to "+
-			"implement next is not, which is the exact defect A.21 reported and internal/match "+
+			"implement next is not, which is the exact defect the Lane A exit gate reported and internal/match "+
 			"fixed: a refusal arriving by the purl route (RefusalUnsupportedPurlType) is the same "+
 			"fact about coverage as one arriving by the ecosystem route. Refusals: %+v",
 			cov.PackagesRefusedScheme, cov.Refusals)
@@ -1358,18 +1358,18 @@ func decideNotWired(t *testing.T, led *ledger) {
 		"internal/ingest/reconcile's weekly baseline self-heal is not exercised by this harness: "+
 			"it re-pulls the full bulk artifact, and proving that it RESTORES a silently-dropped "+
 			"record needs a second, later archive plus a deliberate deletion between the two runs",
-		"A.15's own TestSelfHealRestoresDroppedRecords covers it against a synthetic "+
+		"The weekly self-heal's own TestSelfHealRestoresDroppedRecords covers it against a synthetic "+
 			"missing-records fixture; an end-to-end proof needs this harness to serve two "+
 			"generations of the same archive and delete rows between them")
 	led.unproven(linkAccelerator,
 		"internal/mirror/accelerator is not in this chain at all. It is a warm-start optimisation "+
 			"that pulls a compiled Trivy-DB/Grype-DB artifact, and pulling one requires a registry "+
 			"this harness must not contact",
-		"A.11/A.13's own tests cover the version gate and the consume-only write refusal against "+
+		"The accelerator and the accelerator review's own tests cover the version gate and the consume-only write refusal against "+
 			"synthetic artifacts; an end-to-end proof needs a local OCI registry fixture")
 	led.unproven(linkProductionUp,
 		"NOTHING UNDER internal/ WIRES THIS CHAIN TOGETHER. Two components this harness needed do "+
-			"not exist in production form: an internal/match.AdvisorySource backed by the A.2 cache "+
+			"not exist in production form: an internal/match.AdvisorySource backed by the ingestion cache "+
 			"(the comparator has never been connected to the cache outside this file) and a reader "+
 			"that fills internal/record/lanea.AdvisoryRow from an `advisory` row (its doc says "+
 			"\"the caller reads the row and fills this in\"; there is no caller). cacheSource and "+
@@ -1525,7 +1525,7 @@ var urlLiteralAllowlist = map[string]string{
 	"https://grype.anchore.io/databases/v6/latest.json": "OPEN ITEM: internal/mirror/accelerator " +
 		"compiles in the Grype v6 listing endpoint as its default. Outside exit criterion 1's " +
 		"stated scope (internal/ingest), but the same argument applies and research/06 S23 says " +
-		"operators should self-host. Reported by A.21, not fixed by it.",
+		"operators should self-host. Reported by the Lane A exit gate, not fixed by it.",
 	"https://ghcr.io": "OPEN ITEM: the same, for the Trivy-DB OCI registry default.",
 }
 
@@ -1882,8 +1882,8 @@ FROM affected ORDER BY source, source_id, ecosystem, package, ifnull(introduced,
 	// advisory_fts is EXTERNAL-CONTENT: selecting its columns returns NULL by
 	// design, so the dump asks whether an index ROW EXISTS for each advisory.
 	// Comparing column values would compare NULL to NULL and pass over any
-	// divergence at all — which is how the A.8/A.14 tombstone divergence this
-	// harness found stayed invisible.
+	// divergence at all — which is how the bulk bootstrap and delta ingestion
+	// tombstone divergence this harness found stayed invisible.
 	ftsDumpSQL = `
 SELECT a.source, a.source_id, a.state,
        CASE WHEN f.rowid IS NULL THEN 'not-indexed' ELSE 'indexed' END AS indexed

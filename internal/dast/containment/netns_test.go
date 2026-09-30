@@ -834,11 +834,11 @@ func TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity(t *testing.T) {
 		"containment ruleset", checked, reserved)
 }
 
-// TestEveryPlanNamedRangeIsInTheDenySet pins the literals plan/50-dast.md D.11
+// TestEveryPlanNamedRangeIsInTheDenySet pins the literals network containment's design
 // enumerates by name, so that a refactor of the sweep above cannot quietly
 // drop them.
 func TestEveryPlanNamedRangeIsInTheDenySet(t *testing.T) {
-	// plan/50-dast.md D.11, verbatim: 169.254.0.0/16, fd00:ec2::254, and the
+	// network containment's design, verbatim: 169.254.0.0/16, fd00:ec2::254, and the
 	// OWASP SSRF block list 127.0.0.0/8, 0.0.0.0/8, ::1/128, 10.0.0.0/8,
 	// 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, ff00::/8.
 	for _, s := range []string{
@@ -848,12 +848,12 @@ func TestEveryPlanNamedRangeIsInTheDenySet(t *testing.T) {
 	} {
 		pfx := netip.MustParsePrefix(s)
 		if !DeniedByRuleset(pfx.Addr()) {
-			t.Fatalf("plan/50-dast.md D.11 names %s and the deny set does not cover it", s)
+			t.Fatalf("Network containment's design names %s and the deny set does not cover it", s)
 		}
 	}
 	for _, s := range []string{"169.254.169.254", "fd00:ec2::254"} {
 		if !DeniedByRuleset(netip.MustParseAddr(s)) {
-			t.Fatalf("plan/50-dast.md D.11 names %s and the deny set does not cover it", s)
+			t.Fatalf("Network containment's design names %s and the deny set does not cover it", s)
 		}
 	}
 }
@@ -1584,7 +1584,7 @@ func TestAssertContainmentRefusesANilCommanderAndAnEmptyCanaryPath(t *testing.T)
 }
 
 // TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns is the SECOND HALF of
-// plan/50-dast.md D.11's stop condition, and only the second half.
+// network containment's design stop condition, and only the second half.
 //
 // The stop condition, verbatim, is TWO clauses joined by a semicolon:
 //
@@ -1954,7 +1954,7 @@ func TestTimeoutIsBoundedAndNonZero(t *testing.T) {
 // itself; neither reads the other's source, so this file needs its own or the
 // property is unchecked here.
 //
-// It matters more than usual in this package. Everything in D.11 is a control
+// It matters more than usual in this package. Everything in network containment is a control
 // that cannot run on the development host, which is exactly the condition
 // under which a skip is reached for -- and a skipped containment assertion
 // lets the package print `ok` while proving nothing about the sandbox. The gap

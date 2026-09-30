@@ -12,7 +12,7 @@
     "resolved_version": "2.14.1",
     "fixed_version": "2.15.0",
     "first_seen_at": "2026-08-08T12:00:00Z",
-    "comment": "plan/40-record-and-storage.md: 'NEVER hashed: the version string - bumping 1.2.3->1.2.4 while still inside the vulnerable range must not mint a new finding; resolution is proved by re-evaluating advisory_affects, not by identity change.'"
+    "comment": "plan/design/record-and-store.md: 'NEVER hashed: the version string - bumping 1.2.3->1.2.4 while still inside the vulnerable range must not mint a new finding; resolution is proved by re-evaluating advisory_affects, not by identity change.'"
   },
   "hashed_fields": [
     "t-0001",

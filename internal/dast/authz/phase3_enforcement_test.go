@@ -12,12 +12,12 @@
 //
 // A TEST WHOSE CORPUS COMES FROM THE IMPLEMENTATION IS NOT A TEST. Every
 // number in this file is a hand-written literal taken from research/20 gate
-// 14 and gate 16 or from plan/50-dast.md's Authorization Gate Sequence table —
+// 14 and gate 16 or from plan/design/dynamic-tier.md's Authorization Gate Sequence table —
 // 10 rps, 4 concurrent, 20,000 requests, 30 minutes, 1 MiB, 3 retries, 10%
 // 5xx, 3× baseline, 30 seconds, 3 × 429. Nothing here asks the implementation
 // what its own limits are and then asserts them.
 //
-// THE NAMED REPRODUCTION. plan/50-dast.md D.6 requires "a reproduction test of
+// THE NAMED REPRODUCTION. Per-request enforcement's design requires "a reproduction test of
 // the ZAP #2546 scenario (scope set to loopback, response 302s to an external
 // host mid-scan) asserting the redirect is refused and logged, not followed".
 // It is TestZAP2546RedirectToAnExternalHostIsRefusedNotFollowed, and it also
@@ -472,7 +472,7 @@ func TestRequestChainRefusesWhenItIsEmptyOrMisattributed(t *testing.T) {
 // ===========================================================================
 
 // TestZAP2546RedirectToAnExternalHostIsRefusedNotFollowed is the reproduction
-// plan/50-dast.md D.6 names: "scope set to loopback, response 302s to an
+// per-request enforcement's design names: "scope set to loopback, response 302s to an
 // external host mid-scan".
 //
 // The second half of this test is the part that matters. GATES 8, 9 AND 10 ON
@@ -545,7 +545,7 @@ func TestZAP2546RedirectToAnExternalHostIsRefusedNotFollowed(t *testing.T) {
 	}
 }
 
-// TestCrossHostRedirectIsRefusedEvenWhenScopePermitsTheOtherHost is D.6's
+// TestCrossHostRedirectIsRefusedEvenWhenScopePermitsTheOtherHost is per-request enforcement's
 // forbidden action in a test: "never follow a cross-host redirect, under any
 // circumstance, including same-registrable-domain-but-different-host cases".
 func TestCrossHostRedirectIsRefusedEvenWhenScopePermitsTheOtherHost(t *testing.T) {
@@ -601,7 +601,7 @@ func TestSameHostRedirectIsRevalidatedAndPermitted(t *testing.T) {
 		Gate13RevalidateEveryRequest)
 }
 
-// TestAnAttestationThatExpiresMidRunStopsTheNextRequest is D.9's HIGH 2,
+// TestAnAttestationThatExpiresMidRunStopsTheNextRequest is kernel review finding HIGH 2,
 // written as the measurement the critic made.
 //
 // WHAT WAS MEASURED. revalidationChain was {4, 8, 9, 10} and Gate5Attestation
@@ -727,7 +727,7 @@ func TestAnAttestationThatExpiresMidRunStopsTheNextRequest(t *testing.T) {
 	})
 }
 
-// TestGate13RunsGates8Through10OnEveryOriginAndEveryHop is the assertion D.8
+// TestGate13RunsGates8Through10OnEveryOriginAndEveryHop is the assertion the gate-stack review
 // is asked to trace: gate 13's re-validation actually calls gate 10's denylist
 // and gate 9's pinning on every hop, not only on the first request.
 //
@@ -991,7 +991,7 @@ func durPtr(v time.Duration) *time.Duration { return &v }
 func floatPtr(v float64) *float64           { return &v }
 
 // TestCodedCapsAreTheFiguresTheGateSequenceNames checks the floors against the
-// numbers written in plan/50-dast.md's Authorization Gate Sequence table,
+// numbers written in plan/design/dynamic-tier.md's Authorization Gate Sequence table,
 // which are hand-copied here rather than read from the implementation.
 func TestCodedCapsAreTheFiguresTheGateSequenceNames(t *testing.T) {
 	c := CodedCaps()
@@ -1015,7 +1015,7 @@ func TestCodedCapsAreTheFiguresTheGateSequenceNames(t *testing.T) {
 	}
 }
 
-// TestNoCombinationOfConfigValuesRaisesAnyCap is the test plan/50-dast.md D.6
+// TestNoCombinationOfConfigValuesRaisesAnyCap is the test per-request enforcement's design
 // requires: "a test asserting no combination of config values can push any of
 // the five caps above its floor".
 //
@@ -1156,7 +1156,7 @@ func TestNoCombinationOfConfigValuesRaisesAnyCap(t *testing.T) {
 }
 
 // TestCapsCannotBeForgedFromOutsideThisPackage is the structural half of the
-// floor rule, and it is here because D.3's critic showed the other half
+// floor rule, and it is here because the kernel-types review showed the other half
 // failing: NewCap is exported and unvalidated, so a caller CAN mint a Cap with
 // any floor it likes. Caps closes that by never accepting one.
 func TestCapsCannotBeForgedFromOutsideThisPackage(t *testing.T) {
@@ -1165,7 +1165,7 @@ func TestCapsCannotBeForgedFromOutsideThisPackage(t *testing.T) {
 		if ty.Field(i).IsExported() {
 			t.Errorf("Caps.%s is exported. An exported field is a composite literal in "+
 				"another package, which is how a config-driven caller would hand this "+
-				"package a floor of its own choosing — the exact hole D.3's critic "+
+				"package a floor of its own choosing — the exact hole the kernel-types review "+
 				"demonstrated in NewAttestation's ceiling parameter", ty.Field(i).Name)
 		}
 	}
@@ -1187,7 +1187,7 @@ func TestCapsCannotBeForgedFromOutsideThisPackage(t *testing.T) {
 	}
 }
 
-// TestCapOverridesAreCopiedNotAliased closes the aliasing shape D.3's critic
+// TestCapOverridesAreCopiedNotAliased closes the aliasing shape the kernel-types review
 // found in Scope: a caller that keeps its pointers and writes through them
 // after the fact must not be able to change a value that was already built.
 func TestCapOverridesAreCopiedNotAliased(t *testing.T) {
@@ -1594,7 +1594,7 @@ func TestGate15PermitsTheNonDestructiveTechniques(t *testing.T) {
 	}
 }
 
-// TestDestructiveDenylistCannotBeMutated is the same guard D.5 wrote for the
+// TestDestructiveDenylistCannotBeMutated is the same guard per-target admission wrote for the
 // reserved ranges: an accessor that hands out a live backing array is a list
 // anything holding it can edit.
 func TestDestructiveDenylistCannotBeMutated(t *testing.T) {
@@ -1722,7 +1722,7 @@ func p3Monitor(t *testing.T) *HealthMonitor {
 }
 
 // TestCircuitBreakerTripsOnTheServerErrorRateAndQuarantinesForTheRun is the
-// 5xx half of D.6's required breaker test.
+// 5xx half of per-request enforcement's required breaker test.
 //
 // The denominator rule is measured here rather than hidden: with fewer than
 // minRateSamples observations the rate rule cannot fire, because one request
@@ -1841,7 +1841,7 @@ func TestCircuitBreakerTripsOnTheConnectionErrorRate(t *testing.T) {
 }
 
 // TestCircuitBreakerTripsOnSustainedLatencyAndNotOnASpike is the p95 half of
-// D.6's required breaker test: "p95>3×baseline sustained 30s".
+// per-request enforcement's required breaker test: "p95>3×baseline sustained 30s".
 //
 // Both halves are asserted. A spike shorter than the sustain window must NOT
 // trip — otherwise the "sustained 30s" clause is decoration — and a sustained
@@ -2119,7 +2119,7 @@ func TestRetryAfterIsAbsoluteNotAdvisory(t *testing.T) {
 	p3AssertPassed(t, CheckGate17RetryAfter(b, p3At(t, 121*time.Second)), Gate17RetryAfter)
 }
 
-// TestGate17ClampsArePinnedToTheirValues is D.9's HIGH 4.
+// TestGate17ClampsArePinnedToTheirValues is kernel review finding HIGH 4.
 //
 // # What was measured
 //
@@ -2220,7 +2220,7 @@ func TestGate17DefaultAppliesWhenRetryAfterCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestMaxRedirectHopsIsPinned is D.9's MEDIUM 5.
+// TestMaxRedirectHopsIsPinned is kernel review finding MEDIUM 5.
 //
 // # What was measured
 //

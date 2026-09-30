@@ -1,4 +1,4 @@
-# Anvil A.4 — pinned acquisition manifest for publisher licence texts.
+# Anvil's licence gate — pinned acquisition manifest for publisher licence texts.
 #
 # Scope: this file is DATA ONLY. It records, per feed, WHERE the publisher's own
 # licence text comes from, WHAT it must hash to, and WHICH SPDX identifier it is
@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # WHY THIS FILE EXISTS
 # ---------------------------------------------------------------------------
-# plan/00-SPINE.md S8 requires a licence gate that reads "LICENSE file bodies,
+# The spine's licence section requires a licence gate that reads "LICENSE file bodies,
 # never API metadata". The point of that rule is that THE BODY IS THE
 # PUBLISHER'S EVIDENCE.
 #
@@ -17,7 +17,7 @@
 # than reading API metadata, because a reviewer sees a gate reading a file and
 # stops asking who wrote the file.
 #
-# The shape below is the one M0.7 already established in this repository for the
+# The shape below is the one the opengrep acquisition already established in this repository for the
 # opengrep engine (eval/tools/opengrep/MANIFEST.toml): pin the artefact, keep the
 # bytes out of git, acquire deliberately, verify on fetch, and refuse to run
 # without it.
@@ -107,7 +107,7 @@
 
 schema_version = 1
 generated_utc = "2026-08-09"
-generated_by = "Anvil implementation plan, step A.4 (post-A.6 rework)"
+generated_by = "Anvil implementation plan, the licence gate (reworked after the licence-gate review)"
 
 # ===========================================================================
 # TIER 0 — always mirrored, licence-clean, no copyleft
@@ -144,7 +144,7 @@ text_url = "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt"
 sha256 = ""
 claim_url = "https://raw.githubusercontent.com/cisagov/kev-data/develop/README.md"
 claim_source = "research/01-vuln-data-sources-and-licensing.md S16, S17"
-note = "Spine S8's worked example. The GitHub API reports NOASSERTION for cisagov/kev-data (S17) while the repository README states CC0 (S16). The claim is the README; the text is the CC0 legalcode the README names. A metadata gate rejects a public-domain feed here."
+note = "The spine's worked example. The GitHub API reports NOASSERTION for cisagov/kev-data (S17) while the repository README states CC0 (S16). The claim is the README; the text is the CC0 legalcode the README names. A metadata gate rejects a public-domain feed here."
 
 [[body]]
 feed_id = "cwe"
@@ -166,7 +166,7 @@ text_url = "https://nvd.nist.gov/general/FAQ-Sections/General-FAQs"
 sha256 = ""
 claim_url = "https://nvd.nist.gov/general/FAQ-Sections/General-FAQs"
 claim_source = "research/01-vuln-data-sources-and-licensing.md S5"
-note = "CITATION CORRECTED (A.6 M3): this conclusion was previously cited to research/01 S6, which is NIST's April 2026 announcement about enrichment volume and says nothing about licensing. The licence statement is S5, the NVD General FAQs: \"All NIST publications are available in the public domain.\" S5 also records the requested attribution notice and the prohibition on implying NIST endorsement, neither of which the earlier record mentioned."
+note = "CITATION CORRECTED (the licence-gate review M3): this conclusion was previously cited to research/01 S6, which is NIST's April 2026 announcement about enrichment volume and says nothing about licensing. The licence statement is S5, the NVD General FAQs: \"All NIST publications are available in the public domain.\" S5 also records the requested attribution notice and the prohibition on implying NIST endorsement, neither of which the earlier record mentioned."
 
 # ===========================================================================
 # TIER 1 — mirrored, attribution required, keep a NOTICE file

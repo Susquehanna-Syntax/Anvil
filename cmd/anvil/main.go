@@ -8,13 +8,13 @@
 // This binary has NO network-probing capability compiled in. The dynamic
 // (DAST) tier ships as a separate artifact, cmd/anvil-dast, which must be
 // separately installed and separately attested. That split is required by
-// plan/00-SPINE.md S9-AMENDED and is enforced mechanically by TestSplit in
+// the two-artifact split and is enforced mechanically by TestSplit in
 // split_test.go, which fails the build if any internal/dast package becomes
 // reachable from this binary's import graph.
 //
 // Bootstrap placeholder. The real entrypoint — the anvil scan and
 // anvil daemon --loop subcommands wired to internal/scanctl and
-// internal/queue — is owned by plan step O.16.
+// internal/queue — is plan node cli (plan/anvil.html).
 package main
 
 import (
@@ -30,6 +30,6 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "anvil %s: bootstrap placeholder, no subcommands yet (see plan step O.16)\n", version)
+	fmt.Fprintf(os.Stderr, "anvil %s: bootstrap placeholder, no subcommands yet\n", version)
 	os.Exit(2)
 }

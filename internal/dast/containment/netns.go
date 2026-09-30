@@ -4,7 +4,7 @@
 //
 // # The design spike the plan asked for
 //
-// plan/50-dast.md's Open Questions (the D.11 entry) leaves the assertion
+// plan/design/dynamic-tier.md's Open Questions (the network containment entry) leaves the assertion
 // probe's mechanism to this worker and names the two candidates. Both were
 // considered; the reasoning is recorded here because the next reader will ask,
 // and because the two options prove DIFFERENT THINGS and the difference is the
@@ -315,11 +315,11 @@ func (n Netns) Path() string { return NetnsRunDir + "/" + n.name }
 // Commander runs one external command to completion and returns its stdout.
 //
 // It exists for exactly two reasons. The first is the licence boundary spine
-// S8 and plan/50-dast.md's Pinned Versions section require: nftables is
-// GPL-2.0 and is INVOKED AS A SUBPROCESS, NEVER LINKED. The second is that it
-// is the only part of this package that needs a Linux kernel, so putting it
-// behind an interface is what lets the decision logic be tested on a host that
-// has none.
+// the spine's licence section and plan/design/dynamic-tier.md's Pinned Versions
+// section require: nftables is GPL-2.0 and is INVOKED AS A SUBPROCESS, NEVER
+// LINKED. The second is that it is the only part of this package that needs a
+// Linux kernel, so putting it behind an interface is what lets the decision
+// logic be tested on a host that has none.
 //
 // stdin is passed as bytes rather than a Reader because every use here writes a
 // complete, already-built script and a streaming stdin would make the command
@@ -389,11 +389,12 @@ func (execCommander) Run(ctx context.Context, argv []string, stdin []byte) ([]by
 
 // The cloud metadata endpoints, as untyped string CONSTANTS.
 //
-// These are the two plan/50-dast.md names for D.11. They are consts rather
-// than vars for the reason gate 10's denylist is: a var is assignable from
-// anywhere in the package, and "the probe list was empty at the moment
-// AssertContainment ran" is a state that must not be reachable. MetadataProbes
-// builds a fresh slice on every call so no caller can retain and mutate it.
+// These are the two plan/design/dynamic-tier.md names for network containment.
+// They are consts rather than vars for the reason gate 10's denylist is: a var
+// is assignable from anywhere in the package, and "the probe list was empty at
+// the moment AssertContainment ran" is a state that must not be reachable.
+// MetadataProbes builds a fresh slice on every call so no caller can retain and
+// mutate it.
 const (
 	metadataIPv4 = "169.254.169.254" // AWS/GCP/Azure/OpenStack IMDS. Hands out credentials.
 	metadataIPv6 = "fd00:ec2::254"   // AWS IMDS over IPv6.
@@ -434,7 +435,7 @@ func MetadataProbes() []Probe {
 
 // The default-deny egress denylist, as untyped string CONSTANTS.
 //
-// This is plan/50-dast.md D.11's list: 169.254.0.0/16, the fd00:ec2::254
+// This is network containment's design list: 169.254.0.0/16, the fd00:ec2::254
 // metadata address, and the full OWASP SSRF block list. It is a superset of
 // what the plan enumerates, because it is checked against gate 10's
 // reserved-range denylist by TestDenySetIsNeverWeakerThanGateTen -- the
@@ -626,14 +627,14 @@ type Plan struct {
 	// Netns is the namespace the ruleset is installed into.
 	Netns Netns
 
-	// Manifest is the target's declared manifest (D.1). Its
+	// Manifest is the target's declared manifest (the target manifest). Its
 	// Scope.AdditionalEgressAllow entries are the only operator-supplied
 	// input to the ruleset, and they cannot widen the metadata drop -- see
 	// BuildRuleset.
 	Manifest *target.Manifest
 
 	// IntraTargetNetworks are the Compose network CIDRs the target's own
-	// services live on, supplied by the provisioning layer (D.10) which is
+	// services live on, supplied by the provisioning layer (target provisioning) which is
 	// what knows them. They are ALLOWED, and they will normally sit inside
 	// RFC 1918 space that the deny set otherwise drops -- a target that cannot
 	// reach its own database is not a target.
@@ -780,7 +781,7 @@ func BuildRuleset(p Plan) (Ruleset, error) {
 	add("ip6 daddr @%s drop", denySetV6)
 
 	// 7. The operator's declared extra egress. LAST, so every drop above wins
-	//    over it. plan/50-dast.md is explicit that scope entries grant nothing
+	//    over it. plan/design/dynamic-tier.md is explicit that scope entries grant nothing
 	//    the kernel's gate 10 would refuse; this ordering is the network-layer
 	//    statement of the same rule.
 	for _, a := range allowed {
@@ -947,7 +948,7 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 		default:
 			a, err := netip.ParseAddr(raw)
 			if err != nil {
-				// D.1 already validated this as an address, a CIDR or a
+				// the target manifest already validated this as an address, a CIDR or a
 				// hostname, so anything left is a hostname.
 				unexpressed = append(unexpressed, raw)
 				continue
@@ -985,7 +986,7 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 // by gVisor" and does NOT mean "its egress is default-deny". Wiring that is the
 // integration packet's, not this one's, and it is recorded in
 // internal/SKIPPED-CONTROLS.md as U1c so it cannot be forgotten -- including
-// D.12's criterion that AssertContainment must run BEFORE any probe engine
+// the containment review's criterion that AssertContainment must run BEFORE any probe engine
 // starts.
 //
 // It DOES NOT assert containment. That is deliberate and it is the whole
@@ -995,8 +996,8 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 // package exists to catch is a namespace that was configured correctly and is
 // now not.
 //
-// Note the signature deviates from plan/50-dast.md's `SetupNetns(target
-// *Target) error`: there is no `Target` type in the tree (D.1 landed
+// Note the signature deviates from plan/design/dynamic-tier.md's `SetupNetns(target
+// *Target) error`: there is no `Target` type in the tree (the target manifest landed
 // `*target.Manifest`), and the Commander and context are what make the exec
 // boundary injectable and cancellable. Reported to the orchestrator.
 func SetupNetns(ctx context.Context, c Commander, p Plan) error {
@@ -1508,11 +1509,12 @@ func AssertContainment(ctx context.Context, c Commander, ns Netns, canaryPath st
 
 // WHY THERE IS NO DIALER IN THIS PACKAGE, AND NO `net` IMPORT
 //
-// The authorization kernel's GATE 3 (the egress choke point, D.2/D.5) refuses
-// any socket construction inside `internal/dast` outside
-// `internal/dast/authz`, and it says in terms that there is no allowlist for
-// it and no code path that can add one. plan/00-SPINE.md S7 is the reason: a
-// socket the kernel did not open is a handle it did not authorize.
+// The authorization kernel's GATE 3 (the egress choke point, the kernel core
+// and per-target admission) refuses any socket construction inside
+// `internal/dast` outside `internal/dast/authz`, and it says in terms that
+// there is no allowlist for it and no code path that can add one. The spine's
+// safety section is the reason: a socket the kernel did not open is a handle it
+// did not authorize.
 //
 // The first draft of this file dialled the metadata endpoints with net.Dialer
 // and gate 3 caught it -- 13 findings, correctly. The gate is right and the
@@ -1527,16 +1529,17 @@ func AssertContainment(ctx context.Context, c Commander, ns Netns, canaryPath st
 // whoever SUPPLIES the capability is the one flagged. This package supplies
 // nothing: it holds the rules, the report schema and the verdict, and it is
 // structurally incapable of holding a network handle, which is a stronger
-// statement of S7 than a comment promising not to.
+// statement of the spine's safety section than a comment promising not to.
 //
 // ConnectProbe attempts ONE TCP connection and returns a verdict. It never
 // returns a connection, so there is no handle for this package or anything
 // downstream of it to hold.
 //
-// The implementation belongs to the anvil-dast binary (D.14/D.15). It will be
-// flagged by gate 3's tier 2 and must be added to nonKernelEgressAllowlist
-// with a justification -- which is exactly the review gate 3 exists to force,
-// and is reported to the orchestrator rather than done here.
+// The implementation belongs to the anvil-dast binary (the nuclei driver and
+// the ZAP driver). It will be flagged by gate 3's tier 2 and must be added to
+// nonKernelEgressAllowlist with a justification -- which is exactly the review
+// gate 3 exists to force, and is reported to the orchestrator rather than done
+// here.
 type ConnectProbe interface {
 	// Attempt tries to connect to address over network ("tcp4" or "tcp6")
 	// within DefaultCanaryDialTimeout.

@@ -369,7 +369,7 @@ func fetchGrypeListing(ctx context.Context, client *http.Client, u *url.URL, max
 
 // resolveArchiveURL turns the listing's path into an absolute URL.
 //
-// The result must be on the SAME HOST as the listing. Spine S7 forbids
+// The result must be on the SAME HOST as the listing. The spine's safety section forbids
 // following cross-host redirects; a listing document that can send the client
 // to an arbitrary host is the same hazard reached one step earlier, and the
 // listing is third-party content.

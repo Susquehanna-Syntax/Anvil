@@ -3,13 +3,13 @@
 // environment, and how its absence or failure is reported. The parsing side
 // lives in trivy.go and never touches os/exec.
 //
-// The split is not cosmetic. plan/00-SPINE.md S12 records that Trivy "exposes
+// The split is not cosmetic. The spine's Go control-plane decision records that Trivy "exposes
 // no REST/RPC API and its maintainers direct users to 'use Trivy's code
 // directly', with no `pkg/` API stability contract", and rules that native
 // linking is vendor-pin-and-monitor with a CLI fallback that must keep
 // existing. The Runner interface below is that boundary drawn in Go: a future
 // native path implements Runner and the CLI implementation stays compiled in
-// as the fallback. plan/20-lane-a-ingestion-sca.md exit criterion 15 — "no
+// as the fallback. plan/design/lane-a.md exit criterion 15 — "no
 // direct dependency on Trivy `pkg/` internals without a CLI fallback
 // annotated in code" — is the criterion this file exists to satisfy, and
 // trivy_test.go's TestNoTrivyLibraryImport enforces it by reading this
@@ -45,7 +45,7 @@ const BinaryName = "trivy"
 // package MUST use when the Trivy binary (or its vulnerability database) is
 // not present, distinct from both success and "the scan failed".
 //
-// Reserved to match M0.7's opengrep acquisition path, which fixed the same
+// Reserved to match the opengrep acquisition path, which fixed the same
 // hazard for the recall tier: eval/tools/opengrep/smoke.py documents
 // "2  the engine or the ruleset is not present  <-- loud, not a 'clean scan'".
 // The reason is narrow and specific and it is the whole design constraint of
@@ -85,10 +85,10 @@ var (
 	ErrBadConfig = errors.New("repo: invalid collector configuration")
 
 	// ErrDBUpdateUnrouted: a vulnerability-database update was requested
-	// without naming the repository to pull it from. plan/20's A.10
-	// Forbidden actions: "Do not invoke Trivy in any mode that fetches its DB
-	// from a redistributable-unclear mirror without going through A.11's
-	// consume-only accelerator."
+	// without naming the repository to pull it from. The repo collector's forbidden actions
+	// (plan/design/lane-a.md): "Do not invoke Trivy in any mode that fetches its DB
+	// from a redistributable-unclear mirror without going through the consume-only
+	// accelerator."
 	ErrDBUpdateUnrouted = errors.New("repo: trivy DB update requested without a configured DB repository")
 
 	// ErrVersionMismatch: the resolved binary is not the pinned release.
@@ -160,7 +160,7 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // Subcommand and flag allowlists
 //
 // These are CONSTANT LISTS, not runtime checks, so that trivy_test.go can
-// assert against the compiled-in vocabulary the way A.9's packet requires for
+// assert against the compiled-in vocabulary the way the host collector's design requires for
 // the host collector ("grep the constant list, not a runtime check"). A
 // runtime check only proves what the test happened to exercise; a list the
 // test reads directly proves what the binary can ever emit.
@@ -176,7 +176,7 @@ func AllowedSubcommands() []string { return []string{SubcommandFilesystem} }
 
 // MutatingSubcommands are Trivy subcommands that change state outside the
 // scan: they delete caches, install plugins or modules, or write registry
-// credentials. plan/00-SPINE.md S7's "the host agent is read-only — no
+// credentials. The spine's "the host agent is read-only — no
 // package manager in a mutating mode, not behind a flag" is stated about the
 // host collector; the same rule is applied here because `trivy clean` and
 // `trivy plugin install` are exactly the shape it forbids.
@@ -192,7 +192,7 @@ func MutatingSubcommands() []string {
 // NetworkSubcommands are Trivy subcommands that reach the network for the
 // SUBJECT of the scan rather than for its database — they clone a remote git
 // repository, pull an image, or query a live cluster. `repo` is in this list
-// and that is deliberate: A.10's objective is "fs/repo mode" over a
+// and that is deliberate: the repo collector's objective is "fs/repo mode" over a
 // repository ALREADY ON DISK, and `trivy repo <url>` would fetch attacker-
 // influenced content over the network from inside a collector that has no
 // egress policy of its own.
@@ -208,7 +208,7 @@ func NetworkSubcommands() []string {
 //     report, not from the exit status.
 //   - --reset and --clear-cache delete cached data (mutating).
 //   - --download-db-only and --download-java-db-only turn a scan into a
-//     fetch, bypassing the A.11 routing rule below.
+//     fetch, bypassing the accelerator routing rule below.
 //   - --server points the scan at a remote Trivy daemon, moving the trust
 //     boundary somewhere this package cannot reason about.
 func ForbiddenFlags() []string {
@@ -237,14 +237,14 @@ const ScannersVuln = "vuln"
 
 // Runner executes one Trivy invocation and returns its stdout.
 //
-// THIS IS THE FALLBACK SEAM plan/00-SPINE.md S12 requires. If Trivy's `pkg/`
+// THIS IS THE FALLBACK SEAM the spine's Go control-plane decision requires. If Trivy's `pkg/`
 // packages are ever linked natively, that path implements Runner and this
 // file's CLIRunner remains compiled in and reachable by configuration — it is
-// never deleted, because S12's finding is that Trivy publishes no `pkg/` API
+// never deleted, because the spine's finding is that Trivy publishes no `pkg/` API
 // stability contract, so the native path can break on any upstream release
 // and the CLI path is what the collector falls back to. A native
 // implementation must live behind this interface and must not be the sole
-// path (plan/20 A.10 Forbidden actions; exit criterion 15).
+// path (the repo collector's forbidden actions in plan/design/lane-a.md; exit criterion 15).
 //
 // Implementations must not retry, must not swallow a non-zero exit, and must
 // not return a nil error alongside empty stdout.
@@ -256,7 +256,7 @@ type Runner interface {
 	Run(ctx context.Context, args []string) (stdout []byte, err error)
 }
 
-// CLIRunner is the subprocess implementation of Runner: the path plan/20 A.10
+// CLIRunner is the subprocess implementation of Runner: the path the repo collector's design
 // takes and the path that must keep working forever.
 type CLIRunner struct {
 	// Binary is the executable to run. Empty means BinaryName, resolved on
@@ -484,7 +484,7 @@ func checkVersionPin(ctx context.Context, runner Runner, required string) (strin
 	}
 	if normalizeVersion(got) != normalizeVersion(required) {
 		return got, fmt.Errorf(
-			"%w: binary reports %q, configuration pins %q. plan/20-lane-a-ingestion-sca.md pins the "+
+			"%w: binary reports %q, configuration pins %q. plan/design/lane-a.md pins the "+
 				"exact Trivy release tag used by internal/collector/repo; an unpinned scanner makes a "+
 				"regression diff between two runs unattributable",
 			ErrVersionMismatch, got, required)

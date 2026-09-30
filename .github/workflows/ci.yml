@@ -224,13 +224,13 @@ jobs:
           git diff --exit-code
           go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/
 
-  # plan/00-SPINE.md S9-AMENDED splits Anvil into two distribution artifacts:
+  # The two-artifact split splits Anvil into two distribution artifacts:
   # anvil (core, no network-probing capability compiled in) and anvil-dast.
-  # plan/IMPLEMENTATION-PLAN.md 2.2 rules that a config flag inside a single
+  # The first plan's two-artifact ruling holds that a config flag inside a single
   # binary does not address the concern the split exists for. This job is what
   # makes the split real rather than conventional.
   artifact-split:
-    name: Two-artifact split (S9-AMENDED)
+    name: Two-artifact split
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -303,10 +303,11 @@ jobs:
               file "/tmp/${target}-linux-${goarch}"
             done
           done
-          # S12 mandates modernc.org/sqlite precisely so no cgo/C toolchain is
-          # needed. mattn/go-sqlite3 would reintroduce both.
+          # the spine's Go control-plane decision mandates modernc.org/sqlite
+          # precisely so no cgo/C toolchain is needed. mattn/go-sqlite3 would
+          # reintroduce both.
           if go list -deps ./... | grep -q 'github.com/mattn/go-sqlite3'; then
-            echo "::error::mattn/go-sqlite3 is in the dependency graph. S12 mandates modernc.org/sqlite."
+            echo "::error::mattn/go-sqlite3 is in the dependency graph. The spine's Go control-plane decision mandates modernc.org/sqlite."
             exit 1
           fi
 
@@ -335,15 +336,16 @@ jobs:
       - name: Install Trivy
         run: |
           set -euo pipefail
-          # Pinned by VERSION AND DIGEST. S8 wants versions pinned; a digest is
-          # what makes the pin mean something, since a tag can be moved.
+          # Pinned by VERSION AND DIGEST. The spine's licence section wants
+          # versions pinned; a digest is what makes the pin mean something,
+          # since a tag can be moved.
           #
           # Both values were read from the GitHub releases API rather than written
           # from memory -- the first version here was invented and 404'd, which is
           # the same assert-from-memory failure this project keeps catching in its
           # own code. The digest is GitHub's, computed over the stored bytes: a
           # primary source, but not an independent re-hash, and that distinction
-          # is the same one M0.7 flagged about its own opengrep pins.
+          # is the same one the opengrep acquisition flagged about its own opengrep pins.
           TRIVY_VERSION=0.73.0
           TRIVY_SHA256=2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
           curl -sSfL -o trivy.tar.gz \
@@ -354,14 +356,15 @@ jobs:
           trivy --version
 
       # The collector invokes Trivy with --skip-db-update --offline-scan, which
-      # is the correct posture -- S0 says Anvil never browses the live web at
-      # inference time -- but it means Trivy REFUSES TO RUN AT ALL until a
-      # database exists locally. The first run of this job proved that: FATAL
-      # "--skip-db-update cannot be specified on the first run".
+      # is the correct posture -- the spine's definition of Anvil says Anvil
+      # never browses the live web at inference time -- but it means Trivy
+      # REFUSES TO RUN AT ALL until a database exists locally. The first run of
+      # this job proved that: FATAL "--skip-db-update cannot be specified on the
+      # first run".
       #
       # That is a genuine operational dependency, not a CI quirk, and no test
       # against recorded Trivy output could have surfaced it. In production the
-      # database is what A.11's warm-start accelerator supplies; here we seed it
+      # database is what the warm-start accelerator supplies; here we seed it
       # the ordinary way so the E2E control exercises the real invocation.
       - name: Seed the Trivy vulnerability database
         run: trivy image --download-db-only
@@ -385,10 +388,10 @@ jobs:
           sudo mv /usr/local/bin/trivy.hidden /usr/local/bin/trivy
           echo "confirmed: with ANVIL_TRIVY_E2E=1 and no binary, the test fails rather than skipping"
 
-  # plan/00-SPINE.md S12 permits Python in exactly three places, and the
+  # The spine's Go control-plane decision permits Python in exactly three places, and the
   # evaluation harness is one of them. eval/ is a pure-Python tree.
   #
-  # The register this job validates is the artifact plan step M0.18 reads to
+  # The register this job validates is the artifact the gate decision reads to
   # decide whether Anvil's detection-model tier exists at all, so the property
   # that matters is narrow and absolute: a row whose experiment has not run must
   # never be readable as a pass. The schema encodes that; this job is what makes
@@ -408,7 +411,8 @@ jobs:
 
       # [dev] carries pytest/ruff. Core deps are deliberately minimal -- the
       # heavy [stats] and [models] extras are pulled by the packets that need
-      # them (M0.6, M0.10, M0.15), not here.
+      # them (the candidate-model acquisition, the code-metrics baseline, the
+      # encoder round-trip measurement), not here.
       - name: Install
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
 
@@ -418,7 +422,7 @@ jobs:
       - name: Tests, including the register mutation suite
         run: python -m pytest tests/ -q
 
-      # A skipped test is a legitimate outcome here -- M0.7's smoke path is
+      # A skipped test is a legitimate outcome here -- the opengrep acquisition's smoke path is
       # UNVERIFIED by design because nothing downloads the opengrep engine in
       # CI. But a suite that silently degrades to all-skips would still report
       # green, so assert the register suite actually ran.
@@ -430,13 +434,14 @@ jobs:
             echo "::error::register schema suite reported no passing tests"; exit 1; }
 
   # NOTE: there is deliberately no "plan" job here. The planning workspace
-  # (plan/) and its verification tooling (tools/) are local-only and gitignored,
-  # same posture as research/ -- they are how Anvil was designed and verified,
-  # not something a consumer of Anvil receives. The cross-reference invariants
-  # those tools enforce are therefore checked locally by the maintainer before
-  # dispatch, not in CI, because CI cannot see the files. Everything CI *can*
-  # see -- the artifact split, the licence bodies, the build -- is still gated
-  # below.
+  # (plan/, with its build and audit scripts) is local-only and gitignored,
+  # same posture as research/ -- it is how Anvil was designed and verified,
+  # not something a consumer of Anvil receives. The plan's own invariants are
+  # therefore checked locally by the maintainer, not in CI, because CI cannot
+  # see the files. What CI can check about the plan -- that none of the first
+  # plan's step codes leak back into the tree -- is test/hygiene, which runs in
+  # the go test job above. Everything else CI *can* see -- the artifact split,
+  # the licence bodies, the build -- is still gated below.
 
   licence:
     name: Licence hygiene
@@ -444,7 +449,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # plan/00-SPINE.md S8: read LICENSE file bodies, never API metadata.
+      # The spine's licence section: read LICENSE file bodies, never API metadata.
       # Seven audited artifacts return NOASSERTION over a real licence and one
       # hides a restrictive licence behind a permissive tag.
       - name: LICENSE is canonical Apache-2.0
@@ -460,14 +465,14 @@ jobs:
         run: |
           set -e
           for f in LICENSE NOTICE THIRD-PARTY-LICENSES.md; do
-            test -s "$f" || { echo "::error::$f missing or empty (plan step C.1)"; exit 1; }
+            test -s "$f" || { echo "::error::$f missing or empty (the licence files)"; exit 1; }
           done
 
-      # plan/00-SPINE.md S5 is enforced, not advisory. This is a coarse
-      # placeholder for cmd/license-gate (plan steps C.9/C.10), which reads
+      # The spine's exclusion list is enforced, not advisory. This is a coarse
+      # placeholder for cmd/license-gate (plan node spdxgate), which reads
       # licence bodies properly; it exists so the exclusion list is not purely
-      # documentary between now and Phase 6.
-      - name: Hard exclusions (S5) are absent from the dependency graph
+      # documentary until that gate lands.
+      - name: Hard exclusions are absent from the dependency graph
         run: |
           set -e
           fail=0
@@ -481,7 +486,7 @@ jobs:
             "github.com/AFLplusplus/AFLplusplus" \
             "github.com/mattn/go-sqlite3" ; do
             if grep -rn --include=go.mod --include=go.sum "$banned" . ; then
-              echo "::error::$banned is on the S5 hard exclusion list"
+              echo "::error::$banned is on the spine's hard-exclusion list"
               fail=1
             fi
           done

@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anvil.invalid/eval/schema/register.schema.json",
   "title": "Anvil Milestone 0 Experiment Register",
-  "description": "Schema for eval/register.yaml. Source of truth for the field list: plan/10-milestone0-evaluation.md '## Experiment Register Schema'. The register carries exactly fourteen rows: EXP-01..EXP-12, INSTR-01, S12-RTT. SAFETY RULE: 'decision' is required on every row and has no null / no empty-string / no absent representation. An experiment whose outcome has not been adjudicated carries the explicit sentinel 'UNRESOLVED'. A missing or unadjudicated decision must never be readable as a PASS.",
+  "description": "Schema for eval/register.yaml. Source of truth for the field list: plan/design/evaluation.md '## Experiment Register Schema'. The register carries exactly fourteen rows: twelve experiments and two instruments, keyed by the slugs listed under properties.id. SAFETY RULE: 'decision' is required on every row and has no null / no empty-string / no absent representation. An experiment whose outcome has not been adjudicated carries the explicit sentinel 'UNRESOLVED'. A missing or unadjudicated decision must never be readable as a PASS.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "experiments"],
   "properties": {
     "version": {
-      "description": "Register format version. 1 per plan/10-milestone0-evaluation.md.",
+      "description": "Register format version. 1 per plan/design/evaluation.md.",
       "type": "integer",
       "minimum": 1
     },
@@ -19,39 +19,39 @@
       "maxItems": 14,
       "items": { "$ref": "#/$defs/row" },
       "allOf": [
-        { "contains": { "$ref": "#/$defs/idIs/EXP-01" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-02" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-03" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-04" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-05" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-06" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-07" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-08" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-09" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-10" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-11" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/EXP-12" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/INSTR-01" }, "minContains": 1, "maxContains": 1 },
-        { "contains": { "$ref": "#/$defs/idIs/S12-RTT" }, "minContains": 1, "maxContains": 1 }
+        { "contains": { "$ref": "#/$defs/idIs/advisory-permutation" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/code-metrics-baseline" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/prefill-sweep" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/patch-quality" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/batch-size" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/correlation-precision" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/route-extraction" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/dast-model-size" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/gvisor-overhead" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/zap-memory" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/task-cards" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/lora-hot-swap" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/candidates-per-scan" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/idIs/encoder-round-trip" }, "minContains": 1, "maxContains": 1 }
       ]
     }
   },
   "$defs": {
     "idIs": {
-      "EXP-01": { "type": "object", "properties": { "id": { "const": "EXP-01" } }, "required": ["id"] },
-      "EXP-02": { "type": "object", "properties": { "id": { "const": "EXP-02" } }, "required": ["id"] },
-      "EXP-03": { "type": "object", "properties": { "id": { "const": "EXP-03" } }, "required": ["id"] },
-      "EXP-04": { "type": "object", "properties": { "id": { "const": "EXP-04" } }, "required": ["id"] },
-      "EXP-05": { "type": "object", "properties": { "id": { "const": "EXP-05" } }, "required": ["id"] },
-      "EXP-06": { "type": "object", "properties": { "id": { "const": "EXP-06" } }, "required": ["id"] },
-      "EXP-07": { "type": "object", "properties": { "id": { "const": "EXP-07" } }, "required": ["id"] },
-      "EXP-08": { "type": "object", "properties": { "id": { "const": "EXP-08" } }, "required": ["id"] },
-      "EXP-09": { "type": "object", "properties": { "id": { "const": "EXP-09" } }, "required": ["id"] },
-      "EXP-10": { "type": "object", "properties": { "id": { "const": "EXP-10" } }, "required": ["id"] },
-      "EXP-11": { "type": "object", "properties": { "id": { "const": "EXP-11" } }, "required": ["id"] },
-      "EXP-12": { "type": "object", "properties": { "id": { "const": "EXP-12" } }, "required": ["id"] },
-      "INSTR-01": { "type": "object", "properties": { "id": { "const": "INSTR-01" } }, "required": ["id"] },
-      "S12-RTT": { "type": "object", "properties": { "id": { "const": "S12-RTT" } }, "required": ["id"] }
+      "advisory-permutation": { "type": "object", "properties": { "id": { "const": "advisory-permutation" } }, "required": ["id"] },
+      "code-metrics-baseline": { "type": "object", "properties": { "id": { "const": "code-metrics-baseline" } }, "required": ["id"] },
+      "prefill-sweep": { "type": "object", "properties": { "id": { "const": "prefill-sweep" } }, "required": ["id"] },
+      "patch-quality": { "type": "object", "properties": { "id": { "const": "patch-quality" } }, "required": ["id"] },
+      "batch-size": { "type": "object", "properties": { "id": { "const": "batch-size" } }, "required": ["id"] },
+      "correlation-precision": { "type": "object", "properties": { "id": { "const": "correlation-precision" } }, "required": ["id"] },
+      "route-extraction": { "type": "object", "properties": { "id": { "const": "route-extraction" } }, "required": ["id"] },
+      "dast-model-size": { "type": "object", "properties": { "id": { "const": "dast-model-size" } }, "required": ["id"] },
+      "gvisor-overhead": { "type": "object", "properties": { "id": { "const": "gvisor-overhead" } }, "required": ["id"] },
+      "zap-memory": { "type": "object", "properties": { "id": { "const": "zap-memory" } }, "required": ["id"] },
+      "task-cards": { "type": "object", "properties": { "id": { "const": "task-cards" } }, "required": ["id"] },
+      "lora-hot-swap": { "type": "object", "properties": { "id": { "const": "lora-hot-swap" } }, "required": ["id"] },
+      "candidates-per-scan": { "type": "object", "properties": { "id": { "const": "candidates-per-scan" } }, "required": ["id"] },
+      "encoder-round-trip": { "type": "object", "properties": { "id": { "const": "encoder-round-trip" } }, "required": ["id"] }
     },
 
     "row": {
@@ -63,7 +63,7 @@
         "kind",
         "spine_ref",
         "source_ref",
-        "owner_step",
+        "owner_node",
         "status",
         "decision_gated",
         "corpus",
@@ -83,15 +83,15 @@
           "description": "Stable identifier, never reused.",
           "type": "string",
           "enum": [
-            "EXP-01", "EXP-02", "EXP-03", "EXP-04", "EXP-05", "EXP-06",
-            "EXP-07", "EXP-08", "EXP-09", "EXP-10", "EXP-11", "EXP-12",
-            "INSTR-01", "S12-RTT"
+            "advisory-permutation", "code-metrics-baseline", "prefill-sweep", "patch-quality", "batch-size", "correlation-precision",
+            "route-extraction", "dast-model-size", "gvisor-overhead", "zap-memory", "task-cards", "lora-hot-swap",
+            "candidates-per-scan", "encoder-round-trip"
           ]
         },
         "name": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "enum": ["experiment", "instrumentation"] },
         "spine_ref": {
-          "description": "Section(s) of plan/00-SPINE.md this row is gated on, e.g. 'S3.1', 'S2', 'S12'.",
+          "description": "Section(s) of plan/design/spine.md this row is gated on, e.g. 'the first kill criterion', 'the spine's affordability rule', 'the spine's Go control-plane decision'.",
           "type": "string",
           "minLength": 1
         },
@@ -100,10 +100,10 @@
           "type": "string",
           "minLength": 1
         },
-        "owner_step": {
-          "description": "The M0.x step ID that builds/runs it, or the literal 'deferred'.",
+        "owner_node": {
+          "description": "The evaluation-lane plan node that builds and runs it (plan/src/graph/nodes/evaluation.json), or the literal 'deferred'.",
           "type": "string",
-          "pattern": "^(M0\\.[0-9]+|deferred)$"
+          "pattern": "^([a-z][a-z0-9]*|deferred)$"
         },
         "status": {
           "type": "string",
@@ -136,7 +136,7 @@
         "threshold_pass": { "type": "string", "minLength": 1 },
         "threshold_fail": { "type": "string", "minLength": 1 },
         "reference_baseline": {
-          "description": "Per plan/10-milestone0-evaluation.md '## Exit Criteria': must either cite a research/plan file + figure (i.e. contain a '.md' path) or be the literal string 'PROPOSED - no published baseline' (em dash).",
+          "description": "Per plan/design/evaluation.md '## Exit Criteria': must either cite a research/plan file + figure (i.e. contain a '.md' path) or be the literal string 'PROPOSED - no published baseline' (em dash).",
           "type": "string",
           "anyOf": [
             { "const": "PROPOSED — no published baseline" },
@@ -161,7 +161,7 @@
           }
         },
         "decision": {
-          "description": "The adjudicated outcome. REQUIRED on every row. There is deliberately no null, no empty string and no absent representation: an unadjudicated row carries the explicit sentinel 'UNRESOLVED', which must never be read as a PASS. Only an orchestrator-inline step may change this away from 'UNRESOLVED' (M0.18 for EXP-01/EXP-02; future orchestrator-inline steps for the rest). Worker packets populate 'result' and leave 'decision' at 'UNRESOLVED'.",
+          "description": "The adjudicated outcome. REQUIRED on every row. There is deliberately no null, no empty string and no absent representation: an unadjudicated row carries the explicit sentinel 'UNRESOLVED', which must never be read as a PASS. Only an orchestrator-inline step may change this away from 'UNRESOLVED' (the gate decision for the advisory-permutation ablation/the code-metrics baseline; future orchestrator-inline steps for the rest). Worker packets populate 'result' and leave 'decision' at 'UNRESOLVED'.",
           "type": "string",
           "enum": ["PASS", "FAIL", "AMBIGUOUS", "DEFERRED", "UNRESOLVED"],
           "default": "UNRESOLVED"
@@ -171,27 +171,27 @@
           "items": {
             "type": "string",
             "enum": [
-              "EXP-01", "EXP-02", "EXP-03", "EXP-04", "EXP-05", "EXP-06",
-              "EXP-07", "EXP-08", "EXP-09", "EXP-10", "EXP-11", "EXP-12",
-              "INSTR-01", "S12-RTT"
+              "advisory-permutation", "code-metrics-baseline", "prefill-sweep", "patch-quality", "batch-size", "correlation-precision",
+              "route-extraction", "dast-model-size", "gvisor-overhead", "zap-memory", "task-cards", "lora-hot-swap",
+              "candidates-per-scan", "encoder-round-trip"
             ]
           },
           "uniqueItems": true
         },
         "deferred_reason": { "type": ["string", "null"] },
         "owning_future_phase": {
-          "description": "Milestone/lane that will own this row once deferred. Populated by step M0.17; null until then. Milestone-0 exit criteria require this to be non-null for every deferred row before M0 closes.",
+          "description": "Milestone/lane that will own this row once deferred. Populated by the register roll-up; null until then. Milestone-0 exit criteria require this to be non-null for every deferred row before the evaluation milestone closes.",
           "type": ["string", "null"]
         }
       },
       "allOf": [
         {
-          "description": "A deferred row must carry a non-empty deferred_reason and must be owned by 'deferred', not an M0 step.",
+          "description": "A deferred row must carry a non-empty deferred_reason and must be owned by 'deferred', not by an evaluation plan node.",
           "if": { "properties": { "status": { "const": "deferred" } }, "required": ["status"] },
           "then": {
             "properties": {
               "deferred_reason": { "type": "string", "minLength": 1 },
-              "owner_step": { "const": "deferred" }
+              "owner_node": { "const": "deferred" }
             }
           }
         },
@@ -212,7 +212,7 @@
           }
         },
         {
-          "description": "A row that has not been run cannot carry an adjudicated decision. not_started / in_progress / blocked / deferred rows stay UNRESOLVED. 'deferred' is in this set deliberately: a deferred row has by definition not been run, so it cannot have an adjudicated outcome. Omitting it was caught by mutation testing -- EXP-05 (deferred) could be set to PASS and the schema accepted it, which is exactly the 'a missing decision reads as a pass' failure this rule exists to prevent. A row that is deferred AND wants to record that fact in the decision field uses status=deferred + decision=UNRESOLVED; the DEFERRED decision value is reserved for an orchestrator-inline step explicitly adjudicating 'we decided not to decide this'.",
+          "description": "A row that has not been run cannot carry an adjudicated decision. not_started / in_progress / blocked / deferred rows stay UNRESOLVED. 'deferred' is in this set deliberately: a deferred row has by definition not been run, so it cannot have an adjudicated outcome. Omitting it was caught by mutation testing -- the batch-size experiment (deferred) could be set to PASS and the schema accepted it, which is exactly the 'a missing decision reads as a pass' failure this rule exists to prevent. A row that is deferred AND wants to record that fact in the decision field uses status=deferred + decision=UNRESOLVED; the DEFERRED decision value is reserved for an orchestrator-inline step explicitly adjudicating 'we decided not to decide this'.",
           "if": {
             "properties": { "status": { "enum": ["not_started", "in_progress", "blocked", "deferred"] } },
             "required": ["status"]

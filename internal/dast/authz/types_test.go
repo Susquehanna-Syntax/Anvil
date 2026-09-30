@@ -13,7 +13,7 @@ import (
 // GATE 6 — there is no "auto", and there is no default
 // ===========================================================================
 
-// TestModeHasNoAutoAndNoDefault is gate 6 as a test. plan/50-dast.md:
+// TestModeHasNoAutoAndNoDefault is gate 6 as a test. plan/design/dynamic-tier.md:
 // "Refuse if absent; no `auto` value exists... Configurable? No — there is no
 // configurable 'auto' path, ever."
 func TestModeHasNoAutoAndNoDefault(t *testing.T) {
@@ -124,7 +124,7 @@ func TestReasonValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if err := r.Validate(); err == nil {
 				t.Fatalf("Validate(%q) accepted it. A Reason reaches the audit log and, "+
-					"from there, possibly a prompt; plan/00-SPINE.md S7 names the DAST "+
+					"from there, possibly a prompt; the spine's safety section names the DAST "+
 					"response body as the highest-risk field in the system. A validated "+
 					"token cannot carry a payload; free text can", string(r))
 			}
@@ -468,7 +468,7 @@ func TestNewScopeRefusals(t *testing.T) {
 	}
 }
 
-// TestScopeHashIsDerivedFromTheBytes is D.3's HIGH finding closed at the
+// TestScopeHashIsDerivedFromTheBytes is the kernel-types review's HIGH finding closed at the
 // constructor.
 //
 // The critic's point: NewScope took the hash as a caller assertion and never
@@ -514,7 +514,7 @@ func TestScopeHashIsDerivedFromTheBytes(t *testing.T) {
 	}
 }
 
-// TestScopeSealsEveryFieldOfEveryEntry is D.3's CRITICAL 2 finding, written as
+// TestScopeSealsEveryFieldOfEveryEntry is the kernel-types review's finding CRITICAL 2, written as
 // the exact attack the critic performed.
 //
 // The critic turned an explicitly DENIED host into a permitted one AFTER
@@ -935,13 +935,13 @@ func TestGateFailureUnwrapsToErrRefused(t *testing.T) {
 	}
 }
 
-// TestSealedTypesKeepEveryFieldUnexported is D.9's MEDIUM 6.
+// TestSealedTypesKeepEveryFieldUnexported is kernel review finding MEDIUM 6.
 //
 // # What was measured
 //
 // The package already guarded Caps, HealthThresholds, HealthMonitor,
 // BackoffLedger and DisclosureRecord this way, and did NOT guard Scope,
-// Attestation or Cap — the exact three types D.3's two CRITICAL findings lived
+// Attestation or Cap — the exact three types the kernel-types review's two CRITICAL findings lived
 // on, and the three whose unexported fields ARE the defence. Renaming
 // Scope.allow to Scope.Allow in a copy of the package left every real test
 // passing.
@@ -958,7 +958,7 @@ func TestGateFailureUnwrapsToErrRefused(t *testing.T) {
 //     hash is what that would defeat.
 //   - Attestation.expiresAt / .scopeHash: an attestation nobody issued, live
 //     for as long as the literal says.
-//   - Cap.coded / Cap.effective: D.3's critic minted a ten-year "coded floor"
+//   - Cap.coded / Cap.effective: the kernel-types review minted a ten-year "coded floor"
 //     when the CONSTRUCTOR was exported; an exported field is the same hole
 //     without needing a constructor at all.
 //
@@ -978,7 +978,7 @@ func TestSealedTypesKeepEveryFieldUnexported(t *testing.T) {
 				"for as long as the literal says"},
 		{"Cap[int]", Cap[int]{},
 			"a Cap built as a literal is a coded floor of the caller's choosing, which " +
-				"is D.3's CRITICAL 1 with the constructor removed from the path"},
+				"is the kernel-types review's finding CRITICAL 1 with the constructor removed from the path"},
 		{"Cap[time.Duration]", Cap[time.Duration]{},
 			"the same, for gate 5's lifetime ceiling"},
 		{"Target", Target{},
@@ -1203,7 +1203,7 @@ func TestScopeNarrowingRecordHoldsNoReference(t *testing.T) {
 	}
 }
 
-// TestScopeNarrowingSealsThePolicyItStores is the D.3 aliasing attack, moved
+// TestScopeNarrowingSealsThePolicyItStores is the kernel-types review aliasing attack, moved
 // to the field this packet added.
 //
 // A RobotsPolicy owns a []string of Disallow patterns. If the scope stores the

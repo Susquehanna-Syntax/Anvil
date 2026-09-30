@@ -2,21 +2,21 @@
 // scanning. Trigger policy is DATA: which events fire a scan, which refs and
 // paths they apply to, which semver bumps gate a full scan, and on what
 // cadence the daemon re-scans are all read from a file in the repository, never
-// compiled into Anvil. plan/00-SPINE.md S1 makes that a hard constraint, and
-// plan/70-orchestration-ci.md restates the review rule it implies: a literal
+// compiled into Anvil. The spine's corrected-requirements table makes that a hard constraint, and
+// plan/design/control-plane.md restates the review rule it implies: a literal
 // such as "push" or "major" used as a match condition anywhere outside the
 // parser is a defect.
 //
-// This file is step O.5's half of that: FINDING the policy file. Parsing it,
-// evaluating its rules (O.6), and computing the semver bump its rules match
-// against (O.7) are separate steps in this same package.
+// This file is the policy schema's half of that: FINDING the policy file. Parsing it,
+// evaluating its rules (the policy engine), and computing the semver bump its rules match
+// against (semver bump classification) are separate steps in this same package.
 //
 // The document shape is defined once, in schemas/policy.schema.json, and this
 // package points at it by SchemaPath and SchemaID rather than restating it.
-// plan/IMPLEMENTATION-PLAN.md section 6 closed ten defects that were all the
+// the first plan's shared-vocabulary review closed ten defects that were all the
 // same error -- two areas each defining the shared vocabulary from their own
-// side -- so a second schema for this one file, in area D or in the GitHub
-// Action (O.8), would be the eleventh. Consumers validate against that file and
+// side -- so a second schema for this one file, in the dynamic tier or in the GitHub
+// Action (the GitHub Action), would be the eleventh. Consumers validate against that file and
 // extend it there.
 package policy
 
@@ -37,7 +37,7 @@ import (
 var ErrNoPolicyFound = errors.New("policy: no policy file found")
 
 // Schema locations for consumers that need to validate a policy document.
-// These exist so the engine (O.6), the GitHub Action (O.8) and area D's DAST
+// These exist so the engine (the policy engine), the GitHub Action and the dynamic tier's DAST
 // overrides all name the SAME schema instead of each shipping their own copy.
 const (
 	// SchemaPath is the schema's location in the Anvil source tree,
@@ -58,7 +58,7 @@ const (
 //
 // These are FILE LOCATIONS, not trigger policy. Nothing here is an event name,
 // a ref pattern, a semver bump kind or a cadence -- the four kinds of value
-// O.5's packet forbids as Go constants. Every matchable value comes from
+// the policy schema's design forbids as Go constants. Every matchable value comes from
 // inside whichever of these files is found.
 //
 // Slash-separated on purpose: these are repository-relative paths as users
@@ -75,7 +75,7 @@ var searchOrder = [...]string{
 // SearchOrder returns the candidate paths, repository-relative and
 // slash-separated, in precedence order.
 //
-// It exists so the GitHub Action (O.8), which runs on a runner without the
+// It exists so the GitHub Action, which runs on a runner without the
 // daemon and may re-implement the lookup, can read the order from one place
 // rather than re-listing it and drifting. It returns a fresh slice on every
 // call: a caller that mutates the result must not be able to change where

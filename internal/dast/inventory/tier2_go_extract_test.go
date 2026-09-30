@@ -1,17 +1,17 @@
-// Tests for D.20, Tier 2 of the attack-surface inventory: static route
+// Tests for Go route extraction, Tier 2 of the attack-surface inventory: static route
 // extraction from Go source.
 //
 // ===========================================================================
 // WHAT THIS SUITE IS FOR
 // ===========================================================================
 //
-// Three claims are load-bearing for D.20 and each one is measured here rather
+// Three claims are load-bearing for Go route extraction and each one is measured here rather
 // than asserted in a comment:
 //
 //  1. NO ROUTE THIS TIER PRODUCES IS EVER CONFIRMED. Every fixture in this
 //     file, including the hostile ones and the one driven through the
 //     type-checked seam by an extractor that TRIES to mint a confirmed route,
-//     is checked. plan/50-dast.md D.20's Forbidden actions, executable.
+//     is checked. Go route extraction's forbidden actions, executable.
 //
 //  2. SIX FRAMEWORKS PRODUCE THEIR KNOWN ROUTE TABLES. Each fixture is a
 //     small but real router setup with an expected table written out by hand,
@@ -314,7 +314,7 @@ func Router() *mux.Router {
 	}
 }
 
-// TestSixFrameworksProduceTheirKnownRouteTables is D.20's stop condition.
+// TestSixFrameworksProduceTheirKnownRouteTables is Go route extraction's stop condition.
 func TestSixFrameworksProduceTheirKnownRouteTables(t *testing.T) {
 	for _, tc := range frameworkFixtures() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -328,7 +328,7 @@ func TestSixFrameworksProduceTheirKnownRouteTables(t *testing.T) {
 			if mix[tc.fw] != len(tc.want) {
 				t.Errorf("FrameworkMix[%s] = %d, want %d. A route tagged with the wrong "+
 					"framework is a route whose extraction path cannot be audited when "+
-					"D.22 fails to confirm it.", tc.fw, mix[tc.fw], len(tc.want))
+					"route confirmation fails to confirm it.", tc.fw, mix[tc.fw], len(tc.want))
 			}
 			for _, r := range res.Routes() {
 				if r.Provenance() != record.InventoryProvenanceStaticExtraction {
@@ -348,8 +348,8 @@ func TestSixFrameworksProduceTheirKnownRouteTables(t *testing.T) {
 //
 // A fixture table that silently lost a framework -- a typo in an import path,
 // a verb table entry deleted -- would still pass TestSixFrameworks... if its
-// `want` were also empty. This asserts every one of the six D.20 names appears
-// in the fixture set AND produced at least one route.
+// `want` were also empty. This asserts every one of the six frameworks Go route
+// extraction names appears in the fixture set AND produced at least one route.
 func TestEveryFrameworkFixtureIsActuallyExercised(t *testing.T) {
 	covered := map[Framework]int{}
 	for _, tc := range frameworkFixtures() {
@@ -358,8 +358,8 @@ func TestEveryFrameworkFixtureIsActuallyExercised(t *testing.T) {
 	}
 	for _, fw := range FrameworkValues() {
 		if covered[fw] == 0 {
-			t.Errorf("framework %q produced no routes in any fixture. plan/50-dast.md "+
-				"D.20's stop condition is that ALL SIX produce candidate route lists; a "+
+			t.Errorf("framework %q produced no routes in any fixture. plan/design/dynamic-tier.md "+
+				"Go route extraction's stop condition is that ALL SIX produce candidate route lists; a "+
 				"table that quietly stopped matching one of them would otherwise report "+
 				"a pass.", fw)
 		}
@@ -390,7 +390,7 @@ func TestNoRouteFromThisTierIsEverConfirmed(t *testing.T) {
 	}
 	for _, r := range res.Routes() {
 		if r.Confirmation() != ConfirmationCandidate {
-			t.Errorf("%s is %q. Every Tier 2 route is a candidate until D.22 confirms it "+
+			t.Errorf("%s is %q. Every Tier 2 route is a candidate until route confirmation confirms it "+
 				"via live probe; a confirmed one here enters the numerator of "+
 				"endpoint_coverage without anything having been probed.",
 				r, r.Confirmation())
@@ -419,7 +419,7 @@ func TestConfirmationCannotBeReachedFromThisFilesSyntax(t *testing.T) {
 		if id.Name == "ConfirmationConfirmed" {
 			found++
 			t.Errorf("tier2_go_extract.go:%d mentions ConfirmationConfirmed. There is no "+
-				"legitimate use of it in this tier: promotion is D.22's job and inflating "+
+				"legitimate use of it in this tier: promotion is route confirmation's job and inflating "+
 				"it here corrupts endpoint_coverage downstream.",
 				fset.Position(id.Pos()).Line)
 		}
@@ -444,7 +444,7 @@ func TestConfirmationCannotBeReachedFromThisFilesSyntax(t *testing.T) {
 // Claim 2: this file opens nothing and knows no repository path
 // ---------------------------------------------------------------------------
 
-// TestTier2OpensNothingAndKnowsNoRepositoryPath enforces D.19's package
+// TestTier2OpensNothingAndKnowsNoRepositoryPath enforces the repo spec reader's package
 // invariant one tier later.
 //
 // It is an ALLOWLIST of imports rather than a denylist of filesystem calls,
@@ -470,7 +470,7 @@ func TestTier2OpensNothingAndKnowsNoRepositoryPath(t *testing.T) {
 		}
 		if !allowed[path] {
 			t.Errorf("tier2_go_extract.go:%d imports %q, which is not on this tier's "+
-				"allowlist. plan/50-dast.md:628-630 makes repository harvesting the SAST "+
+				"allowlist. plan/design/dynamic-tier.md:628-630 makes repository harvesting the SAST "+
 				"tier's job; a filesystem import here means Tier 2 is walking an "+
 				"attacker-controlled directory tree with none of the harvest controls.",
 				fset.Position(imp.Pos()).Line, path)
@@ -478,7 +478,7 @@ func TestTier2OpensNothingAndKnowsNoRepositoryPath(t *testing.T) {
 	}
 }
 
-// TestTier2HardCodesNoRequestPath mirrors D.18's guard.
+// TestTier2HardCodesNoRequestPath mirrors the runtime spec probe's guard.
 //
 // Any string literal that begins with "/" and is longer than one byte is a
 // path this tier would be inventing rather than extracting. The exceptions are
@@ -642,7 +642,7 @@ func TestComputedPathsBecomeCaveatsNotRoutes(t *testing.T) {
 //
 // The tempting bug is to bind a group whose prefix could not be read as a
 // group with prefix "", because then the routes under it still "work". They
-// work at the WRONG PATHS: /orders instead of /api/v2/orders. D.22 then fails
+// work at the WRONG PATHS: /orders instead of /api/v2/orders. Route confirmation then fails
 // to confirm every one of them and the failure looks like the target's fault.
 func TestGroupPrefixIsNeverAssumedEmpty(t *testing.T) {
 	res := extract(t, computedPathFixture)
@@ -650,7 +650,7 @@ func TestGroupPrefixIsNeverAssumedEmpty(t *testing.T) {
 		if r.Path() == "/orders" {
 			t.Fatalf("%s was emitted. Its group prefix was the constant `base`, which this "+
 				"tier cannot read; emitting the route at \"/orders\" invents an endpoint "+
-				"the application does not serve and hands D.22 a candidate that can never "+
+				"the application does not serve and hands route confirmation a candidate that can never "+
 				"confirm.", r)
 		}
 	}
@@ -662,7 +662,7 @@ func TestGroupPrefixIsNeverAssumedEmpty(t *testing.T) {
 
 // TestGinAndChiSpellingsOfOneEndpointProduceOneKey.
 //
-// D.26 deduplicates the Tier 0-2 union on Route.Key(). gin writes ":id", chi
+// Coverage reporting deduplicates the Tier 0-2 union on Route.Key(). gin writes ":id", chi
 // writes "{id}", gorilla writes "{id:[0-9]+}" and net/http 1.22 writes
 // "{id...}". Four spellings of one endpoint would be four rows in a
 // denominator that is supposed to be auditable.
@@ -712,7 +712,7 @@ func F() { m := http.NewServeMux(); m.HandleFunc("GET /users/{id}", h) }`},
 
 // TestPathParametersAreExtractedUntyped.
 //
-// plan/50-dast.md:610's "parameter-typed" claim is measured by Param.Typed().
+// plan/design/dynamic-tier.md:610's "parameter-typed" claim is measured by Param.Typed().
 // Syntactic extraction cannot know a parameter's type, and inventing "string"
 // would make that predicate lie -- so the parameters are extracted, named, and
 // left explicitly UNTYPED.
@@ -734,7 +734,7 @@ func F() { r := chi.NewRouter(); r.Get("/orgs/{orgID}/repos/{repoID}", h) }`)
 		if p.Typed() {
 			t.Errorf("parameter %q reports Typed()=true with type %q. A parser cannot "+
 				"know a path parameter's type, and a fabricated one makes the predicate "+
-				"plan/50-dast.md:610 is measured by report a capability this tier does "+
+				"plan/design/dynamic-tier.md:610 is measured by report a capability this tier does "+
 				"not have.", p.Name, p.Type)
 		}
 	}
@@ -812,7 +812,7 @@ func F() {
 //
 // Go 1.22's ServeMux pattern may carry a host: "example.com/path". A host
 // written in the target's repository is a network destination supplied by the
-// repository, and D.19's header records what that costs when it is believed.
+// repository, and the repo spec reader's header records what that costs when it is believed.
 // It is discarded, and the discard is REPORTED rather than done quietly.
 func TestNetHTTPHostPatternIsDiscardedAndReported(t *testing.T) {
 	res := extract(t, `package a
@@ -1255,7 +1255,7 @@ func api(e *echo.Echo) { e.PUT("/from-typed-param", h) }
 // path emitted here would be "/users" and the application would serve
 // "/api/v1/users". A parser cannot follow the call, so the route is emitted as
 // a candidate AND the incompleteness is reported -- because a candidate at a
-// path the target does not serve looks like the target's fault when D.22
+// path the target does not serve looks like the target's fault when route confirmation
 // cannot confirm it.
 func TestARouterHandedInFromOutsideReportsThatItsPrefixIsInvisible(t *testing.T) {
 	res := extract(t, `package a
@@ -1518,7 +1518,7 @@ func readLicenceArtifact(t *testing.T, name string) []byte {
 	p := filepath.Join(repoRootForLicenceGuard(t), "third_party", "go-apispec", name)
 	b, err := os.ReadFile(p)
 	if err != nil {
-		t.Fatalf("reading %s: %v. plan/00-SPINE.md S8 requires the licence FILE BODY to "+
+		t.Fatalf("reading %s: %v. The spine's licence section requires the licence FILE BODY to "+
 			"travel with the pin; an absent body means the compliance gate downstream has "+
 			"nothing to read and would pass on its absence.", p, err)
 	}
@@ -1565,10 +1565,11 @@ func TestVendoredLicenceBodiesMatchThePin(t *testing.T) {
 
 // TestVendoredLicenceIsApache2AndNotShareAlike.
 //
-// S8 quarantines share-alike sources under data/share-alike/ and mirror/tier2/;
-// vendoring one into third_party/ without that treatment is a compliance
-// defect, not a style question. This reads the BODY -- never a metadata field,
-// never an SPDX tag somebody wrote -- and checks both directions.
+// The spine's licence section quarantines share-alike sources under
+// data/share-alike/ and mirror/tier2/; vendoring one into third_party/ without
+// that treatment is a compliance defect, not a style question. This reads the
+// BODY -- never a metadata field, never an SPDX tag somebody wrote -- and
+// checks both directions.
 func TestVendoredLicenceIsApache2AndNotShareAlike(t *testing.T) {
 	body := string(readLicenceArtifact(t, "LICENSE"))
 
@@ -1602,7 +1603,7 @@ func TestVendoredLicenceIsApache2AndNotShareAlike(t *testing.T) {
 	} {
 		if strings.Contains(strings.ToLower(body), strings.ToLower(term)) {
 			t.Errorf("the licence body contains %q. Apache-2.0 has no share-alike term; "+
-				"a body that does is not the licence PIN.md determined, and S8 requires "+
+				"a body that does is not the licence PIN.md determined, and the spine's licence section requires "+
 				"share-alike sources to be quarantined under data/share-alike/ rather "+
 				"than vendored into third_party/.", term)
 		}
@@ -1629,7 +1630,7 @@ func TestNoticeBodyCarriesBothCopyrightHolders(t *testing.T) {
 	}
 }
 
-// TestVendoringGoSourceWouldWidenTheNoticeDuty is the trigger that arms D.20's
+// TestVendoringGoSourceWouldWidenTheNoticeDuty is the trigger that arms Go route extraction's
 // stop condition for the day somebody vendors the source.
 //
 // Apache-2.0 §4(d) attaches to DISTRIBUTING the Work. Today this packet
@@ -1664,7 +1665,7 @@ func TestVendoringGoSourceWouldWidenTheNoticeDuty(t *testing.T) {
 		t.Logf("no go-apispec source is vendored, so Apache-2.0 §4(d) is discharged by " +
 			"third_party/go-apispec/NOTICE alone. See third_party/go-apispec/PIN.md §5 " +
 			"for the two measured blockers (gate 3's repository scan does not skip " +
-			"third_party/, and go.mod is outside D.20's write scope).")
+			"third_party/, and go.mod is outside Go route extraction's write scope).")
 		return
 	}
 
@@ -1678,7 +1679,7 @@ func TestVendoringGoSourceWouldWidenTheNoticeDuty(t *testing.T) {
 		t.Fatalf("%d go-apispec source file(s) are now vendored under third_party/"+
 			"go-apispec/ (%v), which makes Anvil a redistributor of the Work. "+
 			"Apache-2.0 §4(d) then requires go-apispec's NOTICE body to appear in the "+
-			"aggregated root NOTICE, and it does not. plan/50-dast.md D.20's Forbidden "+
+			"aggregated root NOTICE, and it does not. Go route extraction's design Forbidden "+
 			"actions call this \"a real, already-verified obligation, not a formality "+
 			"to skip\".", len(goFiles), goFiles)
 	}
@@ -1722,8 +1723,8 @@ func TestEnumZeroValuesAreNeverLegal(t *testing.T) {
 
 // TestTheSixFrameworkNamesAreThePlansSix.
 //
-// plan/50-dast.md D.20's expected output schema names the framework tags
-// literally. A rename here would be a silent contract break with D.26's
+// Go route extraction's design expected output schema names the framework tags
+// literally. A rename here would be a silent contract break with coverage reporting's
 // aggregation.
 func TestTheSixFrameworkNamesAreThePlansSix(t *testing.T) {
 	want := []Framework{"chi", "gin", "net_http", "echo", "fiber", "gorilla_mux"}
@@ -1731,7 +1732,7 @@ func TestTheSixFrameworkNamesAreThePlansSix(t *testing.T) {
 	sort.Slice(want, func(i, j int) bool { return want[i] < want[j] })
 	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("FrameworkValues() = %v, want %v (plan/50-dast.md D.20: "+
+		t.Errorf("FrameworkValues() = %v, want %v (Go route extraction's design: "+
 			"`framework: <chi|gin|net_http|echo|fiber|gorilla_mux>`)", got, want)
 	}
 }

@@ -1,11 +1,11 @@
-# REVIEW-A.13 — critic verdict on A.11 (Trivy-DB / Grype-DB warm-start accelerator)
+# Review: the Trivy-DB / Grype-DB warm-start accelerator
 
 **Verdict: FAIL.** Two blockers, two majors, two minors.
 
-**This was a SAME-FAMILY critic.** The packet routes A.13 to an OpenCode
-`openai/gpt-5.5-fast` route; that route is withdrawn (plan/00-ROUTING.md OWNER
+**This was a SAME-FAMILY critic.** The packet routes this review to an OpenCode
+`openai/gpt-5.5-fast` route; that route is withdrawn (plan/design/routing.md OWNER
 DECISION, 2026-08-07). This review was performed by a Claude subagent — the same
-model family that produced A.11. Correlated blind spots are therefore *not*
+model family that produced the accelerator. Correlated blind spots are therefore *not*
 excluded, and this verdict must never be recorded as "cross-family critic: PASS".
 Compensation applied: every claim was checked against the file, the suite was
 re-run locally with `-count=1`, and every finding below was proved by a probe
@@ -15,7 +15,7 @@ Scope reviewed: `internal/mirror/accelerator/trivydb.go` (1200 lines),
 `internal/mirror/accelerator/grypedb.go` (435), `accelerator_test.go` (961).
 Cross-read for authority: `internal/ingest/license/tiers.go`,
 `internal/ingest/config/feeds.go`, `internal/collector/repo/trivy.go`,
-`mirror/.gitignore`, root `.gitignore`, plan/00-SPINE.md S1/S5/S7/S8/S12.
+`mirror/.gitignore`, root `.gitignore`, the spine's corrected-requirements, exclusion, safety, licence and Go control-plane sections.
 
 ---
 
@@ -33,8 +33,8 @@ That is the right call and the reasoning at `trivydb.go:236-240` is sound.
 
 Check 1 fails. The guard is correctly *shaped* — inverting `license.CheckWritePath`
 rather than re-deriving the rule is exactly right and answers the packet's
-question 2 in A.11's favour — but the authority it delegates to compares paths
-case-sensitively, and A.11 is the component that performs the actual filesystem
+question 2 in the accelerator's favour — but the authority it delegates to compares paths
+case-sensitively, and the accelerator is the component that performs the actual filesystem
 write on a case-insensitive host.
 
 ---
@@ -89,12 +89,12 @@ separators, UNC/extended-length (`\\?\C:\mirror\tier2`), a caller-supplied
 `CacheDir`, and a `.cache` symlink pointing at the quarantine — and every one is
 correctly refused. Case is the single hole.
 
-**Fix (A.11 side, not the frozen gate):** fold case before the tier comparison in
+**Fix (the accelerator side, not the frozen gate):** fold case before the tier comparison in
 `guardNotTiered` on case-insensitive platforms — or, better, compare
 `strings.EqualFold`-style tails unconditionally, since no legitimate cache root
 distinguishes `Tier2` from `tier2`. Do **not** patch
 `internal/ingest/license/tiers.go`; the gate is frozen and its exact-match
-semantics may be load-bearing for A.4's admission path. The accelerator is the
+semantics may be load-bearing for the licence gate's admission path. The accelerator is the
 one asserting a filesystem property, so the accelerator owns the fold. Add the
 case-varied path to both tables in `TestWritePathNeverResolvesIntoTheLicenceTieredMirror`.
 
@@ -122,7 +122,7 @@ re-serves, re-publishes or re-packages it." True of Go code, and
 `TestPackageExposesNoWayToServeOrRepublishTheArtifact` (`:856-915`) proves it
 well. But `git push` is not a Go code path, and the repo already knows this:
 `mirror/.gitignore` exists for precisely this reason and says so in prose —
-*"a file that git cannot carry is a file no Anvil commit can author."* A.11 did
+*"a file that git cannot carry is a file no Anvil commit can author."* the accelerator did
 not apply its own repo's rule to its own directory.
 
 **Fix:** ship `internal/mirror/accelerator/.gitignore` containing `.cache/`, and
@@ -146,9 +146,9 @@ if secret := readCredential(ctx); secret != "" {
 }
 ```
 
-There is no check that the realm host is the registry host. Spine S7 requires
+There is no check that the realm host is the registry host. The spine's safety section requires
 "Re-validate scope on **every request including every redirect hop**; never
-follow cross-host redirects." A.11 enforces that for redirects
+follow cross-host redirects." the accelerator enforces that for redirects
 (`httpClient`, `trivydb.go:911-920`) and for the Grype listing's archive
 reference (`resolveArchiveURL`, `grypedb.go:371-375`) — and then leaves the
 token realm, which is *also* third-party content naming a host, entirely
@@ -286,7 +286,7 @@ field or adding `verified_against: "registry manifest (unsigned)"`.
   `CacheDir()`; `internal/collector/repo/trivy.go` defaults `SkipDBUpdate: true`
   and `Validate` refuses `SkipDBUpdate:false` with no `DBRepository`
   (`ErrDBUpdateUnrouted`), so a cold cache produces a failed scan, not a fast
-  clean one. This is the strongest part of A.11 and it is well done.
+  clean one. This is the strongest part of the accelerator and it is well done.
 - **Tier-2-derived data laundering into tier 0/1 (packet question 3).** No
   directory-level laundering: the accelerator never reads `mirror/` at all. The
   data-provenance concern is real but narrower than feared — the Trivy DB does
@@ -296,8 +296,8 @@ field or adding `verified_against: "registry manifest (unsigned)"`.
   data inside it. Mitigating: `internal/collector/repo/trivy.go:368-374` carries
   Trivy's own `DataSourceID`/`DataSourceName` through to `finding.source`, so
   attribution survives into the findings cache. What does not exist anywhere is a
-  `DataSourceID` → licence-tier mapping. Not A.11's to build, and not a finding
-  against it — but it is an **unowned cross-area gap** and A.17/A.19 should be
+  `DataSourceID` → licence-tier mapping. Not the accelerator's to build, and not a finding
+  against it — but it is an **unowned cross-area gap** and the comparator and record emission should be
   told before findings are published.
 
 ---
@@ -310,14 +310,14 @@ field or adding `verified_against: "registry manifest (unsigned)"`.
 tripped by sibling packets that now import `internal/ingest/sanitize`
 (`internal/collector/host/collect.go`, `internal/collector/repo/trivy.go`,
 `internal/ingest/bootstrap/bootstrap.go`, `internal/ingest/poller/poller.go`).
-Nothing to do with A.11 — `go test -count=1 ./internal/mirror/accelerator/`
+Nothing to do with the accelerator — `go test -count=1 ./internal/mirror/accelerator/`
 passes on its own — but somebody owns retiring that tripwire and updating
 `sanitize.go`'s KNOWN LIMITS item 1, and no packet in my scope does.
 
 ## What I could not verify
 
 - `go test -race` did not run (cgo unavailable on this Windows host, per the
-  standing note). CI on Linux must run it. A.11 has one mutable shared field —
+  standing note). CI on Linux must run it. The accelerator has one mutable shared field —
   `registryClient.token` (`trivydb.go:876`) — written in `exchangeToken` and read
   in `do`. Both happen on one goroutine per warm start today, but `WarmStartWith`
   has no guard against two concurrent calls sharing a cache root, and two
@@ -327,14 +327,14 @@ passes on its own — but somebody owns retiring that tripwire and updating
   `pkg-containers.githubusercontent.com`; `httpClient`'s cross-host redirect
   refusal (`trivydb.go:915-918`) would reject that hop, so the production Trivy
   pull may never have succeeded against real ghcr.io. Correctly no test asserts
-  this (S7 forbids the network at test time and the packet forbids it too), but
+  this (the spine's safety section forbids the network at test time and the packet forbids it too), but
   the stop condition "Accelerator pulls succeed against a mocked OCI registry" is
   satisfied by a mock that does not model the redirect the real registry issues.
-  Worth one manual operator-run check before A.21 depends on it.
+  Worth one manual operator-run check before the Lane A exit gate depends on it.
 
 ## Blocking status
 
-Per the packet's stop condition — *"any redistribution-path finding blocks A.21
-until resolved"* — **B-1 and B-2 are redistribution-path findings and A.21 is
+Per the packet's stop condition — *"any redistribution-path finding blocks the Lane A exit gate
+until resolved"* — **B-1 and B-2 are redistribution-path findings and the Lane A exit gate is
 blocked.** M-1 should be treated as blocking independently: it is a credential
 egress to an attacker-named host, and the credential is the ops-provisioned PAT.

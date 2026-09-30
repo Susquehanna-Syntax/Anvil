@@ -1,6 +1,6 @@
 #!/bin/sh
-# Anvil A.4 — deliberate acquisition of the publisher licence texts the licence
-# gate reads as evidence.
+# Anvil's licence gate — deliberate acquisition of the publisher licence texts the gate
+# reads as evidence.
 #
 # NOTHING RUNS THIS FOR YOU. It is not wired into any build, test or CI job, and
 # internal/ingest/license imports no HTTP client at all. An operator runs it

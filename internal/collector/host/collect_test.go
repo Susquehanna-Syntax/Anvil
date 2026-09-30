@@ -23,7 +23,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 )
 
-// This file is A.9's evidence that plan/00-SPINE.md S7 holds:
+// This file is the host collector's evidence that the spine's safety section holds:
 //
 //	The host agent is read-only — no package manager in a mutating mode,
 //	not behind a flag.
@@ -104,7 +104,7 @@ import (
 // than passed: dot imports, imports whose package name is not derivable from
 // the path, function declarations with no Go body, and non-Go sources in the
 // package directory. Failing closed on the unresolvable is the difference
-// between this version and the one A.12 defeated.
+// between this version and the one the read-only-boundary review defeated.
 
 // ---------------------------------------------------------------------------
 // Source-analysis plumbing
@@ -260,7 +260,7 @@ func recvTypeName(e ast.Expr) string {
 // Identity resolution: what an identifier in this package actually refers to
 // ---------------------------------------------------------------------------
 
-// A.12's review defeated the previous version of this analyser with three
+// The read-only-boundary review defeated the previous version of this analyser with three
 // one-line edits, because it matched the SOURCE SPELLING of a callee against a
 // map of strings:
 //
@@ -382,7 +382,7 @@ func allDigits(s string) bool {
 // spawnPaths maps an import path to the symbols in it that can start a process
 // or load code into one. A NIL symbol set means EVERY identifier in that
 // package is treated as spawning, which is the honest reading of os/exec and
-// syscall: they exist to do the thing S7 forbids, and enumerating their
+// syscall: they exist to do the thing the spine's safety section forbids, and enumerating their
 // surface from memory is how `exec.CommandContextRun` — a function that does
 // not exist — ended up in the previous version of this list.
 var spawnPaths = map[string]map[string]bool{
@@ -831,7 +831,7 @@ func findHostOpViolations(ss *sourceSet) []hostOpViolation {
 
 // exprText renders an expression approximately, for a failure message only.
 // Nothing decides anything on its output — the resolution is done by import
-// path — which is the distinction A.12's B1 turned on.
+// path — which is the distinction the read-only-boundary review's finding B1 turned on.
 func exprText(e ast.Expr) string {
 	switch x := e.(type) {
 	case *ast.Ident:
@@ -853,7 +853,7 @@ func exprText(e ast.Expr) string {
 }
 
 // TestThereIsExactlyOneProcessSpawningReferenceAndItIsRunQuery is the
-// structural core of S7. If mutation is to be impossible rather than merely
+// structural core of the spine's safety section. If mutation is to be impossible rather than merely
 // absent, there must be exactly one place where anything at all is executed,
 // and its input must be a closed enum. Two spawn sites is two sets of rules,
 // and one of them is unreviewed.
@@ -869,7 +869,7 @@ func TestThereIsExactlyOneProcessSpawningReferenceAndItIsRunQuery(t *testing.T) 
 			lines = append(lines, "  "+s.String())
 		}
 		t.Fatalf("expected exactly ONE process-spawning reference in internal/collector/host, found %d:\n%s\n\n"+
-			"plan/00-SPINE.md S7 makes the host agent read-only, and that is enforced by there being a single "+
+			"The spine's safety section makes the host agent read-only, and that is enforced by there being a single "+
 			"exec wrapper whose only input is the unexported queryID enum. A second reference is a second set "+
 			"of rules about what may run, and nothing reviews it. Note that this counts REFERENCES: taking a "+
 			"spawning function as a value is a call site with the call moved somewhere this analysis cannot see.",
@@ -893,9 +893,10 @@ func TestThereIsExactlyOneProcessSpawningReferenceAndItIsRunQuery(t *testing.T) 
 // TestTheSpawnGuardCatchesTheBypassesThatDefeatedItsPredecessor is the
 // negative control, and it is the specific reason this file was rewritten. The
 // first three cases are the spellings the old guard caught. The last four are
-// A.12's blocker B1, verbatim — an aliased import, a dot import, a function
-// value and a function value stored in a struct field — each of which compiled
-// a HOST-MUTATING command into this package while the suite stayed green.
+// the read-only-boundary review's blocker B1, verbatim — an aliased import, a
+// dot import, a function value and a function value stored in a struct field —
+// each of which compiled a HOST-MUTATING command into this package while the
+// suite stayed green.
 //
 // A negative control that does not include the bypass is not a negative
 // control.
@@ -1005,13 +1006,14 @@ func raw() error { return sc.Exec("/usr/bin/rpm", []string{"rpm", "--initdb"}, n
 	}
 }
 
-// TestEveryFilesystemAndProcessOperationIsOnTheAllowlist is A.12's M5, redone
-// as an allowlist after the denylist that replaced nothing lost to three
-// symbols nobody had listed (see the commentary on permittedHostOps).
+// TestEveryFilesystemAndProcessOperationIsOnTheAllowlist is the
+// read-only-boundary review's finding M5, redone as an allowlist after the
+// denylist that replaced nothing lost to three symbols nobody had listed (see
+// the commentary on permittedHostOps).
 //
 // The collector reads package databases and emits an inventory on stdout. Any
 // file it creates on a customer's server, and any process it signals, is a host
-// mutation that plan/00-SPINE.md S7 forbids just as much as `apk add`.
+// mutation that the spine's safety section forbids just as much as `apk add`.
 func TestEveryFilesystemAndProcessOperationIsOnTheAllowlist(t *testing.T) {
 	violations := findHostOpViolations(parsePackageSources(t))
 	if len(violations) == 0 {
@@ -1352,7 +1354,7 @@ func TestEveryIdentityInThisPackageIsResolvable(t *testing.T) {
 		t.Fatalf("internal/collector/host contains constructs whose identity the read-only guards cannot "+
 			"resolve:\n  %s\n\n"+
 			"A guard that passes what it cannot read is not a guard. Each of these is refused rather than "+
-			"analysed, because A.12 defeated the previous version with exactly this class of edit.",
+			"analysed, because the read-only-boundary review defeated the previous version with exactly this class of edit.",
 			strings.Join(found, "\n  "))
 	}
 	// Negative controls: each construct must be seen.
@@ -1444,7 +1446,7 @@ func keysOf(m map[string]bool) []string {
 
 // THE DENYLIST BELOW IS A BELT. THE BRACES ARE THE ARGV ALLOWLIST.
 //
-// A.12's review was right that exit criterion 13 calls for an allowlist and
+// The read-only-boundary review was right that exit criterion 13 calls for an allowlist and
 // that this was a denylist wearing its name: eighteen real, host-mutating
 // command lines returned no tokens, including `rpm --rebuilddb`,
 // `dpkg --configure -a` and `dpkg --unpack`. The fix is in two parts and the
@@ -1474,9 +1476,10 @@ var denyVerbs = map[string]bool{
 	"delete": true, "update": true, "refresh": true, "fix": true,
 	"build-dep": true, "builddep": true, "autoclean": true,
 
-	// A.12 M1(a): eighteen mutating command lines that this list returned
-	// nothing for. Each entry below is one of them, and the ones that rewrite
-	// the package database or run maintainer scripts are the dangerous half.
+	// The read-only-boundary review's finding M1(a): eighteen mutating command
+	// lines that this list returned nothing for. Each entry below is one of
+	// them, and the ones that rewrite the package database or run maintainer
+	// scripts are the dangerous half.
 	"rebuilddb": true, // rpm --rebuilddb rewrites /var/lib/rpm
 	"initdb":    true,
 	"setperms":  true, // rewrites the permissions of every installed file
@@ -1558,11 +1561,12 @@ func tokenizeLiteral(s string) []string {
 // EVERY token is checked against EVERY set. The previous version branched on
 // `strings.HasPrefix(tok, "-")` and, for a flag, checked only the flag maps
 // before `continue`-ing — so denyVerbs was never applied to a flag token and
-// every verb in it was evaded by spelling it with two dashes. A.12 measured
-// that: `mutatingTokens("--autoremove")`, `("--dist-upgrade")`, `("--del")`,
-// `("--add")`, `("--downgrade")`, `("--update")`, `("--localinstall")` and six
-// more all returned nothing while their bare forms were caught. A flag is a
-// token; the leading dashes are punctuation, not a category.
+// every verb in it was evaded by spelling it with two dashes. The
+// read-only-boundary review measured that: `mutatingTokens("--autoremove")`,
+// `("--dist-upgrade")`, `("--del")`, `("--add")`, `("--downgrade")`,
+// `("--update")`, `("--localinstall")` and six more all returned nothing while
+// their bare forms were caught. A flag is a token; the leading dashes are
+// punctuation, not a category.
 func mutatingTokens(s string) []string {
 	return mutatingTokensIn(s, false)
 }
@@ -1669,7 +1673,7 @@ func TestNoMutatingVerbAppearsInAnyStringLiteral(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("  %s: %q contains %v", v.where, v.literal, v.tokens))
 	}
 	t.Fatalf("internal/collector/host contains %d string literal(s) naming a mutating package-manager verb:\n%s\n\n"+
-		"plan/00-SPINE.md S7: \"The host agent is read-only — no package manager in a mutating mode, not behind "+
+		"The spine's safety section: \"The host agent is read-only — no package manager in a mutating mode, not behind "+
 		"a flag.\" research/12 hard boundary #1 gives the failure mode: an unattended upgrade restarted "+
 		"systemd-networkd on live instances. This is not a style rule and there is no flag that makes it acceptable.",
 		len(violations), strings.Join(lines, "\n"))
@@ -1737,12 +1741,13 @@ func TestTheVerbGuardDoesNotFireOnTheReadOnlyArgvItMustAllow(t *testing.T) {
 	}
 }
 
-// TestTheVerbBeltCatchesTheCommandLinesItPreviouslyMissed is A.12's M1
-// measurement, turned into a regression test. Every line below is a real,
-// host-mutating command line that the previous `mutatingTokens` returned NO
-// tokens for. The first block is M1(a) — verbs nobody had listed. The second
-// is M1(b) — every verb that WAS listed, evaded by spelling it with two
-// dashes, because the flag branch never consulted denyVerbs.
+// TestTheVerbBeltCatchesTheCommandLinesItPreviouslyMissed is the
+// read-only-boundary review's finding M1 measurement, turned into a regression
+// test. Every line below is a real, host-mutating command line that the
+// previous `mutatingTokens` returned NO tokens for. The first block is M1(a) —
+// verbs nobody had listed. The second is M1(b) — every verb that WAS listed,
+// evaded by spelling it with two dashes, because the flag branch never
+// consulted denyVerbs.
 func TestTheVerbBeltCatchesTheCommandLinesItPreviouslyMissed(t *testing.T) {
 	t.Run("M1(a) mutating command lines with unlisted verbs", func(t *testing.T) {
 		for _, line := range []string{
@@ -1809,7 +1814,7 @@ func TestTheVerbBeltCatchesTheCommandLinesItPreviouslyMissed(t *testing.T) {
 //
 // This is exit criterion 13's "allowlist", made into one. What stood here
 // before was a denylist of mutating verbs wearing an allowlist's name, and
-// A.12 measured what that costs: eighteen host-mutating command lines,
+// the read-only-boundary review measured what that costs: eighteen host-mutating command lines,
 // including `rpm --rebuilddb`, `rpm --setperms -a` and `dpkg --configure -a`,
 // produced no tokens at all because nobody had listed those verbs.
 //
@@ -1904,7 +1909,7 @@ func checkArgvIsClosed(ss *sourceSet) []string {
 	return problems
 }
 
-// TestArgvIsAClosedSwitchOverCompileTimeConstants proves the claim A.9's
+// TestArgvIsAClosedSwitchOverCompileTimeConstants proves the claim the host collector's
 // Expected output schema makes: "the binary's set of invocable subcommands is
 // a compile-time constant list". A Go const has no storage, so it cannot be
 // reassigned, appended to, monkey-patched from a test, or loaded from a config
@@ -2137,9 +2142,10 @@ func TestEveryCommandLineConstantIsOnTheAllowlist(t *testing.T) {
 // TestTheAllowlistRefusesCommandLinesNoDenylistNames is the negative control
 // that matters most, because it is the one that distinguishes an allowlist
 // from a denylist. Every case below is a REAL host-mutating command line from
-// A.12's M1(a), and each must be refused. The first four are refused by the
-// allowlist ALONE — the guard would refuse them even with every deny set
-// emptied, which is the property exit criterion 13 is asking for.
+// the read-only-boundary review's finding M1(a), and each must be refused. The
+// first four are refused by the allowlist ALONE — the guard would refuse them
+// even with every deny set emptied, which is the property exit criterion 13 is
+// asking for.
 func TestTheAllowlistRefusesCommandLinesNoDenylistNames(t *testing.T) {
 	// A CALIBRATION FIRST. The fixture has to be the real package's constant
 	// set, or every case below "passes" on the complaint that the allowlist
@@ -2241,7 +2247,7 @@ func TestTheAllowlistIsRefusalByDefaultNotByDenylist(t *testing.T) {
 	} {
 		if problems := checkCommandLineAllowlist(allowlistFixture(t, nil, extra)); len(problems) == 0 {
 			t.Errorf("with every denylist emptied the allowlist accepted %s; it is therefore not an allowlist "+
-				"but a denylist with extra steps, which is exactly A.12's M1", extra)
+				"but a denylist with extra steps, which is exactly the read-only-boundary review's finding M1", extra)
 		}
 	}
 }
@@ -2599,7 +2605,7 @@ func TestNothingBranchesOnBeingRoot(t *testing.T) {
 
 // TestTheInvocableCommandListIsExactlyTheEnumerationQueries reads the
 // compile-time constant list through the same accessor the collector uses and
-// asserts its contents, which is A.9's "grep the constant list, not a runtime
+// asserts its contents, which is the host collector's "grep the constant list, not a runtime
 // check" done as an assertion rather than as a regex.
 func TestTheInvocableCommandListIsExactlyTheEnumerationQueries(t *testing.T) {
 	want := map[queryID][]string{
@@ -2697,7 +2703,7 @@ func TestOptionsCarriesNoCommandSurface(t *testing.T) {
 			got = append(got, typ.Field(i).Name+" "+typ.Field(i).Type.String())
 		}
 		t.Fatalf("Options has %d field(s) (%s); it must have exactly %d.\n\n"+
-			"plan/00-SPINE.md S7's \"not behind a flag\" is a statement about what may EXIST. A field here is "+
+			"The spine's \"not behind a flag\" is a statement about what may EXIST. A field here is "+
 			"where a command, a mode or an extra argument would arrive.", typ.NumField(), strings.Join(got, ", "), len(want))
 	}
 	for i := 0; i < typ.NumField(); i++ {
@@ -2749,7 +2755,7 @@ func TestNoExportedAPIAcceptsACommand(t *testing.T) {
 // 21: "`remediable_by_agent` is `false` for 100% of host-collector-sourced
 // records, with no code path, flag, or config key capable of overriding it".
 //
-// plan/00-SPINE.md S6 puts host findings at false because the coding agent's
+// The spine's record section puts host findings at false because the coding agent's
 // write surface is the git repository only (research/12 hard boundary #2). It
 // cannot patch a host package, and handing it one as actionable asks it to try.
 func TestRemediableByAgentIsAConstantFalseWithNoOverride(t *testing.T) {
@@ -2831,10 +2837,11 @@ func TestSerialisedInventoryCarriesRemediableFalse(t *testing.T) {
 		t.Fatalf("remediable_by_agent = %v, want false", value)
 	}
 
-	// A.12 m2: FindingSeed is the artifact that CROSSES to A.17, and it was
-	// the one that did not carry the field. The Inventory is this collector's
-	// own record; the seed is what another component reads, so if only one of
-	// them can carry the guarantee it is the seed.
+	// The read-only-boundary review's finding m2: FindingSeed is the artifact
+	// that CROSSES to the comparator, and it was the one that did not carry the
+	// field. The Inventory is this collector's own record; the seed is what
+	// another component reads, so if only one of them can carry the guarantee
+	// it is the seed.
 	seeds := inv.FindingSeeds()
 	if len(seeds) != 1 {
 		t.Fatalf("expected one seed, got %d", len(seeds))
@@ -2851,14 +2858,14 @@ func TestSerialisedInventoryCarriesRemediableFalse(t *testing.T) {
 		v, ok := seedDecoded["remediable_by_agent"]
 		if !ok {
 			t.Fatalf("the serialised FindingSeed has no remediable_by_agent key: %s\n\n"+
-				"plan/00-SPINE.md S6 requires it false for host findings, and the field has to travel with the "+
+				"The spine's record section requires it false for host findings, and the field has to travel with the "+
 				"thing that crosses the boundary rather than with the thing that stays here.", seedBlob)
 		}
 		if v != false {
 			t.Fatalf("FindingSeed remediable_by_agent = %v, want false", v)
 		}
 	}
-	// The whole slice must survive marshalling too — that is how A.17 will
+	// The whole slice must survive marshalling too — that is how the comparator will
 	// actually receive them.
 	sliceBlob, err := json.Marshal(seeds)
 	if err != nil {
@@ -2869,13 +2876,14 @@ func TestSerialisedInventoryCarriesRemediableFalse(t *testing.T) {
 	}
 }
 
-// TestTheFallbackChainAdvancesOnAnyFailure is A.12's M3. `apk info -v` is
-// documented as "the fallback for apk builds predating `apk list`" — and an
-// apk-tools build that predates `apk list` HAS the apk binary. It fails with
-// "ERROR: Not a valid command: list" and a non-zero exit, which is not
-// errBinaryNotFound, so the previous collectFamily returned immediately and
-// the fallback could not fire under any input. Alpine hosts running those
-// builds reported zero packages through a fallback written for them.
+// TestTheFallbackChainAdvancesOnAnyFailure is the read-only-boundary review's
+// finding M3. `apk info -v` is documented as "the fallback for apk builds
+// predating `apk list`" — and an apk-tools build that predates `apk list` HAS
+// the apk binary. It fails with "ERROR: Not a valid command: list" and a
+// non-zero exit, which is not errBinaryNotFound, so the previous collectFamily
+// returned immediately and the fallback could not fire under any input. Alpine
+// hosts running those builds reported zero packages through a fallback written
+// for them.
 func TestTheFallbackChainAdvancesOnAnyFailure(t *testing.T) {
 	t.Run("the fallback carries the family", func(t *testing.T) {
 		c := testCollector(t, osReleaseFixture(t, "ID=alpine\n"), map[queryID][]byte{
@@ -2947,8 +2955,8 @@ func TestTheFallbackChainAdvancesOnAnyFailure(t *testing.T) {
 	})
 }
 
-// TestTheReadOnlyClaimIsTheNarrowOneAndTheRPMDBCaveatIsStated is A.12's M2,
-// enforced rather than promised.
+// TestTheReadOnlyClaimIsTheNarrowOneAndTheRPMDBCaveatIsStated is the
+// read-only-boundary review's finding M2, enforced rather than promised.
 //
 // `rpm -qa` is not filesystem-read-only on a Berkeley-DB-backed rpmdb: opening
 // the database creates and updates /var/lib/rpm/__db.001..003 when the caller
@@ -3009,7 +3017,7 @@ func TestTheReadOnlyClaimIsTheNarrowOneAndTheRPMDBCaveatIsStated(t *testing.T) {
 // binary that runs on somebody's production server has no business carrying a
 // SQL driver — so the shared vocabulary is duplicated by value. This TEST-ONLY
 // import is what stops that duplication from drifting into the silent
-// produce/consume break plan/IMPLEMENTATION-PLAN.md §6 exists to prevent.
+// produce/consume break the shared-vocabulary review exists to prevent.
 func TestCollectorVocabularyMatchesTheCacheSchema(t *testing.T) {
 	literals, err := cache.CheckLiterals("finding_collector")
 	if err != nil {
@@ -3042,7 +3050,7 @@ func TestCollectorVocabularyMatchesTheCacheSchema(t *testing.T) {
 	}
 }
 
-// TestInventoryTrustIsUntrusted. plan/00-SPINE.md S6 requires `anvil/trust` on
+// TestInventoryTrustIsUntrusted. The spine's record section requires `anvil/trust` on
 // every string originating outside Anvil, and every package name and version
 // here came off a host Anvil does not control. Anvil ran the query and parsed
 // the output; none of that changes who wrote the bytes.
@@ -3443,7 +3451,7 @@ func TestCollectAssemblesAnInventoryFromEveryFamily(t *testing.T) {
 }
 
 // TestCollectIsDeterministic. Two runs against the same host must produce
-// byte-identical output, or every downstream diff is noise and A.21's
+// byte-identical output, or every downstream diff is noise and the Lane A exit gate's
 // two-consecutive-run evidence is unreadable.
 func TestCollectIsDeterministic(t *testing.T) {
 	body := osReleaseFixture(t, "ID=alpine\nVERSION_ID=3.20.3\n")
@@ -3513,7 +3521,7 @@ func TestCollectNeverReportsASilentClean(t *testing.T) {
 			t.Error("the failure reason was dropped")
 		}
 		if !inv.ParseDegraded {
-			t.Error("ParseDegraded must be set when a family failed; S6 requires the flag and cache persists it")
+			t.Error("ParseDegraded must be set when a family failed; the spine's record section requires the flag and cache persists it")
 		}
 		if len(inv.Packages) != 1 {
 			t.Errorf("the surviving family's packages were lost: %+v", inv.Packages)
@@ -3523,7 +3531,7 @@ func TestCollectNeverReportsASilentClean(t *testing.T) {
 
 // TestHostSuppliedStringsAreSanitised. A package name is not trusted input:
 // it is a string from a host Anvil does not control, and it flows into both
-// the comparator and, downstream, a model prompt. plan/00-SPINE.md S7 requires
+// the comparator and, downstream, a model prompt. The spine's safety section requires
 // sanitising AT INGEST rather than at prompt time, and research/12's own
 // reasoning applies to the quieter failure — an invisible code point inside a
 // package name makes the comparator MISS a match, which nothing surfaces.
@@ -3546,7 +3554,7 @@ func TestHostSuppliedStringsAreSanitised(t *testing.T) {
 		t.Errorf("an HTML comment survived into PRETTY_NAME: %q", inv.OSRelease.PrettyName)
 	}
 	if inv.Sanitizer == nil {
-		t.Fatal("Sanitize removed characters but no counts were recorded; A.3 forbids dropping characters without a count")
+		t.Fatal("Sanitize removed characters but no counts were recorded; the sanitizer forbids dropping characters without a count")
 	}
 	if inv.Sanitizer["zero_width_bidi"] == 0 && inv.Sanitizer["html_comments"] == 0 {
 		t.Errorf("the sanitizer counts do not mention the removals: %+v", inv.Sanitizer)
@@ -3585,11 +3593,11 @@ func TestCollectRefusesANilContext(t *testing.T) {
 	}
 }
 
-// TestFindingSeedsProjectTheInventory checks the shape A.17's comparator
+// TestFindingSeedsProjectTheInventory checks the shape the comparator
 // consumes, including the two things it must NOT contain: a source/source_id
 // (only a component that read an advisory may fill those) and a fingerprint
 // (anvil-fp/v1 is defined once, in internal/record, and Lane A must not invent
-// a second — plan/00-SPINE.md S6).
+// a second — the spine's record section).
 func TestFindingSeedsProjectTheInventory(t *testing.T) {
 	inv := mustCollect(t, testCollector(t, "", map[queryID][]byte{
 		queryDpkgList: []byte("openssl\t3.0.11-1\tamd64\tii \n"),
@@ -3653,9 +3661,10 @@ func TestCappedBufferStopsAtItsLimit(t *testing.T) {
 const unitExecStart = "/usr/lib/anvil/anvil-host-collector"
 
 // unitCollectorMain is the main package that has to exist for unitExecStart to
-// be a real path rather than a promise. A.12's M4: the unit named a binary
-// that did not exist anywhere in the repository, and a unit that cannot start
-// is worse than no unit because it reads as deployed.
+// be a real path rather than a promise. The read-only-boundary review's finding
+// M4: the unit named a binary that did not exist anywhere in the repository,
+// and a unit that cannot start is worse than no unit because it reads as
+// deployed.
 const unitCollectorMain = "anvil-host-collector"
 
 // parsedUnit is a systemd unit read as directives.
@@ -3724,10 +3733,11 @@ func stripSystemdExecPrefixes(value string) (command string, escalators []string
 // ExecStart: ExecCondition=, ExecStartPre=, ExecStart=, ExecStartPost=,
 // ExecReload=, ExecStop= and ExecStopPost=. The previous check collected
 // `ExecStart` alone and then looked at execStart[0], so it examined one
-// directive out of seven and one occurrence out of however many. A.12 proved
-// it: a unit with `ExecStartPre=/usr/bin/apt-get install -y anvil-host-deps`,
-// an ExecStartPost going through /bin/sh, and `ExecStopPost=/usr/bin/dpkg
-// --configure -a` reported zero violations.
+// directive out of seven and one occurrence out of however many. The
+// read-only-boundary review proved it: a unit with
+// `ExecStartPre=/usr/bin/apt-get install -y anvil-host-deps`, an ExecStartPost
+// going through /bin/sh, and `ExecStopPost=/usr/bin/dpkg --configure -a`
+// reported zero violations.
 //
 // Every key beginning with "Exec" is treated as executing — a superset of the
 // seven, so a directive systemd adds later is covered before anyone hears of
@@ -3797,8 +3807,8 @@ func checkUnitExecDirectives(u parsedUnit) []string {
 }
 
 // TestTheUnitGuardScansEveryExecDirective is B2's negative control, and it is
-// A.12's probe verbatim. The previous guard reported zero violations for this
-// unit body.
+// the read-only-boundary review's probe verbatim. The previous guard reported
+// zero violations for this unit body.
 func TestTheUnitGuardScansEveryExecDirective(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"a mutating ExecStartPre", "[Service]\nExecStartPre=/usr/bin/apt-get install -y anvil-host-deps\nExecStart=" + unitExecStart + "\n"},
@@ -3898,9 +3908,10 @@ func TestSystemdUnitIsAOneshotWithTheRequiredConfinement(t *testing.T) {
 			"this unit exists to prevent", values)
 	}
 
-	// A.12 m3: the unit's own network and syscall confinement was never
-	// asserted, so the comment claiming "the collector makes NO network calls"
-	// rested on a line that could be deleted with the suite staying green.
+	// The read-only-boundary review's finding m3: the unit's own network and
+	// syscall confinement was never asserted, so the comment claiming "the
+	// collector makes NO network calls" rested on a line that could be deleted
+	// with the suite staying green.
 	for key, want := range map[string]string{
 		"RestrictAddressFamilies": "AF_UNIX",
 		"SecureBits":              "noroot-locked",
@@ -3927,11 +3938,11 @@ func TestSystemdUnitIsAOneshotWithTheRequiredConfinement(t *testing.T) {
 			"@privileged @resources", values)
 	}
 
-	// A.12 M4: ExecStart named a binary that existed nowhere in the
-	// repository, so the unit could not start and A.9's stop condition
-	// ("collector runs to completion under a non-root UID") could not be
-	// demonstrated at all. It is shipped now, and this is what keeps the unit
-	// and the binary from drifting apart again.
+	// The read-only-boundary review's finding M4: ExecStart named a binary that
+	// existed nowhere in the repository, so the unit could not start and the
+	// host collector's stop condition ("collector runs to completion under a
+	// non-root UID") could not be demonstrated at all. It is shipped now, and
+	// this is what keeps the unit and the binary from drifting apart again.
 	mainDir := filepath.Join("..", "..", "..", "cmd", unitCollectorMain)
 	if _, err := os.Stat(filepath.Join(mainDir, "main.go")); err != nil {
 		t.Fatalf("the unit's ExecStart is %s but cmd/%s does not exist (%v). A unit that cannot start is worse "+
@@ -3988,7 +3999,7 @@ func TestTheCollectorBinaryIsSubjectToTheSameGuards(t *testing.T) {
 	}
 	// Its import set is an ALLOWLIST too, for the same reason this package's
 	// is: `flag` is the one that matters most — a command-line flag on the
-	// binary is the same flag as a field on Options, and S7's "not behind a
+	// binary is the same flag as a field on Options, and the spine's "not behind a
 	// flag" is a statement about what may exist — but naming only the imports
 	// somebody thought of is the mistake this file is repairing.
 	permittedMainImports := map[string]bool{
@@ -4027,14 +4038,15 @@ func TestPackageDependenciesStayCollectorShaped(t *testing.T) {
 		if errors.As(err, &ee) {
 			stderr = string(ee.Stderr)
 		}
-		// A.12 m4: this used to t.Skipf here, so the only test standing
-		// between the shipped collector and modernc.org/sqlite, net/http or
-		// internal/store reported SUCCESS in exactly the environment where it
-		// could not check — a hermetic build, a container with no toolchain, a
-		// CI job with a broken PATH. A guard that vanishes silently when it
-		// cannot run is worse than no guard, because the green tick is read as
-		// an answer. There is deliberately no opt-out env var: an opt-out is a
-		// flag, and a flag is what somebody sets to make the red go away.
+		// the read-only-boundary review's finding m4: this used to t.Skipf
+		// here, so the only test standing between the shipped collector and
+		// modernc.org/sqlite, net/http or internal/store reported SUCCESS in
+		// exactly the environment where it could not check — a hermetic build,
+		// a container with no toolchain, a CI job with a broken PATH. A guard
+		// that vanishes silently when it cannot run is worse than no guard,
+		// because the green tick is read as an answer. There is deliberately no
+		// opt-out env var: an opt-out is a flag, and a flag is what somebody
+		// sets to make the red go away.
 		t.Fatalf("cannot run `go list -deps .`, so the collector's dependency shape is UNCHECKED: %v\n%s\n\n"+
 			"This test fails rather than skips on purpose. Run it in an environment with the Go toolchain "+
 			"available, and with -count=1: `go list`'s result is not tracked by Go's test cache and this "+
@@ -4077,7 +4089,7 @@ func TestPackageDependenciesStayCollectorShaped(t *testing.T) {
 // graph that imports one of these has that ability, whether or not this
 // repository wrote it.
 var forbiddenGraphImports = map[string]string{
-	"os/exec":     "Go's process API; it exists to do the thing plan/00-SPINE.md S7 forbids",
+	"os/exec":     "Go's process API; it exists to do the thing the spine's safety section forbids",
 	"syscall":     "syscall.Exec, ForkExec and StartProcess spawn without going anywhere near os/exec",
 	"plugin":      "plugin.Open loads foreign code into this process and runs its init functions",
 	"runtime/cgo": "cgo links a C toolchain's output into the binary, and no Go source analysis can read it",
@@ -4186,10 +4198,11 @@ func TestNoPackageInTheImportGraphCanSpawnAProcess(t *testing.T) {
 				if errors.As(err, &ee) {
 					stderr = string(ee.Stderr)
 				}
-				// It FAILS rather than skips, for the reason A.12's m4 recorded
-				// about the sibling test: a guard that vanishes silently when it
-				// cannot run is worse than no guard, because the green tick is
-				// read as an answer.
+				// It FAILS rather than skips, for the reason the
+				// read-only-boundary review's finding m4 recorded about the
+				// sibling test: a guard that vanishes silently when it cannot
+				// run is worse than no guard, because the green tick is read as
+				// an answer.
 				t.Fatalf("cannot run `go list -deps .` in %s, so the import graph is UNCHECKED: %v\n%s",
 					target.dir, err, stderr)
 			}
@@ -4250,7 +4263,7 @@ func TestNoPackageInTheImportGraphCanSpawnAProcess(t *testing.T) {
 // The invariant that matters is the second one. ANVIL'S OWN CODE GETS EXACTLY
 // ONE EXCEPTION, and it is the collector's single sanctioned exec site. A
 // second first-party package appearing here means the product has grown a
-// second place that can start a process, which is the thing plan/00-SPINE.md S7
+// second place that can start a process, which is the thing the spine's safety section
 // is about — and it must not be possible to do that by editing a map quietly.
 func TestEveryPermittedGraphEdgeStatesItsReason(t *testing.T) {
 	const modulePath = "github.com/Susquehanna-Syntax/Anvil/"

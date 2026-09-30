@@ -1,4 +1,4 @@
-// D.24 — the authenticated-crawl helper.
+// The authentication helper for the authenticated crawl.
 //
 // THIS IS THE ONE FILE IN THE DYNAMIC TIER THAT HOLDS A CREDENTIAL, so it is
 // the one file where getting logging wrong is itself the vulnerability. Two
@@ -161,7 +161,7 @@
 //	driver's claim, and a claim is not an observation. A Session reaches
 //	AuthStateAuthenticated only after CheckLiveness — a request Anvil itself
 //	pushed through NewRequestIntent, RequireAuthorization and AuditedAdmit —
-//	comes back alive. That is ruling 7's rule ("only an observation Anvil
+//	comes back alive. That is the inventory ruling's rule ("only an observation Anvil
 //	made through the kernel confirms") applied to a session instead of to an
 //	endpoint. A driver that returns SessionEstablished:true and cannot then
 //	be observed logged in produces AuthStateAuthenticationFailed.
@@ -174,7 +174,7 @@
 //	knows where — and only a window bracketed by two passes is
 //	AuthStateAuthenticated. AuthState.AuthenticatedCoverage() is an allowlist
 //	of exactly one value, so every other state, including the zero value,
-//	answers false. D.26 joins a CrawlVisit's At() against this.
+//	answers false. Coverage reporting joins a CrawlVisit's At() against this.
 //
 // # Everything still goes through the kernel
 //
@@ -198,7 +198,7 @@
 //
 // # What this file does not do
 //
-// It does not parse .anvil/target.yaml. D.1 (internal/dast/target) parses and
+// It does not parse .anvil/target.yaml. The target manifest (internal/dast/target) parses and
 // validates the `auth` section — method is an allowlist of one value, steps_ref
 // is path-checked and repo-contained — and AuthStepsFromManifest reads that
 // result rather than the file.
@@ -209,7 +209,7 @@
 // module has no YAML parser (see RefusalYAMLUnsupported), so
 // SystemAuthStepLoader always refuses on every host today.
 //
-// It holds no socket and cannot: D.9's gate 3 tier 1 makes that structural.
+// It holds no socket and cannot: the build-time guard's gate 3 tier 1 makes that structural.
 // The browser lives behind AuthDriver, and the obligations on an implementer
 // are stated on that interface and enforced nowhere here — the same shape
 // ClientSpider and engines.ZapRunner have, and the same integration lane owes
@@ -442,7 +442,7 @@ func (s Secret) MarshalText() ([]byte, error) { return nil, ErrSecretMarshalled 
 
 // AuthStepKind is one step of a browser-based login flow.
 //
-// The five literals are plan/50-dast.md D.24's own list. They are ZAP
+// The five literals are the authentication helper design's own list. They are ZAP
 // Authentication Helper step types; this module does not drive ZAP on any host
 // it has measured, so the mapping from these names to ZAP's configuration is
 // the integration lane's to prove and is NOT claimed here.
@@ -450,7 +450,7 @@ func (s Secret) MarshalText() ([]byte, error) { return nil, ErrSecretMarshalled 
 // AUTO_STEPS is on the list and is not a contradiction of "never
 // autodetection". It is an EXPLICITLY REQUESTED step that performs the
 // packaged username-and-password fill at a point the operator chose. What
-// D.24 forbids is letting ZAP work out the whole login flow by itself; a step
+// the authentication helper forbids is letting ZAP work out the whole login flow by itself; a step
 // list containing AUTO_STEPS is still a step list somebody wrote.
 type AuthStepKind string
 
@@ -542,13 +542,13 @@ type AuthSteps struct {
 
 // NewAuthSteps validates a step list and seals it.
 //
-// method must be target.AuthMethodBrowser — D.1's allowlist of one — and is
+// method must be target.AuthMethodBrowser — the target manifest's allowlist of one — and is
 // re-checked here rather than trusted, because AuthSteps can also be built
 // from a step list that never came through a Manifest at all.
 //
 // An EMPTY step list is refused. An empty list is autodetection under another
 // name: it asks the driver to work the login out for itself, which is the one
-// thing D.24 forbids.
+// thing the authentication helper forbids.
 //
 // A list with no secret-bearing step is refused. A login flow that submits no
 // credential is not a login flow, and a session it produced could not honestly
@@ -556,7 +556,7 @@ type AuthSteps struct {
 func NewAuthSteps(method, sourceRef string, steps []AuthStep) (AuthSteps, error) {
 	if method != target.AuthMethodBrowser {
 		return AuthSteps{}, fmt.Errorf("inventory: %w: auth.method is %q and the only "+
-			"method D.1 accepts is %q", ErrRefused, redact(method), target.AuthMethodBrowser)
+			"method the target manifest accepts is %q", ErrRefused, redact(method), target.AuthMethodBrowser)
 	}
 	if strings.TrimSpace(sourceRef) == "" {
 		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list names no source. A "+
@@ -566,7 +566,7 @@ func NewAuthSteps(method, sourceRef string, steps []AuthStep) (AuthSteps, error)
 	if len(steps) == 0 {
 		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list is empty. An empty "+
 			"list is autodetection under another name — it asks the driver to work the "+
-			"login out for itself — and D.24 requires an explicit step list", ErrRefused)
+			"login out for itself — and the authentication helper requires an explicit step list", ErrRefused)
 	}
 	if len(steps) > codedMaxAuthSteps {
 		return AuthSteps{}, fmt.Errorf("inventory: %w: the step list has %d steps and the "+
@@ -719,14 +719,14 @@ func (a AuthSteps) stepBears(oneBased int) bool {
 // and MUST NOT retain the plaintext anywhere else.
 type AuthStepLoader interface {
 	// LoadAuthSteps reads the document at path — already resolved and
-	// repo-contained by D.1 — and returns the steps it declares.
+	// repo-contained by the target manifest — and returns the steps it declares.
 	LoadAuthSteps(ctx context.Context, path string) ([]AuthStep, error)
 }
 
 // SystemAuthStepLoader returns the loader this host can use.
 //
 // IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY. auth.steps_ref is a YAML
-// document (D.1's checkYAMLExt) and this module has no YAML parser — the same
+// document (the target manifest's checkYAMLExt) and this module has no YAML parser — the same
 // fact RefusalYAMLUnsupported records for Tier 0 spec bodies. Returning a
 // loader that produced an empty step list would be autodetection with extra
 // steps, and NewAuthSteps refuses an empty list anyway.
@@ -738,7 +738,7 @@ func SystemAuthStepLoader() (AuthStepLoader, error) {
 		"login can be attempted", ErrNoAuthStepLoader)
 }
 
-// AuthStepsFromManifest turns D.1's validated `auth` section into a sealed
+// AuthStepsFromManifest turns the target manifest's validated `auth` section into a sealed
 // step list.
 //
 // It re-parses nothing: internal/dast/target already validated that
@@ -773,7 +773,7 @@ func AuthStepsFromManifest(ctx context.Context, m *target.Manifest, repoRoot str
 		// The loader touched the credential document. Its error text is
 		// therefore treated as capable of containing a credential and is NOT
 		// forwarded — only the fact of failure and the manifest's own
-		// steps_ref, which D.1 validated and which Anvil wrote down.
+		// steps_ref, which the target manifest validated and which Anvil wrote down.
 		return AuthSteps{}, fmt.Errorf("inventory: %w: the AuthStepLoader failed on the "+
 			"document auth.steps_ref names (%q). Its error text is not reproduced here: "+
 			"it read a document that holds a credential",
@@ -922,9 +922,9 @@ type AuthDriver interface {
 
 // SystemAuthDriver returns the authentication driver this host can run.
 //
-// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY — and the error is D.15's
+// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY — and the error is the ZAP driver's
 // own, obtained by CALLING engines.SystemZapRunner rather than by asserting
-// what it would say. D.24's driver is ZAP's Authentication Helper; no ZAP
+// what it would say. The authentication helper's driver is ZAP's Authentication Helper; no ZAP
 // runner adapter is compiled into this module, so there is no Authentication
 // Helper either.
 //
@@ -941,7 +941,7 @@ func SystemAuthDriver() (AuthDriver, error) {
 			"an auth flow Anvil can drive are two different things, and the second one "+
 			"is missing", ErrNoAuthDriver)
 	}
-	return nil, fmt.Errorf("%w: D.24's driver is ZAP's Authentication Helper and ZAP is "+
+	return nil, fmt.Errorf("%w: the authentication helper's driver is ZAP's Authentication Helper and ZAP is "+
 		"not drivable here: %w", ErrNoAuthDriver, err)
 }
 
@@ -950,7 +950,7 @@ func SystemAuthDriver() (AuthDriver, error) {
 // ---------------------------------------------------------------------------
 
 // AuthArtifactKind is one kind of authentication-report artifact.
-// plan/50-dast.md D.24: "screenshots + HTTP + storage".
+// The authentication helper's design: "screenshots + HTTP + storage".
 type AuthArtifactKind string
 
 const (
@@ -1111,7 +1111,7 @@ func (a StoredArtifact) Bytes() []byte {
 
 // ArtifactSink stores the authentication report.
 //
-// plan/50-dast.md D.24 requires every run to store the report for
+// The authentication helper's design requires every run to store the report for
 // diagnosability. A nil sink is therefore a recorded refusal on every
 // artifact, never a silent drop: a report nobody kept and a login that
 // produced no artifacts are different findings.
@@ -1221,7 +1221,7 @@ func (rep AuthReport) AssertNoCredentialWasFound() error {
 }
 
 // ---------------------------------------------------------------------------
-// AuthState — the provenance D.26 consumes
+// AuthState — the provenance coverage reporting consumes
 // ---------------------------------------------------------------------------
 
 // AuthState labels what a stretch of a run's coverage means.
@@ -1231,8 +1231,8 @@ func (rep AuthReport) AssertNoCredentialWasFound() error {
 // internal/record has no session vocabulary today — InventoryProvenance says
 // how an endpoint was FOUND, not whether Anvil was logged in when it found it.
 // So this is declared here and FLAGGED TO THE ORCHESTRATOR for hoisting into
-// internal/record beside InventoryProvenance if D.26 needs it in the record,
-// exactly as D.23's ScanTrigger was. Until then this is the one place the
+// internal/record beside InventoryProvenance if coverage reporting needs it in the record,
+// exactly as the crawl's ScanTrigger was. Until then this is the one place the
 // vocabulary is written.
 //
 // # The zero value is not a value
@@ -1517,7 +1517,7 @@ type AuthConfig struct {
 	// LivenessPath is a path that REQUIRES authentication. Required, no
 	// default: a liveness check against a public path answers 200 forever
 	// and would report a dead session as alive, which is the exact failure
-	// D.24 exists to detect.
+	// the authentication helper exists to detect.
 	LivenessPath string
 
 	// AliveStatuses is the allowlist of statuses that mean "still logged
@@ -1902,7 +1902,7 @@ func (s *Session) StateAt(t time.Time) AuthState {
 // # Why the second field exists
 //
 // StateAt answers a question about the SESSION — was it alive at this instant.
-// D.26 was reading that answer as a question about the REQUEST — was this
+// Coverage reporting was reading that answer as a question about the REQUEST — was this
 // visit authenticated — and those are different claims joined by nothing but
 // wall-clock overlap. A crawl request issued while a session happened to be
 // alive is not an authenticated request; it is a request that happened at the
@@ -2023,7 +2023,7 @@ func (s *Session) CoverageAt(c CoverageInstant) AuthState {
 }
 
 // PartitionByState counts observations by the state each maps to. It is the
-// shape D.26 needs: a crawl's visits in, a labelled breakdown out.
+// shape coverage reporting needs: a crawl's visits in, a labelled breakdown out.
 func (s *Session) PartitionByState(instants []CoverageInstant) map[AuthState]int {
 	out := map[AuthState]int{}
 	for _, c := range instants {
@@ -2143,7 +2143,7 @@ func (s *Session) AssertNoCredentialInLedger() error {
 // AssertReportRetained returns an error when a login ran and NOTHING of its
 // authentication report was stored.
 //
-// plan/50-dast.md D.24 requires every run to store the report. A run that
+// The authentication helper's design requires every run to store the report. A run that
 // stored nothing is not automatically a defect — every artifact may have been
 // a suppressed screenshot — so this names which it was rather than passing on
 // len(x) > 0.
@@ -2157,7 +2157,7 @@ func (s *Session) AssertReportRetained() error {
 	}
 	if s.report.Offered() == 0 {
 		return fmt.Errorf("inventory: %w: %d credential submission(s) ran and the driver "+
-			"produced NO report artifact. D.24 requires screenshots, HTTP and storage on "+
+			"produced NO report artifact. The authentication helper requires screenshots, HTTP and storage on "+
 			"every run: a login nobody can diagnose is the shape research/22's Risk #7 "+
 			"takes", ErrRefused, s.attempts)
 	}
@@ -2199,17 +2199,17 @@ func UnauthenticatedSession(now authz.Clock) *Session {
 // AuthenticateAndMonitor
 // ---------------------------------------------------------------------------
 
-// AuthenticateAndMonitor is D.24: run the explicit login flow, store the
+// AuthenticateAndMonitor is the authentication helper: run the explicit login flow, store the
 // authentication report, and OBSERVE the resulting session through the kernel.
 //
 // # Signature
 //
-// plan/50-dast.md D.24 writes it `AuthenticateAndMonitor(target *Target, steps
+// The authentication helper's design writes it `AuthenticateAndMonitor(target *Target, steps
 // AuthSteps) (*Session, error)`. There is no `*Target` in this package — the
 // kernel's authz.Target is the type, and it is one of a dozen things an
 // authenticated request needs — so the target, the steps and the kernel
-// objects arrive in an AuthConfig, exactly as D.18's Config, D.22's
-// ConfirmConfig and D.23's CrawlConfig do. The ctx and the run clock are
+// objects arrive in an AuthConfig, exactly as the runtime spec probe's Config, route confirmation's
+// ConfirmConfig and the crawl's CrawlConfig do. The ctx and the run clock are
 // explicit for the same reason CrawlWithClientSpider's are.
 //
 // # It returns a Session AND an error together, on failure
@@ -2398,7 +2398,7 @@ func (s *Session) lastEventAt(fallback time.Time) time.Time {
 }
 
 // admit runs one request through NewRequestIntent, RequireAuthorization and
-// GateAudit.AuditedAdmit — the same three calls D.22's probeOne and D.23's
+// GateAudit.AuditedAdmit — the same three calls route confirmation's probeOne and the crawl's
 // crawlOne make, in the same order.
 func (s *Session) admit(method authz.Method, path string, at authz.Clock) (
 	*authz.Lease, authz.AuditSeq, error) {
@@ -2462,7 +2462,7 @@ func isHTTPStatus(code int) bool { return code >= minStatusCode && code <= maxSt
 //
 // # Signature
 //
-// plan/50-dast.md D.24 writes it `CheckLiveness(session *Session) (bool,
+// The authentication helper's design writes it `CheckLiveness(session *Session) (bool,
 // error)`. The ctx and the run clock are explicit here for the reason
 // CrawlWithClientSpider's are: a request that leaves the process needs a
 // cancellation and an instant gate 14 can meter against, and reading either
@@ -2477,7 +2477,7 @@ func isHTTPStatus(code int) bool { return code >= minStatusCode && code <= maxSt
 // return false. There is no path through this function on which an
 // unanswerable question becomes "alive".
 //
-// D.24 forbids relying on ZAP's logout-avoidance option as a substitute for
+// The authentication helper forbids relying on ZAP's logout-avoidance option as a substitute for
 // this: research 22 records that it does not cover the Client Spider, so the
 // component that would keep the session alive is not the component the crawl
 // runs through.
@@ -2599,7 +2599,7 @@ func (s *Session) bouncesToLogin(location string) bool {
 // EnsureSessionBeforePhase
 // ---------------------------------------------------------------------------
 
-// EnsureSessionBeforePhase is the between-phases call D.24 specifies: check
+// EnsureSessionBeforePhase is the between-phases call the authentication helper specifies: check
 // liveness, and force AuthenticateAndMonitor's login again on failure.
 //
 // It is the ONLY thing that turns a mid-scan logout into a recovered session,
@@ -2879,7 +2879,7 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //
 // AN AMBIGUOUS INPUT IS READ EVERY WAY AND ANY READING THAT CONTAINS THE SECRET
 // REFUSES — AND IT IS READ EVERY WAY AT THE STEP WHERE THE AMBIGUITY ARISES,
-// not where the answer is consumed. That distinction is the whole of ruling 11
+// not where the answer is consumed. That distinction is the whole of the branch-at-the-step ruling
 // and it was got wrong once already: containsUnderEveryReading took the union
 // over readings, but it took it over a FORM that decodeEntities had produced by
 // picking the greedy reading, so the union existed at encoding depth 0 and
@@ -3224,7 +3224,7 @@ const codedSweepStepReadings = 3 + 2*8
 //	by an earlier decoder before the later one could see the form containing
 //	it. `pa\nssw0rd` under one percent layer is `pa%5Cnssw0rd`: decodePercent
 //	produces the secret exactly, and decodeBackslash in the same pass eats it.
-//	Six of the ten realistic secret shapes in d24EscapeShapedSecrets were lost
+//	Six of the ten realistic secret shapes in authEscapeShapedSecrets were lost
 //	that way under ONE percent layer — a base64 secret carries '+' and '/', a
 //	secret out of a JSON config carries a backslash, a key lifted out of a URL
 //	carries a '%'.
@@ -3344,7 +3344,7 @@ func sweepForms(s string) []string {
 }
 
 // decodeStep returns every reading of s that ONE decoder produces, excluding s
-// itself. It is the step function ruling 11 requires: a pass returns a set.
+// itself. It is the step function the branch-at-the-step ruling requires: a pass returns a set.
 //
 // The decoders are applied SEPARATELY rather than composed, because composing
 // them inside one step is what destroyed a secret whose own bytes are an

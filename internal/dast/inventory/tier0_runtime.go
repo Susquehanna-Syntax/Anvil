@@ -2,16 +2,16 @@
 // endpoints the DAST tier believes a target exposes, and — for every one of
 // them — WHERE THAT BELIEF CAME FROM and WHETHER ANVIL CONFIRMED IT.
 //
-// This file is packet D.18: Tier 0, the runtime spec route.
+// This file is the runtime spec probe: Tier 0, the runtime spec route.
 //
 // ===========================================================================
 // THE TWO AXES, AND WHY NEITHER MAY BE DEFAULTED
 // ===========================================================================
 //
-// plan/50-dast.md's Coverage Reporting Contract (line 1154) defines
+// plan/design/dynamic-tier.md's Coverage Reporting Contract (line 1154) defines
 // `inventory_provenance` as a PER-ROUTE enum {runtime_spec, repo_spec,
 // static_extraction, crawl} PLUS confirmed/candidate, "aggregated to a
-// record-level summary in D.26. This is what makes the SAST->DAST handoff
+// record-level summary in coverage reporting. This is what makes the SAST->DAST handoff
 // auditable."
 //
 // Those are two independent axes and this package treats them as two fields:
@@ -19,7 +19,7 @@
 //	Route.Provenance()   record.InventoryProvenance -- which tier found it
 //	Route.Confirmation() Confirmation               -- did Anvil observe it
 //
-// The reason they cannot be defaulted is arithmetic. plan/50-dast.md:1152
+// The reason they cannot be defaulted is arithmetic. plan/design/dynamic-tier.md:1152
 // defines `endpoint_coverage` as confirmed-probed endpoints divided by the
 // union of the Tier 0-2 inventory, and says in bold "Never a raw request
 // count." A candidate endpoint that reads as confirmed moves into the
@@ -62,7 +62,7 @@
 // The question TrustLevel answers is 'who wrote these bytes', never 'who
 // assigned this field'."
 //
-// DEVIATION FROM plan/50-dast.md:606-608, stated rather than hidden. That
+// DEVIATION FROM plan/design/dynamic-tier.md:606-608, stated rather than hidden. That
 // block says every Tier 0 route is "status: confirmed (a spec straight from
 // the running service is definitionally confirmed, not a candidate)". This
 // file does not do that, on the orchestrator's standing instruction, and the
@@ -79,9 +79,9 @@
 // ===========================================================================
 //
 // Fetching a spec is a request, so it goes through the kernel like any other.
-// D.9's gate 3 tier 1 fails the build if any package under internal/dast
+// The build-time guard's gate 3 tier 1 fails the build if any package under internal/dast
 // outside internal/dast/authz imports something that can construct a
-// connection, with no allowlist. So Tier 0 is shaped the way D.14's Nuclei
+// connection, with no allowlist. So Tier 0 is shaped the way the Nuclei
 // driver is shaped, deliberately and for the same reason:
 //
 //	Probe builds an authz.RequestIntent per endpoint
@@ -104,14 +104,14 @@
 // chain contains Gate11RobotsDeny, and nothing is registered for it — so the
 // chain refuses every target there and NO Authorization can be constructed
 // from outside package authz. internal/SKIPPED-CONTROLS.md U4 records this.
-// The consequence for D.18 is exact: Probe's admit-and-fetch path cannot reach
+// The consequence for the runtime spec probe is exact: Probe's admit-and-fetch path cannot reach
 // a fetcher today, and every test of it asserts a refusal.
 //
 // That is why this file splits the packet in two. ParseSpec takes an
 // authz.Target — which authz.NewTarget builds without any authorization,
 // because it is gate 8/9's OUTPUT and not a permission — and is therefore
 // FULLY exercisable now, including the kernel's own path validation. The
-// parameter-typed extraction plan/50-dast.md:610 asks for is proven against
+// parameter-typed extraction plan/design/dynamic-tier.md:610 asks for is proven against
 // fixtures today; only the socket half waits on gate 11. There is no t.Skip in
 // this package.
 //
@@ -119,7 +119,7 @@
 // THE PROBE LIST IS CONFIGURATION AND THERE IS NO DEFAULT
 // ===========================================================================
 //
-// plan/50-dast.md:601 forbids hard-coding the spec-endpoint list (the spine's
+// plan/design/dynamic-tier.md:601 forbids hard-coding the spec-endpoint list (the spine's
 // "nothing about trigger/policy may be hard-coded", applied to the endpoint
 // list itself). EndpointList has one constructor, it refuses an empty list,
 // and no function in this file returns a populated one. The guard is not that
@@ -133,8 +133,8 @@
 // WHAT THE THREE LATER PACKETS INHERIT
 // ===========================================================================
 //
-// D.18 is first into this package. Route, RouteFacts, NewRoute, Param,
-// Confirmation, Refusal and Result are tier-NEUTRAL and belong to D.19
+// The runtime spec probe is first into this package. Route, RouteFacts, NewRoute, Param,
+// Confirmation, Refusal and Result are tier-NEUTRAL and belong to the repo spec reader
 // (repo_spec), the static-extraction packet and the crawl packet equally.
 // Three rules they inherit, each enforced by NewRoute rather than by
 // documentation:
@@ -148,7 +148,7 @@
 //     authz.RequestIntent, rather than by a second path validator in this
 //     package that could disagree with the kernel's.
 //
-// Sources: plan/50-dast.md D.18 (lines 595-616) and the Coverage Reporting
+// Sources: the runtime spec probe's design (lines 595-616) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 319-323; internal/record/contract.go (InventoryProvenance, Trust,
 // DastCoverage).
@@ -229,13 +229,13 @@ const (
 //
 // # Why this is declared here and not in internal/record
 //
-// internal/record owns every shared enum (its package doc: "area 40 owns every
+// internal/record owns every shared enum (its package doc: "The record area owns every
 // shared enum, because it owns the record contract, and no other area may
 // declare one"). record.InventoryProvenance is there for exactly that reason.
 // The confirmed/candidate axis is NOT — record carries it as two aggregate
 // counters, DastCoverage.ConfirmedCount and DastCoverage.CandidateCount, with
 // no enum behind them. The literals below are chosen to match those counter
-// names exactly, so D.26's aggregation is a partition of this enum and not a
+// names exactly, so coverage reporting's aggregation is a partition of this enum and not a
 // mapping. FLAGGED TO THE ORCHESTRATOR as a candidate addition to
 // internal/record/contract.go alongside InventoryProvenance; until it lands,
 // this declaration is the one place the vocabulary is written.
@@ -345,7 +345,7 @@ type Param struct {
 }
 
 // Typed reports whether the document actually declared a type for this
-// parameter. plan/50-dast.md:610 asks for "full parameter-typed route
+// parameter. plan/design/dynamic-tier.md:610 asks for "full parameter-typed route
 // extraction"; this is the predicate that makes the claim measurable rather
 // than asserted.
 func (p Param) Typed() bool { return p.Type != "" }
@@ -439,14 +439,14 @@ type Route struct {
 func NewRoute(f RouteFacts) (Route, error) {
 	if !f.Provenance.Valid() {
 		return Route{}, fmt.Errorf("inventory: %w: inventory_provenance is %q, which is not "+
-			"one of %v. plan/50-dast.md:1154 makes provenance PER ROUTE and D.26 aggregates "+
+			"one of %v. plan/design/dynamic-tier.md:1154 makes provenance PER ROUTE and coverage reporting aggregates "+
 			"it into the record; a route whose provenance nobody set is not a weaker route, "+
 			"it is an unattributable one",
 			ErrRefused, redact(string(f.Provenance)), record.InventoryProvenanceValues())
 	}
 	if !f.Confirmation.Valid() {
 		return Route{}, fmt.Errorf("inventory: %w: confirmation is %q, which is not one of "+
-			"%v. endpoint_coverage (plan/50-dast.md:1152) is confirmed-probed endpoints over "+
+			"%v. endpoint_coverage (plan/design/dynamic-tier.md:1152) is confirmed-probed endpoints over "+
 			"the Tier 0-2 union, so an unset confirmation would either inflate the numerator "+
 			"or vanish from the denominator depending on who read it",
 			ErrRefused, redact(string(f.Confirmation)), ConfirmationValues())
@@ -607,7 +607,7 @@ func (r Route) FullyTyped() bool {
 }
 
 // Key is the route's identity within the inventory: method, path and
-// operation. It is what D.26 must deduplicate the Tier 0-2 union on, and it is
+// operation. It is what coverage reporting must deduplicate the Tier 0-2 union on, and it is
 // a method here rather than a convention there so the two cannot drift.
 //
 // The separator is a NUL byte, which cannot appear in any of the three
@@ -781,10 +781,10 @@ func (r RefusalReason) PerOperation() bool { return perOperationReasons()[r] }
 // Refusal is one thing the inventory saw and did not turn into a Route.
 //
 // It is RETURNED rather than logged, and that is a coverage decision rather
-// than a diagnostics one. plan/50-dast.md:1152 divides confirmed-probed
+// than a diagnostics one. plan/design/dynamic-tier.md:1152 divides confirmed-probed
 // endpoints by the Tier 0-2 union; an operation this tier could not represent
 // is attack surface that exists, and dropping it silently SHRINKS the
-// denominator, which makes coverage look better. Refusals travel so D.26 can
+// denominator, which makes coverage look better. Refusals travel so coverage reporting can
 // count them.
 type Refusal struct {
 	// Endpoint is the well-known spec path being probed, or "" for a
@@ -862,7 +862,7 @@ func redact(s string) string {
 
 // EndpointList is the configured set of well-known spec paths to probe.
 //
-// plan/50-dast.md:601 forbids hard-coding it. The enforcement is structural in
+// plan/design/dynamic-tier.md:601 forbids hard-coding it. The enforcement is structural in
 // three parts:
 //
 //  1. There is exactly one constructor and it takes the list.
@@ -886,7 +886,7 @@ type EndpointList struct {
 func NewEndpointList(paths []string) (EndpointList, error) {
 	if len(paths) == 0 {
 		return EndpointList{}, fmt.Errorf("inventory: %w: the spec-endpoint probe list is "+
-			"empty. plan/50-dast.md forbids a hard-coded list, so there is no default to "+
+			"empty. plan/design/dynamic-tier.md forbids a hard-coded list, so there is no default to "+
 			"fall back to and an empty list probes nothing rather than probing the usual "+
 			"suspects", ErrRefused)
 	}
@@ -1064,7 +1064,7 @@ type ParseResult struct {
 
 // AssertAccountedFor checks the identity above.
 //
-// It is exported because it is a claim D.26 and the integration harness should
+// It is exported because it is a claim coverage reporting and the integration harness should
 // be able to re-check, not merely a test helper: a parser change that starts
 // dropping operations silently is a coverage inflation, and it should be
 // catchable from outside this package.
@@ -1934,7 +1934,7 @@ type SpecResponse struct {
 //
 // # Why this is an interface and not a function that dials
 //
-// D.9's gate 3 tier 1: a socket constructed inside internal/dast outside
+// The build-time guard's gate 3 tier 1: a socket constructed inside internal/dast outside
 // internal/dast/authz fails the build, with no allowlist. This package
 // therefore cannot dial, cannot hold an http.Client, and cannot import a
 // package that could. The implementation lives on the far side of that
@@ -2007,7 +2007,7 @@ func (r Result) ProbedSpecEndpoints() []string {
 	return out
 }
 
-// DenominatorFloor is the smallest number of endpoints D.26 may use in the
+// DenominatorFloor is the smallest number of endpoints coverage reporting may use in the
 // Tier 0 half of endpoint_coverage's denominator.
 //
 // It is len(routes) PLUS every per-operation refusal, and the addition is the
@@ -2076,7 +2076,7 @@ type Config struct {
 	Fetcher SpecFetcher
 }
 
-// Prober is D.18: the Tier 0 runtime spec probe.
+// Prober is the Tier 0 runtime spec probe.
 type Prober struct {
 	cfg    Config
 	sealed bool
@@ -2098,7 +2098,7 @@ func NewProber(cfg Config) (*Prober, error) {
 	}
 	if !cfg.Endpoints.Constructed() {
 		return nil, fmt.Errorf("inventory: %w: the prober was handed an EndpointList "+
-			"NewEndpointList never built. plan/50-dast.md forbids a hard-coded probe list "+
+			"NewEndpointList never built. plan/design/dynamic-tier.md forbids a hard-coded probe list "+
 			"and there is therefore no default to substitute", ErrUnconstructed)
 	}
 	if !cfg.Target.Constructed() {
@@ -2297,12 +2297,13 @@ func (p *Prober) Probe(ctx context.Context, now authz.Clock) (Result, error) {
 	return out, nil
 }
 
-// ProbeRuntimeSpecs is plan/50-dast.md D.18's named entry point.
+// ProbeRuntimeSpecs is the entry point the runtime spec probe's design names.
 //
 // DEVIATION, stated: the plan's expected schema is
 // `ProbeRuntimeSpecs(target *Target, endpoints []string) ([]Route, error)`.
-// Three things about it could not survive contact with D.9's kernel and D.14's
-// established seam, and each is a refusal this signature makes impossible:
+// Three things about it could not survive contact with the kernel's build-time
+// guard and the nuclei driver's established seam, and each is a refusal this
+// signature makes impossible:
 //
 //   - A bare `target` cannot issue a request. Every request in Anvil goes
 //     through a Governor and a GateAudit against an Authorization, so those
@@ -2325,7 +2326,7 @@ func ProbeRuntimeSpecs(ctx context.Context, cfg Config, now authz.Clock) (Result
 //
 // authz.LimitBody is the kernel's, and it refuses AT THE BYTE that crosses the
 // cap rather than after io.ReadAll has already put the whole thing on the
-// heap. The response body is plan/00-SPINE.md S7's highest-risk field; a
+// heap. The response body is the spine's highest-risk field; a
 // resource-exhaustion probe pointed at Anvil is still a resource-exhaustion
 // probe.
 func readBounded(r io.Reader) ([]byte, error) {

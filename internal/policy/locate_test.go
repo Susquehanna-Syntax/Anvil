@@ -169,7 +169,7 @@ func TestLocateEmptyRootNotFoundNamesCurrentDirectory(t *testing.T) {
 }
 
 // TestSearchOrderIsTheDocumentedOrder pins the list itself. The order is a
-// published contract (research/09 Recommendation 2, and the O.8 Action
+// published contract (research/09 Recommendation 2, and the GitHub Action
 // re-implements the lookup on the runner), so reordering it must break a test,
 // not just a habit.
 func TestSearchOrderIsTheDocumentedOrder(t *testing.T) {
@@ -209,7 +209,7 @@ func TestSearchOrderReturnsACopy(t *testing.T) {
 }
 
 // TestSchemaIdentifiersAreStable guards the constants other areas consume. If
-// the schema's $id or path changes, the Action (O.8) and area D must change
+// the schema's $id or path changes, the Action (the GitHub Action) and the dynamic tier must change
 // with it, so the change should be deliberate.
 func TestSchemaIdentifiersAreStable(t *testing.T) {
 	if SchemaPath != "schemas/policy.schema.json" {

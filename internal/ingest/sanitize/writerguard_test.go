@@ -5,16 +5,16 @@
 // WHY THIS FILE EXISTS
 // ===========================================================================
 //
-// A.3's stop condition is a claim about EVERY write path into `advisory`,
-// `affected` and `advisory_fts`. A.5 checked it and found the claim true and
+// The sanitizer's stop condition is a claim about EVERY write path into `advisory`,
+// `affected` and `advisory_fts`. The sanitizer review checked it and found the claim true and
 // worthless: there is no writer. `internal/ingest/cache` exports statement
 // TEXTS and migration plumbing; nothing in the repository binds a parameter to
 // UpsertAdvisorySQL outside cache's own tests. So the obligation lived in two
 // comments — cache/schema.go:50-53 and :483-486 — which is the shape
-// plan/00-SPINE.md S7 names as the thing to avoid: "enforce in code, not
+// the spine's safety section names as the thing to avoid: "enforce in code, not
 // documentation".
 //
-// This guard is what can be enforced from inside A.3's write scope. It walks
+// This guard is what can be enforced from inside the sanitizer's write scope. It walks
 // the AST of every package under internal/ingest and asks one question of
 // every function:
 //
@@ -72,7 +72,7 @@
 //     question this cannot answer, and pretending otherwise would manufacture
 //     the confidence the package comment warns about. The real fix is a
 //     signature: a writer that takes record.TrustedString cannot be handed a
-//     raw string at all, and that is A.7/A.8's to build.
+//     raw string at all, and that is the poller and the bulk bootstrap's to build.
 //   - PACKAGE-LOCAL CALL GRAPH ONLY. A helper in another package is not
 //     followed; only the callee NAME is matched. A writer that puts its bind
 //     in package P and its Sanitize call in package Q is flagged (P's graph
@@ -130,7 +130,7 @@ var wgAdvisoryWriteShapes = map[string]bool{
 var wgAdvisoryWriteSQL = regexp.MustCompile(`(?is)\b(insert|replace|update)\b.{0,160}?\b(advisory|advisory_fts|affected)\b`)
 
 // wgSanitizeEntries are the callee names that mean "this call graph went
-// through A.3". They are matched as CALLEE names on a call whose result is
+// through the sanitizer". They are matched as CALLEE names on a call whose result is
 // used, exactly as the read-gate guard matches its gate names: a mention is
 // not a call, and a discarded result is not obedience.
 var wgSanitizeEntries = map[string]bool{
@@ -143,7 +143,7 @@ var wgSanitizeEntries = map[string]bool{
 }
 
 // wgExemption is one allowlist entry: why this write site does not need to
-// reach A.3, and the hash of the BODY that claim was made about. A rewritten
+// reach the sanitizer, and the hash of the BODY that claim was made about. A rewritten
 // body expires the exemption, so a reason cannot be inherited by code nobody
 // re-read.
 type wgExemption struct {
@@ -420,9 +420,9 @@ type wgVerdict int
 const (
 	// wgNoWriteSite: this call graph never names an advisory write shape.
 	wgNoWriteSite wgVerdict = iota
-	// wgSanitized: it does, and the same call graph reaches A.3.
+	// wgSanitized: it does, and the same call graph reaches the sanitizer.
 	wgSanitized
-	// wgUnsanitized: it does, and nothing in the call graph reaches A.3.
+	// wgUnsanitized: it does, and nothing in the call graph reaches the sanitizer.
 	// This is the finding.
 	wgUnsanitized
 )
@@ -512,11 +512,12 @@ func wgCheckExemption(idx *wgIndex, key string, ex wgExemption) error {
 // function under internal/ingest that binds an advisory write shape without
 // its call graph reaching this package.
 //
-// IT FLAGS NOTHING TODAY. That is not a pass in the sense that matters — A.3's
-// stop condition is CARRIED FORWARD UNMET to A.7/A.8, and no reader should
-// record this test's green run as having verified the ingest property at
-// system level. What a green run does say is: as of this commit, no writer
-// exists that skips Sanitize, and the next one cannot be added silently.
+// IT FLAGS NOTHING TODAY. That is not a pass in the sense that matters — the sanitizer's
+// stop condition is CARRIED FORWARD UNMET to the poller and the bulk bootstrap,
+// and no reader should record this test's green run as having verified the
+// ingest property at system level. What a green run does say is: as of this
+// commit, no writer exists that skips Sanitize, and the next one cannot be
+// added silently.
 func TestNoIngestWriterBindsAnUnsanitizedString(t *testing.T) {
 	allow := wgAllowlist()
 	used := map[string]bool{}
@@ -551,7 +552,7 @@ func TestNoIngestWriterBindsAnUnsanitizedString(t *testing.T) {
 				"    stamps anvil/trust) or sanitize.Sanitize, and call sanitize.AssertAllSanitized\n"+
 				"    on the field map before binding. If this function structurally cannot bind\n"+
 				"    external text, add it to wgAllowlist WITH A REASON and its body hash.\n"+
-				"    plan/00-SPINE.md S7: sanitize at ingest, not at prompt time.",
+				"    the spine's safety section: sanitize at ingest, not at prompt time.",
 				full, idx.pkg, idx.file[key], detail)
 		}
 	}
@@ -573,9 +574,9 @@ func TestNoIngestWriterBindsAnUnsanitizedString(t *testing.T) {
 	t.Logf("writer guard: %d functions scanned, %d bind an advisory write shape (%d reach "+
 		"sanitize, %d allowlisted)", scanned, writeSites, sanitized, len(used))
 	if writeSites == 0 {
-		t.Logf("NO WRITER EXISTS YET. A.3's stop condition — every write path into advisory, " +
+		t.Logf("NO WRITER EXISTS YET. The sanitizer's stop condition — every write path into advisory, " +
 			"affected and advisory_fts — is satisfied VACUOUSLY and is carried forward to " +
-			"A.7/A.8 unmet. Do not record it as verified.")
+			"the poller and the bulk bootstrap unmet. Do not record it as verified.")
 	}
 }
 
@@ -621,7 +622,7 @@ func wgPackageDirs(t *testing.T, root string) []string {
 
 // wgLeakProbeSource is the writer someone will actually write: a poller that
 // unmarshals a feed, takes the description straight out of the JSON, and binds
-// it to UpsertAdvisorySQL. It is the shape A.5 said the stop condition was
+// it to UpsertAdvisorySQL. It is the shape the sanitizer review said the stop condition was
 // supposed to be about, and it lives here as source text so the guard is
 // exercised against it on every run.
 //
@@ -677,7 +678,7 @@ func (w *Writer) bindClean(source, description string) error {
 
 // TestTheWriterGuardCatchesAWriterThatSkipsSanitize is the control that keeps
 // the guard from being a test that cannot fail — which is precisely the defect
-// A.5 found in TestCommentPassLimitFailsClosed, and the reason this file
+// the sanitizer review found in TestCommentPassLimitFailsClosed, and the reason this file
 // ships with probes rather than with an empty scan and a green tick.
 //
 // Four shapes, all of which must be flagged:
@@ -709,7 +710,7 @@ func TestTheWriterGuardCatchesAWriterThatSkipsSanitize(t *testing.T) {
 			case wgUnsanitized:
 				t.Logf("flagged, correctly: %s (%s)", key, detail)
 			case wgSanitized:
-				t.Errorf("%s classifies as sanitized: the analysis believes it reaches A.3. It "+
+				t.Errorf("%s classifies as sanitized: the analysis believes it reaches the sanitizer. It "+
 					"does not — it binds a raw string.", key)
 			case wgNoWriteSite:
 				t.Errorf("%s classifies as no-write-site: the analysis cannot see that it binds "+

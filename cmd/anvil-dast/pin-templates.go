@@ -1,10 +1,10 @@
-// This file is plan step D.17: supply-chain pinning for the nuclei-templates
+// This file is template pinning: supply-chain pinning for the nuclei-templates
 // corpus.
 //
 // # The failure this prevents
 //
 // research/23-dast-signal-sources.md Risk #3 is supply-chain poisoning of the
-// template corpus, and plan/00-SPINE.md S7 answers it with one sentence: "Pin
+// template corpus, and the spine's safety section answers it with one sentence: "Pin
 // nuclei-templates by commit SHA and diff before promotion." The corpus is
 // roughly ten thousand YAML files maintained by people Anvil has no
 // relationship with, and `nuclei -update-templates` against a moving `main` is
@@ -19,7 +19,7 @@
 //
 // Nothing here promotes on a clean diff. A clean diff is a precondition for a
 // human being asked; it is not an approval, and there is no flag that makes it
-// one. plan/50-dast.md D.17's Forbidden actions say so in as many words.
+// one. Template pinning's design says so in as many words.
 //
 // # Why the pin is a SHA and never a ref
 //
@@ -42,7 +42,7 @@
 // # What decides whether a template is dangerous
 //
 // Not this file. internal/dast/engines.LoadTemplates already owns that
-// judgement, by an allowlist matched on identity, and D.14 built it so that a
+// judgement, by an allowlist matched on identity, and the nuclei driver built it so that a
 // `code:` template is refused at load time. This job calls it on BOTH trees
 // and diffs the results, which means the definition of "dangerous" lives in
 // exactly one place and this file cannot drift from it.
@@ -91,7 +91,7 @@ import (
 //	                                data/LICENSES/nuclei-templates/LICENSE
 //
 // The licence was read as a FILE BODY out of the repository at the pinned
-// commit, per plan/00-SPINE.md S8 -- not from a repository-metadata field,
+// commit, per the spine's licence section -- not from a repository-metadata field,
 // which is the route that returns NOASSERTION over a real licence and, in one
 // audited case, a permissive tag over a restrictive body.
 //
@@ -126,7 +126,7 @@ const (
 	archivedLicencePath = "data/LICENSES/nuclei-templates/LICENSE"
 
 	// archivedLicenceSPDX is the identifier for the body that was actually
-	// read. It agrees with plan/50-dast.md's Pinned Versions And Licences
+	// read. It agrees with plan/design/dynamic-tier.md's Pinned Versions And Licences
 	// table ("MIT"), and it was derived from the text, not from the table.
 	archivedLicenceSPDX = "MIT"
 
@@ -211,7 +211,7 @@ func (p Pin) Valid() error {
 // SourceForm renders the constant block a promotion requires a human to paste
 // into this file.
 //
-// This is the "explicit promotion step" of plan/50-dast.md D.17's expected
+// This is the "explicit promotion step" of template pinning's design expected
 // output schema, made as awkward as it deserves to be. The job computes the
 // new pin; a person commits it.
 func (p Pin) SourceForm() string {
@@ -346,7 +346,7 @@ type CorpusSource interface {
 // gitSource is the production CorpusSource. It shells out.
 //
 // A subprocess rather than a Go git library on purpose: the module has one
-// direct requirement (modernc.org/sqlite) and plan/00-SPINE.md's dependency
+// direct requirement (modernc.org/sqlite) and plan/design/spine.md's dependency
 // posture is that anything entering the graph is reviewed. `git` is already a
 // build-host requirement, so this adds no dependency at all -- and if it is
 // absent, that fact is reported rather than absorbed.
@@ -494,7 +494,7 @@ func (e TemplateEntry) Protocols() []engines.Protocol {
 	return out
 }
 
-// Snapshot is one corpus tree, loaded through the D.14 template loader.
+// Snapshot is one corpus tree, loaded through the nuclei driver's template loader.
 //
 // The zero value is not a snapshot. Constructed says so, and Diff refuses one,
 // because a Snapshot{} has no admitted templates and no rejections -- which,
@@ -555,7 +555,7 @@ func (s Snapshot) Rejected() map[string]engines.RejectedTemplate {
 // IT IS THE ROOT, and that is a decision rather than a default.
 //
 // The obvious alternative is to scan only `http/`, since that is the one
-// upstream directory whose templates the D.14 loader can admit at all --
+// upstream directory whose templates the nuclei driver's loader can admit at all --
 // everything under code/, javascript/, headless/, network/, dns/, file/,
 // ssl/, dast/ and cloud/ is refused by the protocol allowlist, and scanning
 // the root therefore files thousands of pre-existing refusals plus every
@@ -567,12 +567,12 @@ func (s Snapshot) Rejected() map[string]engines.RejectedTemplate {
 //
 //  1. A CHECK THAT CANNOT SEE THE DAMAGE IS NOT A CHECK. Scoping to `http/`
 //     means a `code:` template landing in any other directory is invisible to
-//     this gate, and plan/50-dast.md D.17 says "rejects any new `code:`
+//     this gate, and template pinning's design says "rejects any new `code:`
 //     protocol template in the diff outright" -- in the diff, not in one
 //     directory of it.
 //  2. Which subdirectories the scan engine actually points LoadTemplates at
-//     is not decided anywhere in this tree today; plan step O.16 owns wiring
-//     the scan, and D.14's LoadTemplates takes a directory from its caller.
+//     is not decided anywhere in this tree today; the dynamic tier's entrypoint owns wiring
+//     the scan, and the nuclei driver's LoadTemplates takes a directory from its caller.
 //     A gate whose scope is a guess about another packet's future decision is
 //     a gate that silently narrows the day that decision is made. The root is
 //     the superset, and a superset cannot be narrowed by someone else.
@@ -747,7 +747,7 @@ const (
 // blockingRejections is the set of loader refusals that stop a promotion
 // outright, by identity.
 //
-// It is EXACTLY the spine S5 hard exclusion, and the narrowness is deliberate
+// It is EXACTLY the spine's hard exclusion, and the narrowness is deliberate
 // rather than an oversight, so it is worth saying what is NOT here and why.
 // Upstream ships thousands of `javascript:`, `flow:`, `headless:` and
 // `self-contained:` templates and adds more every week; every one is already
@@ -758,7 +758,7 @@ const (
 // They are not ignored: every one appears in the report's NewRejections
 // section by name and reason, and the promotion still requires a human who
 // has that report in front of them. What differs is that a `code:` template
-// is the one an approval CANNOT wave through, because spine S5 excludes the
+// is the one an approval CANNOT wave through, because the spine's exclusion list excludes the
 // protocol outright and no operator has standing to override a spine
 // exclusion from a command line.
 func blockingRejections() map[engines.RejectionReason]bool {
@@ -785,7 +785,7 @@ func (b Block) String() string {
 	return s
 }
 
-// DiffReport is the artifact plan/50-dast.md D.17 requires: what changed
+// DiffReport is the artifact template pinning's design requires: what changed
 // between the pinned commit and the fetched one, and whether anything in it
 // forbids promotion.
 //
@@ -893,7 +893,7 @@ func Diff(pin Pin, from, to Snapshot, lic LicenceProbe) (DiffReport, error) {
 				Reason:  BlockNewCodeProtocolTemplate,
 				Subject: path,
 				Detail: fmt.Sprintf("the loader refused this file with reason %q; "+
-					"plan/00-SPINE.md S5 excludes the `code:` protocol outright, "+
+					"The spine's exclusion list excludes the `code:` protocol outright, "+
 					"and a snapshot that introduces one is not promotable by any "+
 					"approval", rej.Reason),
 			})
@@ -1025,7 +1025,7 @@ type Approval struct {
 // Promote computes the new pin, or refuses.
 //
 // It does NOT write this file, and there is no flag that makes it. It returns
-// the Pin a human must commit. plan/50-dast.md D.17 forbids automatic
+// the Pin a human must commit. Template pinning's design forbids automatic
 // promotion on a clean diff, and the way to be sure a job never promotes
 // itself is for it to have no code that can.
 func Promote(r DiffReport, ap Approval, upstreamLicence LicenceProbe) (Pin, error) {

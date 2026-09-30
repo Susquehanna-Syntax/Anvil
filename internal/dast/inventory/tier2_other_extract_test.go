@@ -1,11 +1,11 @@
-// Tests for D.21, Tier 2 of the attack-surface inventory: static route
+// Tests for non-Go route extraction, Tier 2 of the attack-surface inventory: static route
 // extraction from Express, Flask, FastAPI, Django, Spring and Rails.
 //
 // ===========================================================================
 // WHAT THIS SUITE IS FOR
 // ===========================================================================
 //
-// Four claims are load-bearing for D.21, and each is measured here rather than
+// Four claims are load-bearing for non-Go route extraction, and each is measured here rather than
 // asserted in a comment.
 //
 //  1. SIX FRAMEWORKS PRODUCE THEIR KNOWN ROUTE TABLES. Every fixture in
@@ -15,7 +15,7 @@
 //     only that the code is deterministic.
 //
 //  2. EVERY FIXTURE CARRIES AN INTENTIONALLY-INVISIBLE ROUTE AND SAYS SO.
-//     plan/50-dast.md D.21's Validation clause. Each fixture contains a
+//     Non-Go route extraction's design Validation clause. Each fixture contains a
 //     computed path, a computed method, an unfollowable mount or a
 //     method-agnostic registration, and the test asserts the matching
 //     CoverageCaveat is present rather than that the route silently vanished.
@@ -142,7 +142,7 @@ type otherFixture struct {
 	// want is the route table, written out by reading src.
 	want []string
 	// invisible names the intentionally-invisible constructs in src and the
-	// caveat each must produce. plan/50-dast.md D.21's Validation clause.
+	// caveat each must produce. Non-Go route extraction's design Validation clause.
 	invisible map[CaveatReason]string
 }
 
@@ -485,7 +485,7 @@ end
 	}
 }
 
-// TestFrameworkFixturesProduceTheirKnownRouteTables is D.21's stop condition,
+// TestFrameworkFixturesProduceTheirKnownRouteTables is non-Go route extraction's stop condition,
 // executable: "Five frameworks produce candidate route lists with honest
 // coverage caveats on fixtures." Six rows, because Flask and FastAPI are
 // separate DSLs read by separate code.
@@ -514,7 +514,7 @@ func TestFrameworkFixturesProduceTheirKnownRouteTables(t *testing.T) {
 	}
 }
 
-// TestEveryFixtureReportsItsInvisibleRoutes is plan/50-dast.md D.21's
+// TestEveryFixtureReportsItsInvisibleRoutes is non-Go route extraction's design
 // Validation clause: "each test must include at least one
 // intentionally-invisible route ... and assert the extractor reports a
 // non-empty coverage_caveat rather than silently under-reporting."
@@ -546,7 +546,7 @@ func TestEveryFixtureReportsItsInvisibleRoutes(t *testing.T) {
 	}
 }
 
-// TestNoNonGoRouteIsEverConfirmed is D.21's Forbidden-actions clause.
+// TestNoNonGoRouteIsEverConfirmed is non-Go route extraction's Forbidden-actions clause.
 func TestNoNonGoRouteIsEverConfirmed(t *testing.T) {
 	for _, fx := range nonGoFixtures() {
 		t.Run(fx.name, func(t *testing.T) {
@@ -566,7 +566,7 @@ func TestNoNonGoRouteIsEverConfirmed(t *testing.T) {
 				}
 				if r.Operation() != "" {
 					t.Fatalf("%s carries operation %q; Route.Key() includes the "+
-						"operation and D.26 deduplicates the union on it", r, r.Operation())
+						"operation and coverage reporting deduplicates the union on it", r, r.Operation())
 				}
 			}
 		})
@@ -917,7 +917,7 @@ func TestUnrecognisedFileTypesDoNotFireTheDenominatorAlarm(t *testing.T) {
 }
 
 // TestGoFileOfferedHereIsNotAGap: a .go file routed to the wrong extractor is
-// a caller mistake, not a hole in Anvil's language coverage. D.20 reads it.
+// a caller mistake, not a hole in Anvil's language coverage. Go route extraction reads it.
 func TestGoFileOfferedHereIsNotAGap(t *testing.T) {
 	res := extractOne(t, "main.go", "package main\nfunc main() {}\n")
 	if err := res.AssertDenominatorIsComplete(); err != nil {
@@ -936,7 +936,7 @@ func TestGoFileOfferedHereIsNotAGap(t *testing.T) {
 // Guessing, and refusing to guess
 // ---------------------------------------------------------------------------
 
-// TestRouterReceiverIsNeverGuessed is D.20's rule carried across: guessing is
+// TestRouterReceiverIsNeverGuessed is Go route extraction's rule carried across: guessing is
 // how cache.get("user:1") becomes an endpoint.
 //
 // The negatives are paired with a positive control on a BOUND router in the
@@ -1081,7 +1081,7 @@ func TestUnterminatedStringIsReportedNotIgnored(t *testing.T) {
 // TestUnbalancedRailsBlockDiscardsItsRoutes. Every prefix in a routes.rb comes
 // from the do/end scope stack. If the stack is wrong, every prefix is wrong,
 // and a candidate at a path the target does not serve reads as the target's
-// fault when D.22 cannot confirm it. The routes are DROPPED and the drop is
+// fault when route confirmation cannot confirm it. The routes are DROPPED and the drop is
 // reported.
 func TestUnbalancedRailsBlockDiscardsItsRoutes(t *testing.T) {
 	const balanced = `
@@ -1280,7 +1280,7 @@ app.use('/root', a);
 }
 
 // TestAnUnmountedExpressRouterIsEmittedAndFlagged. The route is still a
-// candidate -- D.22 confirms it -- but the caller's prefix is invisible, and a
+// candidate -- route confirmation confirms it -- but the caller's prefix is invisible, and a
 // candidate at a path the target does not serve must not read as the target's
 // fault.
 func TestAnUnmountedExpressRouterIsEmittedAndFlagged(t *testing.T) {
@@ -1550,7 +1550,7 @@ func TestDenominatorFloorCountsWhatItSays(t *testing.T) {
 	}
 }
 
-// TestSourceOfTracesACandidateBackToItsFile. A candidate D.22 cannot confirm
+// TestSourceOfTracesACandidateBackToItsFile. A candidate route confirmation cannot confirm
 // is unreviewable without it.
 func TestSourceOfTracesACandidateBackToItsFile(t *testing.T) {
 	res := extractOne(t, "app/views.py", nonGoFixtures()[1].src)
@@ -1604,7 +1604,7 @@ func TestCancelledContextDoesNotReportAPartialInventory(t *testing.T) {
 }
 
 // TestNonGoCaveatCarriesItsFrameworkAndStaysAValidCoverageCaveat. The embedded
-// value is what D.26 consumes, so it has to keep working.
+// value is what coverage reporting consumes, so it has to keep working.
 func TestNonGoCaveatCarriesItsFrameworkAndStaysAValidCoverageCaveat(t *testing.T) {
 	fx := nonGoFixtures()[5] // rails
 	res := extractOne(t, fx.uri, fx.src)
@@ -1637,7 +1637,7 @@ func TestNonGoCaveatCarriesItsFrameworkAndStaysAValidCoverageCaveat(t *testing.T
 // No code path in this package can produce an ExtractedNonGoRoute with an
 // unset framework -- fileWalk.emit always passes a constant -- so breaking the
 // check in toRoute left the whole suite GREEN, which is a finding about the
-// suite and not a licence to delete the check: unlike D.20's deleted method
+// suite and not a licence to delete the check: unlike Go route extraction's deleted method
 // allowlist, nothing downstream re-checks this. NewRoute never sees the
 // framework, so an unset one would simply land in FrameworkMix under the empty
 // key and a route would be attributed to nothing.
@@ -1673,7 +1673,7 @@ func TestAdmitRefusesARouteThatNamesNoFramework(t *testing.T) {
 		})
 		if len(acc.routes) != 0 {
 			t.Fatalf("framework %q produced a route; FrameworkMix would attribute it "+
-				"to nothing and D.22 could not say which extractor to blame when it "+
+				"to nothing and route confirmation could not say which extractor to blame when it "+
 				"fails to confirm", fw)
 		}
 		if len(acc.refusals) != 1 || acc.refusals[0].Reason != RefusalRouteUnconstructible {

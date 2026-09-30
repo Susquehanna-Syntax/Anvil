@@ -218,7 +218,7 @@ func p1AssertRefused(t *testing.T, res GateResult, want GateID, wantReason Reaso
 		t.Fatalf("refusal does not unwrap to ErrRefused: %v", err)
 	}
 	if res.Failure() == nil {
-		t.Fatalf("the refusal carries no typed GateFailure; D.2's schema requires one "+
+		t.Fatalf("the refusal carries no typed GateFailure; the kernel core's schema requires one "+
 			"(%s)", want)
 	}
 	named, err := res.Failure().Reason.Gate()
@@ -360,7 +360,7 @@ func TestScopeHashIsOverTheExactBytes(t *testing.T) {
 }
 
 // TestGate4RefusesEveryMalformedScopeFile is the deny-by-default corpus
-// plan/50-dast.md D.4 requires: "malformed scope file → zero targets".
+// run initiation's design requires: "malformed scope file → zero targets".
 //
 // Every case asserts BOTH halves: gate 4 refuses, and the Scope it returned
 // permits nothing. A gate that refused but handed back a usable Scope would
@@ -521,7 +521,7 @@ func TestGate4RefusesEveryMalformedScopeFile(t *testing.T) {
 	}
 }
 
-// TestGate4NeverPutsUntrustedBytesInAMessage covers plan/00-SPINE.md S6/S7:
+// TestGate4NeverPutsUntrustedBytesInAMessage covers the spine's record and safety sections:
 // a scope file is untrusted input and a GateFailure's Detail is Anvil-authored
 // text that may end up in an audit row and from there in a prompt.
 func TestGate4NeverPutsUntrustedBytesInAMessage(t *testing.T) {
@@ -686,7 +686,7 @@ func TestGate5AcceptsTheCanonicalAttestation(t *testing.T) {
 }
 
 // TestScopeEditInvalidatesTheAttestation is gate 5's whole purpose, and it is
-// named in D.4's validation requirements: "scope-hash mismatch after scope
+// named in run initiation's validation requirements: "scope-hash mismatch after scope
 // edit → attestation invalidated".
 func TestScopeEditInvalidatesTheAttestation(t *testing.T) {
 	original := p1Scope(t)
@@ -892,8 +892,9 @@ func TestAttestationCeilingMayOnlyBeLowered(t *testing.T) {
 	}
 }
 
-// TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction is D.3's CRITICAL 1
-// finding, written as the exact attack the critic compiled and ran.
+// TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction is the kernel-types
+// review's finding CRITICAL 1 finding, written as the exact attack the critic
+// compiled and ran.
 //
 // What the critic ran, verbatim:
 //
@@ -981,8 +982,8 @@ func TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction(t *testing.T) {
 	}
 }
 
-// TestNoExportedSurfaceMintsACap is the compile-fence half of D.3's CRITICAL 1
-// and D.9's MEDIUM 7.
+// TestNoExportedSurfaceMintsACap is the compile-fence half of the kernel-types
+// review's finding CRITICAL 1 and kernel review finding MEDIUM 7.
 //
 // A Go test cannot assert that another package fails to build, so it asserts
 // the property that made the critic's `authz.NewCap(10*365*24*time.Hour)` line
@@ -1020,7 +1021,7 @@ func TestNoExportedSurfaceMintsACap(t *testing.T) {
 		"method Cap.Lower": "the only operation a caller has on a Cap, and it tightens " +
 			"only: it refuses any value above the current effective cap, so a sequence " +
 			"of config layers cannot walk one back up.",
-		"func NewAttestation": "accepts a ceiling, which is the shape D.3's critic " +
+		"func NewAttestation": "accepts a ceiling, which is the shape the kernel-types review " +
 			"exploited — and re-checks the window against the compiled-in " +
 			"MaxAttestationLifetime regardless of what the ceiling says. " +
 			"TestTheCriticsForgedTenYearCeilingIsRefusedAtConstruction is the proof.",
@@ -1061,7 +1062,7 @@ func TestNoExportedSurfaceMintsACap(t *testing.T) {
 	for _, d := range found {
 		if _, ok := allowed[d.key]; !ok {
 			t.Errorf("%s:%s names a Cap on this package's EXPORTED surface and is not on "+
-				"the allowlist. D.3's critic minted a ten-year \"coded floor\" through "+
+				"the allowlist. The kernel-types review minted a ten-year \"coded floor\" through "+
 				"exactly such a declaration; a Cap must not be constructible above its "+
 				"coded floor by any caller, and a type alias re-exports the type "+
 				"entirely. If this declaration genuinely cannot mint or widen one, add "+
@@ -1112,7 +1113,7 @@ var HouseCeiling Cap[time.Duration]
 		"var HouseCeiling",
 	} {
 		if !keys[want] {
-			t.Errorf("the walk did not flag %q. That is one of the gaps D.9's critic "+
+			t.Errorf("the walk did not flag %q. That is one of the gaps the build-time guard's review "+
 				"demonstrated, so the allowlist above cannot catch its return", want)
 		}
 	}
@@ -1269,7 +1270,7 @@ func p1BaseTypeName(e ast.Expr) string {
 // a Cap.
 //
 // Parameters count, not only results. A function that ACCEPTS a caller-supplied
-// ceiling is the exact shape D.3's critic exploited — the ten-year Cap was
+// ceiling is the exact shape the kernel-types review exploited — the ten-year Cap was
 // handed to NewAttestation, not returned by it.
 func p1SignatureNamesACap(ft *ast.FuncType, aliases map[string]bool) bool {
 	for _, list := range []*ast.FieldList{ft.Params, ft.Results} {
@@ -1335,7 +1336,7 @@ func p1NamesACap(e ast.Expr, aliases map[string]bool) bool {
 // GATE 4 — THE CALLER'S BYTES ARE READ EXACTLY ONCE
 // ===========================================================================
 
-// TestGate4ReadsTheCallersScopeBytesExactlyOnce is D.9's HIGH 3, pinned.
+// TestGate4ReadsTheCallersScopeBytesExactlyOnce is kernel review finding HIGH 3, pinned.
 //
 // # What was measured
 //
@@ -1985,7 +1986,7 @@ func TestGate7PermitsAVerifiedWriteAuthorityTrigger(t *testing.T) {
 	}
 }
 
-// TestGate7RefusesForkPullRequests is the attack path D.4's packet names
+// TestGate7RefusesForkPullRequests is the attack path run initiation's design names
 // explicitly: "Gate 7 must refuse fork PRs and untrusted pull_request_target
 // contexts; that is a real GitHub Actions attack path."
 func TestGate7RefusesForkPullRequests(t *testing.T) {
@@ -2119,7 +2120,7 @@ func TestNoTriggerPolicyCanPermitAnIneligibleEvent(t *testing.T) {
 		t.Run(string(e), func(t *testing.T) {
 			p, err := NewTriggerPolicy(e)
 			if err == nil {
-				t.Fatalf("a policy permitting %q was constructed. D.4's forbidden "+
+				t.Fatalf("a policy permitting %q was constructed. Run initiation's forbidden "+
 					"actions rule out any documented exception here", e)
 			}
 			if !errors.Is(err, ErrRefused) {
@@ -2341,9 +2342,9 @@ func TestDefaultTriggerPolicyIsNarrow(t *testing.T) {
 // TestGate7CannotBeRegisteredAsAGateFunc is the tripwire on this packet's most
 // consequential decision, after the orchestrator ruled on it.
 //
-// D.4 refused to register gate 7 because trigger provenance is not a function
+// Run initiation refused to register gate 7 because trigger provenance is not a function
 // of (target, scope, attestation, clock), and escalated. The ruling: gate 7 is
-// a PHASE 1 RUN-INITIATION gate — plan/50-dast.md's own table puts it there —
+// a PHASE 1 RUN-INITIATION gate — plan/design/dynamic-tier.md's own table puts it there —
 // evaluated ONCE PER RUN before any target exists, so it does not belong in the
 // admission chain at all. It was removed from admissionChain, and registerInto
 // refuses it, so this is enforced rather than remembered.
@@ -2354,13 +2355,13 @@ func TestDefaultTriggerPolicyIsNarrow(t *testing.T) {
 func TestGate7CannotBeRegisteredAsAGateFunc(t *testing.T) {
 	for _, g := range []GateID{Gate4ScopeFile, Gate5Attestation, Gate6ModeDeclaration} {
 		if fn, ok := registry[g]; !ok || fn == nil {
-			t.Fatalf("%s has no implementation compiled in; D.4 registers it", g)
+			t.Fatalf("%s has no implementation compiled in; run initiation registers it", g)
 		}
 	}
 	if fn, ok := registry[Gate7TriggerProvenance]; ok && fn != nil {
 		t.Fatal("gate 7 has been registered as an admission gateFunc. Trigger provenance " +
 			"is not a function of (target, scope, attestation, clock) — the four " +
-			"parameters plan/00-SPINE.md S7 fixes — so any gateFunc for it either " +
+			"parameters the spine's safety section fixes — so any gateFunc for it either " +
 			"reads ambient state or can never refuse")
 	}
 	for _, g := range admissionChain {
@@ -2780,7 +2781,7 @@ func TestInitiateRunRefusesAtEveryGate(t *testing.T) {
 	}
 }
 
-// TestInitiateRunRequiresEveryGateBeforeEnabling records what D.3's critic
+// TestInitiateRunRequiresEveryGateBeforeEnabling records what the kernel-types review
 // asked for: EnableDAST now has a caller, and the enablement it mints is
 // unreachable unless all four Phase 1 gates passed first. Gate 7 is the last
 // one consulted, so refusing there is the sharpest form of the test.

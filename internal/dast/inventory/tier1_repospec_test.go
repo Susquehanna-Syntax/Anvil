@@ -1,4 +1,4 @@
-// Tests for D.19, Tier 1 of the attack-surface inventory.
+// Tests for the repo spec reader, Tier 1 of the attack-surface inventory.
 //
 // ===========================================================================
 // WHAT IS PROVEN HERE
@@ -11,7 +11,7 @@
 //
 //	all five input formats the packet names parse to Route lists — OpenAPI
 //	YAML, Swagger JSON, WSDL, GraphQL SDL, and a Postman collection converted
-//	to OpenAPI at ingest — in ONE ingest, which is D.19's stop condition
+//	to OpenAPI at ingest — in ONE ingest, which is the repo spec reader's stop condition
 //	the two axes: every Tier 1 route is repo_spec + candidate + untrusted, and
 //	the retag that stamps them cannot be made to launder a confirmed route
 //	gate 11's asymmetry against a REPOSITORY-AUTHORED file: an OpenAPI
@@ -130,7 +130,7 @@ func t1HasReason(refs []Refusal, want RefusalReason) bool {
 }
 
 // ===========================================================================
-// THE FIVE FORMATS — D.19's STOP CONDITION
+// THE FIVE FORMATS — the repo spec reader's STOP CONDITION
 // ===========================================================================
 
 // fixtureOpenAPIYAML exercises the block-YAML reader on the constructs a real
@@ -265,7 +265,7 @@ const fixturePostman = `{
  ]
 }`
 
-// TestAllFiveInputFormatsParseToRouteListsInOneIngest is D.19's stop
+// TestAllFiveInputFormatsParseToRouteListsInOneIngest is the repo spec reader's stop
 // condition, stated as one test: "All five input formats parse to Route lists;
 // Postman-to-OpenAPI conversion verified against a fixture collection."
 func TestAllFiveInputFormatsParseToRouteListsInOneIngest(t *testing.T) {
@@ -487,9 +487,9 @@ func TestPostmanIsConvertedToOpenAPIAtIngest(t *testing.T) {
 
 // TestEveryTier1RouteIsRepoSpecCandidateUntrusted sweeps every fixture.
 //
-// The two axes cannot be defaulted for the reason D.18 records: a candidate
+// The two axes cannot be defaulted for the reason the runtime spec probe records: a candidate
 // that reads as confirmed moves into the NUMERATOR of endpoint_coverage
-// (plan/50-dast.md:1152). For Tier 1 the pressure is specific — the plan text
+// (plan/design/dynamic-tier.md:1152). For Tier 1 the pressure is specific — the plan text
 // itself says a checked-in spec is "authoritative for what the developer
 // intended" — and a six-month-old openapi.yaml is exactly the input that would
 // hand Anvil a numerator full of endpoints that no longer exist.
@@ -508,7 +508,7 @@ func TestEveryTier1RouteIsRepoSpecCandidateUntrusted(t *testing.T) {
 						r.Provenance())
 				}
 				if r.Confirmation() != ConfirmationCandidate {
-					t.Errorf("route %s is %q. Confirmation is D.22's, on a non-404 "+
+					t.Errorf("route %s is %q. Confirmation is route confirmation's, on a non-404 "+
 						"response; a checked-in spec is a claim about a service Anvil "+
 						"has not touched", r, r.Confirmation())
 				}
@@ -520,7 +520,7 @@ func TestEveryTier1RouteIsRepoSpecCandidateUntrusted(t *testing.T) {
 				}
 				if r.ServedAt() != "" {
 					t.Errorf("route %s carries ServedAt %q. ServedAt is a well-known "+
-						"ENDPOINT and D.18 uses it as a request path; a repository "+
+						"ENDPOINT and the runtime spec probe uses it as a request path; a repository "+
 						"filename there is a filename where a later packet looks for an "+
 						"address", r, r.ServedAt())
 				}
@@ -1626,7 +1626,7 @@ var ingestResultReferenceFields = map[string]string{
 }
 
 var fileResultAllFields = map[string]string{
-	"ParseResult":            "D.18's, embedded; its Routes and Refusals are cloned by cloneFileResults",
+	"ParseResult":            "The runtime spec probe's, embedded; its Routes and Refusals are cloned by cloneFileResults",
 	"Location":               "a record.ArtifactLocation; its Index pointer is deep-copied",
 	"DeclaredFormat":         "a SpecFormat, which is a string; immutable",
 	"DeclaredFormatDiverged": "a bool; immutable",
@@ -1816,7 +1816,7 @@ func TestSpecFileBytesAreCopiedNotAliased(t *testing.T) {
 // ===========================================================================
 // THIS TIER CANNOT HARVEST, AND THE GUARD IS STRUCTURAL
 //
-// plan/50-dast.md:628-630: "Do not have this step or its dependents re-derive
+// plan/design/dynamic-tier.md:628-630: "Do not have this step or its dependents re-derive
 // spec harvesting from the repo directly — that is explicitly the SAST tier's
 // job." A comment saying so is not a control. Both halves below are
 // ALLOWLISTS, so the filesystem package nobody thought to ban and the glob
@@ -2060,7 +2060,7 @@ func TestZeroValuesOfTheTier1EnumsAreNotValues(t *testing.T) {
 // is outside this packet's write scope. Every refusal raised here therefore
 // has to come out of the existing set, and this sweep is what would notice a
 // new literal that Recognised() does not carry — a refusal that reports itself
-// invalid is a row D.26 has no bucket for.
+// invalid is a row coverage reporting has no bucket for.
 func TestEveryRefusalThisTierProducesIsRecognised(t *testing.T) {
 	seen := map[RefusalReason]int{}
 	for _, fx := range everyTier1Fixture() {
@@ -2123,7 +2123,7 @@ func TestIngestIsDeterministic(t *testing.T) {
 }
 
 // TestATier1ResultComposesIntoARecordDastCoverage. The point of the two axes
-// is what D.26 does with them; this checks the arithmetic actually validates
+// is what coverage reporting does with them; this checks the arithmetic actually validates
 // against internal/record rather than merely looking plausible here.
 func TestATier1ResultComposesIntoARecordDastCoverage(t *testing.T) {
 	files := []SpecFile{
@@ -2163,7 +2163,7 @@ func TestATier1ResultComposesIntoARecordDastCoverage(t *testing.T) {
 	}
 	if confirmed != 0 {
 		t.Fatalf("Tier 1 contributed %d confirmed endpoints to the numerator. It probes "+
-			"nothing; every one of them is D.22's to promote", confirmed)
+			"nothing; every one of them is route confirmation's to promote", confirmed)
 	}
 	if cov.EndpointCoverage != 0 {
 		t.Fatalf("a repository whose spec files were merely READ reports %v coverage",

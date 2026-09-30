@@ -11,8 +11,8 @@
 #   1. .github/workflows/ci.yml does not run golangci-lint. CI runs gofmt,
 #      go vet, go build and `go test -race -count=1 ./...`. So on the machine
 #      that decides whether a change lands, the rules below are inert until a
-#      lint job is added -- and ci.yml is outside plan step D.9's write scope,
-#      so D.9 could not add one.
+#      lint job is added -- and ci.yml is outside the build-time guard's write scope,
+#      so the kernel's build-time guard could not add one.
 #   2. Rule `egress-choke-point` below is a DENYLIST, and a denylist loses. It
 #      names net, net/http, crypto/tls and the ones we thought of. It does not
 #      know about the networking package that appears in Go 1.28, or a
@@ -28,7 +28,7 @@
 #                                                   imports, whole-repo scan
 #   internal/dast/authz/kernel_depgraph_test.go     gate 2, `go list -deps`,
 #                                                   resolved by import PATH
-#   cmd/anvil/split_test.go                         S9-AMENDED artifact split
+#   cmd/anvil/split_test.go                         the two-artifact split
 #
 # If a rule here and a test there ever disagree, the test is right.
 #
@@ -61,7 +61,7 @@ linters:
         # inference package reached two hops away through an innocently named
         # intermediary. The test can, and has a fixture proving it.
         #
-        # plan/00-SPINE.md S7: the authorization kernel is "compiled separately
+        # The spine's safety section: the authorization kernel is "compiled separately
         # from the model runtime, with a build-time test that fails if the
         # dependency graph inverts. No model ever holds a network handle."
         # -------------------------------------------------------------------
@@ -74,21 +74,21 @@ linters:
             - github.com/Susquehanna-Syntax/Anvil/internal/dast
             - github.com/Susquehanna-Syntax/Anvil/internal/record
           deny:
-            # Redundant against strict mode, and kept for the message. S7
+            # Redundant against strict mode, and kept for the message. The spine's safety section
             # names these three shapes; a contributor who trips one should be
             # told which rule they tripped, not just that their import is
             # unlisted.
             - pkg: github.com/Susquehanna-Syntax/Anvil/internal/inference
               desc: >-
-                S7: the authorization kernel is compiled separately from the
+                the spine's safety section: the authorization kernel is compiled separately from the
                 model runtime. No model ever holds a network handle.
             - pkg: github.com/Susquehanna-Syntax/Anvil/internal/model
               desc: >-
-                S7: the authorization kernel is compiled separately from the
+                the spine's safety section: the authorization kernel is compiled separately from the
                 model runtime. No model ever holds a network handle.
             - pkg: github.com/Susquehanna-Syntax/Anvil/internal/llm
               desc: >-
-                S7: the authorization kernel is compiled separately from the
+                the spine's safety section: the authorization kernel is compiled separately from the
                 model runtime. No model ever holds a network handle.
 
         # -------------------------------------------------------------------

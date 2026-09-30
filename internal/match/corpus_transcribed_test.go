@@ -362,7 +362,7 @@ var dpkgTranscribed = []vector{
 // apk-tools: test/unit/version.data, every ordering row (738)
 // ---------------------------------------------------------------------------
 //
-// This is the section A.18 called the weakest of the three, on the grounds that
+// This is the section the comparator review called the weakest of the three, on the grounds that
 // not one apk vector had ever been diffed against apk's own fixture. All 738 of
 // them now ARE that fixture: 674 pass, 64 are refused for the reasons in the
 // Note constants above, and none produce a wrong ordering.

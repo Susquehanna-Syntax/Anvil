@@ -8,7 +8,7 @@ appear in neither file's body.
 ## How every entry here was determined
 
 **By reading the LICENSE file body in the Go module cache at the pinned version — never from registry
-metadata.** `plan/00-SPINE.md` §S8 requires this, and the reason is concrete: seven artifacts in
+metadata.** The spine's licence section requires this, and the reason is concrete: seven artifacts in
 `research/13-license-compatibility-audit.md` return `NOASSERTION` over a real licence, and one
 (`fdtn-ai/Foundation-Sec-8B`) is tagged `apache-2.0` on Hugging Face while its own `NOTICE.md` places the
 weights under the Llama 3.1 Community License. Metadata is not evidence.
@@ -52,7 +52,7 @@ therefore pinned by `go.sum` and move only when the sqlite pin moves.
 > permission.
 
 Clause 3 is a **conduct duty**, not a file duty: Anvil's marketing and contributor guidelines must not
-imply endorsement by any of these projects. `plan/spine-b-open-licences.md` A4 records the same duty for
+imply endorsement by any of these projects. `plan/design/spine-open-licences.md` (Valkey) records the same duty for
 Valkey.
 
 ### MIT — required notice
@@ -63,13 +63,13 @@ Valkey.
 
 ## `modernc.org/sqlite` — two things worth recording
 
-**Its licence was an open item and is now closed.** `plan/40-record-and-storage.md`'s Pinned Versions
+**Its licence was an open item and is now closed.** `plan/design/record-and-store.md`'s Pinned Versions
 table listed it as *"Requires reading the LICENSE file body at pin time — not independently re-verified
 in this pass."* It has now been read: **BSD-3-Clause**, hash above.
 
 **Its FTS5 support was spine-locked on grade-B evidence and is now directly verified.**
-`plan/00-SPINE.md` §S12 asserted FTS5 support as "orchestrator-verified", while the trail behind that
-claim (`plan/spine-c-language.md` C5–C7) graded itself B, *"absence-of-evidence, not
+The spine's Go control-plane decision asserted FTS5 support as "orchestrator-verified", while the trail behind that
+claim (the modernc.org/sqlite source rows in `plan/design/spine-language.md`) graded itself B, *"absence-of-evidence, not
 evidence-of-absence"*. At Phase 0 bootstrap the claim was tested directly against the pinned version:
 
 ```
@@ -82,14 +82,14 @@ RESULT: FTS5 VERIFIED WORKING
 The SQLite amalgamation itself is public domain, which is why it is absent from the table above; the Go
 translation carries the BSD-3-Clause notice recorded there.
 
-This does **not** retire `R.5`'s startup FTS5 guard. That guard exists because a future dependency bump
+This does **not** retire the migration runner's startup FTS5 guard. That guard exists because a future dependency bump
 could drop the feature silently, and a runtime check is the only thing that catches that. The pin is
 verified; the guard is the control.
 
 ## Tools invoked as subprocesses — licences tracked, notices not yet triggered
 
 Anvil shells out to these rather than linking them, so no notice duty attaches at source checkout. Duties
-attach when a release artifact bakes them in, which is `O.17` (container) and `O.18` (systemd tarball).
+attach when a release artifact bakes them in, which is the container image and the systemd tarball (plan node packaging).
 
 | Tool | SPDX | Notes |
 |---|---|---|
@@ -98,28 +98,28 @@ attach when a release artifact bakes them in, which is `O.17` (container) and `O
 | ZAP | Apache-2.0 | Scheduled full scans. Ships only in `anvil-dast`. |
 | Syft / Grype / OSV-Scanner | Apache-2.0 | SBOM and matching. |
 | opengrep (engine) | **LGPL-2.1** | The single strongest obligation in the set — see below. |
-| `AikidoSec/opengrep-rules` | MIT | The rules corpus. **Not** `opengrep/opengrep-rules`, which is archived, `NOASSERTION`, and LGPL-2.1 + Commons Clause; it is on the §S5 exclusion list. |
+| `AikidoSec/opengrep-rules` | MIT | The rules corpus. **Not** `opengrep/opengrep-rules`, which is archived, `NOASSERTION`, and LGPL-2.1 + Commons Clause; it is on the spine's exclusion list. |
 | llama.cpp / llama-server | MIT | Model serving. |
 | ONNX Runtime | MIT | Encoder path. |
 | honggfuzz | Apache-2.0 | The permissive AFL++ substitute. AFL++ is excluded: its LICENSE is AGPL-3.0 regardless of its README. |
-| llama-swap | MIT | Attribution in docs — `plan/spine-b-open-licences.md` A3. |
+| llama-swap | MIT | Attribution in docs — `plan/design/spine-open-licences.md` (llama-swap). |
 
 **opengrep is LGPL-2.1 and it is invoked, never linked.** It is an OCaml CLI with zero bindings in any
-language (`plan/00-SPINE.md` §S12), so subprocess invocation is the only option that exists — which is
+language (the spine's Go control-plane decision), so subprocess invocation is the only option that exists — which is
 also the option that keeps the LGPL boundary clean. Baking the binary into the container image is the
-event that triggers offer-source obligations, and `O.17` must name where that offer is served rather than
+event that triggers offer-source obligations, and the container image must name where that offer is served rather than
 leaving it implicit.
 
 ## sqlmap — a separate GPL-3.0 artifact, deliberately not a dependency
 
 sqlmap is **not** listed above because it is not a dependency of anything in this repository. Under
-`plan/00-SPINE.md` §S8 it ships as a separately distributed GPL-3.0 plugin under four rules: (i) separate
+the spine's licence section it ships as a separately distributed GPL-3.0 plugin under four rules: (i) separate
 git repo, separate release artifact, separate package name, never vendored into this tree; (ii) separate
 **process** — the core loads no plugin code into its address space; (iii) the interface is a documented
 **tool-agnostic** data contract, because an interface named `SqlmapDriver` is arguably itself "designed
 specifically to execute sqlmap"; (iv) all sqlmap-specific knowledge lives on the GPL side.
 
-`plan/PLUGIN-SQLMAP-BOUNDARY.md` (plan step `C.7`) makes those four rules enforceable.
+The sqlmap boundary document (plan node sqlmap) makes those four rules enforceable.
 
 ## nmap — an open decision, not a settled exclusion
 
@@ -127,11 +127,11 @@ Recorded so it is not mistaken for a resolved item. NPSL's derivative-work terms
 parties who *accept* the licence, and the licence disclaims binding vendors whose practices fair use
 already permits. Dropping nmap is prudence, not compulsion — and the proposed replacements were never
 checked for coverage: nuclei's `network/` templates presuppose a known host and port and do no discovery.
-See `plan/00-SPINE.md` §S8.
+See the spine's licence section.
 
 ## Maintenance
 
-`cmd/license-gate` (plan steps `C.9`, `C.10`) enforces this file in CI. It reads LICENSE file bodies,
+`cmd/license-gate` (plan node spdxgate) enforces this file in CI. It reads LICENSE file bodies,
 never API metadata, and carries a hard-coded override table for the eight artifacts that return
 `NOASSERTION` over a real licence — each override recording the quoted operative sentence that justifies
 it. A dependency whose licence cannot be located **as a file body** fails the build. It does not warn.

@@ -1,19 +1,19 @@
 // Package scanctl is `anvil-scanctl`: the ONE named scan controller
-// plan/00-SPINE.md S10 requires, holding ONE state machine with ONE owner.
-// S10's reason for existing is that four research branches each specified part
+// the spine's one-controller rule requires, holding ONE state machine with ONE owner.
+// The spine's one-controller rule exists because four research branches each specified part
 // of an orchestrator (a consumption protocol with leases and ledgers, a
 // correlator process, sixteen validation gates, a target-lifecycle harness),
 // and "implement it as one named scan controller with one state machine and
 // one owner, or it will be re-implemented inconsistently in four places."
 //
-// This file (step O.1) carries the package doc because it is the package's
+// This file (the deadline design) carries the package doc because it is the package's
 // first file and the one every other file in it depends on. Later files in
-// this package — statemachine.go (O.2), handoff.go (O.3) — must NOT add a
-// second package comment.
+// this package — statemachine.go (the controller's state wiring), handoff.go
+// (the handoff adapter) — must NOT add a second package comment.
 //
 // scanctl OWNS NO VOCABULARY. Every enum token it handles is a Go constant
-// from internal/record, which plan/IMPLEMENTATION-PLAN.md §6 makes the single
-// point where shared vocabulary is fixed: "area 40 owns every shared enum,
+// from internal/record, which the shared-vocabulary review makes the single
+// point where shared vocabulary is fixed: "The record area owns every shared enum,
 // because it owns the record contract, and no other area may declare one."
 // Nine of the ten defects that review found were the same structural error —
 // separate authors each defining the shared vocabulary from their own side.
@@ -34,17 +34,17 @@ import (
 // ---------------------------------------------------------------------------
 //
 // internal/handoff/reaper.go opens with a header explaining TWO clocks and why
-// conflating them is the defect plan/00-SPINE.md S1 names outright. This file
+// conflating them is the defect the spine's corrected-requirements table names outright. This file
 // adds the third. It does not add a fourth spelling of either of the first
 // two, and every statement below is written to AGREE with the existing owner
 // rather than to restate it in different words.
 //
 //	CLOCK 1 — THE LEASE.        handoff.lease_expires_at
-//	  Owner: internal/handoff (R.7). 15-30 minutes, heartbeat-renewed.
+//	  Owner: internal/handoff (the claim protocol). 15-30 minutes, heartbeat-renewed.
 //	  Governs ONE consumer attempt. Expiry means "the holder is presumed
 //	  dead": back to 'ready' while attempts remain, terminal after that.
-//	  scanctl NEVER computes it. internal/scanctl/handoff.go (O.3) is a thin
-//	  adapter over R.7's protocol, per IMPLEMENTATION-PLAN.md §6 ruling G9.
+//	  scanctl NEVER computes it. internal/scanctl/handoff.go (the handoff adapter) is a thin
+//	  adapter over the claim protocol, per the handoff-table ruling.
 //
 //	CLOCK 2 — THE CLAIM TIMEOUT. audit_record.deadline_at
 //	  Owner of the FORMULA: record.ComputeDeadline — `scan_run.started_at +
@@ -70,7 +70,7 @@ import (
 //	  this must be config, not a constant."
 //	  Owner of the DUE-CHECK: record.Sealer.SealDastIfDeadlineDue.
 //
-//	  THIS FILE USED TO OWN THAT DUE-CHECK AND MUST NOT AGAIN. CRITIQUE O.4
+//	  THIS FILE USED TO OWN THAT DUE-CHECK AND MUST NOT AGAIN. The controller-core review
 //	  blocker 2: the check ran against `Deadlines.DastDeadlineAt`, an EXPORTED
 //	  field on a value the caller holds, so a tick handler could move clock 3
 //	  by plain assignment — the exact thing clock 2 shrugs off, because clock 2
@@ -80,11 +80,11 @@ import (
 //	  them. What THIS file carries is a DERIVED, ADVISORY instant used for
 //	  scheduling and diagnostics, on a struct with no assignable field.
 //
-// WHAT "8 HOURS" IS. plan/00-SPINE.md S1 correction #5, verbatim: "'8 hours'
+// WHAT "8 HOURS" IS. The spine's corrected-requirements table correction #5, verbatim: "'8 hours'
 // is a claim timeout, not a deletion policy and not a confidentiality
 // control." Nothing here deletes anything, nothing here is a retention
 // guarantee, and nothing here is a security boundary. internal/record/SECRETS.md
-// (R.9) is where the confidentiality posture lives.
+// (the retention document) is where the confidentiality posture lives.
 //
 // ONE ANCHOR, TWO OFFSETS. Clocks 2 and 3 are both anchored to
 // `scan_run.started_at` and to nothing else. See the "Anchoring" section
@@ -101,14 +101,14 @@ import (
 // claim_timeout_seconds` and ALSO carries a separate `audit_record.created_at`
 // column. Those are two different columns with two different meanings, and
 // this is precisely the "two areas meaning different things by the same field
-// name" class IMPLEMENTATION-PLAN.md §6 was convened over.
+// name" class the shared-vocabulary review was convened over.
 //
 // THE ANCHOR IS `scan_run.started_at`. Resolution, not a preference:
 //
 //   - `audit_record.created_at` is a WRITE timestamp — the moment the record
 //     row is first materialised, which is at or after the scan began and can
 //     be arbitrarily later on a loaded host. record.ComputeDeadline's doc
-//     states R.6's forbidden action outright: "Do not compute `deadline_at`
+//     states the sealer's forbidden action outright: "Do not compute `deadline_at`
 //     from any write timestamp... Anchoring it to the last write makes the
 //     timeout unbounded for a chatty scan, which quietly defeats the reaper."
 //     Anchoring to created_at is a weaker form of the same mistake.
@@ -195,10 +195,10 @@ import (
 //	unusually attractive target." So: Anvil gates self-hosted runners on
 //	public repos loudly (the shipped Action's README reproduces GitHub's
 //	warning verbatim and documents restricting to private repos via runner
-//	groups — that enforcement is step O.8's, not this file's), and it NEVER
+//	groups — that enforcement is the GitHub Action's, not this file's), and it NEVER
 //	treats a self-hosted runner as the DAST execution host regardless of
 //	repository visibility. DAST executes on the user's daemon, which is a
-//	separately installed artifact (plan/00-SPINE.md S9-AMENDED: `anvil-dast`,
+//	separately installed artifact (the two-artifact split: `anvil-dast`,
 //	with "no network probing capability compiled in" to core `anvil`).
 //
 //	Consequence for the clock: no Anvil deadline may ever be derived from
@@ -235,7 +235,7 @@ import (
 //	(Deadlines.DastDeadlineBinds), the forced seal lands BEFORE expiry, so the
 //	audit reaches record.StateBothSealed and the record is consumable — with a
 //	half that says "timed out", which is honest — instead of reaching
-//	record.StateExpired with the SAST half stranded. plan/00-SPINE.md S6's
+//	record.StateExpired with the SAST half stranded. The spine's
 //	rationale generalises here: a half that ran out of clock must be
 //	distinguishable from one scanned clean, and record.DastStatusTimedOut is
 //	that distinction. Note that the timed-out half is TERMINAL BUT NOT
@@ -268,7 +268,8 @@ import (
 //	     installation token (research/09 §4 already requires the App path for
 //	     fix PRs). Whether the DAST daemon holds that installation token, and
 //	     what else that token can then do, is an authorization-scope question
-//	     — O.11's lane, and it must not be settled by whoever needs it first.
+//	     — the publishing-and-App review's lane, and it must not be settled
+//	     by whoever needs it first.
 //	  2. Which commit. research/09 Risk #12: "`repository_dispatch` runs on
 //	     the default branch only... the branch must be passed in
 //	     `client_payload`". So the head SHA the check run attaches to must
@@ -283,7 +284,7 @@ import (
 //	  4. Rate limits against long scans, given research/09 Risk #13's
 //	     1,000 req/hr/repo ceiling on any `GITHUB_TOKEN` path.
 //
-//	ONE INVARIANT IS NOT OPEN, and O.2 must hold it: the GitHub side is a
+//	ONE INVARIANT IS NOT OPEN, and the controller's state wiring must hold it: the GitHub side is a
 //	PROJECTION of the record and can never be an input to it. A stalled,
 //	failed, rate-limited or rejected check-run update must not stall, block or
 //	corrupt the daemon-side record — it must not become a fourth clock, and it
@@ -362,7 +363,7 @@ const SelfHostedJobCap = 5 * 24 * time.Hour
 // long an unclaimed finding stays eligible, and how much of that window the
 // DAST half gets before it is forced terminal.
 //
-// It is data, never a constant. plan/00-SPINE.md S1 makes "no hard-coded
+// It is data, never a constant. The spine's corrected-requirements table makes "no hard-coded
 // triggers" a hard constraint and research/21 §5 extends it to this value
 // explicitly: "Following the owner's no-hard-coding rule for triggers, this
 // must be config, not a constant." The zero DeadlinePolicy is meaningful and
@@ -370,8 +371,9 @@ const SelfHostedJobCap = 5 * 24 * time.Hour
 //
 // WHERE THE VALUES COME FROM is not this file's business either. Trigger
 // policy is `.anvil/policy.yml`, whose schema and search order are steps
-// O.5/O.6; this type is the shape those values land in after parsing. Nothing
-// here reads a file, names an event, or matches a ref.
+// the policy schema and the policy engine; this type is the shape those values
+// land in after parsing. Nothing here reads a file, names an event, or matches
+// a ref.
 type DeadlinePolicy struct {
 	// ClaimTimeoutSeconds is `audit_record.claim_timeout_seconds` — clock 2.
 	// Zero means record.DefaultClaimTimeoutSeconds (28800 = 8h); negative is
@@ -379,7 +381,7 @@ type DeadlinePolicy struct {
 	// and record.Sealer.BeginAudit's own check.
 	//
 	// It is a CLAIM timeout. Not retention, not deletion, not
-	// confidentiality (plan/00-SPINE.md S1 correction #5).
+	// confidentiality (the spine's corrected-requirements table correction #5).
 	ClaimTimeoutSeconds int
 
 	// DastDeadlineSeconds is `audit_record.dast_deadline_seconds` — clock 3,
@@ -399,7 +401,7 @@ type DeadlinePolicy struct {
 	DastDeadlineSeconds *int
 
 	// DastEnabled reports whether this installation has a DAST half at all.
-	// It is FALSE in the core `anvil` artifact: plan/00-SPINE.md S9-AMENDED
+	// It is FALSE in the core `anvil` artifact: the two-artifact split
 	// splits `anvil-dast` into a separately installed artifact with the
 	// network-probing capability compiled in, so Tier S "simply does not
 	// install `anvil-dast`."
@@ -455,8 +457,8 @@ func (p DeadlinePolicy) Resolve() (DeadlinePolicy, error) {
 		}
 	}
 
-	// VALIDATED BEFORE THE DastEnabled BRANCH, not after it. CRITIQUE O.4
-	// finding O4-m5: this check used to live below the early return, so a
+	// VALIDATED BEFORE THE DastEnabled BRANCH, not after it. The controller-core review
+	// controller-core finding m5: this check used to live below the early return, so a
 	// policy carrying `dastDeadlineSeconds: -1` with DAST off resolved clean
 	// and the config error survived — invisibly — until the day somebody
 	// installed `anvil-dast`, at which point a scan that had been working
@@ -513,7 +515,7 @@ func (p DeadlinePolicy) DastDeadline() (time.Duration, bool) {
 //
 // It exists so that no caller in this package ever populates a
 // record.AuditConfig field by field. That is the shape in which the deadline
-// fields could drift from the ones this file computes, and R.6 owns the
+// fields could drift from the ones this file computes, and the sealer owns the
 // resulting `audit_record` columns.
 //
 // BeginAudit computes `deadline_at` itself, once, via record.ComputeDeadline.
@@ -595,7 +597,7 @@ func (p DeadlinePolicy) At(startedAt time.Time) (Deadlines, error) {
 // # EVERY FIELD IS UNEXPORTED, AND THAT IS THE ENFORCEMENT
 //
 // The previous version of this type made the claim above in a doc comment and
-// then exported all five fields. CRITIQUE O.4 blocker 2 is what that cost: the
+// then exported all five fields. The controller-core review's blocker 2 is what that cost: the
 // argument offered was that Deadlines "is a value … and there is no method on
 // it that mutates anything", which is true of methods and irrelevant to fields.
 // A tick handler moved clock 3 with one assignment, the forced DAST seal did
@@ -694,7 +696,7 @@ func (d Deadlines) DastDeadline() (time.Time, bool) {
 // THERE IS NO DastDeadlineElapsed, AND THERE MUST NOT BE ONE AGAIN.
 //
 // This type used to carry `DastDeadlineElapsed(now)` and to call it "THE ONE
-// DUE-CHECK THIS PACKAGE OWNS". CRITIQUE O.4 blocker 2 found what that was
+// DUE-CHECK THIS PACKAGE OWNS". The controller-core review's blocker 2 found what that was
 // worth: the predicate read `DastDeadlineAt`, an exported field on the caller's
 // own copy, so clock 3 could be moved by assignment and the forced seal simply
 // never fired — while clock 2, asked the same way, was unfoolable because
@@ -725,7 +727,7 @@ func (d Deadlines) DastDeadline() (time.Time, bool) {
 // NOT REJECTING IT IS A DELIBERATE CHOICE, and this is the argument. A policy
 // layer that refuses a config the frozen schema accepts becomes a second,
 // stricter definition of what a legal audit is — the exact defect class
-// IMPLEMENTATION-PLAN.md §6 catalogues — and the operator who set it may have
+// the shared-vocabulary review catalogues — and the operator who set it may have
 // meant it. What such a policy costs is real and should be logged, not
 // silently absorbed: the DAST half will never be forced terminal, so a
 // never-terminating DAST run leaves the audit in record.StateSastSealed until
@@ -757,7 +759,7 @@ func (d Deadlines) ExceedsGitHubHostedJobCap() bool {
 // RemainingClaimWindow reports how much of the claim window is left at now,
 // clamped at zero once the window has closed.
 //
-// It is the budget input plan/00-SPINE.md S6's ordering rule needs — "re-cut
+// It is the budget input the spine's ordering rule needs — "re-cut
 // the work queue on every version bump and reserve a configurable fraction
 // (default 50%) of remaining budget for late DAST-confirmed arrivals" — and it
 // is arithmetic, not a decision. A zero return does NOT by itself mean the
@@ -779,7 +781,7 @@ func (d Deadlines) RemainingClaimWindow(now time.Time) time.Duration {
 // IT IS A SCHEDULING ANSWER, NOT A DECISION. Waking at the returned instant is
 // what gives the controller the opportunity to act; what it then does is
 // decided by the owners of each clock — record.Sealer.ExpireIfDue for clock 2
-// and record.Sealer.SealDastIfDeadlineDue for clock 3, both driven by O.2's
+// and record.Sealer.SealDastIfDeadlineDue for clock 3, both driven by the state wiring's
 // EventKindTick. A caller
 // that infers "the returned instant is the DAST deadline, therefore the DAST
 // half is not yet timed out" has substituted a scheduling hint for a due-check

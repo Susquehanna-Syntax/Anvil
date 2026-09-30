@@ -67,12 +67,12 @@ duty is recorded now so that the packaging steps cannot ship without it.
 
   Trivy (aquasecurity/trivy) -- Apache-2.0
       Duty: Section 4(d) notice. Triggers when the container image bakes in the
-      Trivy binary. Status: PENDING (image build, plan step O.17).
+      Trivy binary. Status: PENDING (image build, the container image).
       Source: research/13 row C25, verified from the LICENSE file body.
 
   ZAP (zaproxy/zaproxy) -- Apache-2.0
       Duty: Section 4(d) notice plus NOTICE-file duties. Triggers when the
-      anvil-dast image bakes in ZAP. Status: PENDING (plan step O.17).
+      anvil-dast image bakes in ZAP. Status: PENDING (the container image).
       Source: research/13 row C3, LICENSE title line verified verbatim.
 
   Syft (anchore/syft), Grype (anchore/grype), OSV-Scanner (google/osv-scanner)
@@ -82,35 +82,35 @@ duty is recorded now so that the packaging steps cannot ship without it.
   honggfuzz (google/honggfuzz) -- Apache-2.0, per its COPYING file
       Duty: Section 4(d) notice on redistribution. Status: PENDING.
       Source: research/13 row D2. This is the permissive AFL++ substitute;
-      AFL++ is excluded by plan/00-SPINE.md S5 because its LICENSE is AGPL-3.0
+      AFL++ is excluded by the spine's exclusion list because its LICENSE is AGPL-3.0
       regardless of what its README says.
 
   Docker Engine, Docker Compose -- Apache-2.0
       Duty: Section 4(d) notice IF redistributed as binaries. Anvil invokes
       them; it does not currently redistribute them. Status: NOT TRIGGERED.
-      Source: plan/spine-b-open-licences.md A5, A6.
+      Source: plan/design/spine-open-licences.md, Docker Engine and Docker Compose.
 
   Gemma 4 weights -- Apache-2.0
       Duty: Section 4(d) notice if the weights are bundled or redistributed,
       plus a container image LABEL. Status: PENDING and CONDITIONAL -- the
-      model tier itself may not exist. Plan step M0.18 decides whether Anvil
+      model tier itself may not exist. The gate decision decides whether Anvil
       has a detection-model tier at all, and no component pick is final before
-      it resolves (plan/00-SPINE.md S3, S4).
+      it resolves (the spine's evaluate-first and component sections).
       CAVEAT, and it is not optional: verify the licence of the SPECIFIC
       Gemma 4 variant at selection time. Qwen is documented to split licences
       by parameter count inside one family, so a sibling's licence proves
-      nothing about the one shipped. Source: plan/spine-b-open-licences.md A1.
+      nothing about the one shipped. Source: plan/design/spine-open-licences.md, Gemma 4.
 
   Qwen/Qwen3-Coder-30B-A3B-Instruct -- Apache-2.0
       Duty: Section 4(d) notice if weights are shipped, plus model-weight
       METADATA. Status: PENDING. Same by-parameter-count caveat as Gemma 4.
-      Source: plan/spine-b-open-licences.md A7.
+      Source: plan/design/spine-open-licences.md, Qwen3-Coder-30B-A3B-Instruct.
 
   go-apispec -- Apache-2.0
       Duty: Section 4(d) requires the upstream NOTICE file be shipped VERBATIM,
       not summarised. Its body is archived at data/LICENSES/GO-APISPEC-NOTICE
-      by plan step C.4. Status: PENDING.
-      Source: plan/spine-b-open-licences.md A2.
+      by the NOTICE archiving. Status: PENDING.
+      Source: plan/design/spine-open-licences.md, go-apispec.
 
 ================================================================================
 3. ATTRIBUTION-REQUIRED DATA SOURCES (CC-BY and equivalent)
@@ -136,7 +136,7 @@ Attribution here is mandatory, not courtesy.
 
   MITRE CVE -- CVE Terms of Use
       Duty: reproduce MITRE's copyright designation. The operative text is
-      archived at data/LICENSES/CVE-TOU.txt by plan step C.4.
+      archived at data/LICENSES/CVE-TOU.txt by the NOTICE archiving.
       Source: research/13 row B1.
 
   MITRE CWE -- CWE Terms of Use
@@ -181,15 +181,15 @@ The Greenbone entry stands on verified evidence: Greenbone's own licence page
 states that "The OPENVAS COMMUNITY FEED is a database licensed under the Open
 Data Commons Open Database License version 1.0 (ODbLv1)". An earlier report
 that this item was unsourced was checked and found wrong; see
-plan/00-SPINE.md S8 and plan/IMPLEMENTATION-PLAN.md 2.3.
+the spine's licence section and the first plan's Greenbone ruling (plan/design/first-plan.md).
 
-Plan step C.2 owns this directory tree.
+The share-alike tree owns this directory tree.
 
 ================================================================================
 5. WHAT IS DELIBERATELY ABSENT
 ================================================================================
 
-The following are EXCLUDED from Anvil by plan/00-SPINE.md S5, each for a
+The following are EXCLUDED from Anvil by the spine's exclusion list, each for a
 documented reason, and must never appear in this file or in any Anvil artifact:
 
   CodeQL                       CLI terms forbid CI/CD database generation and
@@ -215,7 +215,7 @@ documented reason, and must never appear in this file or in any Anvil artifact:
 Note on Gemma: Gemma 4 IS eligible and Gemma 1-3 are NOT. Gemma 4 resolves to
 Apache-2.0 and is carved out of the old Gemma Terms of Use, whose remote-
 restriction clause was the reason Gemma 1-3 were excluded. See
-plan/00-SPINE.md S4.
+the spine's component table.
 
 ================================================================================
 6. PATENT POSTURE -- STATED SO IT IS NOT MISREAD
@@ -228,4 +228,4 @@ contributions and does nothing about third-party patents. US10043004B2
 approximately 2035, assignee Denim Group Ltd. / Coalfire Systems) is materially
 similar to Anvil's link-based correlation mechanism and remains an unresolved
 risk. An outbound licence is not a freedom-to-operate instrument. See
-plan/00-SPINE.md S8 and plan/40-record-and-storage.md Open Question 1.
+the spine's licence section and plan/design/record-and-store.md Open Question 1.

@@ -207,7 +207,7 @@ type cve5CVSS struct {
 // CVE5 decodes one CVE Record Format 5.x document.
 //
 // An unknown dataVersion sets ParseDegraded and the record is still returned.
-// Lane A exit criterion 23 and spine S6: a record from a newer schema is
+// Lane A exit criterion 23 and the spine's record section: a record from a newer schema is
 // persisted and flagged, never dropped.
 func (dc *Decoder) CVE5(raw []byte) (Record, bool, error) {
 	var d cve5Doc

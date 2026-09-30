@@ -150,7 +150,7 @@ func p4Key(t *testing.T) AuditKey {
 
 // p4SecurityTxt is a hand-typed RFC 9116 document. It is bytes, not a
 // constructed SecurityTxtResult, so the reporting channel in these tests goes
-// through D.5's real parser.
+// through per-target admission's real parser.
 const p4SecurityTxt = "Contact: mailto:security@vendor.example.com\n" +
 	"Policy: https://vendor.example.com/vdp\n" +
 	"Expires: 2027-06-01T00:00:00Z\n"
@@ -470,7 +470,7 @@ func TestGate18DeadlineIsFortyFiveDaysFromFirstContact(t *testing.T) {
 	}
 }
 
-// TestGate18ThirdPartyFindingIsNotPublishedBeforeTheDeadline is D.7's first
+// TestGate18ThirdPartyFindingIsNotPublishedBeforeTheDeadline is the disclosure phase's first
 // required validation: "a third-party finding cannot reach a 'published' state
 // before 45 days without an explicit acceleration reason attached".
 func TestGate18ThirdPartyFindingIsNotPublishedBeforeTheDeadline(t *testing.T) {
@@ -633,7 +633,7 @@ func TestGate18AdjustmentsAreRecordedWithBothDeadlines(t *testing.T) {
 	}
 }
 
-// TestEmbargoAdjustmentsCannotBeWrittenThrough is the test D.3's critic asked
+// TestEmbargoAdjustmentsCannotBeWrittenThrough is the test the kernel-types review asked
 // for against Scope: mutate what the accessor handed back and assert the value
 // is unmoved.
 func TestEmbargoAdjustmentsCannotBeWrittenThrough(t *testing.T) {
@@ -653,7 +653,7 @@ func TestEmbargoAdjustmentsCannotBeWrittenThrough(t *testing.T) {
 }
 
 // TestEmbargoAdjustmentHasNoReferenceFields is the guard behind the comment on
-// EmbargoState.Adjustments. D.3's critic showed that copying a []ScopeEntry
+// EmbargoState.Adjustments. The kernel-types review showed that copying a []ScopeEntry
 // copies the structs but not their []uint16 backing arrays; a shallow copy is
 // only sufficient while every field is a value type, so this fails the moment
 // somebody adds a slice, map, pointer or interface field.
@@ -1376,7 +1376,7 @@ func TestPersistedDisclosureZeroValueProvesNothing(t *testing.T) {
 // GATE 20 — no unsolicited fixes pushed to third parties
 // ===========================================================================
 
-// TestPushGateRefusesABenignPatchWithoutAnAttestation is D.7's third required
+// TestPushGateRefusesABenignPatchWithoutAnAttestation is the disclosure phase's third required
 // validation: PushGate refuses without a valid attestation even when the patch
 // content itself is benign. Gate 20 never sees patch content at all, which is
 // what makes "but the patch is harmless" unexpressible rather than merely
@@ -1841,7 +1841,7 @@ func TestAuditedAdmitWritesARowForEveryGateInTheTrace(t *testing.T) {
 }
 
 // TestAuditedAdmitReleasesTheLeaseWhenTheWriteFails is the load-bearing test
-// for D.7's second required validation: an audit-log write failure causes the
+// for the disclosure phase's second required validation: an audit-log write failure causes the
 // paired gate decision to fail closed, not silently allow.
 func TestAuditedAdmitReleasesTheLeaseWhenTheWriteFails(t *testing.T) {
 	// Both failure shapes, because they exercise DIFFERENT branches of
@@ -2291,7 +2291,7 @@ func TestApplyRefusesAWriteWhoseStateMovedUnderIt(t *testing.T) {
 // Structural guards
 // ---------------------------------------------------------------------------
 
-// TestPhase4GatesCannotBeRegisteredIntoAChain locks D.2's refusal in place. If
+// TestPhase4GatesCannotBeRegisteredIntoAChain locks the kernel core's refusal in place. If
 // somebody adds `register(Gate18Embargo, ...)` to phase4_disclosure.go, the
 // package panics at init in every test binary that links it — but only because
 // registerInto still refuses Phase 4, and this is what fails if that refusal is
@@ -2995,7 +2995,7 @@ func TestGate18BackdatingToTheBoundCannotCancelTheAccelerationFloor(t *testing.T
 //
 // Writing "nothing may raise this" in a comment pins nothing. Measured before
 // this test existed: MinAcceleratedEmbargo could be changed from 24h to 1s —
-// turning acceleration into the disable switch plan/50-dast.md says is not
+// turning acceleration into the disable switch plan/design/dynamic-tier.md says is not
 // configurable — and the whole suite stayed GREEN, because the one test that
 // looked at the floor computed its expectation as p4FirstContact.Add(
 // MinAcceleratedEmbargo) and so asserted that the code equals itself.

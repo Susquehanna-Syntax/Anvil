@@ -1,12 +1,12 @@
-# REVIEW-A.12 — critique of the host read-only boundary (A.9: `internal/collector/host/**`, `deploy/systemd/anvil-host-collector.service`)
+# Review: the host collector's read-only boundary (`internal/collector/host/**`, `deploy/systemd/anvil-host-collector.service`)
 
 **Verdict: FAIL — 2 blockers, 5 majors, 7 minors.**
 
-**This was a SAME-FAMILY critic.** A.12's packet routes this step to OpenCode `openai/gpt-5.5`; that
-route is **WITHDRAWN** by the OWNER DECISION block at the top of `plan/00-ROUTING.md` (2026-08-07,
-external routes copy private project files to a third party). The cross-family guarantee A.12 was
+**This was a SAME-FAMILY critic.** This review's packet routes this step to OpenCode `openai/gpt-5.5`; that
+route is **WITHDRAWN** by the OWNER DECISION block at the top of `plan/design/routing.md` (2026-08-07,
+external routes copy private project files to a third party). The cross-family guarantee this review was
 written to obtain **was not obtained and is still owed**. A later reader must not record this file as
-"cross-family critic: PASS". `plan/IMPLEMENTATION-PLAN.md` §0.2 reserved the strongest available
+"cross-family critic: PASS". The critic-routing rule reserved the strongest available
 reviewer for exactly this class — a security gate where a miss is unrecoverable — and that reviewer
 did not run. The compensation applied was method, not model: every claim in the reviewed files was
 re-checked against the source, every gate was re-run locally with `-count=1`, and **every finding
@@ -17,14 +17,14 @@ below is backed by a probe I wrote and executed**. Reported output was treated a
 ## 0. The one-paragraph answer
 
 **The shipped code does not mutate the host. The mechanism that was supposed to make that
-structural does not hold.** A.9's entire claim — restated three times in `collect.go`'s package
+structural does not hold.** The host collector's entire claim — restated three times in `collect.go`'s package
 comment — is that "the mutating invocation cannot be expressed", enforced by an AST guard in
 `collect_test.go`. I defeated that guard with a one-line import alias, and separately with a
 function value and no alias at all. With two host-mutating exec call sites compiled into the
 package (`rpm --rebuilddb`, `dpkg --configure -a`), `gofmt -l` is clean, `go vet` is clean and
 `go test -count=1 ./internal/collector/host/` is **`ok`**. A second, independent hole exists in the
 deployment artifact: the unit-file test scans `ExecStart=` and nothing else, so
-`ExecStartPre=/usr/bin/apt-get install -y …` in Anvil's own systemd unit passes the suite. A.12's
+`ExecStartPre=/usr/bin/apt-get install -y …` in Anvil's own systemd unit passes the suite. This review's
 question was *cannot*, not *does not*. The answer today is *does not*.
 
 ---
@@ -33,7 +33,7 @@ question was *cannot*, not *does not*. The answer today is *does not*.
 
 - Read in full: `collect.go` (1060), `dpkg.go` (120), `rpm.go` (87), `apk.go` (169),
   `collect_test.go` (2085), `deploy/systemd/anvil-host-collector.service` (123). Read as context:
-  `plan/00-SPINE.md` S1/S4/S5/S7/S8/S12, `plan/20-lane-a-ingestion-sca.md` A.9/A.12 and exit
+  The spine's corrected-requirements, component, exclusion, safety, licence and Go control-plane sections, the host collector's and this review's designs in `plan/design/lane-a.md` and exit
   criteria 13/14/20/21, `internal/ingest/cache/schema.go` (the `finding_host_not_remediable` CHECK).
 - **No repository file was modified by this review other than this one.** Probes were compiled into
   the package with `go test -overlay=…`, except for the two whole-suite probes in §2.1, which
@@ -62,9 +62,9 @@ $ go test -count=1 ./internal/collector/host/
 ok  	github.com/Susquehanna-Syntax/Anvil/internal/collector/host	0.814s
 ```
 
-`go test -count=1 ./...` is **NOT** fully green, for reasons that belong to siblings, not to A.9:
+`go test -count=1 ./...` is **NOT** fully green, for reasons that belong to siblings, not to the host collector:
 `internal/ingest/sanitize` fails `TestNoProductionImporterYet` (that test is a tripwire that now
-correctly fires because A.9, A.10, A.14 and the poller import `sanitize` — the fix is to delete the
+correctly fires because the host collector, the repo collector, delta ingestion and the poller import `sanitize` — the fix is to delete the
 tripwire and update `sanitize.go`'s KNOWN LIMITS item 1), and `internal/mirror/accelerator` fails on
 `zz_a13_probe_test.go`, a sibling critic's probe file left in the working tree. Neither touches
 this packet.
@@ -74,7 +74,7 @@ bytes (error code: 87)`. CI runs `-race` on `ubuntu-latest` (`.github/workflows/
 
 ---
 
-## 2. The enumeration A.12 demands: every subprocess call site with its argv
+## 2. The enumeration this review demands: every subprocess call site with its argv
 
 The packet requires the verdict to **list every call site, not summarise**. There is exactly one in
 the package, and one more that is test-only.
@@ -236,7 +236,7 @@ include the bypass is not a negative control.
 systemd runs `ExecStartPre=`, `ExecStartPost=`, `ExecReload=` and `ExecStopPost=` with the same
 identity and privileges as `ExecStart=`. None of them is collected into `execStart`, so none is
 verb-checked and none is shell-checked. `deploy/systemd/anvil-host-collector.service` is a file
-Anvil ships and an operator installs; a mutating line in it is `plan/00-SPINE.md` S7 violated at the
+Anvil ships and an operator installs; a mutating line in it is the spine's safety section violated at the
 deployment layer, not behind a flag.
 
 **Probe, run by me** (the test's own parser, replayed verbatim over a synthetic unit body — I did
@@ -271,7 +271,7 @@ their presence should itself be a failure in this unit.
 **Where:** `collect_test.go:316-343` (`denyVerbs`, `denyLongFlags`, `denyShortFlags`) and
 `:357-389` (`mutatingTokens`).
 
-Exit criterion 13 calls this "A.9/A.12's **allowlist** test". It is a **denylist**. The argv
+Exit criterion 13 calls this "The host collector and this review's **allowlist** test". It is a **denylist**. The argv
 constants are a genuine allowlist and that part holds; this belt does not.
 
 Two independent gaps, both probed.
@@ -346,7 +346,7 @@ binary or container entrypoint that guarantees it is used (see M4).
 
 **Confidence: this is the one finding below not proved by a probe on this host** — it needs a real
 BDB-backed RPM host, which Windows is not. It is stated as a documented property of rpm's BDB
-backend and marked for verification. I flag it because A.12's attack #6 is explicitly "does anything
+backend and marked for verification. I flag it because this review's attack #6 is explicitly "does anything
 write to the filesystem outside a scratch dir", and the honest answer for `rpm -qa` as root is *yes,
 on a large installed base*.
 
@@ -394,21 +394,21 @@ fires on a non-`errBinaryNotFound` failure.
 
 `deploy/systemd/anvil-host-collector.service:35` is `ExecStart=/usr/lib/anvil/anvil-host-collector`.
 `ls cmd/` is `anvil`, `anvil-dast`. **No such main package exists.** The unit therefore cannot be
-installed and A.9's stop condition — *"Collector runs to completion and exits under a non-root UID on
+installed and the host collector's stop condition — *"Collector runs to completion and exits under a non-root UID on
 at least one fixture per family"* — is unmet for all three families as an artifact question, and
-A.12's own Expected output ("confirmation the binary runs successfully as a non-root user in the
+this review's own Expected output ("confirmation the binary runs successfully as a non-root user in the
 test fixture") cannot be given: **there is no binary to confirm.**
 
 The exec path itself is exercised only by `TestCollectAgainstTheRealHost` (`collect_test.go:2042`),
 which `t.Skip`s on anything but Linux and on any Linux host without a package manager. In practice
 that means it runs on CI's `ubuntu-latest` runner (non-root, `dpkg-query` present) and covers the
 **deb family only**. The rpm and apk exec paths have never been executed anywhere — including in the
-run that produced A.9's evidence, since that ran on this Windows host, where the test skips.
+run that produced the host collector's evidence, since that ran on this Windows host, where the test skips.
 
-**Fix.** Add `cmd/anvil-host-collector` (out of A.9's scope, so this is a plan-sequencing gap the
+**Fix.** Add `cmd/anvil-host-collector` (out of the host collector's scope, so this is a plan-sequencing gap the
 owner should schedule, not a defect the author introduced), and add a CI matrix job running the
 collector in `debian:12`, `rockylinux:9` and `alpine:3.20` containers as a non-root user. Until then
-exit criterion 13's second clause and A.9's stop condition should be recorded as **not met**.
+exit criterion 13's second clause and the host collector's stop condition should be recorded as **not met**.
 
 ---
 
@@ -450,7 +450,7 @@ and nowhere else. Probed (`TestProbe_NoWaitDelayOnTheExecCall`). Fix: `cmd.WaitD
  "inventory_trust":"untrusted","as_of":"…","staleness_seconds":0,"detected_at":"…"}
 ```
 
-`FindingSeed` is the artifact that crosses to A.17. A.12's checklist item 7 says *check the emission,
+`FindingSeed` is the artifact that crosses to the comparator. This review's checklist item 7 says *check the emission,
 not the comment* — the emission is present on `Inventory` (`MarshalJSON`, `collect.go:612-618`) and
 absent on `FindingSeed`. Risk is bounded because `internal/ingest/cache/schema.go:383-384` carries
 `CONSTRAINT finding_host_not_remediable CHECK (collector <> 'host' OR remediable_by_agent = 0)`, and
@@ -481,7 +481,7 @@ the list was written from memory rather than from `os/exec`'s actual surface —
 as B1.
 
 **m7 — No `.timer` unit ships.** The unit's header says a `.timer` supplies the cadence and none is
-in `deploy/systemd/`. Not in A.9's scope; recorded so it is not lost.
+in `deploy/systemd/`. Not in the host collector's scope; recorded so it is not lost.
 
 ---
 
@@ -508,12 +508,12 @@ in `deploy/systemd/`. Not in A.9's scope; recorded so it is not lost.
 
 ## 7. Stop condition
 
-A.12's stop condition is *"any mutating-capable call site found blocks this collector from being
-wired into A.17/A.21 until fixed and re-reviewed."*
+This review's stop condition is *"any mutating-capable call site found blocks this collector from being
+wired into the comparator and the Lane A exit gate until fixed and re-reviewed."*
 
 **No mutating call site exists in the shipped source.** But B1 and B2 mean the guard that is supposed
-to keep it that way does not work, and A.12 was commissioned to answer *cannot*, not *does not*.
-**Recommend: do not wire this collector into A.17 or A.21 until B1 and B2 are fixed and the
+to keep it that way does not work, and this review was commissioned to answer *cannot*, not *does not*.
+**Recommend: do not wire this collector into the comparator or the Lane A exit gate until B1 and B2 are fixed and the
 negative-control suites are re-run with the four bypass spellings and the `Exec*=` directive set
 included.** M1 should land with them. M3 and M4 gate exit criterion 13's second clause
 ("completes successfully under a non-root UID against a fixture") independently of the safety

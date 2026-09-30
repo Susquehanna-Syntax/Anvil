@@ -1,4 +1,4 @@
-// D.15's evidence.
+// The ZAP driver's evidence.
 //
 // ===========================================================================
 // WHAT THIS SUITE CAN PROVE ON THIS HOST, AND WHAT IT CANNOT
@@ -19,7 +19,7 @@
 // SystemZapRunner refuses on every host rather than returning a no-op that
 // would let a scan come back clean.
 //
-// The SECOND gap was D.14's and it is now CLOSED. Gate 11 used to sit in
+// The SECOND gap was the nuclei driver's and it is now CLOSED. Gate 11 used to sit in
 // authz.admissionChain with no implementation, so the chain refused every
 // target there, so authz.Adjudicate - the only mint for an
 // authz.Authorization - could never mint one, and no ZapDriver could be built
@@ -44,7 +44,7 @@
 // production route in both directions.
 //
 // internal/SKIPPED-CONTROLS.md U5 records what remains unexecuted, including
-// the one plan/50-dast.md explicitly asked this packet to answer â€” ZAP's JVM
+// the one plan/design/dynamic-tier.md explicitly asked this step to answer — ZAP's JVM
 // memory footprint â€” which is NOT answered here, because there is no ZAP to
 // measure and a fabricated number would become tier-M sizing documentation.
 //
@@ -194,11 +194,11 @@ func yamlValue(t *testing.T, doc, key string) string {
 }
 
 // ---------------------------------------------------------------------------
-// D.15's first named validation: all four caps, always explicit and bounded
+// The ZAP driver's first named validation: all four caps, always explicit and bounded
 // ---------------------------------------------------------------------------
 
 // TestTheFourZapCapsAreExplicitNonZeroAndBoundedInEveryGeneratedPlan is
-// plan/50-dast.md D.15's "Test asserting the generated zap.yaml always
+// the ZAP driver's design "Test asserting the generated zap.yaml always
 // contains explicit non-zero, non-'unlimited' values for all four caps".
 //
 // It asserts more than presence. Each cap must parse as a bare positive
@@ -527,11 +527,11 @@ func TestTheKernelCeilingTracksTheKernelAndNotALiteral(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// D.15's second named validation: attribution
+// The ZAP driver's second named validation: attribution
 // ---------------------------------------------------------------------------
 
 // TestTheAttributionHeaderAndThePluginIdAreInEveryGeneratedPlan is
-// plan/50-dast.md D.15's "Test asserting that X-Anvil-Scan: <run-id> and
+// the ZAP driver's design "Test asserting that X-Anvil-Scan: <run-id> and
 // injectPluginIdInHeader: true are present so operators can identify Anvil
 // traffic". research/19 line 173: "A production operator must be able to
 // distinguish Anvil from an attacker in their logs at 3am."
@@ -820,7 +820,7 @@ func TestTheReplacerJobMustRunBeforeTheActiveScan(t *testing.T) {
 	}
 
 	// So must an EXTRA job nobody declared — a spider or an ajaxSpider added
-	// to the document would crawl, and D.15 is not the crawl (D.23 is).
+	// to the document would crawl, and the ZAP driver is not the crawler; the crawl step is.
 	p2 := good
 	p2.yaml = strings.Replace(doc, "  - type: activeScan",
 		"  - type: spider\n  - type: activeScan", 1)
@@ -914,7 +914,7 @@ func TestBareUintIsStrict(t *testing.T) {
 
 // TestZapIsGivenAProxyAndNeverEgressOfItsOwn.
 //
-// This is the difference between D.14 and D.15 in one test. Nuclei is driven
+// This is the difference between the nuclei driver and the ZAP driver in one test. Nuclei is driven
 // in-process and physically cannot dial from this package (gate 3 tier 1).
 // ZAP is a JVM with its own HTTP stack, so the only thing that puts Anvil's
 // kernel in front of its requests is env.proxy â€” and if that block can be
@@ -1258,7 +1258,7 @@ func TestBothReportTemplatesAreDeclaredInEveryPlan(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The absence contract, shared with D.14
+// The absence contract, shared with the nuclei driver
 // ---------------------------------------------------------------------------
 
 // TestSystemZapRunnerRefusesRatherThanReturningANoOp.
@@ -1291,11 +1291,11 @@ func TestSystemZapRunnerRefusesRatherThanReturningANoOp(t *testing.T) {
 
 // TestBothDriversShareOneArtefactAbsentContract.
 //
-// D.14 and D.15 are two engines in one package and an operator's wrapper must
-// not need a per-engine table. The contract is three things: the same
-// sentinel, the same exit code, and the same method to read it by. This
-// asserts all three across both error types, so a future divergence is a test
-// failure rather than a silent drift.
+// The nuclei driver and the ZAP driver are two engines in one package and an
+// operator's wrapper must not need a per-engine table. The contract is three
+// things: the same sentinel, the same exit code, and the same method to read it
+// by. This asserts all three across both error types, so a future divergence is
+// a test failure rather than a silent drift.
 func TestBothDriversShareOneArtefactAbsentContract(t *testing.T) {
 	zapErr := &ZapUnavailableError{Name: ZapEngineName, Detail: "fixture"}
 	nucErr := &EngineUnavailableError{Name: EngineName, Detail: "fixture"}
@@ -1514,11 +1514,11 @@ func TestTheInvocationIsAVectorAndNeverAShellString(t *testing.T) {
 
 // TestOnlyTwoOriginsCanBeProposedByTheZapDriver.
 //
-// D.15 generates an active-scan plan and nothing else: no template, no
+// The ZAP driver generates an active-scan plan and nothing else: no template, no
 // headless browser, no WebSocket job, no out-of-band callback. So four of the
 // kernel's six origins have no job in the plan that could produce them, and
 // proposing one would be describing a request this configuration cannot make.
-// D.23's Client Spider is what widens this, and widening it is the review that
+// The crawl's Client Spider is what widens this, and widening it is the review that
 // widening should be.
 func TestOnlyTwoOriginsCanBeProposedByTheZapDriver(t *testing.T) {
 	plan := zapPlan(t)
@@ -1536,7 +1536,7 @@ func TestOnlyTwoOriginsCanBeProposedByTheZapDriver(t *testing.T) {
 		permitted[o] = true
 	}
 	if len(permitted) != 2 {
-		t.Fatalf("zapProposalOrigins() has %d entries; D.15 proposes exactly initial and "+
+		t.Fatalf("zapProposalOrigins() has %d entries; the ZAP driver proposes exactly initial and "+
 			"redirect", len(permitted))
 	}
 
@@ -1788,12 +1788,12 @@ func TestNewZapDriverRefusesEveryUnauthorizedRoute(t *testing.T) {
 // The admit-and-issue path, which is new
 // ---------------------------------------------------------------------------
 //
-// D.15's Fire has the same shape as D.14's and was blocked on the same thing:
-// NewZapDriver needs an authz.Authorization, and until gate 11 became a scope
-// narrowing none could be minted from outside package authz. zapSpec and
-// zapDriverWithRunner forge their values by composite literal for exactly that
-// reason, and every test that used them proved something BELOW the
-// authorization boundary.
+// The ZAP driver's Fire has the same shape as the nuclei driver's and was
+// blocked on the same thing: NewZapDriver needs an authz.Authorization, and
+// until gate 11 became a scope narrowing none could be minted from outside
+// package authz. zapSpec and zapDriverWithRunner forge their values by
+// composite literal for exactly that reason, and every test that used them
+// proved something BELOW the authorization boundary.
 //
 // The two tests here are the ones that could not be written: a ZapDriver built
 // by NewZapDriver from a real token, fired end to end, and the same driver
@@ -1822,10 +1822,10 @@ func mustZapDriver(t *testing.T, a admission, scope authz.Scope, sink authz.Audi
 	return d
 }
 
-// TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate is D.15's positive
+// TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate is the ZAP driver's positive
 // control, and the first time a ZapDriver has existed without being forged.
 //
-// It asserts the same three things D.14's does, because they are the same
+// It asserts the same three things the nuclei driver's does, because they are the same
 // three properties: the whole path runs, gate 21 gets ONE ROW PER GATE in
 // authz.GovernorGateOrder() rather than one row naming the last gate, and
 // ZapCoverage.RequestsIssued moves.
@@ -1871,7 +1871,7 @@ func TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`ZapDriver.Fire REFUSED a request the kernel should admit: %v
 
-This is D.15's positive control. Every other assertion about this driver is
+This is the ZAP driver's positive control. Every other assertion about this driver is
 about a refusal, and a stack only ever shown to refuse is indistinguishable
 from a stack that is broken.`, err)
 	}
@@ -1921,8 +1921,8 @@ not match the gate list means a gate was consulted and not recorded.`,
 	}
 }
 
-// TestZapFireRefusesAnOutOfScopeRedirectAndIssuesNothing is D.14's item (3)
-// for D.15: a REAL kernel refusal, driven by gate 11 in its new form.
+// TestZapFireRefusesAnOutOfScopeRedirectAndIssuesNothing is the nuclei driver's item (3)
+// for the ZAP driver: a REAL kernel refusal, driven by gate 11 in its new form.
 //
 // The narrowing is the same production shape — robots.txt fetched outside the
 // kernel, applied once to the sealed scope, and gate 13 re-validating every
@@ -2154,7 +2154,7 @@ func TestTheAutomationPlanCarriesNoReferenceAWriterCouldReach(t *testing.T) {
 // TestThisDriverIsTriggerAgnosticByInstruction records, executably, that this
 // package carries no trigger check.
 //
-// plan/50-dast.md D.15 forbidden actions: ZAP "is gated to scheduled full
+// The ZAP driver's forbidden actions: ZAP "is gated to scheduled full
 // scans only, enforced by the caller's trigger-policy check, not by this
 // driver refusing to run (the driver itself should be trigger-agnostic; the
 // gating is a config/scheduling concern)."
@@ -2163,7 +2163,7 @@ func TestTheAutomationPlanCarriesNoReferenceAWriterCouldReach(t *testing.T) {
 // absence is a recorded decision rather than an oversight somebody later
 // "fixes" by adding a check in the wrong layer. It fails if a trigger ever
 // appears in this driver's configuration surface, which is the moment to
-// reconcile with D.15's instruction rather than to discover it.
+// reconcile with the ZAP driver's instruction rather than to discover it.
 //
 // WHERE THE SCHEDULED-ONLY RULE IS ENFORCED: nowhere in this package.
 // internal/SKIPPED-CONTROLS.md U5 records it as an unenforced contract.
@@ -2172,7 +2172,7 @@ func TestThisDriverIsTriggerAgnosticByInstruction(t *testing.T) {
 	for i := 0; i < v.NumField(); i++ {
 		name := strings.ToLower(v.Field(i).Name)
 		if strings.Contains(name, "trigger") || strings.Contains(name, "schedule") {
-			t.Fatalf("ZapConfig.%s exists. plan/50-dast.md D.15 requires this driver to be "+
+			t.Fatalf("ZapConfig.%s exists. The ZAP driver's design requires this driver to be "+
 				"trigger-agnostic and puts the scheduled-only gate in the caller's "+
 				"trigger-policy check. If that instruction has changed, change "+
 				"internal/SKIPPED-CONTROLS.md U5 in the same commit", v.Field(i).Name)
@@ -2189,8 +2189,8 @@ func TestThisDriverIsTriggerAgnosticByInstruction(t *testing.T) {
 
 // TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage.
 //
-// plan/50-dast.md:1253 records ZAP's JVM memory footprint as unquantified and
-// notes that it decides whether tier-M hardware (spine S9, 32 GB / 8 core)
+// plan/design/dynamic-tier.md:1253 records ZAP's JVM memory footprint as unquantified and
+// notes that it decides whether tier-M hardware (the spine's hardware-tier table, 32 GB / 8 core)
 // accommodates a scheduled full scan alongside SAST and the coding agent.
 //
 // It CANNOT be measured here: there is no ZAP on this host and no Docker to
@@ -2225,7 +2225,7 @@ func TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage(t *testing.T) {
 	for _, f := range forbidden {
 		if strings.Contains(body, f) {
 			t.Errorf("zap.go contains %q. ZAP's JVM footprint is UNQUANTIFIED "+
-				"(plan/50-dast.md:1253) and cannot be measured on this host: there is no "+
+				"(plan/design/dynamic-tier.md:1253) and cannot be measured on this host: there is no "+
 				"ZAP and no Docker (both measured 2026-08-22, PowerShell). A figure here "+
 				"becomes tier-M sizing documentation. Settle it with a `docker stats` run "+
 				"during a representative scheduled scan and record the measurement in "+
@@ -2350,7 +2350,7 @@ func TestARunnerErrorIsNotAnEmptyFindingList(t *testing.T) {
 }
 
 // TestZapStderrIsScrubbedBeforeItIsRetained. ZAP's stderr is prose from
-// outside Anvil; plan/00-SPINE.md S7 puts prompt-injection defence at ingest,
+// outside Anvil; the spine's safety section puts prompt-injection defence at ingest,
 // and this driver's report is an ingest point.
 func TestZapStderrIsScrubbedBeforeItIsRetained(t *testing.T) {
 	hostile := "ZAP failed\u202eSTOP\u200b\U000E0041\x07"

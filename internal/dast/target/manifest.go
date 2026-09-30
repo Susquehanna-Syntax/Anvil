@@ -3,7 +3,7 @@
 // DAST half has a target to work with at all.
 //
 // The one sentence that governs every decision in this file, from
-// plan/50-dast.md's "Target Manifest Schema" section:
+// plan/design/dynamic-tier.md's "Target Manifest Schema" section:
 //
 //	Declared only -- Anvil never infers how to run a repo.
 //
@@ -28,7 +28,7 @@
 //
 // If those two collapsed, an operator could not tell "we never wrote one" from
 // "we wrote a broken one", and the second would silently read as the first --
-// which is the reading plan/00-SPINE.md S6 forbids ("a target that failed to
+// which is the reading the spine's record section forbids ("a target that failed to
 // boot must be distinguishable from scanned clean").
 //
 // # Strictness
@@ -86,7 +86,7 @@ const (
 	DefaultRelPath   = ManifestDirName + "/" + ManifestFileName
 
 	// ResetStrategyDestroyRecreate is the only `reset.strategy` v1 supports.
-	// plan/50-dast.md: snapshot/restore is reserved for a future Firecracker
+	// plan/design/dynamic-tier.md: snapshot/restore is reserved for a future Firecracker
 	// tier and is unsafe for anything holding a real credential. The field is
 	// REQUIRED rather than defaulted precisely so that adding a second value
 	// later cannot change an existing manifest's behaviour by omission.
@@ -180,15 +180,15 @@ func (r SkipReason) Valid() bool {
 // value this package does not recognise.
 func (r SkipReason) Skips() bool { return r != SkipReasonNotSkipped }
 
-// RecordOutcome maps a skip onto area 40's frozen record enums.
+// RecordOutcome maps a skip onto the record area's frozen record enums.
 //
 // The two record fields are DIFFERENT MEASUREMENTS and are both returned:
 // record.DastStatus is the DAST half's outcome, record.TargetProvenance is the
-// boot/reachability outcome. plan/IMPLEMENTATION-PLAN.md section 6 rulings
-// G4+G7 split them and forbid merging them back.
+// boot/reachability outcome. The first plan's target-provenance split separated
+// them and forbids merging them back.
 //
 // WHY SkipReasonInvalidManifest DOES NOT MAP TO skipped_no_manifest -- this is
-// a deliberate departure from plan/50-dast.md's "same downstream effect as a
+// a deliberate departure from plan/design/dynamic-tier.md's "same downstream effect as a
 // missing file", and it is flagged for the orchestrator:
 //
 // The frozen ten-value dast_status enum has no "manifest present but broken"
@@ -224,7 +224,7 @@ func (r SkipReason) RecordOutcome() (record.DastStatus, record.TargetProvenance,
 
 // AuthorizedService is the single Compose service Anvil may probe.
 //
-// plan/50-dast.md: every other service in the Compose file is provisioned (for
+// plan/design/dynamic-tier.md: every other service in the Compose file is provisioned (for
 // realistic dependencies) and is NOT a probe target. That is enforced by TYPE,
 // not by convention: this is a struct wrapping ONE unexported string, so
 //
@@ -278,7 +278,7 @@ type Manifest struct {
 	service AuthorizedService
 }
 
-// Health is the required health definition. plan/50-dast.md: no health
+// Health is the required health definition. plan/design/dynamic-tier.md: no health
 // definition means no DAST -- provisioning aborts.
 type Health struct {
 	URL             string
@@ -315,7 +315,7 @@ type Inventory struct {
 // Scope narrows what the scope layer permits WITHIN what the authorization
 // kernel already allows.
 //
-// This field grants nothing. plan/50-dast.md is explicit that anything listed
+// This field grants nothing. plan/design/dynamic-tier.md is explicit that anything listed
 // here still passes through the kernel's non-configurable reserved-range
 // denylist (gate 10), which lives in the authorization kernel, not here. This
 // package validates the SYNTAX of these entries and nothing else; it makes no
@@ -334,8 +334,8 @@ func (m *Manifest) AuthorizedService() AuthorizedService { return m.service }
 // authorization path, which does not read this file.
 //
 // Note that this is anvil/target.provisioning, NOT anvil/target.provenance.
-// The two were one field until plan/IMPLEMENTATION-PLAN.md section 6 rulings
-// G4+G7 split them; see record.TargetProvisioning's doc comment.
+// The two were one field until the first plan's target-provenance split
+// separated them; see record.TargetProvisioning's doc comment.
 func (m *Manifest) Provisioning() record.TargetProvisioning {
 	return record.TargetProvisioningEphemeralManifest
 }
@@ -376,7 +376,7 @@ func LoadInRepo(repoRoot string) (*Manifest, SkipReason, error) {
 //	(nil, SkipReasonInvalidManifest, err)  -- a refusal, err says why.
 //
 // The non-nil error on the invalid path is a deliberate strengthening of
-// plan/50-dast.md's `(nil, SkipReasonInvalidManifest, nil)`: a caller that
+// plan/design/dynamic-tier.md's `(nil, SkipReasonInvalidManifest, nil)`: a caller that
 // only tests `err != nil` must not be able to read a broken opt-in as a clean
 // skip. The SkipReason is exactly as the plan specifies, so a caller that
 // switches on it is unaffected.
@@ -483,7 +483,7 @@ func checkBytes(raw []byte) error {
 // ---------------------------------------------------------------------------
 
 // The accepted key sets. These are allowlists: a key that is not here is a
-// refusal. plan/50-dast.md's own reason for strictness is that a typo like
+// refusal. plan/design/dynamic-tier.md's own reason for strictness is that a typo like
 // `helth:` would otherwise parse cleanly, disable the health gate, and
 // silently mean "no DAST" forever.
 var (
@@ -1129,7 +1129,7 @@ func isHostname(s string) bool {
 // ---------------------------------------------------------------------------
 
 // validateFilesystem checks the declared files actually exist inside the repo.
-// plan/50-dast.md: "If compose_file is present but does not exist ... the
+// plan/design/dynamic-tier.md: "If compose_file is present but does not exist ... the
 // manifest is schema-invalid."
 func (m *Manifest) validateFilesystem(repoRoot string) error {
 	if err := requireFileWithin(repoRoot, m.ComposeFile, "compose_file"); err != nil {

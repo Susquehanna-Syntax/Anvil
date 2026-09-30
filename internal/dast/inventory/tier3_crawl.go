@@ -1,9 +1,9 @@
-// D.23 — Tier 3: the browser-driven crawl.
+// Tier 3: the browser-driven crawl.
 //
 // A CRAWLER IS THE MOST DANGEROUS COMPONENT IN THE DYNAMIC TIER, for one
 // reason that is worth stating before any code: EVERY DESTINATION IT VISITS
 // AFTER THE FIRST ONE WAS PROPOSED BY THE TARGET. A spec document is
-// attacker-controlled bytes DESCRIBING attack surface (D.18's framing); a link
+// attacker-controlled bytes DESCRIBING attack surface (the runtime spec probe's framing); a link
 // graph is attacker-controlled bytes CHOOSING ANVIL'S NEXT REQUEST. That is a
 // materially stronger capability handed to the thing being tested, and the
 // whole shape of this file follows from refusing it.
@@ -15,7 +15,7 @@
 //
 //	scope, robots, method, technique   authz.Governor, per request, via
 //	                                   GateAudit.AuditedAdmit — the same call
-//	                                   D.22's probeOne makes
+//	                                   route confirmation's probeOne makes
 //	the walk-off                       gate 13 (CheckGate13Revalidate) re-runs
 //	                                   gates 4, 5, 8, 9 and 10 on EVERY request
 //	                                   and EVERY hop, against the destination
@@ -30,17 +30,17 @@
 //	                                   through Scope.PermitsPath — which is
 //	                                   fail-closed on an origin nobody
 //	                                   determined
-//	the canonical identity of a path   D.20's canonicalizePattern, the ONE
+//	the canonical identity of a path   Go route extraction's canonicalizePattern, the ONE
 //	                                   canonicalizer this package has, and the
-//	                                   one D.22 keys its union on
+//	                                   one route confirmation keys its union on
 //
 // This file constructs no socket, holds no client and cannot import a package
-// that could: D.9's gate 3 tier 1 makes that structural. The browser lives
+// that could: the build-time guard's gate 3 tier 1 makes that structural. The browser lives
 // behind ClientSpider, and its absence is a loud typed refusal.
 //
 // # The redirect label, which is the one thing this file adds to the kernel
 //
-// internal/dast/engines/zap.go (D.15) records, at length, that NOTHING makes
+// internal/dast/engines/zap.go (the ZAP driver) records, at length, that NOTHING makes
 // ZAP's own redirect following arrive at gate 13 labelled as a redirect: a
 // proxy that stamps every request `initial` at Hop 0 never reaches authz's
 // maxRedirectHops, and a same-host redirect chain is then bounded only by gate
@@ -67,7 +67,7 @@
 // bounds, any one of which alone terminates the loop:
 //
 //	1 THE VISITED SET. An address is fetched at most once. The key is
-//	  endpointKey(method, canonicalizePattern(path)) — D.22's key, so "visited"
+//	  endpointKey(method, canonicalizePattern(path)) — route confirmation's key, so "visited"
 //	  here and "one endpoint" there are the same question. A cycle A->B->A
 //	  therefore revisits nothing: the loop pops strictly from a frontier that
 //	  only ever admits keys it has not already admitted, so the number of
@@ -89,19 +89,20 @@
 // not visit is attack surface that exists, and dropping it quietly SHRINKS the
 // denominator of endpoint_coverage — which makes coverage look better.
 //
-// # Confirmation, per ruling 7
+// # Confirmation, per the inventory ruling
 //
 // EVERY ROUTE THIS FILE PRODUCES IS ConfirmationCandidate, unconditionally,
 // including one whose page answered 200 to a request this crawl itself made.
 // There is exactly one writer of ConfirmationConfirmed in this package —
-// D.22's confirmationFor — and a second one here would be a second numerator.
-// The crawl hands D.22 candidates and D.22 confirms them; a link's existence
-// is not evidence the endpoint responds, and neither is this file's opinion.
-// AssertEveryRouteIsACandidate is the check rather than this paragraph.
+// route confirmation's confirmationFor — and a second one here would be a second numerator.
+// The crawl hands candidates to route confirmation, and route confirmation
+// confirms them; a link's existence is not evidence the endpoint responds, and
+// neither is this file's opinion. AssertEveryRouteIsACandidate is the check
+// rather than this paragraph.
 //
 // # The exclusion list is a DENYLIST, and denylists lose
 //
-// plan/50-dast.md D.23 requires Swagger UI and GraphQL playground routes to be
+// The crawl's design requires Swagger UI and GraphQL playground routes to be
 // excluded "even if discovered by the crawl itself". A prefix list is a
 // denylist, and this build's standing rule is that a denylist loses. It is
 // acceptable HERE, and only here, because of where its failure lands: a
@@ -163,7 +164,7 @@ var (
 
 	// ErrRouteClaimsConfirmed is what AssertEveryRouteIsACandidate returns.
 	ErrRouteClaimsConfirmed = errors.New("inventory: a crawl-discovered route claims " +
-		"\"confirmed\"; only D.22 confirms an endpoint, and only on an observation")
+		"\"confirmed\"; only route confirmation confirms an endpoint, and only on an observation")
 )
 
 // ---------------------------------------------------------------------------
@@ -214,12 +215,12 @@ const (
 // question — WHO started the run and whether their provenance is trustworthy
 // (schedule, workflow_dispatch, pull_request_target...). This one answers HOW
 // DEEP the run is, which is orthogonal: a `schedule` event can start a light
-// run and an operator can start a full one. plan/50-dast.md:1153 uses exactly
+// run and an operator can start a full one. plan/design/dynamic-tier.md:1153 uses exactly
 // this axis for `server_line_coverage` ("scheduled full scans only... `null`
-// on incremental scans") and D.23's own validation asks for a run "whose
+// on incremental scans") and the crawl's own validation asks for a run "whose
 // trigger type is `incremental`". Nothing in this module declares that axis
 // yet, so it is declared here and FLAGGED TO THE ORCHESTRATOR as a candidate
-// for hoisting — into internal/record beside InventoryProvenance if D.26 needs
+// for hoisting — into internal/record beside InventoryProvenance if coverage reporting needs
 // it in the record, or into a run-orchestration packet if one lands first.
 // Until then this is the one place the vocabulary is written, and the two
 // gates compose rather than duplicate: gate 7 decides whether the run may
@@ -240,11 +241,11 @@ const (
 	// THE TIER 3 ALLOWLIST.
 	ScanTriggerScheduledFull ScanTrigger = "scheduled_full"
 
-	// ScanTriggerIncremental is the always-on path — the one D.15 and D.23
+	// ScanTriggerIncremental is the always-on path — the one the ZAP driver and the crawl
 	// are both forbidden from firing on.
 	ScanTriggerIncremental ScanTrigger = "incremental"
 
-	// ScanTriggerTag is a tag-triggered scan. D.23's forbidden actions name
+	// ScanTriggerTag is a tag-triggered scan. The crawl's forbidden actions name
 	// it beside `incremental`.
 	ScanTriggerTag ScanTrigger = "tag"
 )
@@ -291,7 +292,7 @@ func (t ScanTrigger) PermitsTier3Crawl() bool { return tier3EligibleTriggers()[t
 // ---------------------------------------------------------------------------
 
 // metaSurfacePrefixes is the compiled-in exclusion seed list: Swagger UI and
-// GraphQL playground routes, which plan/50-dast.md D.23 forbids crawling "even
+// GraphQL playground routes, which the crawl's design forbids crawling "even
 // if discovered by the crawl itself".
 //
 // They are META-SURFACE, not application surface. Tier 0 already asks the
@@ -440,7 +441,7 @@ const (
 	CrawlOutcomeOffHost CrawlOutcome = "link_points_off_the_admitted_origin"
 	// CrawlOutcomeLinkUnusable: the href is not a path Anvil can request —
 	// a mailto:, a javascript:, a fragment-only reference, an over-long
-	// string, or a path D.20's canonicalizer rewrote (which would mean
+	// string, or a path Go route extraction's canonicalizer rewrote (which would mean
 	// requesting a template).
 	CrawlOutcomeLinkUnusable CrawlOutcome = "link_is_not_a_requestable_path"
 	// CrawlOutcomeDepthExceeded: the address sits deeper than MaxDepth.
@@ -545,8 +546,9 @@ func (v CrawlVisit) Method() authz.Method { return v.method }
 // Path is the CONCRETE path, as the link spelled it after resolution.
 func (v CrawlVisit) Path() string { return v.path }
 
-// CanonicalPath is the path under D.20's canonicalizer — the spelling D.22
-// keys its union on, and the spelling the visited set is keyed on.
+// CanonicalPath is the path under Go route extraction's canonicalizer — the
+// spelling route confirmation keys its union on, and the spelling the visited
+// set is keyed on.
 func (v CrawlVisit) CanonicalPath() string { return v.canon }
 
 // Depth is the link distance from a seed. A seed is depth 0.
@@ -587,7 +589,7 @@ func (v CrawlVisit) String() string {
 		redact(v.from))
 }
 
-// CoverageOfVisit is THE ONE JOIN between a crawl visit and D.24's session
+// CoverageOfVisit is THE ONE JOIN between a crawl visit and the authentication helper's session
 // timeline, and it hard-codes CarriedSession false.
 //
 // That is not a placeholder. NOTHING IN THIS FILE CAN ATTACH A SESSION TO A
@@ -595,13 +597,13 @@ func (v CrawlVisit) String() string {
 // CrawlRequest carries an Authorization, a Target, a method, a path, a
 // technique, an origin, a hop and an audit sequence, and not one of those is a
 // session; and ClientSpider is handed nothing else. A crawl request therefore
-// reaches the target as an anonymous request, whatever D.24's session was
+// reaches the target as an anonymous request, whatever the authentication helper's session was
 // doing at the same moment.
 //
 // So a visit's instant falling inside an authenticated window means the
 // session was alive WHILE the visit happened, and nothing more. Labelling it
 // authenticated coverage would be a claim about timing dressed as a claim
-// about access, and D.26 would report the number as coverage behind the login.
+// about access, and coverage reporting would report the number as coverage behind the login.
 //
 // TestNoCrawlRequestCanCarryASession is what keeps this honest: it walks
 // CrawlConfig and CrawlRequest by reflection and fails if a field appears that
@@ -612,7 +614,7 @@ func CoverageOfVisit(v CrawlVisit) CoverageInstant {
 	return CoverageInstant{At: v.At(), CarriedSession: false}
 }
 
-// CoverageOfVisits maps a whole crawl's visits for D.26. It is the plural of
+// CoverageOfVisits maps a whole crawl's visits for coverage reporting. It is the plural of
 // CoverageOfVisit and carries the same claim.
 func CoverageOfVisits(vs []CrawlVisit) []CoverageInstant {
 	out := make([]CoverageInstant, 0, len(vs))
@@ -835,7 +837,7 @@ type ClientSpider interface {
 
 // SystemClientSpider returns the browser this host can drive.
 //
-// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY — and the error is D.15's
+// IT ALWAYS RETURNS AN ERROR, ON EVERY HOST, TODAY — and the error is the ZAP driver's
 // own, obtained by CALLING engines.SystemZapRunner rather than by asserting
 // what it would say. The Tier 3 spider is ZAP's Client Spider; no ZAP runner
 // adapter is compiled into this module, so there is no Client Spider either,
@@ -929,7 +931,7 @@ type CrawlConfig struct {
 	// every address and a loud error — never a silently empty link graph.
 	Spider ClientSpider
 
-	// Clock advances the instant between requests. It is D.22's ClockSource,
+	// Clock advances the instant between requests. It is route confirmation's ClockSource,
 	// reused rather than re-declared, and for the same reason: gate 14's
 	// token bucket refills from the ELAPSED interval between the instants it
 	// is handed, so a frozen clock spends the initial bucket and then refuses
@@ -999,11 +1001,11 @@ func (r CrawlResult) SkipReason() string { return r.skipReason }
 // Routes returns a deep COPY of the crawl-discovered routes.
 //
 // Every one carries record.InventoryProvenanceCrawl and
-// ConfirmationCandidate. They are inputs to D.22's MergeAndConfirm, which is
+// ConfirmationCandidate. They are inputs to route confirmation's MergeAndConfirm, which is
 // the only thing that confirms anything.
 func (r CrawlResult) Routes() []Route { return cloneRoutes(r.routes) }
 
-// Refusals returns a COPY of every refusal, for D.26's denominator.
+// Refusals returns a COPY of every refusal, for coverage reporting's denominator.
 func (r CrawlResult) Refusals() []Refusal { return cloneRefusals(r.refusals) }
 
 // Visits returns a COPY of the crawl's ledger, one row per address
@@ -1081,7 +1083,7 @@ func (r CrawlResult) AssertNotSilentlyEmpty() error {
 // AssertBudgetSufficed reports whether any address was left unreached because
 // a BUDGET ran out rather than because Anvil decided against it.
 //
-// It names the same hazard D.22's AssertBudgetSufficed does — research/22's
+// It names the same hazard route confirmation's AssertBudgetSufficed does — research/22's
 // Risk #4, where a larger candidate list produces a smaller confirmed count —
 // arriving through the crawl instead of through confirmation.
 func (r CrawlResult) AssertBudgetSufficed() error {
@@ -1107,11 +1109,11 @@ func (r CrawlResult) AssertBudgetSufficed() error {
 		ErrProbeBudgetExhausted, strings.Join(parts, ", "))
 }
 
-// AssertEveryRouteIsACandidate is ruling 7, checked rather than asserted.
+// AssertEveryRouteIsACandidate is the inventory ruling, checked rather than asserted.
 //
 // A crawl-discovered route is a candidate even when the crawl fetched it and
 // the target answered 200, because there is exactly one writer of
-// ConfirmationConfirmed in this package and it is D.22's.
+// ConfirmationConfirmed in this package and it is route confirmation's.
 func (r CrawlResult) AssertEveryRouteIsACandidate() error {
 	for _, rt := range r.routes {
 		if rt.Confirmation() != ConfirmationCandidate {
@@ -1172,20 +1174,20 @@ type crawlState struct {
 	out     *CrawlResult
 }
 
-// CrawlWithClientSpider is D.23: Tier 3, the browser-driven crawl.
+// CrawlWithClientSpider is Tier 3: the browser-driven crawl.
 //
 // # Signature
 //
-// plan/50-dast.md D.23 writes it `CrawlWithClientSpider(target *Target,
+// The crawl's design writes it `CrawlWithClientSpider(target *Target,
 // exclude []string) ([]Route, error)`. There is no `*Target` in this package —
 // the kernel's authz.Target is the type, and it is one of a dozen things a
 // crawl needs — so the target and its kernel objects arrive in a CrawlConfig,
-// exactly as D.18's Config and D.22's ConfirmConfig do. `exclude` stays a
-// named parameter because it is the plan's own emphasis and because an
-// exclusion list is worth reading at the call site. The return is a
-// CrawlResult rather than a bare []Route for the reason every tier in this
-// package returns one: the refusals and the unreached addresses are part of
-// the coverage denominator, and a bare slice drops them.
+// exactly as the runtime spec probe's Config and route confirmation's
+// ConfirmConfig do. `exclude` stays a named parameter because it is the plan's
+// own emphasis and because an exclusion list is worth reading at the call site.
+// The return is a CrawlResult rather than a bare []Route for the reason every
+// tier in this package returns one: the refusals and the unreached addresses
+// are part of the coverage denominator, and a bare slice drops them.
 //
 // # Order
 //
@@ -1218,7 +1220,7 @@ func CrawlWithClientSpider(ctx context.Context, cfg CrawlConfig, now authz.Clock
 	// the answer whatever else is wrong.
 	if !cfg.Trigger.PermitsTier3Crawl() {
 		out.skipReason = fmt.Sprintf("trigger %q is not on the Tier 3 eligibility "+
-			"allowlist %v. plan/50-dast.md D.23: the browser crawl fires on scheduled "+
+			"allowlist %v. The crawl's design: the browser crawl fires on scheduled "+
 			"full scans only, never on the incremental or tag-triggered path",
 			redact(string(cfg.Trigger)), []ScanTrigger{ScanTriggerScheduledFull})
 		return out, nil
@@ -1430,8 +1432,8 @@ func (s *crawlState) emitRoute(item frontierItem) {
 		Params:     params,
 		Provenance: record.InventoryProvenanceCrawl,
 		// UNCONDITIONAL, and it stays unconditional if this address answered
-		// 200 to a request this crawl made. Ruling 7 and D.22 own the other
-		// value; see AssertEveryRouteIsACandidate.
+		// 200 to a request this crawl made. The inventory ruling and route
+		// confirmation own the other value; see AssertEveryRouteIsACandidate.
 		Confirmation: ConfirmationCandidate,
 		Trust:        record.TrustUntrusted,
 	})
@@ -1571,7 +1573,7 @@ func (s *crawlState) crawlOne(ctx context.Context, item frontierItem, now authz.
 		return
 	}
 
-	// A status outside [100,599] is NOT an answer. D.22 holds the same rule
+	// A status outside [100,599] is NOT an answer. Route confirmation holds the same rule
 	// for the same reason: 0 is non-404, and a seam that lost the response
 	// must not read as a page that exists.
 	if page.Status < minStatusCode || page.Status > maxStatusCode {
@@ -1671,9 +1673,10 @@ func (s *crawlState) offer(href, from string, depth, hop int, origin authz.Reque
 	}
 	addressPath := stripQuery(requestPath)
 
-	// ONE canonicalizer: D.20's, the same one D.22 keys its union on. A
-	// second one here could disagree, and the disagreement would be silent —
-	// two spellings of one address, one of them fetched twice.
+	// ONE canonicalizer: Go route extraction's, the same one route confirmation
+	// keys its union on. A second one here could disagree, and the disagreement
+	// would be silent — two spellings of one address, one of them fetched
+	// twice.
 	canon, _, cerr := canonicalizePattern(addressPath)
 	if cerr != nil {
 		s.noteUnreachable(href, from, depth, hop, origin, CrawlOutcomeLinkUnusable,
@@ -1708,7 +1711,7 @@ func (s *crawlState) offer(href, from string, depth, hop int, origin authz.Reque
 
 	if p, hit := s.exclude.covers(canon); hit {
 		s.record(item, CrawlOutcomeMetaSurfaceExcluded, 0, 0, s.now, fmt.Sprintf(
-			"prefix %q covers it. plan/50-dast.md D.23 forbids crawling Swagger UI and "+
+			"prefix %q covers it. The crawl's design forbids crawling Swagger UI and "+
 				"GraphQL playground routes even when the crawl finds them itself: they "+
 				"are meta-surface, Tier 0 already reads the document behind them in one "+
 				"request, and crawling the app that renders it spends the tightest "+
@@ -1927,7 +1930,7 @@ var errLinkAmbiguous = errors.New("the link's canonical identity is ambiguous")
 //
 // THIS IS THE THIRD TIME THIS BUILD HAS LOST TO A NON-CANONICAL SPELLING —
 // gate 8 encodes the lesson, containment lost to ::ffff:169.254.169.254/128,
-// and D.25 measured this crawl fetching "/%2e%2e/admin" while refusing the
+// and the crawl-and-auth review measured this crawl fetching "/%2e%2e/admin" while refusing the
 // plain "/admin" that gate 11 had removed. Every browser resolves the first to
 // the second. A control that matches on bytes the client will re-interpret is
 // matching on the wrong bytes.
@@ -2022,7 +2025,7 @@ func dotSegmentsSpelledPlainly(escapedPath string) (string, error) {
 //
 // It is a string split and NOT a canonicalization — nothing in this file
 // matches on its output without first running it through
-// canonicalizePattern, which is D.20's and the package's only one.
+// canonicalizePattern, which is Go route extraction's and the package's only one.
 func stripQuery(path string) string {
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		if i == 0 {
@@ -2038,7 +2041,7 @@ func stripQuery(path string) string {
 //
 // The TYPE is left empty and stays empty. A crawl cannot know a parameter's
 // type, and inventing "string" would make Param.Typed() — the predicate
-// plan/50-dast.md:610's "parameter-typed" claim is measured by — lie. Required
+// plan/design/dynamic-tier.md:610's "parameter-typed" claim is measured by — lie. Required
 // is false for the same reason: a link carrying a parameter is not evidence
 // the server demands it.
 //

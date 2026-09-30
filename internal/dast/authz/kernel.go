@@ -1,4 +1,4 @@
-// The kernel proper: the pure decision function plan/00-SPINE.md S7 mandates,
+// The kernel proper: the pure decision function the spine's safety section mandates,
 // the gate chain it runs, and the audit-coupled adjudication that turns a pure
 // ruling into something a socket may be opened on.
 //
@@ -7,10 +7,10 @@
 // ===========================================================================
 //
 //	Decide(target, scope, attestation, clock) -> Ruling
-//	    The pure function. S7: "The authorization kernel is a pure function of
-//	    (target, scope, attestation, clock)". It reads no files, opens no
-//	    sockets, consults no clock of its own, and writes nothing. A Ruling
-//	    AUTHORIZES NOTHING — it is an opinion.
+//	    The pure function. The spine's safety section: "The authorization
+//	    kernel is a pure function of (target, scope, attestation, clock)". It
+//	    reads no files, opens no sockets, consults no clock of its own, and
+//	    writes nothing. A Ruling AUTHORIZES NOTHING — it is an opinion.
 //
 //	Adjudicate(sink, enablement, target, scope, attestation, clock) -> Decision
 //	    The impure wrapper, and the only mint point for permission in Anvil.
@@ -31,7 +31,7 @@
 //	    constructs a socket, and refuses if the token does not name exactly
 //	    this target and exactly this pinned address.
 //
-// The split between step 1 and step 2 is the whole reason S7's "pure function"
+// The split between step 1 and step 2 is the whole reason the spine's "pure function"
 // and gate 21's "the audit write is part of the decision" are not in conflict.
 // A pure function cannot write to a log. So the pure function does not produce
 // permission; it produces an opinion, and permission is produced by the thing
@@ -43,7 +43,7 @@
 //
 // The admission chain is a compiled-in ordered list of GateIDs. Gate
 // implementations install themselves into a registry from their own files
-// (D.4–D.7). If a gate in the chain has NO implementation compiled in, the
+// (the kernel's gate phases). If a gate in the chain has NO implementation compiled in, the
 // chain REFUSES at that gate. It does not skip it, log a warning, or treat the
 // absence as a pass.
 //
@@ -70,7 +70,7 @@
 // ===========================================================================
 //
 // security.txt resolves a reporting channel and never grants permission
-// (RFC 9116; plan/00-SPINE.md S7; plan/50-dast.md gate 12). Three things
+// (RFC 9116; the spine's safety section; plan/design/dynamic-tier.md gate 12). Three things
 // enforce that here:
 //
 //   - Gate12SecurityTxtReportingChannel appears in no chain in this file.
@@ -251,11 +251,11 @@ func (r Ruling) String() string {
 //
 // THESE FOUR PARAMETERS ARE THE WHOLE OF A GATE'S WORLD. There is no context,
 // no options struct, no io.Reader, no logger, and above all no security.txt
-// result. plan/00-SPINE.md S7 requires the kernel to be a pure function of
+// result. The spine's safety section requires the kernel to be a pure function of
 // exactly (target, scope, attestation, clock), and gate 12 requires that the
 // admission decision be structurally unable to see a security.txt result.
 // Widening this signature is how both requirements would be lost, so it is
-// declared here, in D.2's write scope, and nowhere else.
+// declared here, in the kernel core's write scope, and nowhere else.
 type gateFunc func(target Target, scope Scope, attestation Attestation, clock Clock) Ruling
 
 // registry holds the compiled-in gate implementations. It is package-level and
@@ -267,7 +267,7 @@ var registry = map[GateID]gateFunc{}
 // every registration that would weaken the contract.
 //
 // It is separate from register so that the refusal paths are testable without
-// mutating the package-level registry that D.4–D.7 populate from init.
+// mutating the package-level registry that the kernel's gate phases populate from init.
 func registerInto(m map[GateID]gateFunc, g GateID, fn gateFunc) error {
 	if m == nil {
 		return fmt.Errorf("authz: %w: nil registry", ErrRefused)
@@ -281,10 +281,10 @@ func registerInto(m map[GateID]gateFunc, g GateID, fn gateFunc) error {
 	}
 	if g == Gate12SecurityTxtReportingChannel {
 		return fmt.Errorf("authz: %w: %s (security.txt) cannot be registered as a gate "+
-			"implementation. RFC 9116, plan/00-SPINE.md S7 and plan/50-dast.md gate 12 all "+
+			"implementation. RFC 9116, the spine's safety section and plan/design/dynamic-tier.md gate 12 all "+
 			"say the same thing: security.txt resolves a reporting channel and NEVER grants "+
 			"permission. Its result is recorded in the audit log and is structurally "+
-			"excluded from the admission decision's input type. Fetch it with D.5's "+
+			"excluded from the admission decision's input type. Fetch it with per-target admission's "+
 			"FetchSecurityTxt and write the result to the audit; do not put it in a chain",
 			ErrRefused, g)
 	}
@@ -301,11 +301,11 @@ func registerInto(m map[GateID]gateFunc, g GateID, fn gateFunc) error {
 	}
 	if g == Gate7TriggerProvenance {
 		return fmt.Errorf("authz: %w: %s is a Phase 1 RUN-INITIATION gate and cannot be "+
-			"registered as a per-target gate implementation. plan/50-dast.md's gate table "+
+			"registered as a per-target gate implementation. plan/design/dynamic-tier.md's gate table "+
 			"puts it in Phase 1: it is evaluated ONCE PER RUN, before any target exists, and "+
 			"it is a function of the trigger event, the actor and the repository — none of "+
 			"which is a target, a scope, an attestation or a clock. Widening gateFunc to "+
-			"carry them would break plan/00-SPINE.md S7's \"pure function of (target, scope, "+
+			"carry them would break the spine's \"pure function of (target, scope, "+
 			"attestation, clock)\", which is the property that makes the admission decision "+
 			"auditable. Call CheckGate7TriggerProvenance from InitiateRun; its pass is a "+
 			"precondition of the Attestation the admission chain consumes",
@@ -313,7 +313,7 @@ func registerInto(m map[GateID]gateFunc, g GateID, fn gateFunc) error {
 	}
 	if g == Gate11RobotsDeny {
 		return fmt.Errorf("authz: %w: %s (robots.txt) cannot be registered as a gate "+
-			"implementation. plan/50-dast.md:1032's own row for it — \"Restrictive "+
+			"implementation. plan/design/dynamic-tier.md:1032's own row for it — \"Restrictive "+
 			"robots.txt/no-scan statement REMOVES PATHS FROM SCOPE; permissive adds "+
 			"nothing\" — describes a SCOPE TRANSFORMATION, not an admission predicate, "+
 			"and it is implemented as one: NarrowScopeToRobots runs ONCE at run "+
@@ -362,11 +362,11 @@ func register(g GateID, fn gateFunc) {
 //
 // # What is absent, and why each absence is structural rather than remembered
 //
-// GATE 7 IS A PHASE 1 RUN-INITIATION GATE. plan/50-dast.md:1032's own table
+// GATE 7 IS A PHASE 1 RUN-INITIATION GATE. plan/design/dynamic-tier.md:1032's own table
 // puts it there, and it is evaluated ONCE PER RUN, before any target exists.
 // Trigger provenance is not a function of (target, scope, attestation, clock),
 // so a gateFunc cannot express it, and widening gateFunc to carry it would
-// break plan/00-SPINE.md S7's "pure function of (target, scope, attestation,
+// break the spine's "pure function of (target, scope, attestation,
 // clock)" — the property that makes the admission decision auditable at all.
 // Gate 7 runs at run initiation (CheckGate7TriggerProvenance, called by
 // InitiateRun), and its pass is a PRECONDITION of obtaining the Attestation
@@ -398,7 +398,7 @@ func register(g GateID, fn gateFunc) {
 // (Target, Scope, Attestation, Clock), it receives NO PATH, and robots.txt
 // requires a fetch.
 //
-// plan/50-dast.md:1032's own gate 11 row is not the language of an admission
+// plan/design/dynamic-tier.md:1032's own gate 11 row is not the language of an admission
 // predicate: "Restrictive robots.txt/no-scan statement REMOVES PATHS FROM
 // SCOPE; permissive adds nothing." That is a SCOPE TRANSFORMATION, and it is
 // implemented as one — NarrowScopeToRobots in phase2_admission.go, run once at
@@ -428,7 +428,7 @@ var admissionChain = []GateID{
 //
 // # Gate 5 is in this chain because an attestation can expire DURING a run
 //
-// It was not, and D.9's critic measured what that cost: an attestation valid
+// It was not, and the build-time guard's review measured what that cost: an attestation valid
 // over [base-1h, base+29d], a Revalidate at base+365d, permits=true, and
 // CheckGate13Revalidate passing an OriginInitial intent at the same instant.
 // Gate 14 permits thirty minutes of wall clock PER TARGET, and a run has many
@@ -446,7 +446,7 @@ var admissionChain = []GateID{
 //
 // # Gate 4 is in this chain because gate 13 is a scope re-check
 //
-// plan/50-dast.md:1032's gate 13 row is "Re-validate scope on every request
+// plan/design/dynamic-tier.md:1032's gate 13 row is "Re-validate scope on every request
 // including every redirect hop", and research/20 says "re-validate SCOPE on
 // every single request". Gates 8, 9 and 10 canonicalize, pin and screen
 // reserved ranges; NOT ONE OF THEM ASKS WHETHER THE HOST IS IN SCOPE. A
@@ -456,7 +456,7 @@ var admissionChain = []GateID{
 //
 // research/20 names the failure this exists to prevent — ZAP issue #2546, where
 // scope was a job-level property rather than a per-request one — and calls it
-// "the single most likely way Anvil escapes scope". D.6 calls Revalidate; it
+// "the single most likely way Anvil escapes scope". Per-request enforcement calls Revalidate; it
 // does not re-implement these four gates.
 var revalidationChain = []GateID{
 	Gate4ScopeFile,
@@ -479,7 +479,7 @@ type chain struct {
 // It returns the trace rather than a single ruling because gate 21 requires "an
 // immutable audit of EVERY GATE DECISION". An earlier draft returned only the
 // last permitting ruling, and Adjudicate wrote one row from it: seven gates
-// consulted, one row recorded. D.3's critic named that, and the fix is here
+// consulted, one row recorded. The kernel-types review named that, and the fix is here
 // rather than in the audit writer, because a writer cannot record decisions the
 // chain runner did not hand it.
 //
@@ -547,16 +547,16 @@ func lastRuling(trace []Ruling) Ruling {
 }
 
 // ---------------------------------------------------------------------------
-// Decide — plan/00-SPINE.md S7's pure function
+// Decide — the spine's pure function
 // ---------------------------------------------------------------------------
 
 // Decide is the authorization kernel's pure decision function.
 //
-// plan/50-dast.md D.2 writes this contract as
+// The kernel core's design writes this contract as
 // `Decision(target, scope, attestation, clock) (Allow|Deny, Reason)`. The
 // function is named Decide here because Decision is the name of the AUDITED
 // result type below, and having a function and a type with the same name in
-// one package is not expressible in Go. D.5's constraint — "Gate 12's
+// one package is not expressible in Go. Per-target admission's constraint — "Gate 12's
 // SecurityTxtResult type must not appear anywhere in the `Decision(...)`
 // function signature or any type it transitively references" — applies to this
 // function, to gateFunc, and to Adjudicate.
@@ -590,7 +590,7 @@ func revalidationRunner() chain {
 // The seam is unexported and exists so that this package's own tests can drive
 // a fully-populated chain while gates 4–11 are still unimplemented. No package
 // outside internal/dast/authz can reach it, so no caller can substitute a
-// shorter chain for the real one; and D.4–D.7 install gates through register
+// shorter chain for the real one; and the kernel's gate phases install gates through register
 // rather than by calling this.
 func decideWith(ch chain, target Target, scope Scope, attestation Attestation, clock Clock) Ruling {
 	return lastRuling(decideTracedWith(ch, target, scope, attestation, clock))
@@ -616,7 +616,7 @@ func decideTracedWith(ch chain, target Target, scope Scope, attestation Attestat
 // them asks whether the host is in the allow list, so a reader of this
 // exported API who took the older "gates 8, 9 and 10" wording at face value
 // would conclude that gate 13 does not re-check scope membership — the exact
-// misreading Ruling 3 was issued to correct, and the reading ZAP issue #2546
+// misreading the revalidation-chain ruling was issued to correct, and the reading ZAP issue #2546
 // is a record of. GATE 5 IS ALSO IN IT: an attestation expires at an instant,
 // not at the end of a run.
 //
@@ -633,7 +633,7 @@ func Revalidate(target Target, scope Scope, attestation Attestation, clock Clock
 // It answers only questions the KERNEL owns: did each of the four inputs come
 // from a constructor in this package, and is the attestation bound to this
 // exact scope. It deliberately does NOT check expiry, authority, trigger
-// provenance or scope membership — those are gates 4–7, they belong to D.4,
+// provenance or scope membership — those are gates 4–7, they belong to run initiation,
 // and a second implementation of them here would be a second implementation
 // that can disagree.
 //
@@ -642,7 +642,7 @@ func Revalidate(target Target, scope Scope, attestation Attestation, clock Clock
 // admission chain AND in revalidationChain, so that comparison is made on every
 // admission, every request and every redirect hop. This function's silence on
 // expiry is a statement about WHERE the check lives, not about whether it
-// happens — D.9's critic read the older wording as the latter and measured a
+// happens — the build-time guard's review read the older wording as the latter and measured a
 // Revalidate at base+365d permitting an attestation that expired at base+29d.
 //
 // The scope/attestation binding is checked here anyway, and the duplication is
@@ -766,7 +766,7 @@ func (r GateRecord) Validate() error {
 	return nil
 }
 
-// AuditSink is the append-only writer gate 21 requires. D.7 implements it over
+// AuditSink is the append-only writer gate 21 requires. The disclosure phase implements it over
 // the SQLite record store.
 //
 // It returns the sequence number of the row it wrote. Returning (0, nil) is
@@ -889,7 +889,7 @@ func (d Decision) Authorization() (Authorization, error) {
 // # Gate 1 is a precondition, not a decoration
 //
 // enablement is the DastEnablement EnableDAST minted. Gate 1 requires an
-// explicit, non-defaulted write before DAST is on; D.3's critic reached
+// explicit, non-defaulted write before DAST is on; the kernel-types review reached
 // Adjudicate without ever calling EnableDAST, which made that write decorative.
 // It is now the first thing checked, and the zero DastEnablement — the value a
 // caller who never called EnableDAST holds — refuses. The enablement must also
@@ -898,7 +898,7 @@ func (d Decision) Authorization() (Authorization, error) {
 //
 // # Gate 21 gets a row per gate, not a row per adjudication
 //
-// plan/50-dast.md gate 21 is "immutable audit of every gate decision". An
+// plan/design/dynamic-tier.md gate 21 is "immutable audit of every gate decision". An
 // earlier draft wrote one row, built from the chain's last permitting ruling:
 // seven gates consulted, one gate recorded, and the six that agreed were
 // invisible. The chain now returns a trace and every ruling in it becomes a
@@ -988,7 +988,7 @@ func adjudicateWith(sink AuditSink, enablement DastEnablement, ch chain, target 
 	// the only thing refusing anything is not kept here.
 	//
 	// The rows are written in chain order and their sequences must strictly
-	// advance. D.7's GateAudit.Record makes the same check across a run; this
+	// advance. The disclosure phase's GateAudit.Record makes the same check across a run; this
 	// one is within a single adjudication, which is the part Adjudicate can
 	// see. A sink that rewound or overwrote a row is a sink whose earlier rows
 	// cannot be trusted, and gate 21 asks for an IMMUTABLE audit.
@@ -1038,7 +1038,7 @@ func adjudicateWith(sink AuditSink, enablement DastEnablement, ch chain, target 
 
 // checkEnablement is gate 1 at adjudication time.
 //
-// D.3's critic reached Adjudicate without ever calling EnableDAST, so gate 1's
+// The kernel-types review reached Adjudicate without ever calling EnableDAST, so gate 1's
 // "explicit non-defaulted write" authorised nothing and prevented nothing. It
 // is a precondition now, and the zero DastEnablement — which is what a caller
 // who never called EnableDAST holds, and what encoding/json produces, because

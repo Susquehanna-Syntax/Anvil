@@ -1,8 +1,8 @@
 """The experiment register must validate, and an unrun row must never read as a pass.
 
-plan step M0.18 reads eval/register.yaml and decides whether Anvil's detection-model
-tier exists at all. Two rows -- EXP-01 (advisory-permutation ablation) and EXP-02
-(code-metrics baseline) -- can delete that tier entirely.
+The gate decision reads eval/register.yaml and decides whether Anvil's detection-model
+tier exists at all. Two rows -- the advisory-permutation ablation and the code-metrics
+baseline -- can delete that tier entirely.
 
 That makes exactly one property load-bearing: **a row whose experiment has not been
 run must be impossible to confuse with a row that passed.** Everything else in the
@@ -15,8 +15,8 @@ once, by hand, at authoring time. A schema nobody runs is a comment.
 The negative cases are mutation tests. Each one takes the real register, introduces
 one specific way an undecided row could be made to read as decided, and asserts the
 schema rejects it. The `deferred` case is here because it was a real bug: the guard
-originally covered not_started/in_progress/blocked and omitted deferred, so EXP-05
-could be set to PASS and validation accepted it.
+originally covered not_started/in_progress/blocked and omitted deferred, so the
+batch-size experiment could be set to PASS and validation accepted it.
 """
 
 from __future__ import annotations
@@ -36,9 +36,20 @@ REGISTER_PATH = EVAL_ROOT / "register.yaml"
 # The fourteen rows the plan requires. Named explicitly rather than counted, so a
 # row being renamed fails loudly instead of silently keeping the count right.
 REQUIRED_IDS = [
-    *(f"EXP-{n:02d}" for n in range(1, 13)),
-    "INSTR-01",
-    "S12-RTT",
+    "advisory-permutation",
+    "code-metrics-baseline",
+    "prefill-sweep",
+    "patch-quality",
+    "batch-size",
+    "correlation-precision",
+    "route-extraction",
+    "dast-model-size",
+    "gvisor-overhead",
+    "zap-memory",
+    "task-cards",
+    "lora-hot-swap",
+    "candidates-per-scan",
+    "encoder-round-trip",
 ]
 
 # Any status meaning "this experiment has not produced an adjudicated outcome".
@@ -120,7 +131,7 @@ def test_schema_rejects_a_pass_on_an_unrun_row(schema: dict, register: dict, sta
     # reason validation can fail is the decision itself.
     if status == "deferred":
         rows[0]["deferred_reason"] = "mutation test"
-        rows[0]["owner_step"] = "deferred"
+        rows[0]["owner_node"] = "deferred"
 
     assert _errors(schema, mutated), (
         f"schema ACCEPTED decision=PASS on a status={status} row. "

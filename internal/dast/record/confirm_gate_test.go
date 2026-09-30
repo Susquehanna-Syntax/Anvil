@@ -1,6 +1,6 @@
-// confirm_gate_test.go is D.27's evidence.
+// confirm_gate_test.go is the confirmation gate's evidence.
 //
-// Two of these tests are named in plan/50-dast.md as the packet's stop
+// Two of these tests are named in plan/design/dynamic-tier.md as the packet's stop
 // condition and neither is a formality:
 //
 //	TestPhantomSQLiClusterIsDemotedAndTheRealOnesSurvive
@@ -368,7 +368,7 @@ func TestEightyEightPhantomsAloneProduceCompletedCleanAndThatIsHonest(t *testing
 // it exists because the two tests above did not prove it.
 //
 // FOUND BY BREAKING THE GUARD. FindingCountForStatus was mutated to
-// `ConfirmedCount() + UnconfirmedCount()` — the exact defect the D.27
+// `ConfirmedCount() + UnconfirmedCount()` — the exact defect the confirmation gate
 // forbidden-actions clause describes — and both phantom fixtures STAYED GREEN,
 // because neither of them ever puts an unconfirmed finding in the same ledger
 // as the status assertion. Zero plus zero is zero. The assertion was true and
@@ -417,7 +417,7 @@ func TestOnlyConfirmedFindingsReachDastStatusFindings(t *testing.T) {
 	// THE CLAIM. 91 candidates decided, 3 of them undecidable, and the
 	// number that reaches the record is zero.
 	if got := l.FindingCountForStatus(); got != 0 {
-		t.Errorf("FindingCountForStatus = %d, want 0. plan/50-dast.md D.27: \"No finding "+
+		t.Errorf("FindingCountForStatus = %d, want 0. The confirmation gate's design: \"No finding "+
 			"reaches dast_status: findings without having passed a re-probe confirmation "+
 			"step.\" An unconfirmed finding is by definition one that did not pass it", got)
 	}
@@ -556,7 +556,7 @@ func closureViolations(typ reflect.Type) []string {
 		case reflect.Slice, reflect.Array:
 			if t.Elem().Kind() == reflect.Uint8 {
 				out = append(out, fmt.Sprintf("%s is %s: a byte sequence is a raw response "+
-					"body, and plan/00-SPINE.md S7 forbids inlining one", path, t))
+					"body, and the spine's safety section forbids inlining one", path, t))
 				return
 			}
 			out = append(out, fmt.Sprintf("%s is %s: a sequence field makes the total string "+
@@ -610,7 +610,7 @@ func TestFindingTypeClosureHasNoRawBodyPath(t *testing.T) {
 	// The claim.
 	if v := closureViolations(reflect.TypeOf(Finding{})); len(v) != 0 {
 		t.Errorf("Finding's field-type closure has %d route(s) a raw response body could "+
-			"travel through. plan/50-dast.md D.27: \"This gate's output type must make "+
+			"travel through. The confirmation gate's design: \"This gate's output type must make "+
 			"'the model reads the raw body' a type error, not a discipline problem\":\n%s",
 			len(v), strings.Join(v, "\n"))
 	}
@@ -804,7 +804,7 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConfirmFinding: %v", err)
 	}
-	// THIS FIXTURE NO LONGER CONFIRMS, AND THAT IS RULING 14 RATHER THAN
+	// THIS FIXTURE NO LONGER CONFIRMS, AND THAT IS THE ON-THE-MATCH RULING RATHER THAN
 	// DRIFT. It used to assert OutcomeConfirmed here, on the reasoning that
 	// the walk is only worth doing on the value a consumer forwards. The
 	// match is 512 KiB against 16 spelled bytes, so it now lands unconfirmed
@@ -831,7 +831,7 @@ func TestNoFindingReachableStringExceedsTheSpanLimit(t *testing.T) {
 	// hid. `spanTruncatedFrom` recorded that a 512 KiB match had been cut
 	// down to MaxSpanBytes — and the 512 bytes that survived were a
 	// VERBATIM PREFIX OF THE RESPONSE, arriving through the one channel
-	// spine S7 sanctions. Every assertion in this test passed while that
+	// the spine's safety section sanctions. Every assertion in this test passed while that
 	// was happening, because every assertion was about LENGTH.
 	if got := f.Evidence().ExtractedSpan(); got != "" {
 		t.Errorf("an over-broad match produced a %d-byte span %q. A prefix of an arbitrary "+
@@ -960,7 +960,7 @@ func TestExtractedSpanIsBoundedPrintableAndDropsRatherThanSubstitutes(t *testing
 				if span != "" {
 					t.Errorf("a %d-byte match produced a %d-byte span. Truncating an "+
 						"over-broad match to the budget inlines a verbatim prefix of "+
-						"the response, which is the thing plan/00-SPINE.md S7 forbids",
+						"the response, which is the thing the spine's safety section forbids",
 						len(body), len(span))
 				}
 				if overBroad != len(body) {
@@ -1100,7 +1100,7 @@ func TestOracleLessClassesAreTaggedUnconfirmedNotAssertedAndNotDropped(t *testin
 				}
 				if f.CountsAsFinding() {
 					t.Error("an unconfirmed finding counts toward dast_status findings; " +
-						"D.27: no finding reaches it without passing confirmation")
+						"The confirmation gate: no finding reaches it without passing confirmation")
 				}
 				// NOT ASSERTED: no confidence number at all.
 				if c, ok := f.Confidence(); ok {
@@ -1992,7 +1992,8 @@ func TestConfirmationTakesTheTimeItTakes(t *testing.T) {
 }
 
 // ===========================================================================
-// D.29 CRITICAL 1 — the raw body escaped through the error return
+// The second confirmation-gate review, finding CRITICAL 1 — the raw body
+// escaped through the error return
 // ===========================================================================
 
 // hostileReprober is a Reprober that does THE ORDINARY THING an
@@ -2116,7 +2117,7 @@ func assertErrorIsClean(t *testing.T, what string, err error, marker string) {
 	t.Helper()
 	msg := err.Error()
 	if strings.Contains(msg, marker) {
-		t.Errorf("%s quotes the response body. plan/00-SPINE.md S7: the DAST response "+
+		t.Errorf("%s quotes the response body. The spine's safety section: the DAST response "+
 			"body is the highest-risk injection channel, and an error message is read "+
 			"by a human and increasingly by an agent", what)
 	}
@@ -2234,7 +2235,7 @@ func boundaryTypes() []boundaryType {
 	return []boundaryType{
 		// --- confirm_gate.go: the values a consumer holds after the gate ---
 		{"Finding", reflect.TypeOf(Finding{}), verdictClosed,
-			"the gate's output type; D.27 requires that a raw body be a type error here", nil},
+			"the gate's output type; the confirmation gate requires that a raw body be a type error here", nil},
 		{"EvidenceRef", reflect.TypeOf(EvidenceRef{}), verdictClosed,
 			"{body_hash, extracted_span} and nothing else", nil},
 		{"Refusal", reflect.TypeOf(Refusal{}), verdictClosed,
@@ -2550,7 +2551,7 @@ func outputViolations(typ reflect.Type) []string {
 		case t.Kind() == reflect.Slice || t.Kind() == reflect.Array:
 			if t.Elem().Kind() == reflect.Uint8 {
 				out = append(out, fmt.Sprintf("%s is %s: a byte sequence is a raw "+
-					"response body, and plan/00-SPINE.md S7 forbids inlining one", path, t))
+					"response body, and the spine's safety section forbids inlining one", path, t))
 				return
 			}
 			walk(path+"[]", t.Elem())
@@ -3218,7 +3219,8 @@ func TestEveryTestNamedInASourceCommentExists(t *testing.T) {
 }
 
 // ===========================================================================
-// D.29 CRITICAL 2 — a target that defends itself is not a target with nothing
+// The second confirmation-gate review, finding CRITICAL 2 — a target that
+// defends itself is not a target with nothing
 // ===========================================================================
 
 // TestARateLimitedReprobeIsNotADisproof is the failure this project exists to
@@ -3238,7 +3240,7 @@ func TestEveryTestNamedInASourceCommentExists(t *testing.T) {
 // THAT CITATION USED TO NAME decide AND IT WAS SELF-CERTIFYING. A citation
 // standing in a test's own doc comment, measured by that same test, passed
 // the aptness check on the strength of the words "decide()" in the paragraph
-// above it — the claim was certifying itself. Under ruling 17 the check reads
+// above it — the claim was certifying itself. Under the syntax-tree ruling the check reads
 // the cited test's SYNTAX TREE, where a comment leaves no trace, so the
 // citation now has to name something this test's code names: ConfirmFinding,
 // which every case below drives, and which reaches decide.
@@ -4136,7 +4138,7 @@ func TestAnOracleLessClassIsUnaffectedByTheInversion(t *testing.T) {
 }
 
 // ===========================================================================
-// D.29 HIGH 3 — an oracle that fires on a benign page
+// The second confirmation-gate review, finding HIGH 3 — an oracle that fires on a benign page
 // ===========================================================================
 
 // TestSignatureRefusesAnOracleThatFiresOnAGeneratedBenignBody is HIGH 3, end
@@ -4963,7 +4965,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"two digit classes and literals; the union is digits and stays token-shaped"},
 		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`,
 			"a dotted quad: a repeat whose unit mixes a digit class with a SPELLED " +
-				"dot. The dot IS in the union — ruling 12 put it there — and the " +
+				"dot. The dot IS in the union — the re-keying ruling put it there — and the " +
 				"union is still not content-bearing, because digits and a dot carry " +
 				"no letter to run from one token into the next. This is the case that " +
 				"separates 'the union holds the literals' from 'the union bans " +
@@ -4976,7 +4978,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"a content-bearing class CONCATENATED with a digit class. A union taken " +
 				"at the concatenation would poison the digit run and refuse this"},
 		{`(?i)(error|warning|expired)`,
-			"an alternation of LITERALS whose union is LETTERS ONLY. Ruling 12 puts " +
+			"an alternation of LITERALS whose union is LETTERS ONLY. The re-keying ruling puts " +
 				"those letters in the union and marks the position undecided; " +
 				"contentBearingClass is still what decides, and a letters-only " +
 				"alphabet cannot run out of the token it declared. This is the " +
@@ -4984,7 +4986,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 				"disclosure in the control's header is wrong"},
 		{`(?:GET|POST|PUT) /admin/[a-z]{1,20} ZZZZ`,
 			"an UNREPEATED alternation whose union crosses letters and a slash. " +
-				"Ruling 12 makes that one undecided position, and one undecided " +
+				"The re-keying ruling makes that one undecided position, and one undecided " +
 				"position against twelve spelled bytes is what R3 exists to allow"},
 		{`(?:(a)|(b)|(,))ZZZZZZZZ`,
 			"an all-literal alternation that is NOT repeated: one undecided position " +
@@ -5051,7 +5053,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 			"different fixture than the one disclosed", matchLen, 2*worstPairs+1)
 	}
 
-	// RULING 15 REVERSED THE DIRECTION OF THIS MEASUREMENT AND THE OLD ONE
+	// THE BOTH-DIRECTIONS RULING REVERSED THE DIRECTION OF THIS MEASUREMENT AND THE OLD ONE
 	// IS QUOTED SO THE REVERSAL IS LEGIBLE. It asserted `len(span) == 0` and
 	// `overBroad == 255`, on the reasoning that "the whole reason this
 	// residual is disclosed rather than closed is that property 1b refuses
@@ -5065,7 +5067,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 	// and a residual whose measurement is left in the old direction reads to
 	// the next reader as a residual that was fixed.
 	if len(span) != matchLen || overBroad != 0 {
-		t.Errorf("the residual match inlined %d of %d bytes (over=%d); ruling 15's floor "+
+		t.Errorf("the residual match inlined %d of %d bytes (over=%d); the both-directions ruling's floor "+
 			"admits it whole and the disclosure says so. If this is withheld again "+
 			"the floor has moved and MaxUnspelledBytes has to move with it",
 			len(span), matchLen, overBroad)
@@ -5148,7 +5150,7 @@ func TestTheQuotationRuleIsTakenOverTheUnionOfWhatAPositionConsumes(t *testing.T
 // same inequality a second time, at extraction, over the actual match, where
 // no class definition is involved at all.
 //
-// RULING 15 PUT A FLOOR UNDER THAT INEQUALITY AND THIS TEST MEASURES WHAT THE
+// THE BOTH-DIRECTIONS RULING PUT A FLOOR UNDER THAT INEQUALITY AND THIS TEST MEASURES WHAT THE
 // FLOOR ADMITS, IN BOTH DIRECTIONS. The 400-wide h1 spelling is still refused.
 // The SAME FAMILY RESPELT AT THE FLOOR — `<h1[0-9A-Za-z]{0,256}` — is
 // ADMITTED, inlines 256 verbatim body bytes and confirms, and that is asserted
@@ -5199,7 +5201,7 @@ func TestASpanMayNotCarryMoreOfTheBodyThanThePatternSpells(t *testing.T) {
 			"understates it", respelt, rf.Outcome())
 	}
 
-	// THE SWEEP, AND RULING 15 MOVED WHERE ITS BOUNDARY SITS. It used to
+	// THE SWEEP, AND THE BOTH-DIRECTIONS RULING MOVED WHERE ITS BOUNDARY SITS. It used to
 	// step the footing from 1 to 48 and assert that `extra == footing` kept
 	// its span while `extra == footing+1` lost it — the bare ratio. Under
 	// the floor that is the wrong boundary for every footing under
@@ -5328,7 +5330,7 @@ func withEmptyBenignCorpus(t *testing.T, f func()) {
 }
 
 // TestTheControlDecidesOnTheStructureAndNotOnASampleOfBodies is the claim
-// ruling 9 asks for, made falsifiable.
+// the structural ruling asks for, made falsifiable.
 //
 // A check that samples inputs has a budget: the attacker needs one input
 // outside the sample, and four rounds of this file have produced one each
@@ -5585,7 +5587,7 @@ func BenchmarkRefuseOverBroadPattern(b *testing.B) {
 // end marker it matches the lot. The span bound is what catches that, and it
 // catches it by producing NOTHING rather than by producing a shorter prefix.
 //
-// RULING 14 ADDED THE HALF THIS TEST WAS MISSING. It asserted the span was
+// THE ON-THE-MATCH RULING ADDED THE HALF THIS TEST WAS MISSING. It asserted the span was
 // withheld and then asserted the finding was CONFIRMED, which is the shape of
 // the whole defect: the quote was withheld and the claim was granted. The same
 // comparison that withholds the span now decides the outcome, so this test
@@ -5606,7 +5608,7 @@ func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarro
 		t.Fatalf("ConfirmFinding: %v", err)
 	}
 	// THE SENTENCE THAT USED TO BE HERE WAS THE DEFECT, and it is kept as a
-	// quotation because deleting it would hide what ruling 14 corrected:
+	// quotation because deleting it would hide what the on-the-match ruling corrected:
 	// "The oracle fired. That is a separate fact from whether its match can
 	// be shown, and conflating the two would silently turn every over-broad
 	// match into a non-reproduction." The first half is true and is asserted
@@ -5658,14 +5660,15 @@ func TestAnOverBroadMatchOnAHostileBodyProducesNoSpanEvenWhenTheSignatureIsNarro
 }
 
 // ===========================================================================
-// D.29 MEDIUM 5 — the attempt count had a ceiling and no floor
+// The second confirmation-gate review, finding MEDIUM 5 — the attempt count had
+// a ceiling and no floor
 // ===========================================================================
 
 // TestAttemptCountHasAFloorAndNotOnlyACeiling.
 //
 // Attempts=1 was legal and produced reason="reproduced_on_every_attempt"
 // from a single observation — the flake detection DefaultAttempts=3 exists
-// for, removed, with the reason string still claiming it ran. D.31 wiring
+// for, removed, with the reason string still claiming it ran. The dynamic tier exit gate wiring
 // under a time budget is exactly the caller that would set it.
 func TestAttemptCountHasAFloorAndNotOnlyACeiling(t *testing.T) {
 	for _, n := range []int{1, -1, -1000, MaxAttempts + 1, 1 << 20} {
@@ -5714,7 +5717,8 @@ func TestAttemptCountHasAFloorAndNotOnlyACeiling(t *testing.T) {
 }
 
 // ===========================================================================
-// D.29 MEDIUM 6 — an unconfirmed finding carrying full confidence
+// The second confirmation-gate review, finding MEDIUM 6 — an unconfirmed
+// finding carrying full confidence
 // ===========================================================================
 
 // TestNoUnconfirmedFindingCarriesFullConfidence is the record-consistency
@@ -5842,7 +5846,7 @@ func TestNoUnconfirmedFindingCarriesFullConfidence(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// RULING 13 — one language, one verdict, however it is spelled
+// THE DENOTED-LANGUAGE RULING — one language, one verdict, however it is spelled
 // ---------------------------------------------------------------------------
 
 // TestEverySpellingOfOneLanguageGetsTheSameVerdict is the test seven rounds of
@@ -5975,7 +5979,7 @@ func TestEverySpellingOfOneLanguageGetsTheSameVerdict(t *testing.T) {
 	for _, p := range []string{`Z(?:[a,]?)*`, `Z(?:(?:a|,)?)*`, `Z(?:a?,?)*`} {
 		_, err := refuseOverBroadPattern(p)
 		if err == nil {
-			t.Fatalf("refuseOverBroadPattern(%q) ACCEPTED it. This is ruling 13's "+
+			t.Fatalf("refuseOverBroadPattern(%q) ACCEPTED it. This is the denoted-language ruling's "+
 				"measured case: `x?` is an alternation with the empty string and a "+
 				"concat of optionals is the alternation over their powerset, so an "+
 				"operator test finds no OpAlternate here and promotes nothing", p)
@@ -5998,7 +6002,7 @@ func TestEverySpellingOfOneLanguageGetsTheSameVerdict(t *testing.T) {
 
 	// THE ALPHABET-SCALED FORM, which is what the accepted spelling was
 	// worth. It is the concat-of-optionals spelling over the WHOLE printable
-	// alphabet: 225 bytes, and before ruling 13 it compiled with spelled=16
+	// alphabet: 225 bytes, and before the denoted-language ruling it compiled with spelled=16
 	// and quoted=0 and then matched every byte of a marker followed by an
 	// ordinary HTML page.
 	scaled := "anvil-probe-4f2a(?:"
@@ -6233,7 +6237,7 @@ func TestAOneRuneClassNeverReachesTheWalk(t *testing.T) {
 // shapeWalk's OpLiteral arm rests on, checked by RUNNING the fold rather than
 // by reading a Unicode table.
 //
-// A literal position is DECIDED under ruling 13 even under (?i), on the
+// A literal position is DECIDED under the denoted-language ruling even under (?i), on the
 // argument that a fold orbit is a set of spellings of one character the pattern
 // itself wrote down — and that argument is only sound while folding cannot
 // carry a position across the letter / non-letter partition contentBearingClass
@@ -6268,7 +6272,7 @@ func TestCaseFoldingCannotMoveAPositionAcrossTheContentBoundary(t *testing.T) {
 }
 
 // TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam is the half of
-// ruling 13 that lives in the ORDER of the walk rather than in what it computes.
+// the denoted-language ruling that lives in the ORDER of the walk rather than in what it computes.
 //
 // A unit made of a fixed literal and a TRAILING optional is decided on its own:
 // `a,?` puts 'a' at position 0 and ',' at position 1 and nothing anywhere twice.
@@ -6339,7 +6343,7 @@ func TestARepeatedUnitOfVaryingWidthIsAnUndecidedPositionAtTheSeam(t *testing.T)
 	} {
 		if _, err := refuseOverBroadPattern(tc.pattern); err != nil {
 			t.Errorf("refuseOverBroadPattern(%q) = %v. %s. A seam rule that refused this "+
-				"would be a ban on repeats wearing ruling 13's clothes",
+				"would be a ban on repeats wearing the denoted-language ruling's clothes",
 				tc.pattern, err, tc.why)
 		}
 	}
@@ -6413,7 +6417,7 @@ func TestAnUndecidedPositionIsCountedWithoutARepetitionToCarryIt(t *testing.T) {
 }
 
 // ===========================================================================
-// RULING 14 — the guarantee moves onto the match
+// THE ON-THE-MATCH RULING — the guarantee moves onto the match
 // ===========================================================================
 
 // overBroadCandidate builds and confirms a candidate whose signature and body
@@ -6498,7 +6502,7 @@ func TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes(t *testing.T
 			"MaxPatternBytes is not where this test thinks it is")
 	}
 
-	// THE UNBOUNDED HALF, where it does not. This is ruling 14's scaled
+	// THE UNBOUNDED HALF, where it does not. This is the on-the-match ruling's scaled
 	// acceptance case, measured on the pattern rather than through the gate.
 	scaled := scaledConcatPattern()
 	if len(scaled) != 891 {
@@ -6507,7 +6511,7 @@ func TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes(t *testing.T
 	spelled, err := refuseOverBroadPattern(scaled)
 	if err != nil {
 		t.Fatalf("refuseOverBroadPattern(scaled) = %v. THIS TEST EXPECTS IT TO BE "+
-			"ACCEPTED: ruling 14 forbids tuning R1/R2/R3 to close this, and if the "+
+			"ACCEPTED: the on-the-match ruling forbids tuning R1/R2/R3 to close this, and if the "+
 			"static layer has been tuned anyway, the match-layer assertions in "+
 			"TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled stop being "+
 			"exercised by this shape", err)
@@ -6534,7 +6538,7 @@ func TestAConcatenationOfUnboundedRunsIsNotBoundedByMaxPatternBytes(t *testing.T
 	}
 }
 
-// TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled is ruling 14's SCALED
+// TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled is the on-the-match ruling's SCALED
 // acceptance case, driven end to end through the gate.
 //
 // MEASURED ON THE TREE AS IT WAS: this pattern is ACCEPTED at spelled=141, it
@@ -6554,7 +6558,7 @@ func TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled(t *testing.T) {
 		t.Fatalf("outcome = %q, want %q", got, want)
 	}
 
-	// THE OUTCOME VALUE IS RULING 14'S THIRD PARAGRAPH, asserted rather than
+	// THE OUTCOME VALUE IS THE ON-THE-MATCH RULING'S THIRD PARAGRAPH, asserted rather than
 	// commented. REJECTED would be wrong for a reason that costs something:
 	// Ledger.AssertNotSilentlyClean deliberately does NOT count rejections,
 	// because a ledger of nothing but rejections is an earned clean. Filing
@@ -6627,7 +6631,7 @@ func TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled(t *testing.T) {
 	}
 }
 
-// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds is ruling 14's MINIMAL
+// TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds is the on-the-match ruling's MINIMAL
 // acceptance case, and it states the new division of labour as a measurement
 // instead of as a paragraph.
 //
@@ -6653,13 +6657,13 @@ func TestAnOverBroadMatchDoesNotConfirmHoweverItIsSpelled(t *testing.T) {
 //
 // IF THIS TEST EVER FAILS AT ITS FIRST ACCEPTANCE, the early layer has been
 // tuned and the acceptance case it was measured on is gone. That is not a win:
-// read ruling 14's "WHAT YOU MUST NOT DO" before deciding it is.
+// read the on-the-match ruling's "WHAT YOU MUST NOT DO" before deciding it is.
 func TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds(t *testing.T) {
 	const concatSpelling = `X [a-z]*`
 	const repeatSpelling = `X(?: [a-z]*){1}`
 
 	// PART 1: they are one language. Measured over every string up to a
-	// length rather than asserted, the same way ruling 13's property does
+	// length rather than asserted, the same way the denoted-language ruling's property does
 	// it, so a mis-transcribed fixture fails loudly here.
 	a := regexp.MustCompile(`^(?:` + concatSpelling + `)$`)
 	b := regexp.MustCompile(`^(?:` + repeatSpelling + `)$`)
@@ -6682,7 +6686,7 @@ func TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("refuseOverBroadPattern(%q) = %v. THIS TEST EXPECTS AN ACCEPTANCE: it "+
 			"is the case the match layer is here to catch, and closing it in the "+
-			"static layer is what ruling 14 forbids", concatSpelling, err)
+			"static layer is what the on-the-match ruling forbids", concatSpelling, err)
 	}
 	if spelled != 2 {
 		t.Errorf("spelled = %d, want 2", spelled)
@@ -6731,7 +6735,7 @@ func TestTheStaticLayerMaySplitAndTheGuaranteeStillHolds(t *testing.T) {
 }
 
 // TestAnOverBroadMatchOnOneAttemptTakesTheWholeCandidate is the interaction
-// ruling 14 asked to be decided, documented and tested: the gate runs several
+// the on-the-match ruling asked to be decided, documented and tested: the gate runs several
 // attempts, and one of them can be over-broad while another is clean.
 //
 // THE DECISION IS FAIL-CLOSED: ANY over-broad match on ANY attempt takes the
@@ -6916,10 +6920,10 @@ func TestTheDisclosedFixedWidthUnitSplitHasAWitness(t *testing.T) {
 }
 
 // ===========================================================================
-// RULING 15 — the floor, and the direction the ratio alone was wrong in
+// THE BOTH-DIRECTIONS RULING — the floor, and the direction the ratio alone was wrong in
 // ===========================================================================
 
-// TestEveryRealOracleConfirmsAGenuineHit is ruling 15's ACCEPTANCE half, and
+// TestEveryRealOracleConfirmsAGenuineHit is the both-directions ruling's ACCEPTANCE half, and
 // it is the half the previous round did not have.
 //
 // A gate that refuses everything passes every over-broadness test in this
@@ -6995,7 +6999,7 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 
 		// THE THREE THE UNION RULE'S NON-VACUITY LIST NAMES AS REAL SHAPES.
 		{`(?:[0-9]{1,3}\.){3}[0-9]{1,3} ZZZZ`, "leaked 10.20.30.41 ZZZZ", 8, 16,
-			"a dotted quad: the internal-address leak ruling 15's message names"},
+			"a dotted quad: the internal-address leak the both-directions ruling's message names"},
 		{`(?i)(error|warning|expired)`, "session expired at 12:00", 5, 7,
 			"the disclosed word-list residual, as an oracle"},
 		{`(?:GET|POST|PUT) /admin/[a-z]{1,20} ZZZZ`, "POST /admin/users ZZZZ", 16, 22,
@@ -7036,7 +7040,7 @@ func TestEveryRealOracleConfirmsAGenuineHit(t *testing.T) {
 					over, printable(span, 64), tc.what)
 			}
 
-			// THE OUTCOME, END TO END, WHICH IS WHAT RULING 15 IS ABOUT.
+			// THE OUTCOME, END TO END, WHICH IS WHAT THE BOTH-DIRECTIONS RULING IS ABOUT.
 			// The span mattering less than the verdict is the lesson of
 			// the round before this one.
 			f, _ := overBroadCandidate(t, tc.pattern, []byte(tc.body), 3)
@@ -7627,7 +7631,7 @@ func TestAnUnvettedSignatureGetsNoFloor(t *testing.T) {
 // that on an ordinary document.
 //
 // THE RATIO'S SHAPE AT THAT SCALE IS DISCLOSED RATHER THAN LEFT IMPLICIT, and
-// it is PRE-EXISTING — ruling 15's floor neither created nor widened it. A
+// it is PRE-EXISTING — the both-directions ruling's floor neither created nor widened it. A
 // 288,000-byte match against 144,000 spelled bytes is inside the ratio and
 // would confirm; 288,001 is not. No span is inlined either way, because both
 // run past MaxSpanBytes, so no byte of the response reaches a prompt-bound
@@ -7691,7 +7695,7 @@ func TestScalingTheSpelledFootingDoesNotBuyAnOrdinaryPage(t *testing.T) {
 }
 
 // ===========================================================================
-// D.30 — WHAT AN EMPTY SPAN MEANS, AND WHERE EVIDENCE COMES FROM
+// The third confirmation-gate review — WHAT AN EMPTY SPAN MEANS, AND WHERE EVIDENCE COMES FROM
 // ===========================================================================
 
 // TestAnEmptySpanHasFourCausesAndOneFieldSeparatesOne is the measurement
@@ -8004,7 +8008,7 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 }
 
 // ===========================================================================
-// D.30 — THE ARITHMETIC-CLAIM GUARD
+// The third confirmation-gate review — THE ARITHMETIC-CLAIM GUARD
 // ===========================================================================
 
 // TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement is the
@@ -8020,7 +8024,7 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // learning to distrust.
 //
 // ===========================================================================
-// RULING 16: A CITATION IS A FORM, NOT A WORD
+// THE CITATION-FORM RULING: A CITATION IS A FORM, NOT A WORD
 // ===========================================================================
 //
 // THE FIRST VERSION OF THIS GUARD HAD THE DEFECT IT WAS BUILT TO END. It asked
@@ -8069,10 +8073,10 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 //	              touches it.
 //
 // ===========================================================================
-// RULING 17: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
+// THE SYNTAX-TREE RULING: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
 // ===========================================================================
 //
-// THE APTNESS ARM SHIPPED WITH THE DEFECT RULING 16 HAD JUST REMOVED FROM THE
+// THE APTNESS ARM SHIPPED WITH THE DEFECT THE CITATION-FORM RULING HAD JUST REMOVED FROM THE
 // LAYER ABOVE IT. It asked whether the cited test's SOURCE mentioned the
 // enforcer, and it asked by text search — so an enforcer spelled like an
 // English word was mentioned by any test whose prose used the word. A
@@ -8087,7 +8091,7 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // the_text_search_this_replaced_still_admits_the_attack drives it at that
 // exact citation on every run, beside the shipped rule refusing it.
 //
-// DIRECT REFERENCES ONLY. Ruling 17 allows one hop through same-package
+// DIRECT REFERENCES ONLY. The syntax-tree ruling allows one hop through same-package
 // helpers instead; that rule was built and counted and it is the LOOSEST of
 // the three, admitting more pairs than the text search it would replace, as
 // well as turning case 6 green. Both facts are asserted by
@@ -8120,7 +8124,7 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // confirm_gate.go or confirm_gate_test.go", which overstates the window in
 // two directions and MEASURING IT IS THE ONLY WAY TO KNOW BY HOW MUCH:
 //
-//	188 of the two files' 6,332 comment NODES carry a comparison operator in
+//	188 of the two files' 6,338 comment NODES carry a comparison operator in
 //	their RAW text. The scanner counts 40 of them, inside 20 claim
 //	paragraphs. The other 148 are not seen, and NONE of them is unexplained:
 //	130 are banner rules, where a line of equals signs is literally a row of
@@ -8133,8 +8137,8 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 // WHILE PRINTING THE NODE COUNT. The two are not the same number. Every `//`
 // comment is one node on one line, so for almost all of these two files they
 // agree — but the two block comments in confirm_gate_test.go share a SINGLE
-// line, so the nodes run one ahead of the physical lines they sit on: 6,332
-// against 6,331. A count reported under the wrong unit is the same defect this
+// line, so the nodes run one ahead of the physical lines they sit on: 6,338
+// against 6,337. A count reported under the wrong unit is the same defect this
 // whole section was built to catch, one unit further down, so both figures are
 // now measured and both are pinned.
 //
@@ -8193,7 +8197,7 @@ func assertRefusedByR3Counting(t *testing.T, pattern, what string, wantQuoted, w
 //	    Case 24 asserts it against a real one. Locally bound names inside the
 //	    cited test count as references for the same reason.
 //	coverage.go AND coverage_test.go, which are in this package and outside
-//	    D.27's write scope. Widening the window is one entry in `owned` below;
+//	    the confirmation gate's write scope. Widening the window is one entry in `owned` below;
 //	    the reason it has not been widened is scope, not difficulty. What that
 //	    costs is measured, not guessed, by the window_excludes_the_two
 //	    _unowned_files_in_this_package case below.
@@ -8388,7 +8392,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				"// TestTheConfirmationBoundaryIsPinnedOnBothArms pins both arms of it.\n" +
 				"func f() {}\n",
 			want: 1,
-			why: "RULING 16. This paragraph PASSED the previous guard and it names " +
+			why: "THE CITATION-FORM RULING. This paragraph PASSED the previous guard and it names " +
 				"exactly the right pair — but a citation is a form, and reading names " +
 				"out of prose is what let the English nouns counted by the_shape_this" +
 				"_replaced_is_still_measurably_vacuous serve as enforcers",
@@ -8584,7 +8588,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			want: 1,
 			why: "THE CONCESSION THIS CASE USED TO ASSERT IS WITHDRAWN. It shipped as " +
 				"want:0 — the citation was ACCEPTED because that test's doc comment " +
-				"names shapeWalk while no line of its code does. Under ruling 17 the " +
+				"names shapeWalk while no line of its code does. Under the syntax-tree ruling the " +
 				"check reads the syntax tree, where a comment leaves nothing, so " +
 				"prose no longer certifies anything",
 		},
@@ -8626,7 +8630,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 				"// MEASURED BY TestEvidenceComesFromTheFirstApplicationAnsweredAttemptNotFromAttemptOne.\n" +
 				"func f() {}\n",
 			want: 0,
-			why: "AND THE REMEDY, ASSERTED BESIDE IT. Ruling 17's answer to a hop is " +
+			why: "AND THE REMEDY, ASSERTED BESIDE IT. The syntax-tree ruling's answer to a hop is " +
 				"that the citation names the helper; confirmAgainst is four lines whose " +
 				"middle one is g.ConfirmFinding. This is the form ConfirmFinding's own " +
 				"doc comment now uses",
@@ -8708,7 +8712,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			"identifiers as enforcer citations", admits, len(idents))
 		if admits < 400 {
 			t.Errorf("the case-boundary shape admits only %d identifiers. The whole "+
-				"argument for ruling 16 is that this population is large enough to "+
+				"argument for the citation-form ruling is that this population is large enough to "+
 				"contain the English nouns this file's prose uses; if it has "+
 				"collapsed, re-derive the argument rather than keeping the sentence",
 				admits)
@@ -8744,7 +8748,7 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 	})
 
 	// ===================================================================
-	// RULING 17, RE-MEASURED THE SAME WAY. The aptness arm used to ask
+	// THE SYNTAX-TREE RULING, RE-MEASURED THE SAME WAY. The aptness arm used to ask
 	// whether the cited test's SOURCE mentioned the enforcer. That rule is
 	// still compiled — it is `mentions` — and it is run here against the
 	// citation it accepts and the shipped rule refuses, so the argument
@@ -8808,14 +8812,14 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			"alone: %v", measurement, byText, len(idents), byTree, prose)
 		if byText <= byTree {
 			t.Errorf("the text search admits %d names and the tree admits %d. The "+
-				"argument for ruling 17 is that the first number is the larger one; "+
+				"argument for the syntax-tree ruling is that the first number is the larger one; "+
 				"if it is not, this doc is describing a change that did nothing",
 				byText, byTree)
 		}
 	})
 
 	// ===================================================================
-	// THE RULE THAT WAS REJECTED, RUN. Ruling 17 offered a hop through
+	// THE RULE THAT WAS REJECTED, RUN. The syntax-tree ruling offered a hop through
 	// same-package helpers as an alternative to direct references.
 	// declaredTestsInModule's doc says it was measured and refused; the
 	// measurement is here, and the figures are literals in an assertion
@@ -9016,8 +9020,8 @@ func TestEveryArithmeticClaimInACommentCitesAnEnforcerAndAMeasurement(t *testing
 			got  int
 			want int
 		}{
-			{"comment NODES in the two owned files", nodes, 6332},
-			{"physical LINES those nodes occupy", len(physical), 6331},
+			{"comment NODES in the two owned files", nodes, 6338},
+			{"physical LINES those nodes occupy", len(physical), 6337},
 			{"block-comment NODES among them", block, 2},
 			{"physical lines those block comments occupy", len(blockPhysical), 1},
 			{"comment NODES whose RAW text carries an operator", rawOps, 188},
@@ -9077,7 +9081,7 @@ var (
 	// quotedSpan is what a comment quotes rather than claims: a backticked
 	// specimen, a double-quoted sentence, or an arrow.
 	quotedSpan = regexp.MustCompile("(`[^`]*`|\"[^\"]*\"|->|<-|=>|<[A-Za-z][A-Za-z0-9_]*>)")
-	// citationForm IS THE TEMPLATE, and it is the whole of ruling 16.
+	// citationForm IS THE TEMPLATE, and it is the whole of the citation-form ruling.
 	//
 	// THE SHAPE THIS REPLACED ASKED FOR A NAME AND THAT IS UNSATISFIABLE,
 	// MEASURED: the previous guard accepted any token in the paragraph that
@@ -9123,7 +9127,7 @@ var (
 // mentions reports whether name occurs in src as a whole word.
 //
 // IT IS THE WITHDRAWN APTNESS RULE AND NOTHING SHIPPED CALLS IT. It was the
-// aptness half of the citation check until ruling 17, and it is kept for the
+// aptness half of the citation check until the syntax-tree ruling, and it is kept for the
 // same reason the previous ruling's rule is kept: so the argument against it
 // is RE-RUN rather than remembered. Its one caller is
 // the_text_search_this_replaced_still_admits_the_attack, which drives it at
@@ -9178,7 +9182,7 @@ func commentProse(text string) string {
 // enforcer, which is what stops a citation naming a real rule and a real test
 // that have nothing to do with each other.
 //
-// RULING 17 IS THE THIRD ONE. It reads the cited test's REFERENCE SET — the
+// THE SYNTAX-TREE RULING IS THE THIRD ONE. It reads the cited test's REFERENCE SET — the
 // ast.Ident nodes of its declaration — and not its source, so prose in the
 // test's doc comment cannot satisfy a citation. See referencedIdents and
 // declaredTestsInModule for what that set contains and what choosing it cost.
@@ -9316,7 +9320,7 @@ type testDecl struct {
 	// src is the declaration's source, doc comment included. It is kept for
 	// ONE purpose: the_text_search_this_replaced_still_admits_the_attack
 	// re-runs the withdrawn rule against it on every invocation, so the
-	// argument for ruling 17 is measured here rather than quoted from a
+	// argument for the syntax-tree ruling is measured here rather than quoted from a
 	// commit message. Nothing in the shipped check reads it.
 	src string
 	// pkg is the directory the declaration was parsed from, which is what
@@ -9332,11 +9336,11 @@ type testDecl struct {
 // legitimately cite one of the kernel's own guards.
 //
 // ===========================================================================
-// RULING 17: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
+// THE SYNTAX-TREE RULING: A REFERENCE IS RESOLVED THROUGH THE SYNTAX TREE
 // ===========================================================================
 //
 // THIS FUNCTION USED TO RETURN SOURCE TEXT AND THE APTNESS ARM USED TO GREP
-// IT, and that arm had, one layer down, the exact defect ruling 16 had just
+// IT, and that arm had, one layer down, the exact defect the citation-form ruling had just
 // removed from the layer above. NAMES ARE WORDS: a text search cannot tell a
 // reference from a sentence, so an enforcer spelled like an English word was
 // "mentioned" by any test whose prose used the word. The demonstration is not
@@ -9350,7 +9354,7 @@ type testDecl struct {
 // test's CODE names.
 //
 // DIRECT REFERENCES ONLY, AND THE ALTERNATIVE WAS BUILT BEFORE IT WAS
-// REJECTED. Ruling 17 offers a hop through same-package helpers for the case
+// REJECTED. The syntax-tree ruling offers a hop through same-package helpers for the case
 // where a test reaches its enforcer through something it calls. Both rules
 // were run over every (declared identifier, module test) pair the citation
 // form can name, and the counts are asserted as literals by
@@ -9374,7 +9378,7 @@ type testDecl struct {
 //
 // THE PRICE OF DIRECT-ONLY IS ONE CITATION AND IT IS PAID IN THE OPEN.
 // ConfirmFinding's step 4 is measured by a test that drives it through
-// confirmAgainst, so that citation names confirmAgainst — ruling 17's own
+// confirmAgainst, so that citation names confirmAgainst — the syntax-tree ruling's own
 // remedy — with ConfirmFinding named in the prose beside it. Cases 22 and 23
 // below assert both halves.
 //
@@ -9481,7 +9485,7 @@ func declaredTestsInModule(t *testing.T) (map[string]testDecl, calleeIndex) {
 //
 // NOTHING IN THE SHIPPED CHECK READS IT. It exists so that
 // the_one_hop_rule_this_rejected_is_measurably_looser can RUN the alternative
-// ruling 17 offered rather than describe it, and so the table in
+// the syntax-tree ruling offered rather than describe it, and so the table in
 // declaredTestsInModule's doc is recomputed on every invocation instead of
 // being remembered from the round that wrote it.
 type calleeIndex map[string]map[string]map[string]bool
@@ -9578,7 +9582,7 @@ func declaredIdentsInPackage(t *testing.T, fset *token.FileSet) (map[string]bool
 }
 
 // ===========================================================================
-// D.31 — THE WITHDRAWN-PHRASING REGISTRY
+// The fourth confirmation-gate review — THE WITHDRAWN-PHRASING REGISTRY
 // ===========================================================================
 
 // withdrawnPhrasing is one sentence this package has RETRACTED as false,
@@ -9686,7 +9690,7 @@ var withdrawnPhrasings = []withdrawnPhrasing{
 // "every" — so any check comparing lines, or comparing raw source, would have
 // seen two different strings. Collapsed, they are one.
 //
-// THE SCAN IS PACKAGE-WIDE, not scoped to the two files D.27 owns. Reading is
+// THE SCAN IS PACKAGE-WIDE, not scoped to the two files the confirmation gate owns. Reading is
 // free and a retracted sentence resurfacing in coverage.go is worth knowing
 // about; the failure message says so, because fixing it there is a REPORT and
 // not an edit under this packet's write scope.
@@ -9751,7 +9755,7 @@ func TestNoWithdrawnPhrasingSurvivesAsLiveProse(t *testing.T) {
 					"Why it was withdrawn: %s.\n"+
 					"This wording is entry %d of withdrawnPhrasings. It may appear "+
 					"inside a quotation, where it is history being refuted, and "+
-					"nowhere else. If this file is outside D.27's write scope, that "+
+					"nowhere else. If this file is outside the confirmation gate's write scope, that "+
 					"is a REPORT to the orchestrator, not an edit.",
 					e.Name(), line, w.text, w.why, i+1)
 			}
@@ -10034,7 +10038,7 @@ func registryDeclSpan(fset *token.FileSet, f *ast.File, srcLen int) []int {
 }
 
 // ===========================================================================
-// D.32 — A NAME IN PROSE MUST RESOLVE TO A DECLARATION
+// The fifth confirmation-gate review — A NAME IN PROSE MUST RESOLVE TO A DECLARATION
 // ===========================================================================
 
 // proseNameException is one camel-case name this package's prose uses on
@@ -10129,7 +10133,7 @@ var proseNamesWithNoDeclaration = []proseNameException{
 			"raw body skipped and reported nothing. THIS ENTRY USED TO DESCRIBE THE " +
 			"EXAMPLE AS THE LIVE WALKER 'marking a type it has already seen', which " +
 			"cannot be right in either tense — the walker has had no dedup key since " +
-			"ruling 12, and the example exists precisely to say why. It is walked in " +
+			"the re-keying ruling, and the example exists precisely to say why. It is walked in " +
 			"prose and nowhere else",
 	},
 	{
@@ -10214,7 +10218,7 @@ var proseNamesWithNoDeclaration = []proseNameException{
 	},
 }
 
-// TestEveryNameInProseResolvesToADeclaration is ruling 18, mechanised.
+// TestEveryNameInProseResolvesToADeclaration is the names-in-prose ruling, mechanised.
 //
 // ===========================================================================
 // WHAT IT DOES

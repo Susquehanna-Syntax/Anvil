@@ -1,4 +1,4 @@
-// Tests for D.22, Tier 2 confirmation: the packet that turns a candidate into
+// Tests for route confirmation (Tier 2): the step that turns a candidate into
 // a confirmed endpoint, and therefore the packet that decides both halves of
 // endpoint_coverage.
 //
@@ -20,11 +20,11 @@
 // Every kernel object below is built by the kernel's own constructors, reusing
 // the harness tier0_runtime_test.go already established: initiateRun drives
 // the real Phase 1 gates and authz.Adjudicate is the only mint for an
-// authz.Authorization. RULING 6 made the admission chain able to admit, so the
+// authz.Authorization. THE ADMISSION RULING made the admission chain able to admit, so the
 // confirmation path in this file is driven END TO END through the real kernel
 // — authz.NewRequestIntent, authz.RequireAuthorization,
 // authz.GateAudit.AuditedAdmit, authz.Governor.ObserveResponse — with the
-// EndpointProber seam as the only double, because D.9's gate 3 forbids this
+// EndpointProber seam as the only double, because the build-time guard's gate 3 forbids this
 // package from holding a socket.
 package inventory
 
@@ -47,8 +47,8 @@ import (
 // Harness
 // ---------------------------------------------------------------------------
 
-// c22Route builds one inventory route on the fixture target.
-func c22Route(t *testing.T, m authz.Method, path, op string,
+// confirmRoute builds one inventory route on the fixture target.
+func confirmRoute(t *testing.T, m authz.Method, path, op string,
 	prov record.InventoryProvenance, conf Confirmation, params ...Param) Route {
 	t.Helper()
 	rt, err := NewRoute(RouteFacts{
@@ -67,22 +67,22 @@ func c22Route(t *testing.T, m authz.Method, path, op string,
 	return rt
 }
 
-// c22Candidate is the common case: a candidate route from one tier.
-func c22Candidate(t *testing.T, m authz.Method, path string, prov record.InventoryProvenance) Route {
+// confirmCandidate is the common case: a candidate route from one tier.
+func confirmCandidate(t *testing.T, m authz.Method, path string, prov record.InventoryProvenance) Route {
 	t.Helper()
-	return c22Route(t, m, path, "", prov, ConfirmationCandidate)
+	return confirmRoute(t, m, path, "", prov, ConfirmationCandidate)
 }
 
-// c22KernelOpts parameterises the governor so a test can put a REAL gate in
+// confirmKernelOpts parameterises the governor so a test can put a REAL gate in
 // the confirmation path rather than assert around it.
-type c22KernelOpts struct {
+type confirmKernelOpts struct {
 	robots    *authz.RobotsPolicy
 	allowance authz.EndpointAllowance
 	overrides *authz.CapOverrides
 }
 
-// c22Kernel builds a real Governor and GateAudit for the fixture target.
-func c22Kernel(t *testing.T, opts c22KernelOpts) (*authz.Governor, *authz.GateAudit, *countingSink) {
+// confirmKernel builds a real Governor and GateAudit for the fixture target.
+func confirmKernel(t *testing.T, opts confirmKernelOpts) (*authz.Governor, *authz.GateAudit, *countingSink) {
 	t.Helper()
 	init := initiateRun(t)
 	scope, err := init.Scope()
@@ -133,10 +133,10 @@ func c22Kernel(t *testing.T, opts c22KernelOpts) (*authz.Governor, *authz.GateAu
 	return gov, audit, sink
 }
 
-// c22Prober is the egress seam's double. It records every ConfirmRequest it
+// confirmProber is the egress seam's double. It records every ConfirmRequest it
 // was handed so a test can assert what actually left rather than what the
 // implementation says it sends.
-type c22Prober struct {
+type confirmProber struct {
 	byPath map[string]int
 	def    int
 	err    error
@@ -144,7 +144,7 @@ type c22Prober struct {
 	calls  int
 }
 
-func (p *c22Prober) ProbeEndpoint(_ context.Context, req ConfirmRequest) (ConfirmResponse, error) {
+func (p *confirmProber) ProbeEndpoint(_ context.Context, req ConfirmRequest) (ConfirmResponse, error) {
 	p.calls++
 	p.seen = append(p.seen, req)
 	if p.err != nil {
@@ -156,7 +156,7 @@ func (p *c22Prober) ProbeEndpoint(_ context.Context, req ConfirmRequest) (Confir
 	return ConfirmResponse{Status: p.def, Latency: 3 * time.Millisecond}, nil
 }
 
-func (p *c22Prober) paths() []string {
+func (p *confirmProber) paths() []string {
 	out := make([]string, 0, len(p.seen))
 	for _, r := range p.seen {
 		out = append(out, string(r.Method())+" "+r.Path())
@@ -164,24 +164,24 @@ func (p *c22Prober) paths() []string {
 	return out
 }
 
-func c22Answering(status int, byPath map[string]int) *c22Prober {
-	return &c22Prober{def: status, byPath: byPath}
+func confirmAnswering(status int, byPath map[string]int) *confirmProber {
+	return &confirmProber{def: status, byPath: byPath}
 }
 
-// c22Clock advances the instant between probes so gate 14's token bucket
+// confirmClock advances the instant between probes so gate 14's token bucket
 // refills, which is what a real run's clock does.
-type c22Clock struct {
+type confirmClock struct {
 	t    *testing.T
 	at   time.Time
 	step time.Duration
 }
 
-func c22Advancing(t *testing.T, step time.Duration) *c22Clock {
+func confirmAdvancing(t *testing.T, step time.Duration) *confirmClock {
 	t.Helper()
-	return &c22Clock{t: t, at: mustClock(t).Instant(), step: step}
+	return &confirmClock{t: t, at: mustClock(t).Instant(), step: step}
 }
 
-func (c *c22Clock) NextInstant() authz.Clock {
+func (c *confirmClock) NextInstant() authz.Clock {
 	c.at = c.at.Add(c.step)
 	k, err := authz.NewClock(c.at)
 	if err != nil {
@@ -190,27 +190,27 @@ func (c *c22Clock) NextInstant() authz.Clock {
 	return k
 }
 
-// c22Concretizer is the PathConcretizer double.
-type c22Concretizer struct {
+// confirmConcretizer is the PathConcretizer double.
+type confirmConcretizer struct {
 	fn    func(template string) (string, string, error)
 	seen  []string
 	calls int
 }
 
-func (c *c22Concretizer) ConcretizePath(_ context.Context, _ authz.Method, template string) (string, string, error) {
+func (c *confirmConcretizer) ConcretizePath(_ context.Context, _ authz.Method, template string) (string, string, error) {
 	c.calls++
 	c.seen = append(c.seen, template)
 	return c.fn(template)
 }
 
-func c22Fixed(path, source string) *c22Concretizer {
-	return &c22Concretizer{fn: func(string) (string, string, error) { return path, source, nil }}
+func confirmFixed(path, source string) *confirmConcretizer {
+	return &confirmConcretizer{fn: func(string) (string, string, error) { return path, source, nil }}
 }
 
-// c22Confirming is the standard confirming configuration.
-func c22Confirming(t *testing.T, prober EndpointProber, budget int) ConfirmConfig {
+// confirmConfirming is the standard confirming configuration.
+func confirmConfirming(t *testing.T, prober EndpointProber, budget int) ConfirmConfig {
 	t.Helper()
-	gov, audit, _ := c22Kernel(t, c22KernelOpts{})
+	gov, audit, _ := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
 	return ConfirmConfig{
 		Governor:      gov,
@@ -221,11 +221,11 @@ func c22Confirming(t *testing.T, prober EndpointProber, budget int) ConfirmConfi
 		ProbeBudget:   budget,
 		Technique:     authz.TechniqueContentDiscovery,
 		Prober:        prober,
-		Clock:         c22Advancing(t, time.Second),
+		Clock:         confirmAdvancing(t, time.Second),
 	}
 }
 
-func c22Run(t *testing.T, cfg ConfirmConfig, tiers ...[]Route) ConfirmResult {
+func confirmRun(t *testing.T, cfg ConfirmConfig, tiers ...[]Route) ConfirmResult {
 	t.Helper()
 	res, err := MergeAndConfirm(context.Background(), cfg, mustClock(t), tiers...)
 	if err != nil {
@@ -234,7 +234,7 @@ func c22Run(t *testing.T, cfg ConfirmConfig, tiers ...[]Route) ConfirmResult {
 	return res
 }
 
-func c22EndpointTable(res ConfirmResult) []string {
+func confirmEndpointTable(res ConfirmResult) []string {
 	out := make([]string, 0, len(res.Endpoints()))
 	for _, e := range res.Endpoints() {
 		out = append(out, fmt.Sprintf("%s %s %s %s", e.Method(), e.Path(),
@@ -243,18 +243,18 @@ func c22EndpointTable(res ConfirmResult) []string {
 	return out
 }
 
-func c22Endpoint(t *testing.T, res ConfirmResult, m authz.Method, path string) MergedEndpoint {
+func confirmEndpoint(t *testing.T, res ConfirmResult, m authz.Method, path string) MergedEndpoint {
 	t.Helper()
 	for _, e := range res.Endpoints() {
 		if e.Method() == m && e.Path() == path {
 			return e
 		}
 	}
-	t.Fatalf("no endpoint %s %s in the union; the union is %v", m, path, c22EndpointTable(res))
+	t.Fatalf("no endpoint %s %s in the union; the union is %v", m, path, confirmEndpointTable(res))
 	return MergedEndpoint{}
 }
 
-func c22NoteCount(res ConfirmResult, reason MergeNoteReason) int {
+func confirmNoteCount(res ConfirmResult, reason MergeNoteReason) int {
 	n := 0
 	for _, note := range res.Notes() {
 		if note.Reason == reason {
@@ -264,7 +264,7 @@ func c22NoteCount(res ConfirmResult, reason MergeNoteReason) int {
 	return n
 }
 
-func c22OutcomeCount(res ConfirmResult, o ConfirmOutcome) int {
+func confirmOutcomeCount(res ConfirmResult, o ConfirmOutcome) int {
 	n := 0
 	for _, e := range res.Endpoints() {
 		if e.Outcome() == o {
@@ -275,7 +275,7 @@ func c22OutcomeCount(res ConfirmResult, o ConfirmOutcome) int {
 }
 
 // ===========================================================================
-// THE END-TO-END PATH — new under RULING 6, and measured rather than assumed
+// THE END-TO-END PATH — new under THE ADMISSION RULING, and measured rather than assumed
 // ===========================================================================
 
 // TestAConfirmationIsARealObservationDrivenThroughTheKernel is the packet's
@@ -287,9 +287,9 @@ func c22OutcomeCount(res ConfirmResult, o ConfirmOutcome) int {
 // sufficient on its own without recording the actual status code observed — a
 // 500 is 'route exists, handler errors,' not 'route works.'"
 func TestAConfirmationIsARealObservationDrivenThroughTheKernel(t *testing.T) {
-	gov, audit, sink := c22Kernel(t, c22KernelOpts{})
+	gov, audit, sink := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
-	prober := c22Answering(200, map[string]int{
+	prober := confirmAnswering(200, map[string]int{
 		"/health":  200,
 		"/gone":    404,
 		"/broken":  500,
@@ -304,13 +304,13 @@ func TestAConfirmationIsARealObservationDrivenThroughTheKernel(t *testing.T) {
 		ProbeBudget:   16,
 		Technique:     authz.TechniqueContentDiscovery,
 		Prober:        prober,
-		Clock:         c22Advancing(t, time.Second),
+		Clock:         confirmAdvancing(t, time.Second),
 	}
-	res := c22Run(t, cfg, []Route{
-		c22Candidate(t, authz.MethodGet, "/health", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/gone", record.InventoryProvenanceRepoSpec),
-		c22Candidate(t, authz.MethodGet, "/broken", record.InventoryProvenanceStaticExtraction),
-		c22Candidate(t, authz.MethodGet, "/private", record.InventoryProvenanceCrawl),
+	res := confirmRun(t, cfg, []Route{
+		confirmCandidate(t, authz.MethodGet, "/health", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/gone", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/broken", record.InventoryProvenanceStaticExtraction),
+		confirmCandidate(t, authz.MethodGet, "/private", record.InventoryProvenanceCrawl),
 	})
 
 	want := []string{
@@ -319,7 +319,7 @@ func TestAConfirmationIsARealObservationDrivenThroughTheKernel(t *testing.T) {
 		"GET /health confirmed observed_non_404",
 		"GET /private confirmed observed_non_404",
 	}
-	if got := c22EndpointTable(res); !reflect.DeepEqual(got, want) {
+	if got := confirmEndpointTable(res); !reflect.DeepEqual(got, want) {
 		t.Fatalf("endpoint table =\n  %v\nwant\n  %v", got, want)
 	}
 	if res.ConfirmedCount() != 3 || res.CandidateCount() != 1 || res.EndpointCount() != 4 {
@@ -337,7 +337,7 @@ func TestAConfirmationIsARealObservationDrivenThroughTheKernel(t *testing.T) {
 		path   string
 		status int
 	}{{"/health", 200}, {"/broken", 500}, {"/private", 403}, {"/gone", 404}} {
-		e := c22Endpoint(t, res, authz.MethodGet, tc.path)
+		e := confirmEndpoint(t, res, authz.MethodGet, tc.path)
 		obs, ok := e.Observation()
 		if !ok {
 			t.Fatalf("%s carries no observation, so its outcome %q cannot be traced to "+
@@ -383,15 +383,15 @@ func TestAConfirmationIsARealObservationDrivenThroughTheKernel(t *testing.T) {
 // TestConfirmationRequiresAProberAndSaysSoLoudly is the tool-absent path. It
 // does not fall back to a smaller numerator; it refuses.
 func TestConfirmationRequiresAProberAndSaysSoLoudly(t *testing.T) {
-	gov, audit, _ := c22Kernel(t, c22KernelOpts{})
+	gov, audit, _ := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
 	cfg := ConfirmConfig{
 		Governor: gov, Audit: audit, Authorization: auth, Target: mustBareTarget(t),
 		Confirm: true, ProbeBudget: 4, Technique: authz.TechniqueContentDiscovery,
 	}
 	res, err := MergeAndConfirm(context.Background(), cfg, mustClock(t), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
 	})
 	if !errors.Is(err, ErrNoEndpointProber) {
 		t.Fatalf("MergeAndConfirm returned %v, want ErrNoEndpointProber", err)
@@ -403,7 +403,7 @@ func TestConfirmationRequiresAProberAndSaysSoLoudly(t *testing.T) {
 		t.Fatalf("%d endpoints were confirmed with nothing wired to observe them",
 			res.ConfirmedCount())
 	}
-	if n := c22OutcomeCount(res, ConfirmOutcomeNoProberWired); n != 2 {
+	if n := confirmOutcomeCount(res, ConfirmOutcomeNoProberWired); n != 2 {
 		t.Fatalf("%d endpoints carry no_prober_wired, want 2", n)
 	}
 	if res.Issued() != 0 {
@@ -421,11 +421,11 @@ func TestConfirmationRequiresAProberAndSaysSoLoudly(t *testing.T) {
 func TestAProberThatReturnsNoStatusCannotMintAConfirmation(t *testing.T) {
 	for _, status := range []int{0, -1, 1, 99, 600, 99999} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			prober := c22Answering(status, nil)
-			res := c22Run(t, c22Confirming(t, prober, 4), []Route{
-				c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+			prober := confirmAnswering(status, nil)
+			res := confirmRun(t, confirmConfirming(t, prober, 4), []Route{
+				confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 			})
-			e := c22Endpoint(t, res, authz.MethodGet, "/a")
+			e := confirmEndpoint(t, res, authz.MethodGet, "/a")
 			if e.Confirmed() {
 				t.Fatalf("status %d confirmed the endpoint. A value that is not an HTTP "+
 					"status is not an answer, and reading it as a non-404 puts an "+
@@ -451,9 +451,9 @@ func TestAProberThatReturnsNoStatusCannotMintAConfirmation(t *testing.T) {
 // reach. ConfirmRequest is sealed and carries no setter, so the only thing a
 // prober returns is a status.
 func TestAHostileProberCannotChooseWhatIsProbed(t *testing.T) {
-	prober := c22Answering(200, nil)
-	res := c22Run(t, c22Confirming(t, prober, 4), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+	prober := confirmAnswering(200, nil)
+	res := confirmRun(t, confirmConfirming(t, prober, 4), []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 	})
 	if len(prober.seen) != 1 {
 		t.Fatalf("the prober saw %d requests, want 1", len(prober.seen))
@@ -479,7 +479,7 @@ func TestAHostileProberCannotChooseWhatIsProbed(t *testing.T) {
 		t.Fatal("the zero ConfirmRequest reports itself constructed")
 	}
 	// And the observation the loop recorded points at the same admission.
-	e := c22Endpoint(t, res, authz.MethodGet, "/a")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/a")
 	obs, ok := e.Observation()
 	if !ok || obs.AuditSeq() != req.AuditSeq() {
 		t.Fatalf("the observation's audit sequence (%v) does not match the request's (%d)",
@@ -489,18 +489,18 @@ func TestAHostileProberCannotChooseWhatIsProbed(t *testing.T) {
 
 // TestAProbeErrorIsNotAConfirmation.
 func TestAProbeErrorIsNotAConfirmation(t *testing.T) {
-	prober := &c22Prober{err: errors.New("dial refused by the fixture")}
-	res := c22Run(t, c22Confirming(t, prober, 4), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+	prober := &confirmProber{err: errors.New("dial refused by the fixture")}
+	res := confirmRun(t, confirmConfirming(t, prober, 4), []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 	})
-	e := c22Endpoint(t, res, authz.MethodGet, "/a")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/a")
 	if e.Confirmed() || e.Outcome() != ConfirmOutcomeProbeFailed {
 		t.Fatalf("a transport error produced %s/%s", e.Confirmation(), e.Outcome())
 	}
 	if res.Answered() != 0 {
 		t.Fatalf("Answered()=%d", res.Answered())
 	}
-	if n := c22RefusalCount(res, RefusalFetchFailed); n != 1 {
+	if n := confirmRefusalCount(res, RefusalFetchFailed); n != 1 {
 		t.Fatalf("%d fetch_failed refusals, want 1", n)
 	}
 	if err := res.AssertEveryConfirmationHasEvidence(); err != nil {
@@ -508,7 +508,7 @@ func TestAProbeErrorIsNotAConfirmation(t *testing.T) {
 	}
 }
 
-func c22RefusalCount(res ConfirmResult, reason RefusalReason) int {
+func confirmRefusalCount(res ConfirmResult, reason RefusalReason) int {
 	n := 0
 	for _, r := range res.Refusals() {
 		if r.Reason == reason {
@@ -528,15 +528,15 @@ func c22RefusalCount(res ConfirmResult, reason RefusalReason) int {
 //
 // The three routes arrive in THREE DIFFERENT SPELLINGS — the OpenAPI "{id}",
 // gin's ":id", and gorilla's "{id:[0-9]+}" — so the test also proves that
-// canonicalization happens BEFORE matching, and that it is D.20's
+// canonicalization happens BEFORE matching, and that it is Go route extraction's
 // canonicalizePattern doing it rather than a second one here.
 func TestTheSameEndpointFoundByThreeRoutesIsOneEndpointWithThreeProvenances(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)},
-		[]Route{c22Route(t, authz.MethodGet, "/users/{id}", "getUser",
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)},
+		[]Route{confirmRoute(t, authz.MethodGet, "/users/{id}", "getUser",
 			record.InventoryProvenanceRuntimeSpec, ConfirmationCandidate)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users/:id",
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users/:id",
 			record.InventoryProvenanceRepoSpec)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users/{id:[0-9]+}",
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users/{id:[0-9]+}",
 			record.InventoryProvenanceStaticExtraction)},
 	)
 
@@ -548,9 +548,9 @@ func TestTheSameEndpointFoundByThreeRoutesIsOneEndpointWithThreeProvenances(t *t
 			"Counting one endpoint three times INFLATES the denominator of "+
 			"endpoint_coverage, which makes coverage look worse -- so nobody "+
 			"investigates it, and the number stops meaning what it says",
-			res.EndpointCount(), c22EndpointTable(res))
+			res.EndpointCount(), confirmEndpointTable(res))
 	}
-	e := c22Endpoint(t, res, authz.MethodGet, "/users/{id}")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/users/{id}")
 	want := []record.InventoryProvenance{
 		record.InventoryProvenanceRuntimeSpec,
 		record.InventoryProvenanceRepoSpec,
@@ -565,7 +565,7 @@ func TestTheSameEndpointFoundByThreeRoutesIsOneEndpointWithThreeProvenances(t *t
 	if n := len(e.Contributors()); n != 3 {
 		t.Fatalf("%d contributors, want 3", n)
 	}
-	if n := c22NoteCount(res, MergeNoteRoutesCollapsed); n != 2 {
+	if n := confirmNoteCount(res, MergeNoteRoutesCollapsed); n != 2 {
 		t.Fatalf("%d routes_collapsed notes, want 2 (the second and third arrivals)", n)
 	}
 	// Routes() is not the denominator, and this is the line that says so.
@@ -581,10 +581,10 @@ func TestTheSameEndpointFoundByThreeRoutesIsOneEndpointWithThreeProvenances(t *t
 // TestConfirmingOneEndpointConfirmsItOnceAndKeepsEveryProvenance is the
 // packet's "two independent axes" requirement stated as arithmetic.
 func TestConfirmingOneEndpointConfirmsItOnceAndKeepsEveryProvenance(t *testing.T) {
-	prober := c22Answering(200, nil)
-	res := c22Run(t, c22Confirming(t, prober, 8),
-		[]Route{c22Candidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRuntimeSpec)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users", record.InventoryProvenanceStaticExtraction)},
+	prober := confirmAnswering(200, nil)
+	res := confirmRun(t, confirmConfirming(t, prober, 8),
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRuntimeSpec)},
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users", record.InventoryProvenanceStaticExtraction)},
 	)
 	if res.EndpointCount() != 1 || res.ConfirmedCount() != 1 {
 		t.Fatalf("union=%d confirmed=%d, want 1/1", res.EndpointCount(), res.ConfirmedCount())
@@ -615,13 +615,13 @@ func TestConfirmingOneEndpointConfirmsItOnceAndKeepsEveryProvenance(t *testing.T
 
 // TestARouteThatArrivesClaimingConfirmedIsNotLaundered.
 //
-// This is D.19's retag lesson applied to the merge. A caller feeding a
+// This is the repo spec reader's retag lesson applied to the merge. A caller feeding a
 // previous result's Routes() back in, or a tier that stamped `confirmed` by
 // mistake, must not reach the numerator without THIS run observing the
 // endpoint. The fixture is asserted to really carry the confirmation first, so
 // a green result cannot be the fixture having rotted.
 func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
-	laundered := c22Route(t, authz.MethodGet, "/admin", "", // deliberately confirmed
+	laundered := confirmRoute(t, authz.MethodGet, "/admin", "", // deliberately confirmed
 		record.InventoryProvenanceStaticExtraction, ConfirmationConfirmed)
 	if laundered.Confirmation() != ConfirmationConfirmed {
 		t.Fatalf("the fixture does not carry the value under test: %s",
@@ -629,8 +629,8 @@ func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
 	}
 
 	t.Run("merge only", func(t *testing.T) {
-		res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{laundered})
-		e := c22Endpoint(t, res, authz.MethodGet, "/admin")
+		res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{laundered})
+		e := confirmEndpoint(t, res, authz.MethodGet, "/admin")
 		if e.Confirmed() || e.Confirmation() != ConfirmationCandidate {
 			t.Fatalf("an unprobed route carried its own confirmation through the merge: "+
 				"%s/%s", e.Confirmation(), e.Outcome())
@@ -638,7 +638,7 @@ func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
 		if e.Outcome() != ConfirmOutcomeNotRequested {
 			t.Fatalf("outcome = %q", e.Outcome())
 		}
-		if n := c22NoteCount(res, MergeNoteInboundConfirmationDiscarded); n != 1 {
+		if n := confirmNoteCount(res, MergeNoteInboundConfirmationDiscarded); n != 1 {
 			t.Fatalf("%d inbound_confirmation_discarded notes, want 1. A silent discard "+
 				"and a silent acceptance look identical in the output", n)
 		}
@@ -648,8 +648,8 @@ func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
 	})
 
 	t.Run("probed and 404", func(t *testing.T) {
-		res := c22Run(t, c22Confirming(t, c22Answering(404, nil), 4), []Route{laundered})
-		e := c22Endpoint(t, res, authz.MethodGet, "/admin")
+		res := confirmRun(t, confirmConfirming(t, confirmAnswering(404, nil), 4), []Route{laundered})
+		e := confirmEndpoint(t, res, authz.MethodGet, "/admin")
 		if e.Confirmed() {
 			t.Fatal("the target said 404 and the endpoint is confirmed; the inbound claim " +
 				"outranked the observation")
@@ -660,13 +660,13 @@ func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
 	})
 
 	t.Run("probed but budget exhausted", func(t *testing.T) {
-		cfg := c22Confirming(t, c22Answering(200, nil), 1)
-		res := c22Run(t, cfg,
-			[]Route{c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec)},
+		cfg := confirmConfirming(t, confirmAnswering(200, nil), 1)
+		res := confirmRun(t, cfg,
+			[]Route{confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec)},
 			[]Route{laundered},
 		)
 		// "/a" sorts before "/admin", so "/a" spends the single unit.
-		e := c22Endpoint(t, res, authz.MethodGet, "/admin")
+		e := confirmEndpoint(t, res, authz.MethodGet, "/admin")
 		if e.Confirmed() || e.Outcome() != ConfirmOutcomeBudgetExhausted {
 			t.Fatalf("a route that arrived confirmed and was never probed came out %s/%s",
 				e.Confirmation(), e.Outcome())
@@ -683,25 +683,25 @@ func TestARouteThatArrivesClaimingConfirmedIsNotLaundered(t *testing.T) {
 func TestManyOperationsOnOneAddressAreOneEndpointAndTheSecondNumberIsReported(t *testing.T) {
 	var tier []Route
 	for _, op := range []string{"user", "posts", "search"} {
-		tier = append(tier, c22Route(t, authz.MethodPost, "/graphql", op,
+		tier = append(tier, confirmRoute(t, authz.MethodPost, "/graphql", op,
 			record.InventoryProvenanceRuntimeSpec, ConfirmationCandidate))
 	}
-	tier = append(tier, c22Candidate(t, authz.MethodGet, "/health",
+	tier = append(tier, confirmCandidate(t, authz.MethodGet, "/health",
 		record.InventoryProvenanceRuntimeSpec))
 
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, tier)
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, tier)
 	if res.EndpointCount() != 2 {
-		t.Fatalf("union = %d, want 2: %v", res.EndpointCount(), c22EndpointTable(res))
+		t.Fatalf("union = %d, want 2: %v", res.EndpointCount(), confirmEndpointTable(res))
 	}
 	if res.OperationCount() != 4 {
 		t.Fatalf("OperationCount() = %d, want 4 (three root fields plus one REST "+
 			"endpoint with no operation name)", res.OperationCount())
 	}
-	e := c22Endpoint(t, res, authz.MethodPost, "/graphql")
+	e := confirmEndpoint(t, res, authz.MethodPost, "/graphql")
 	if got := e.Operations(); !reflect.DeepEqual(got, []string{"posts", "search", "user"}) {
 		t.Fatalf("operations = %v", got)
 	}
-	if n := c22NoteCount(res, MergeNoteOperationsOnOneAddress); n != 1 {
+	if n := confirmNoteCount(res, MergeNoteOperationsOnOneAddress); n != 1 {
 		t.Fatalf("%d multiple_operations_on_one_address notes, want 1. Collapsing "+
 			"operations onto an address SHRINKS the denominator, and a number that "+
 			"shrinks a denominator has to be visible", n)
@@ -713,39 +713,39 @@ func TestManyOperationsOnOneAddressAreOneEndpointAndTheSecondNumberIsReported(t 
 //
 // "/users/{id}" and "/users/{userId}" are almost certainly one endpoint. They
 // are counted as two, which INFLATES the denominator — the pessimistic
-// direction — because merging them needs an opinion D.20's canonicalizer
+// direction — because merging them needs an opinion Go route extraction's canonicalizer
 // deliberately does not have. The note is what stops the inflation being
 // silent.
 func TestPlaceholderNameDivergenceIsReportedRatherThanMerged(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
-		c22Candidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/users/{userId}", record.InventoryProvenanceStaticExtraction),
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+		confirmCandidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/users/{userId}", record.InventoryProvenanceStaticExtraction),
 	})
 	if res.EndpointCount() != 2 {
 		t.Fatalf("union = %d, want 2 -- the merge must not invent a rename rule",
 			res.EndpointCount())
 	}
-	if n := c22NoteCount(res, MergeNotePlaceholderNamesDiverge); n != 1 {
+	if n := confirmNoteCount(res, MergeNotePlaceholderNamesDiverge); n != 1 {
 		t.Fatalf("%d placeholder_names_diverge notes, want 1", n)
 	}
 
 	// NEGATIVE CONTROL: different literal segments are different endpoints and
 	// must NOT be reported, or the note carries no information.
-	res = c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
-		c22Candidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/orgs/{id}", record.InventoryProvenanceRuntimeSpec),
+	res = confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+		confirmCandidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/orgs/{id}", record.InventoryProvenanceRuntimeSpec),
 	})
-	if n := c22NoteCount(res, MergeNotePlaceholderNamesDiverge); n != 0 {
+	if n := confirmNoteCount(res, MergeNotePlaceholderNamesDiverge); n != 0 {
 		t.Fatalf("%d placeholder_names_diverge notes for two different paths; a note that "+
 			"fires on everything is not a note", n)
 	}
 	// And a literal segment still matches by IDENTITY, not by position.
-	res = c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
-		c22Candidate(t, authz.MethodGet, "/users/me", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
+	res = confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+		confirmCandidate(t, authz.MethodGet, "/users/me", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
 	})
 	if res.EndpointCount() != 2 {
-		t.Fatalf("a literal segment merged with a placeholder: %v", c22EndpointTable(res))
+		t.Fatalf("a literal segment merged with a placeholder: %v", confirmEndpointTable(res))
 	}
 }
 
@@ -756,19 +756,19 @@ func TestPlaceholderNameDivergenceIsReportedRatherThanMerged(t *testing.T) {
 // the merge collapsed — the denominator inflating itself through the refusal
 // list instead of the endpoint list.
 func TestAMergeIsNotADuplicateRefusal(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRuntimeSpec)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRepoSpec)},
-		[]Route{c22Candidate(t, authz.MethodGet, "/users", record.InventoryProvenanceCrawl)},
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)},
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRuntimeSpec)},
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users", record.InventoryProvenanceRepoSpec)},
+		[]Route{confirmCandidate(t, authz.MethodGet, "/users", record.InventoryProvenanceCrawl)},
 	)
-	if n := c22RefusalCount(res, RefusalDuplicateRoute); n != 0 {
+	if n := confirmRefusalCount(res, RefusalDuplicateRoute); n != 0 {
 		t.Fatalf("%d duplicate_route refusals. That reason is per-operation and raises the "+
 			"denominator floor; a cross-tier merge is not an extra operation", n)
 	}
 	if len(res.Refusals()) != 0 {
 		t.Fatalf("the merge recorded refusals for a clean union: %v", res.Refusals())
 	}
-	if n := c22NoteCount(res, MergeNoteRoutesCollapsed); n != 2 {
+	if n := confirmNoteCount(res, MergeNoteRoutesCollapsed); n != 2 {
 		t.Fatalf("%d collapse notes, want 2", n)
 	}
 }
@@ -785,11 +785,11 @@ func TestAMergeIsNotADuplicateRefusal(t *testing.T) {
 func TestTheProbeBudgetIsRespectedAndUnprobedCandidatesAreMarkedNotDropped(t *testing.T) {
 	var tier []Route
 	for i := 0; i < 10; i++ {
-		tier = append(tier, c22Candidate(t, authz.MethodGet,
+		tier = append(tier, confirmCandidate(t, authz.MethodGet,
 			fmt.Sprintf("/e%02d", i), record.InventoryProvenanceStaticExtraction))
 	}
-	prober := c22Answering(200, nil)
-	res := c22Run(t, c22Confirming(t, prober, 3), tier)
+	prober := confirmAnswering(200, nil)
+	res := confirmRun(t, confirmConfirming(t, prober, 3), tier)
 
 	if res.EndpointCount() != 10 {
 		t.Fatalf("the union is %d and the inventory declared 10. A candidate the budget "+
@@ -802,7 +802,7 @@ func TestTheProbeBudgetIsRespectedAndUnprobedCandidatesAreMarkedNotDropped(t *te
 	if res.ConfirmedCount() != 3 {
 		t.Fatalf("confirmed=%d, want 3", res.ConfirmedCount())
 	}
-	if n := c22OutcomeCount(res, ConfirmOutcomeBudgetExhausted); n != 7 {
+	if n := confirmOutcomeCount(res, ConfirmOutcomeBudgetExhausted); n != 7 {
 		t.Fatalf("%d endpoints carry budget_exhausted, want 7", n)
 	}
 	for _, e := range res.Endpoints() {
@@ -848,18 +848,18 @@ func TestTheProbeBudgetIsRespectedAndUnprobedCandidatesAreMarkedNotDropped(t *te
 // AssertBudgetSufficed.
 func TestMoreEndpointsCanMeanLessCoverage(t *testing.T) {
 	small := []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/c", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/c", record.InventoryProvenanceRuntimeSpec),
 	}
 	big := append([]Route(nil), small...)
 	for i := 0; i < 7; i++ {
-		big = append(big, c22Candidate(t, authz.MethodGet,
+		big = append(big, confirmCandidate(t, authz.MethodGet,
 			fmt.Sprintf("/z%d", i), record.InventoryProvenanceStaticExtraction))
 	}
 
-	first := c22Run(t, c22Confirming(t, c22Answering(200, nil), 3), small)
-	second := c22Run(t, c22Confirming(t, c22Answering(200, nil), 3), big)
+	first := confirmRun(t, confirmConfirming(t, confirmAnswering(200, nil), 3), small)
+	second := confirmRun(t, confirmConfirming(t, confirmAnswering(200, nil), 3), big)
 
 	if first.Coverage().EndpointCoverage != 1.0 {
 		t.Fatalf("the small run reported %v, want 1", first.Coverage().EndpointCoverage)
@@ -889,10 +889,10 @@ func TestMoreEndpointsCanMeanLessCoverage(t *testing.T) {
 func TestABudgetThatIsNotConfiguredIsRefused(t *testing.T) {
 	for _, budget := range []int{0, -1, maxProbeBudget + 1} {
 		t.Run(fmt.Sprint(budget), func(t *testing.T) {
-			cfg := c22Confirming(t, c22Answering(200, nil), 4)
+			cfg := confirmConfirming(t, confirmAnswering(200, nil), 4)
 			cfg.ProbeBudget = budget
 			_, err := MergeAndConfirm(context.Background(), cfg, mustClock(t), []Route{
-				c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+				confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 			})
 			if !errors.Is(err, ErrRefused) {
 				t.Fatalf("budget %d was accepted (%v)", budget, err)
@@ -909,14 +909,14 @@ func TestABudgetThatIsNotConfiguredIsRefused(t *testing.T) {
 // endpoints behind them would report budget_exhausted — a starvation Anvil
 // caused, reported as a fact about the target.
 func TestAKernelRefusalCostsNoProbeBudget(t *testing.T) {
-	prober := c22Answering(200, nil)
+	prober := confirmAnswering(200, nil)
 	// "/a-delete" sorts first, so the refused endpoint is reached before the
 	// probeable one and would spend the budget if refusals cost anything.
-	res := c22Run(t, c22Confirming(t, prober, 1), []Route{
-		c22Candidate(t, authz.MethodDelete, "/a-delete", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/b-get", record.InventoryProvenanceRuntimeSpec),
+	res := confirmRun(t, confirmConfirming(t, prober, 1), []Route{
+		confirmCandidate(t, authz.MethodDelete, "/a-delete", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/b-get", record.InventoryProvenanceRuntimeSpec),
 	})
-	del := c22Endpoint(t, res, authz.MethodDelete, "/a-delete")
+	del := confirmEndpoint(t, res, authz.MethodDelete, "/a-delete")
 	if del.Outcome() != ConfirmOutcomeKernelRefused {
 		t.Fatalf("a DELETE with no operator allowance came out %q; gate 15 refuses "+
 			"state-changing methods without a per-endpoint allow", del.Outcome())
@@ -924,7 +924,7 @@ func TestAKernelRefusalCostsNoProbeBudget(t *testing.T) {
 	if del.Confirmed() {
 		t.Fatal("a kernel-refused endpoint is confirmed")
 	}
-	get := c22Endpoint(t, res, authz.MethodGet, "/b-get")
+	get := confirmEndpoint(t, res, authz.MethodGet, "/b-get")
 	if !get.Confirmed() {
 		t.Fatalf("the probeable endpoint came out %s/%s -- the refusal spent the budget",
 			get.Confirmation(), get.Outcome())
@@ -933,7 +933,7 @@ func TestAKernelRefusalCostsNoProbeBudget(t *testing.T) {
 		t.Fatalf("issued=%d calls=%d, want 1/1", res.Issued(), prober.calls)
 	}
 	if res.EndpointCount() != 2 {
-		t.Fatalf("the refused endpoint left the denominator: %v", c22EndpointTable(res))
+		t.Fatalf("the refused endpoint left the denominator: %v", confirmEndpointTable(res))
 	}
 	// The refusal names the gate, so an operator can see WHICH rule refused.
 	found := false
@@ -963,24 +963,24 @@ func TestGate11RemovesAPathAndTheEndpointStaysInTheDenominator(t *testing.T) {
 		t.Fatal("the fixture robots.txt does not actually disallow /private, so this test " +
 			"would prove nothing")
 	}
-	gov, audit, _ := c22Kernel(t, c22KernelOpts{robots: &policy})
+	gov, audit, _ := confirmKernel(t, confirmKernelOpts{robots: &policy})
 	auth, _ := mintAuthorization(t)
-	prober := c22Answering(200, nil)
-	res := c22Run(t, ConfirmConfig{
+	prober := confirmAnswering(200, nil)
+	res := confirmRun(t, ConfirmConfig{
 		Governor: gov, Audit: audit, Authorization: auth, Target: mustBareTarget(t),
 		Confirm: true, ProbeBudget: 8, Technique: authz.TechniqueContentDiscovery,
-		Prober: prober, Clock: c22Advancing(t, time.Second),
+		Prober: prober, Clock: confirmAdvancing(t, time.Second),
 	}, []Route{
-		c22Candidate(t, authz.MethodGet, "/private", record.InventoryProvenanceRepoSpec),
-		c22Candidate(t, authz.MethodGet, "/public", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/private", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/public", record.InventoryProvenanceRepoSpec),
 	})
 
-	priv := c22Endpoint(t, res, authz.MethodGet, "/private")
+	priv := confirmEndpoint(t, res, authz.MethodGet, "/private")
 	if priv.Outcome() != ConfirmOutcomeKernelRefused || priv.Confirmed() {
 		t.Fatalf("/private came out %s/%s; gate 11 removes it", priv.Confirmation(),
 			priv.Outcome())
 	}
-	if !c22Endpoint(t, res, authz.MethodGet, "/public").Confirmed() {
+	if !confirmEndpoint(t, res, authz.MethodGet, "/public").Confirmed() {
 		t.Fatal("/public was not confirmed")
 	}
 	if got := prober.paths(); !reflect.DeepEqual(got, []string{"GET /public"}) {
@@ -1003,24 +1003,24 @@ func TestGate14RefusesTheOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 	var tier []Route
 	const n = 12
 	for i := 0; i < n; i++ {
-		tier = append(tier, c22Candidate(t, authz.MethodGet,
+		tier = append(tier, confirmCandidate(t, authz.MethodGet,
 			fmt.Sprintf("/e%02d", i), record.InventoryProvenanceRuntimeSpec))
 	}
-	gov, audit, _ := c22Kernel(t, c22KernelOpts{})
+	gov, audit, _ := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
 	frozen := ConfirmConfig{
 		Governor: gov, Audit: audit, Authorization: auth, Target: mustBareTarget(t),
 		Confirm: true, ProbeBudget: n, Technique: authz.TechniqueContentDiscovery,
-		Prober: c22Answering(200, nil),
+		Prober: confirmAnswering(200, nil),
 		// No Clock: the run instant is reused for every probe.
 	}
-	res := c22Run(t, frozen, tier)
+	res := confirmRun(t, frozen, tier)
 	if res.ConfirmedCount() != authz.CodedMaxRequestsPerSecondPerHost {
 		t.Fatalf("confirmed=%d, want %d -- the bucket holds exactly that many tokens and "+
 			"a frozen clock never refills it",
 			res.ConfirmedCount(), authz.CodedMaxRequestsPerSecondPerHost)
 	}
-	if got := c22OutcomeCount(res, ConfirmOutcomeKernelRefused); got != n-authz.CodedMaxRequestsPerSecondPerHost {
+	if got := confirmOutcomeCount(res, ConfirmOutcomeKernelRefused); got != n-authz.CodedMaxRequestsPerSecondPerHost {
 		t.Fatalf("%d endpoints kernel_refused, want %d", got,
 			n-authz.CodedMaxRequestsPerSecondPerHost)
 	}
@@ -1032,11 +1032,11 @@ func TestGate14RefusesTheOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 	// The same inventory with an advancing clock confirms every endpoint. The
 	// difference is Anvil's clock handling and nothing about the target, which
 	// is exactly why the seam is not optional in a real run.
-	advancing := c22Confirming(t, c22Answering(200, nil), n)
-	res2 := c22Run(t, advancing, tier)
+	advancing := confirmConfirming(t, confirmAnswering(200, nil), n)
+	res2 := confirmRun(t, advancing, tier)
 	if res2.ConfirmedCount() != n {
 		t.Fatalf("with an advancing clock confirmed=%d, want %d: %v",
-			res2.ConfirmedCount(), n, c22EndpointTable(res2))
+			res2.ConfirmedCount(), n, confirmEndpointTable(res2))
 	}
 }
 
@@ -1051,19 +1051,19 @@ func TestGate14RefusesTheOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 // The 429 endpoint is itself CONFIRMED, and that is correct: a rate-limited
 // route is a route that exists.
 func TestTheObservationIsFedBackToTheKernelAndCanStopTheRun(t *testing.T) {
-	prober := c22Answering(200, map[string]int{"/a": 429})
-	res := c22Run(t, c22Confirming(t, prober, 8), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/c", record.InventoryProvenanceRuntimeSpec),
+	prober := confirmAnswering(200, map[string]int{"/a": 429})
+	res := confirmRun(t, confirmConfirming(t, prober, 8), []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/c", record.InventoryProvenanceRuntimeSpec),
 	})
-	a := c22Endpoint(t, res, authz.MethodGet, "/a")
+	a := confirmEndpoint(t, res, authz.MethodGet, "/a")
 	if !a.Confirmed() {
 		t.Fatalf("/a answered 429 and came out %s/%s; a rate-limited route exists",
 			a.Confirmation(), a.Outcome())
 	}
 	for _, p := range []string{"/b", "/c"} {
-		e := c22Endpoint(t, res, authz.MethodGet, p)
+		e := confirmEndpoint(t, res, authz.MethodGet, p)
 		if e.Outcome() != ConfirmOutcomeKernelRefused {
 			t.Fatalf("%s came out %q after the target said 429. Gate 17 learns about a "+
 				"429 only through Governor.ObserveResponse, so a loop that does not feed "+
@@ -1085,20 +1085,20 @@ func TestTheObservationIsFedBackToTheKernelAndCanStopTheRun(t *testing.T) {
 // TestTheKernelValidatesTheProbePathRatherThanASecondValidator.
 func TestTheKernelValidatesTheProbePathRatherThanASecondValidator(t *testing.T) {
 	// NewRoute accepts this path -- it is printable ASCII with no dot segment
-	// -- and D.20's canonicalizer refuses the placeholder name, because
+	// -- and Go route extraction's canonicalizer refuses the placeholder name, because
 	// sanitizing it would fold two distinct placeholders onto one row.
-	bad := c22Candidate(t, authz.MethodGet, "/a/{bad-name}", record.InventoryProvenanceRepoSpec)
+	bad := confirmCandidate(t, authz.MethodGet, "/a/{bad-name}", record.InventoryProvenanceRepoSpec)
 	if !bad.Constructed() {
 		t.Fatal("the fixture route was not built, so this test proves nothing")
 	}
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
 		bad,
-		c22Candidate(t, authz.MethodGet, "/ok", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/ok", record.InventoryProvenanceRepoSpec),
 	})
 	if res.EndpointCount() != 1 {
-		t.Fatalf("union = %d, want 1: %v", res.EndpointCount(), c22EndpointTable(res))
+		t.Fatalf("union = %d, want 1: %v", res.EndpointCount(), confirmEndpointTable(res))
 	}
-	if n := c22RefusalCount(res, RefusalPathRejectedByKernel); n != 1 {
+	if n := confirmRefusalCount(res, RefusalPathRejectedByKernel); n != 1 {
 		t.Fatalf("%d path refusals, want 1: %v", n, res.Refusals())
 	}
 	if res.Accepted() != 1 || res.Offered() != 2 {
@@ -1122,14 +1122,14 @@ func TestRoutesOnAnotherTargetAreRefusedNotCounted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRoute: %v", err)
 	}
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
 		foreign,
-		c22Candidate(t, authz.MethodGet, "/ours", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/ours", record.InventoryProvenanceRuntimeSpec),
 	})
 	if res.EndpointCount() != 1 {
-		t.Fatalf("union = %d, want 1: %v", res.EndpointCount(), c22EndpointTable(res))
+		t.Fatalf("union = %d, want 1: %v", res.EndpointCount(), confirmEndpointTable(res))
 	}
-	if n := c22RefusalCount(res, RefusalKernelRefused); n != 1 {
+	if n := confirmRefusalCount(res, RefusalKernelRefused); n != 1 {
 		t.Fatalf("%d refusals for the foreign route", n)
 	}
 	// sameTarget compares by identity, and a Target that was never built is
@@ -1144,15 +1144,15 @@ func TestRoutesOnAnotherTargetAreRefusedNotCounted(t *testing.T) {
 
 // TestAnUnconstructedRouteIsRefusedNotCounted.
 func TestAnUnconstructedRouteIsRefusedNotCounted(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
 		{}, // a composite literal from another package looks exactly like this
-		c22Candidate(t, authz.MethodGet, "/ok", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/ok", record.InventoryProvenanceRuntimeSpec),
 	})
 	if res.EndpointCount() != 1 || res.Accepted() != 1 || res.Offered() != 2 {
 		t.Fatalf("union=%d accepted=%d offered=%d", res.EndpointCount(), res.Accepted(),
 			res.Offered())
 	}
-	if n := c22RefusalCount(res, RefusalRouteUnconstructible); n != 1 {
+	if n := confirmRefusalCount(res, RefusalRouteUnconstructible); n != 1 {
 		t.Fatalf("%d unconstructible refusals", n)
 	}
 }
@@ -1163,12 +1163,12 @@ func TestAnUnconstructedRouteIsRefusedNotCounted(t *testing.T) {
 
 // TestATemplatedPathIsAnHonestCandidateWithoutAConcretizer.
 func TestATemplatedPathIsAnHonestCandidateWithoutAConcretizer(t *testing.T) {
-	prober := c22Answering(200, nil)
-	res := c22Run(t, c22Confirming(t, prober, 8), []Route{
-		c22Candidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/health", record.InventoryProvenanceRuntimeSpec),
+	prober := confirmAnswering(200, nil)
+	res := confirmRun(t, confirmConfirming(t, prober, 8), []Route{
+		confirmCandidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/health", record.InventoryProvenanceRuntimeSpec),
 	})
-	e := c22Endpoint(t, res, authz.MethodGet, "/users/{id}")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/users/{id}")
 	if e.Outcome() != ConfirmOutcomeTemplatedPathNotConcretized || e.Confirmed() {
 		t.Fatalf("/users/{id} came out %s/%s", e.Confirmation(), e.Outcome())
 	}
@@ -1188,13 +1188,13 @@ func TestATemplatedPathIsAnHonestCandidateWithoutAConcretizer(t *testing.T) {
 
 // TestAConcretizerDrivesARealObservationAndItsSourceIsRecorded.
 func TestAConcretizerDrivesARealObservationAndItsSourceIsRecorded(t *testing.T) {
-	conc := c22Fixed("/users/42", "operator fixture dataset rev 7")
-	cfg := c22Confirming(t, c22Answering(200, map[string]int{"/users/42": 200}), 8)
+	conc := confirmFixed("/users/42", "operator fixture dataset rev 7")
+	cfg := confirmConfirming(t, confirmAnswering(200, map[string]int{"/users/42": 200}), 8)
 	cfg.Concretizer = conc
-	res := c22Run(t, cfg, []Route{
-		c22Candidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
+	res := confirmRun(t, cfg, []Route{
+		confirmCandidate(t, authz.MethodGet, "/users/{id}", record.InventoryProvenanceRuntimeSpec),
 	})
-	e := c22Endpoint(t, res, authz.MethodGet, "/users/{id}")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/users/{id}")
 	if !e.Confirmed() {
 		t.Fatalf("the concretized endpoint came out %s/%s", e.Confirmation(), e.Outcome())
 	}
@@ -1240,17 +1240,17 @@ func TestAHostileConcretizerCannotMoveTheProbe(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path, source, cerr := tc.path, tc.source, tc.err
-			conc := &c22Concretizer{fn: func(string) (string, string, error) {
+			conc := &confirmConcretizer{fn: func(string) (string, string, error) {
 				return path, source, cerr
 			}}
-			prober := c22Answering(200, nil)
-			cfg := c22Confirming(t, prober, 8)
+			prober := confirmAnswering(200, nil)
+			cfg := confirmConfirming(t, prober, 8)
 			cfg.Concretizer = conc
-			res := c22Run(t, cfg, []Route{
-				c22Candidate(t, authz.MethodGet, "/users/{id}",
+			res := confirmRun(t, cfg, []Route{
+				confirmCandidate(t, authz.MethodGet, "/users/{id}",
 					record.InventoryProvenanceRuntimeSpec),
 			})
-			e := c22Endpoint(t, res, authz.MethodGet, "/users/{id}")
+			e := confirmEndpoint(t, res, authz.MethodGet, "/users/{id}")
 			if e.Confirmed() {
 				t.Fatalf("the concretizer returning %q confirmed the endpoint", tc.path)
 			}
@@ -1355,8 +1355,8 @@ func TestEveryMergeNoteReasonIsRecognised(t *testing.T) {
 // structural claim nobody checks is a claim, and the assertions themselves
 // need a red before they can be trusted.
 func TestAConfirmationCannotExistWithoutAnObservation(t *testing.T) {
-	good := c22Run(t, c22Confirming(t, c22Answering(200, nil), 4), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+	good := confirmRun(t, confirmConfirming(t, confirmAnswering(200, nil), 4), []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 	})
 	if err := good.AssertEveryConfirmationHasEvidence(); err != nil {
 		t.Fatalf("a real confirmation failed the assertion: %v", err)
@@ -1415,11 +1415,11 @@ func TestAConfirmationCannotExistWithoutAnObservation(t *testing.T) {
 // slice inside an endpoint, the Params slice inside a contributor Route — and
 // through both maps.
 func TestConfirmResultAccessorsReturnDeepCopies(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)},
-		[]Route{c22Route(t, authz.MethodGet, "/users/{id}", "getUser",
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)},
+		[]Route{confirmRoute(t, authz.MethodGet, "/users/{id}", "getUser",
 			record.InventoryProvenanceRuntimeSpec, ConfirmationCandidate,
 			Param{Name: "id", In: ParamInPath, Type: "string", Required: true})},
-		[]Route{c22Route(t, authz.MethodGet, "/users/{id}", "fetchUser",
+		[]Route{confirmRoute(t, authz.MethodGet, "/users/{id}", "fetchUser",
 			record.InventoryProvenanceRepoSpec, ConfirmationCandidate)},
 	)
 
@@ -1554,22 +1554,22 @@ func TestConfirmResultAccessorsReturnDeepCopies(t *testing.T) {
 func TestConfirmOutputIsDeterministic(t *testing.T) {
 	build := func() []Route {
 		return []Route{
-			c22Candidate(t, authz.MethodGet, "/z", record.InventoryProvenanceCrawl),
-			c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-			c22Route(t, authz.MethodPost, "/graphql", "b", record.InventoryProvenanceRuntimeSpec,
+			confirmCandidate(t, authz.MethodGet, "/z", record.InventoryProvenanceCrawl),
+			confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+			confirmRoute(t, authz.MethodPost, "/graphql", "b", record.InventoryProvenanceRuntimeSpec,
 				ConfirmationCandidate),
-			c22Route(t, authz.MethodPost, "/graphql", "a", record.InventoryProvenanceRepoSpec,
+			confirmRoute(t, authz.MethodPost, "/graphql", "a", record.InventoryProvenanceRepoSpec,
 				ConfirmationCandidate),
-			c22Candidate(t, authz.MethodGet, "/m/{id}", record.InventoryProvenanceRepoSpec),
-			c22Candidate(t, authz.MethodGet, "/m/{key}", record.InventoryProvenanceCrawl),
-			c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceStaticExtraction),
+			confirmCandidate(t, authz.MethodGet, "/m/{id}", record.InventoryProvenanceRepoSpec),
+			confirmCandidate(t, authz.MethodGet, "/m/{key}", record.InventoryProvenanceCrawl),
+			confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceStaticExtraction),
 		}
 	}
 	var firstTable, firstNotes, firstProbed []string
 	for i := 0; i < 9; i++ {
-		prober := c22Answering(200, nil)
-		res := c22Run(t, c22Confirming(t, prober, 3), build())
-		table := c22EndpointTable(res)
+		prober := confirmAnswering(200, nil)
+		res := confirmRun(t, confirmConfirming(t, prober, 3), build())
+		table := confirmEndpointTable(res)
 		var notes []string
 		for _, n := range res.Notes() {
 			notes = append(notes, n.String())
@@ -1609,30 +1609,30 @@ func TestConfirmOutputIsDeterministic(t *testing.T) {
 func TestTheUnionDoesNotDependOnTheOrderTheTiersArriveIn(t *testing.T) {
 	a := func() []Route {
 		return []Route{
-			c22Candidate(t, authz.MethodGet, "/alpha", record.InventoryProvenanceRuntimeSpec),
-			c22Candidate(t, authz.MethodGet, "/mike", record.InventoryProvenanceRuntimeSpec),
+			confirmCandidate(t, authz.MethodGet, "/alpha", record.InventoryProvenanceRuntimeSpec),
+			confirmCandidate(t, authz.MethodGet, "/mike", record.InventoryProvenanceRuntimeSpec),
 		}
 	}
 	b := func() []Route {
 		return []Route{
-			c22Candidate(t, authz.MethodGet, "/zulu", record.InventoryProvenanceRepoSpec),
-			c22Candidate(t, authz.MethodGet, "/bravo", record.InventoryProvenanceRepoSpec),
+			confirmCandidate(t, authz.MethodGet, "/zulu", record.InventoryProvenanceRepoSpec),
+			confirmCandidate(t, authz.MethodGet, "/bravo", record.InventoryProvenanceRepoSpec),
 		}
 	}
 	c := func() []Route {
 		return []Route{
-			c22Candidate(t, authz.MethodGet, "/kilo", record.InventoryProvenanceStaticExtraction),
+			confirmCandidate(t, authz.MethodGet, "/kilo", record.InventoryProvenanceStaticExtraction),
 		}
 	}
 
-	forward := c22Answering(200, nil)
-	fwd := c22Run(t, c22Confirming(t, forward, 2), a(), b(), c())
-	reverse := c22Answering(200, nil)
-	rev := c22Run(t, c22Confirming(t, reverse, 2), c(), b(), a())
+	forward := confirmAnswering(200, nil)
+	fwd := confirmRun(t, confirmConfirming(t, forward, 2), a(), b(), c())
+	reverse := confirmAnswering(200, nil)
+	rev := confirmRun(t, confirmConfirming(t, reverse, 2), c(), b(), a())
 
-	if !reflect.DeepEqual(c22EndpointTable(fwd), c22EndpointTable(rev)) {
+	if !reflect.DeepEqual(confirmEndpointTable(fwd), confirmEndpointTable(rev)) {
 		t.Fatalf("the union depends on tier order:\n  forward %v\n  reverse %v",
-			c22EndpointTable(fwd), c22EndpointTable(rev))
+			confirmEndpointTable(fwd), confirmEndpointTable(rev))
 	}
 	want := []string{"GET /alpha", "GET /bravo"}
 	if got := forward.paths(); !reflect.DeepEqual(got, want) {
@@ -1645,17 +1645,17 @@ func TestTheUnionDoesNotDependOnTheOrderTheTiersArriveIn(t *testing.T) {
 	}
 
 	// The same, within one tier: the routes shuffled among themselves.
-	shuffledProber := c22Answering(200, nil)
-	shuffled := c22Run(t, c22Confirming(t, shuffledProber, 2), []Route{
-		c22Candidate(t, authz.MethodGet, "/kilo", record.InventoryProvenanceStaticExtraction),
-		c22Candidate(t, authz.MethodGet, "/zulu", record.InventoryProvenanceRepoSpec),
-		c22Candidate(t, authz.MethodGet, "/mike", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/bravo", record.InventoryProvenanceRepoSpec),
-		c22Candidate(t, authz.MethodGet, "/alpha", record.InventoryProvenanceRuntimeSpec),
+	shuffledProber := confirmAnswering(200, nil)
+	shuffled := confirmRun(t, confirmConfirming(t, shuffledProber, 2), []Route{
+		confirmCandidate(t, authz.MethodGet, "/kilo", record.InventoryProvenanceStaticExtraction),
+		confirmCandidate(t, authz.MethodGet, "/zulu", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/mike", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/bravo", record.InventoryProvenanceRepoSpec),
+		confirmCandidate(t, authz.MethodGet, "/alpha", record.InventoryProvenanceRuntimeSpec),
 	})
-	if !reflect.DeepEqual(c22EndpointTable(shuffled), c22EndpointTable(fwd)) {
+	if !reflect.DeepEqual(confirmEndpointTable(shuffled), confirmEndpointTable(fwd)) {
 		t.Fatalf("shuffling one tier's routes changed the union:\n  %v\n  %v",
-			c22EndpointTable(shuffled), c22EndpointTable(fwd))
+			confirmEndpointTable(shuffled), confirmEndpointTable(fwd))
 	}
 	if got := shuffledProber.paths(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the shuffled run spent the budget on %v, want %v", got, want)
@@ -1665,12 +1665,12 @@ func TestTheUnionDoesNotDependOnTheOrderTheTiersArriveIn(t *testing.T) {
 // TestCoverageComposesIntoRecordDastCoverage runs the result through the
 // record's own validator rather than through a local re-statement of it.
 func TestCoverageComposesIntoRecordDastCoverage(t *testing.T) {
-	res := c22Run(t, c22Confirming(t, c22Answering(200, map[string]int{"/gone": 404}), 8),
+	res := confirmRun(t, confirmConfirming(t, confirmAnswering(200, map[string]int{"/gone": 404}), 8),
 		[]Route{
-			c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-			c22Candidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRepoSpec),
-			c22Candidate(t, authz.MethodGet, "/gone", record.InventoryProvenanceStaticExtraction),
-			c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceCrawl),
+			confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+			confirmCandidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRepoSpec),
+			confirmCandidate(t, authz.MethodGet, "/gone", record.InventoryProvenanceStaticExtraction),
+			confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceCrawl),
 		})
 	cov := res.Coverage()
 	if err := record.ValidateDastCoverage(&cov); err != nil {
@@ -1714,7 +1714,7 @@ func TestCoverageComposesIntoRecordDastCoverage(t *testing.T) {
 
 // TestAnEmptyUnionIsAStatementAboutTheHandoffNotTheTarget.
 func TestAnEmptyUnionIsAStatementAboutTheHandoffNotTheTarget(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)})
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)})
 	if err := res.AssertNotSilentlyEmpty(); !errors.Is(err, ErrNothingMerged) {
 		t.Fatalf("AssertNotSilentlyEmpty returned %v, want ErrNothingMerged", err)
 	}
@@ -1727,8 +1727,8 @@ func TestAnEmptyUnionIsAStatementAboutTheHandoffNotTheTarget(t *testing.T) {
 		t.Fatalf("record.ValidateDastCoverage on an empty union: %v", err)
 	}
 	// One route is enough to make it a statement about the target.
-	res = c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+	res = confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 	})
 	if err := res.AssertNotSilentlyEmpty(); err != nil {
 		t.Fatalf("AssertNotSilentlyEmpty on a real union: %v", err)
@@ -1749,11 +1749,11 @@ func TestAnEmptyUnionIsAStatementAboutTheHandoffNotTheTarget(t *testing.T) {
 func TestACancelledRunDoesNotReportAPartialInventoryAsAMeasurement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	prober := c22Answering(200, nil)
-	cfg := c22Confirming(t, prober, 8)
+	prober := confirmAnswering(200, nil)
+	cfg := confirmConfirming(t, prober, 8)
 	res, err := MergeAndConfirm(ctx, cfg, mustClock(t), []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
-		c22Candidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+		confirmCandidate(t, authz.MethodGet, "/b", record.InventoryProvenanceRuntimeSpec),
 	})
 	if err != nil {
 		t.Fatalf("MergeAndConfirm: %v", err)
@@ -1765,7 +1765,7 @@ func TestACancelledRunDoesNotReportAPartialInventoryAsAMeasurement(t *testing.T)
 		t.Fatalf("confirmed=%d proberCalls=%d after cancellation",
 			res.ConfirmedCount(), prober.calls)
 	}
-	if n := c22OutcomeCount(res, ConfirmOutcomeRunCancelled); n != 2 {
+	if n := confirmOutcomeCount(res, ConfirmOutcomeRunCancelled); n != 2 {
 		t.Fatalf("%d endpoints carry run_cancelled, want 2", n)
 	}
 	for _, e := range res.Endpoints() {
@@ -1777,10 +1777,10 @@ func TestACancelledRunDoesNotReportAPartialInventoryAsAMeasurement(t *testing.T)
 
 // TestMergeOnlyIsALegitimateRequestAndSaysSo.
 func TestMergeOnlyIsALegitimateRequestAndSaysSo(t *testing.T) {
-	res := c22Run(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
-		c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+	res := confirmRun(t, ConfirmConfig{Target: mustBareTarget(t)}, []Route{
+		confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 	})
-	e := c22Endpoint(t, res, authz.MethodGet, "/a")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/a")
 	if e.Outcome() != ConfirmOutcomeNotRequested {
 		t.Fatalf("outcome = %q, want confirmation_not_requested", e.Outcome())
 	}
@@ -1798,11 +1798,11 @@ func TestMergeOnlyIsALegitimateRequestAndSaysSo(t *testing.T) {
 // TestConfirmationIsRefusedWhenTheKernelIsNotWired.
 func TestConfirmationIsRefusedWhenTheKernelIsNotWired(t *testing.T) {
 	auth, _ := mintAuthorization(t)
-	gov, audit, _ := c22Kernel(t, c22KernelOpts{})
+	gov, audit, _ := confirmKernel(t, confirmKernelOpts{})
 	base := ConfirmConfig{
 		Governor: gov, Audit: audit, Authorization: auth, Target: mustBareTarget(t),
 		Confirm: true, ProbeBudget: 4, Technique: authz.TechniqueContentDiscovery,
-		Prober: c22Answering(200, nil),
+		Prober: confirmAnswering(200, nil),
 	}
 	cases := []struct {
 		name  string
@@ -1826,7 +1826,7 @@ func TestConfirmationIsRefusedWhenTheKernelIsNotWired(t *testing.T) {
 				t.Fatalf("Constructed() is true for %q", tc.name)
 			}
 			_, err := MergeAndConfirm(context.Background(), cfg, mustClock(t), []Route{
-				c22Candidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
+				confirmCandidate(t, authz.MethodGet, "/a", record.InventoryProvenanceRuntimeSpec),
 			})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)

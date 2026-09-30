@@ -1,10 +1,10 @@
-# REVIEW-A.18 — critique of the deterministic comparator (A.17: `internal/match/**`)
+# Review: the deterministic comparator (`internal/match/**`)
 
 **Verdict: FAIL — 3 blockers, 6 majors, 5 minors.**
 
-**This was a SAME-FAMILY critic.** A.18's packet routes this step to OpenCode `openai/gpt-5.5`. That
-route is **WITHDRAWN** by the OWNER DECISION block at the top of `plan/00-ROUTING.md` (2026-08-07:
-external routes copy private project files to a third party). The cross-family guarantee A.18 was
+**This was a SAME-FAMILY critic.** This review's packet routes this step to OpenCode `openai/gpt-5.5`. That
+route is **WITHDRAWN** by the OWNER DECISION block at the top of `plan/design/routing.md` (2026-08-07:
+external routes copy private project files to a third party). The cross-family guarantee this review was
 written to obtain **was not obtained and is still owed**. A later reader must not record this file as
 "cross-family critic: PASS". The compensation applied was method, not model: every claim in the
 reviewed files was re-checked against the source, every gate was re-run locally with `-count=1`, and
@@ -36,7 +36,7 @@ for.
 
 - Read in full: `comparator.go` (1556), `purl.go` (584), `dpkg_compare.go` (330),
   `rpm_compare.go` (342), `apk_compare.go` (402), `comparator_test.go` (2007). Read as context:
-  `plan/00-SPINE.md` S1/S4/S6, `plan/20-lane-a-ingestion-sca.md` A.17/A.18, `plan/00-ROUTING.md`.
+  The spine's corrected-requirements, component and record sections, the comparator's design and its review packet, `plan/design/routing.md`.
 - `dpkg_compare.go`'s `verrevcmp`/`order` and `rpm_compare.go`'s `rpmvercmp` were compared
   statement-by-statement against the upstream C (dpkg `lib/dpkg/version.c`, rpm
   `rpmio/rpmvercmp.c`). Both are faithful ports, including the two early returns that make `^`
@@ -85,7 +85,7 @@ $ for i in 1..8; do ./probe.exe digest; done | sort | uniq -c
 ```
 
 Eight distinct OS processes, eight distinct map seeds, one digest. **Nothing to report here.** This
-is the one part of A.17 that is exactly as strong as it claims to be.
+is the one part of the comparator that is exactly as strong as it claims to be.
 
 ---
 
@@ -112,7 +112,7 @@ Probe R1 — 400 well-formed Debian packages, an advisory source with zero rows:
 `Complete` is *true* (nothing was refused, nothing errored, ≥1 package evaluated), so the single
 flag the doc tells a caller to read — "the single flag a caller may read to know whether 'no
 findings' is an answer or an absence" (`comparator.go:881–884`) — says the absence is an answer.
-This is the exact state of a deployment where A.5's bootstrap has not run, or has run and produced
+This is the exact state of a deployment where the sanitizer review's bootstrap has not run, or has run and produced
 nothing, or where ingestion normalised ecosystem strings into a vocabulary the `affected` rows do
 not use. Lane A exit criterion 20 and the package doc's Rule 3 are both defeated in the most likely
 failure mode of the whole lane.
@@ -153,7 +153,7 @@ C) deb: installed 1:1.2.11.dfsg-2 vs fixed 1.2.13 (no epoch)
 The vulnerable host is reported clean, with **no refusal, no coverage entry, no defence row and
 `Complete: true`**. This is a silently wrong CVE match in the false-negative direction — the outcome
 the package doc's opening paragraph names as "the worst output this lane can produce", and the
-outcome A.17's own packet calls "a missed vulnerability".
+outcome the comparator's own packet calls "a missed vulnerability".
 
 Three things make this a blocker rather than an acceptable inherited semantic:
 
@@ -174,7 +174,7 @@ Three things make this a blocker rather than an acceptable inherited semantic:
 **Fix:** a range endpoint whose epoch-presence differs from the installed version's must be a typed
 refusal (a new allowlist member, e.g. `epoch_presence_mismatch`), counted in `CoverageReport`, not
 an ordering. If the orchestrator judges that ingestion should normalise epochs instead, that is a
-legitimate answer — but then A.17 must *say* so and refuse until it holds, because today the gap is
+legitimate answer — but then the comparator must *say* so and refuse until it holds, because today the gap is
 invisible.
 
 ### 3.3 BLOCKER — the identity check accepts a name spelling it then fails to look up
@@ -247,7 +247,7 @@ default and emitted the exact false positive the vendor-first policy exists to p
 that carries the backported fix. `Complete` goes false and the refusal is recorded, which is the
 mitigation, but nothing on the **finding** says "this exists only because a vendor range failed to
 parse", and a consumer that reads findings without reading `Refusals` sees a confident false
-positive. Given how much of A.17 is built on the premise that this false-positive class destroys the
+positive. Given how much of the comparator is built on the premise that this false-positive class destroys the
 tool's audience, an unparseable vendor row should suppress the group's findings (or mark them), not
 silently hand the group to upstream.
 
@@ -271,7 +271,7 @@ which is genuinely to the implementation's credit and is the difference between 
 and a blocker — but the precondition itself ("the defence requires the CVE alias populated on both
 rows") is nowhere stated, and Debian DSA rows commonly enumerate several CVEs per advisory rather
 than carrying one alias. Since `internal/ingest/cache` owns whether that column is populated, this
-is a cross-step contract that A.17 assumes and does not assert. State it, and ideally add a
+is a cross-step contract that the comparator assumes and does not assert. State it, and ideally add a
 `(ecosystem, package, source-family)` fallback grouping or a coverage counter for "vendor rows that
 could not be grouped".
 
@@ -411,7 +411,7 @@ rule all pass (probe P2). **The three ordering algorithms are the strongest part
 
 ---
 
-## 6. The three checks A.18's packet names, answered directly
+## 6. The three checks this review's packet names, answered directly
 
 **(1) No LLM / model / network call anywhere in the match path — PASS.** Verified independently of
 the package's own guards:
@@ -434,7 +434,7 @@ G4 RED control (`TestBackportRegressionIsNotVacuous`) genuinely proves the fixtu
 produce the false positive — that is the right way to build this test and it was built that way. But
 the precedence is defeated by an unparseable vendor range (§4.1) and by an empty vendor `CVEID`
 (§4.2), and neither precondition is stated. Separately, the packet's Forbidden-actions line scopes
-the precedence to the **package**; A.17 scoped it to the **advisory** and reported the deviation in
+the precedence to the **package**; the comparator scoped it to the **advisory** and reported the deviation in
 its own package doc (`comparator.go:76–89`) with an argument I find correct — a package-scoped
 suppression would be an unbounded false-negative generator, and the residue is reported through
 `UpstreamOnlyAdvisories`. **This deviation needs the orchestrator's explicit ratification**; it is
@@ -460,7 +460,7 @@ refusal so an error-swallowing caller gets nothing usable, and `SchemeForEcosyst
 `Debian:11` and `""` while accepting only the exact three. A Maven bracket range has no field to
 arrive in and its ecosystem is refused by name; PEP 440 and Go pseudo-versions are refused at the
 ecosystem gate; a malformed string and an empty string are both `RefusalMalformedVersion`. There is
-no lexical fallback and no semver fallback anywhere. **This is the thing A.17 most needed to get
+no lexical fallback and no semver fallback anywhere. **This is the thing the comparator most needed to get
 right and it got it right.**
 
 **Priority 4 (range boundaries) — PASS except where §3.2 reaches it.** Inclusive `Introduced`,
@@ -474,7 +474,7 @@ but it belongs in the package doc's list of reported gaps.
 
 ---
 
-## 7. What must change before A.21 unblocks
+## 7. What must change before the Lane A exit gate unblocks
 
 | # | Severity | Change |
 |---|---|---|

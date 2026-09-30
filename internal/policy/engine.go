@@ -1,14 +1,14 @@
-// engine.go is step O.6: the POLICY ENGINE over the schema O.5 froze at
+// engine.go is the POLICY ENGINE over the schema that the policy-schema step froze at
 // schemas/policy.schema.json.
 //
-// The owner's hard constraint (plan/00-SPINE.md S1, restated by
-// plan/70-orchestration-ci.md) is that trigger policy is DATA. If a trigger
+// The owner's hard constraint (the spine's corrected-requirements table, restated by
+// plan/design/control-plane.md) is that trigger policy is DATA. If a trigger
 // decision can only be changed by editing Go, this file has failed no matter
 // how clean it reads. So the evaluator below is generic over whatever
 // `scanRules` the parsed document contains: it never branches on a particular
 // event name, ref glob, path glob, bump kind or cadence. The only closed
 // vocabularies it knows are the ones the SCHEMA itself closes -- `depth`,
-// `matchSemverBump`, `version` -- plus area 40's `detector` enum, and it knows
+// `matchSemverBump`, `version` -- plus the record area's `detector` enum, and it knows
 // them for VALIDATION at load time, never as a match condition. Grep this file
 // for a string literal used to decide whether a rule fires and you will find
 // none; the tests in engine_test.go assert that with invented vocabulary.
@@ -45,15 +45,15 @@
 // ---------------------------------------------------------------------------
 //
 // schemas/policy.schema.json flags an OPEN CROSS-AREA ITEM: research/09 writes
-// `failOn: high`, while area 40's severity vocabulary is SARIF's
+// `failOn: high`, while the record area's severity vocabulary is SARIF's
 // none|note|warning|error, and the mapping between them "needs one named owner
-// before O.6 ships". O.6 does NOT claim that ownership and does not invent the
-// mapping. `FailOn` is carried through this engine as an OPAQUE token: merged
-// field-by-field like any other setting, never compared, never ordered, never
-// mapped. Whoever is named owner of the mapping applies it downstream of the
-// resolved rule. Inventing it here would have created exactly the second
-// definition that plan/IMPLEMENTATION-PLAN.md section 6 closed ten instances
-// of.
+// before the policy engine ships". The policy engine does NOT claim that
+// ownership and does not invent the mapping. `FailOn` is carried through this
+// engine as an OPAQUE token: merged field-by-field like any other setting,
+// never compared, never ordered, never mapped. Whoever is named owner of the
+// mapping applies it downstream of the resolved rule. Inventing it here would
+// have created exactly the second definition that the first plan's
+// shared-vocabulary review closed ten instances of.
 
 package policy
 
@@ -108,7 +108,7 @@ var (
 	//
 	// WHY IT EXISTS SEPARATELY FROM ErrPatternTooComplex. That cap bounds ONE
 	// pattern. It says nothing about how many patterns there are, and the
-	// denial of service CRITIQUE O.4 found by recursion is reachable again by
+	// denial of service the controller-core review found by recursion is reachable again by
 	// MULTIPLICATION: ten thousand cheap rules cost the same outage as one
 	// expensive one, and `.anvil/policy.yml` comes from the repository under
 	// scan either way. A per-item cap with no aggregate cap is a bounded unit
@@ -140,12 +140,13 @@ const SchemaVersion = 1
 // Depth is how much of the tree a scan covers.
 //
 // schemas/policy.schema.json#/$defs/depth owns this enum ("This enum IS owned
-// here, by O.5, because no other area declares it; O.6 and O.8 consume these
-// two tokens rather than declaring a third"). The schema is a JSON document
-// and cannot be imported, so THIS is its one Go image: consumers use these
-// constants and do not declare a third spelling. The engine never branches on
-// a particular depth -- these exist so the loader can reject a typo, and so
-// callers naming a depth in Go name it once.
+// here, by the policy schema, because no other area declares it; the policy
+// engine and the GitHub Action consume these two tokens rather than declaring a
+// third"). The schema is a JSON document and cannot be imported, so THIS is its
+// one Go image: consumers use these constants and do not declare a third
+// spelling. The engine never branches on a particular depth -- these exist so
+// the loader can reject a typo, and so callers naming a depth in Go name it
+// once.
 type Depth string
 
 const (
@@ -162,10 +163,10 @@ func (d Depth) Valid() bool { return slices.Contains(DepthValues(), d) }
 // BumpKind is a kind of semantic-version bump a tag may represent.
 //
 // schemas/policy.schema.json#/$defs/semverBump owns this enum and names its
-// computer: internal/policy/semver.go (O.7), whose `ComputeSemverBump(repoPath,
-// newTag string) (BumpKind, error)` returns THIS type. O.7 must not declare a
-// second one -- that is the defect class section 6 of the implementation plan
-// closed ten instances of.
+// computer: internal/policy/semver.go (semver bump classification), whose
+// `ComputeSemverBump(repoPath, newTag string) (BumpKind, error)` returns THIS
+// type. Semver bump classification must not declare a second one -- that is the
+// defect class section 6 of the implementation plan closed ten instances of.
 //
 // The bump is COMPUTED by Anvil (`git describe --tags --abbrev=0 <tag>^`),
 // never read from a GitHub event payload, which carries no previous tag.
@@ -224,7 +225,7 @@ type Settings struct {
 	Dast      *DastOverrides        `json:"dast,omitempty"`
 }
 
-// DastOverrides is the DAST-half settings block. Area D EXTENDS the schema's
+// DastOverrides is the DAST-half settings block. The dynamic tier EXTENDS the schema's
 // $defs/dastOverrides in place; when it does, a field is added here too. Both
 // fields are pointers/empty-able for the same set-vs-unset reason as Settings.
 type DastOverrides struct {
@@ -287,7 +288,7 @@ type ScanRule struct {
 // path to paper over a caller's bug. A caller holding host paths converts with
 // filepath.ToSlash before filling this in.
 //
-// SemverBump is BumpNone unless O.7 computed one for this ref.
+// SemverBump is BumpNone unless semver bump classification computed one for this ref.
 type TriggerContext struct {
 	Event        string
 	Ref          string
@@ -403,7 +404,7 @@ func (r ResolvedRule) MatchedNames() []string {
 // ---------------------------------------------------------------------------
 //
 // MaxGlobPatternBytes and MaxGlobPatternSegments bound ONE pattern. They were
-// the answer to CRITIQUE O.4 finding O4-M4, which measured a single pathological
+// the answer to the controller-core review's finding M4, which measured a single pathological
 // pattern at 8.51 seconds. They are not an answer to the same denial of service
 // reached by MULTIPLICATION, and until these four constants existed there was
 // nothing bounding the number of rules, the number of patterns in a rule, or the
@@ -813,7 +814,7 @@ func (r *ResolvedRule) applySchedule(s *Schedule, src FieldSource) {
 // The one the schema requires by name: "$defs/dastOverrides ... Only
 // meaningful when this rule's resolved `detectors` includes the dast token;
 // the engine warns rather than silently ignoring it otherwise." The dast token
-// here is area 40's constant, not a literal, and this check changes NOTHING
+// here is the record area's constant, not a literal, and this check changes NOTHING
 // about which detectors run -- it emits text. It is a diagnostic, not a
 // trigger decision.
 func (r ResolvedRule) warnings() []string {
@@ -1056,7 +1057,7 @@ const (
 // path being matched.
 //
 // It replaces a recursion that tried every split point for every `**` with no
-// memoisation, which CRITIQUE O.4 (O4-M4) measured at 8.5s for ten `**`
+// memoisation, which the controller-core review (finding M4) measured at 8.5s for ten `**`
 // segments against a thirty-segment path and unbounded past eleven. That was
 // not a slow path, it was a denial of service against the scanner reachable by
 // committing a file. TestPathologicalGlobPatternsTerminateFast is the
@@ -1201,7 +1202,7 @@ func validateGlob(pattern string) error {
 // not have fails it too.
 
 // keyDast is the schema's `dast` KEY name. It is a named constant, and the
-// only key name that is, because it collides spelling-with area 40's `dast`
+// only key name that is, because it collides spelling-with the record area's `dast`
 // DETECTOR token -- two unrelated vocabularies that happen to share a word.
 // Naming it once keeps the collision visible and lets
 // TestFrozenEnumsAreNotForked reject a stray detector literal in this file
@@ -1233,7 +1234,7 @@ var (
 //   - list-valued keys are non-empty and duplicate-free (minItems/uniqueItems)
 //     -- absent means "unconstrained", empty would mean "matches nothing",
 //     which is always an authoring mistake;
-//   - `detectors` tokens are area 40's DetectorKind, validated through
+//   - `detectors` tokens are the record area's DetectorKind, validated through
 //     record.ValidateDetectorKind. This file does not re-enumerate them;
 //   - `depth` and `matchSemverBump` tokens are the schema's own enums;
 //   - durations parse as Go durations and are not negative;
@@ -1413,7 +1414,7 @@ func settingsFromMapping(m map[string]any, at string) (Settings, error) {
 		return Settings{}, err
 	} else if ok {
 		for i, tok := range list {
-			// Area 40 owns this vocabulary. It is validated through
+			// the record area owns this vocabulary. It is validated through
 			// record's own validator, not re-enumerated here.
 			if err := record.ValidateDetectorKind(tok); err != nil {
 				return Settings{}, fmt.Errorf("%w: %s/detectors/%d: %v",

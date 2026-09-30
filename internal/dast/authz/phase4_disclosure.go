@@ -13,7 +13,7 @@
 //
 // kernel.go's registerInto REFUSES to register any Phase 4 gate, by number,
 // with a message saying they "do not run per target and do not take (target,
-// scope, attestation, clock)". That refusal is D.2's, not this file's, and
+// scope, attestation, clock)". That refusal is the kernel core's, not this file's, and
 // TestPhase4GatesCannotBeRegisteredIntoAChain exercises all four so that a later
 // contributor who adds `register(Gate18Embargo, ...)` to this file gets a
 // panic in every test binary that links the package rather than a gate that
@@ -27,7 +27,7 @@
 // GATE 19 IS A DATA-LOCATION RULE, AND IT IS THE ONE PEOPLE GET WRONG
 // ===========================================================================
 //
-// plan/00-SPINE.md S1 row 5 collapsed the "8-hour buffer file, then deleted"
+// The spine's corrected-requirements table row 5 collapsed the "8-hour buffer file, then deleted"
 // design into "one SQLite store of record + a `handoff` table + a regenerable
 // tmpfs packet", and says plainly that "8 hours" is A CLAIM TIMEOUT, NOT A
 // DELETION POLICY. That is what makes a 45-day embargo representable at all:
@@ -54,7 +54,7 @@
 // WHAT IS NOT CONFIGURABLE HERE, AND HOW THAT IS ENFORCED
 // ===========================================================================
 //
-// plan/50-dast.md's gate table marks gates 19, 20 and 21 "Configurable? No",
+// plan/design/dynamic-tier.md's gate table marks gates 19, 20 and 21 "Configurable? No",
 // and gate 18 configurable only through "acceleration (active exploitation) /
 // extension (core-OS changes)... disabling the embargo outright is not
 // configurable".
@@ -129,7 +129,7 @@
 // runs both halves.
 //
 // WHAT THIS DOES NOT CLOSE, STATED RATHER THAN PAPERED OVER. This package has
-// no ambient time source — plan/00-SPINE.md S7 makes the kernel a pure
+// no ambient time source — the spine's safety section makes the kernel a pure
 // function of (target, scope, attestation, clock) — so a run's clock is still
 // the instant the harness handed InitiateRun. Telling the January/August lie
 // now costs TWO run initiations: two scope loads, two gate-7 trigger checks,
@@ -218,7 +218,7 @@ const (
 // Gate 21 reasons.
 //
 // ReasonAuditWriteFailed, ReasonAuditKeyIncomplete and ReasonAuditSinkMissing
-// are D.2's and are reused rather than re-spelled: a second token for one
+// are the kernel core's and are reused rather than re-spelled: a second token for one
 // condition is a second thing an operator has to grep for.
 const (
 	ReasonAuditClockUnconstructed Reason = "gate21.clock_not_constructed"
@@ -230,11 +230,11 @@ const (
 
 // ReasonTriggerProvenanceVerified is gate 7's PASS token.
 //
-// It is declared here rather than in phase1_run.go for the reason D.6 gave for
-// declaring gate 11's pass token in phase3_enforcement.go: D.4's file is
+// It is declared here rather than in phase1_run.go for the reason per-request enforcement gave for
+// declaring gate 11's pass token in phase3_enforcement.go: run initiation's file is
 // outside this packet's write scope, and the need for the token is gate 21's.
 // CheckGate7TriggerProvenance returns gatePassed, which carries no Reason —
-// D.2's GateResult has no field for one — so without this the audit row for a
+// the kernel core's GateResult has no field for one — so without this the audit row for a
 // gate 7 allow would have an empty reason and GateRecord.Validate would refuse
 // it.
 const ReasonTriggerProvenanceVerified Reason = "gate07.trigger_provenance_verified"
@@ -252,7 +252,7 @@ const maxFindingIDLen = 128
 //
 // The charset is an ALLOWLIST, for the same reason AttestationID's is: this
 // value lands in an audit row and in a SQLite column, both of which are read
-// by humans and by tooling, and plan/00-SPINE.md S7 makes anything derived
+// by humans and by tooling, and the spine's safety section makes anything derived
 // from a scanned target `anvil/trust: untrusted`.
 type FindingID string
 
@@ -424,7 +424,7 @@ func (o Ownership) Owner() FindingOwnership {
 // unexported excludedFromAdmission interface and kernel_test.go's closure walk
 // refuses it anywhere in Decide's input types. This is Phase 4: the reporting
 // channel is being used for REPORTING, which is the only thing RFC 9116 and
-// plan/00-SPINE.md S7 permit it to be used for. Nothing in this file returns a
+// the spine's safety section permit it to be used for. Nothing in this file returns a
 // Ruling, so nothing here can put a security.txt result into an admission
 // decision even by accident.
 type VendorContact struct {
@@ -524,7 +524,7 @@ func (v VendorContact) Channel() SecurityTxtResult { return v.channel }
 //
 // It is a const and there is no function in this package that accepts an
 // embargo duration, which is how "disabling the embargo outright is not
-// configurable" (plan/50-dast.md gate 18) is enforced rather than promised.
+// configurable" (plan/design/dynamic-tier.md gate 18) is enforced rather than promised.
 const DefaultEmbargo = 45 * 24 * time.Hour
 
 // MinAcceleratedEmbargo is the floor an ACCELERATED embargo cannot go below,
@@ -807,7 +807,7 @@ func (e EmbargoState) Deadline() time.Time { return e.deadline }
 
 // Adjustments returns a copy of the recorded adjustments.
 //
-// The copy is enough here and would not be enough for a Scope: D.3's critic
+// The copy is enough here and would not be enough for a Scope: the kernel-types review
 // showed that copying a []ScopeEntry copies the structs but not their []uint16
 // backing arrays. EmbargoAdjustment has no slice, map or pointer field — only
 // strings and time.Times — so a copied element shares nothing with the
@@ -870,7 +870,7 @@ func (e EmbargoState) Accelerate(reason EmbargoAccelerationReason, evidence stri
 	if err != nil {
 		return EmbargoState{}, gateFailed(g, ReasonEmbargoAccelerationUnevidenced,
 			"acceleration requires evidence, and this one carries none the audit can hold. "+
-				"plan/50-dast.md calls acceleration a DOCUMENTED exception; an "+
+				"plan/design/dynamic-tier.md calls acceleration a DOCUMENTED exception; an "+
 				"exception with no document is a config key.",
 			"evidence: "+err.Error())
 	}
@@ -1238,7 +1238,7 @@ const (
 	// MediumUnset is the zero value: the store did not say.
 	MediumUnset StorageMedium = ""
 	// MediumRecordStoreSQLite is the SQLite store of record
-	// (plan/00-SPINE.md S1). It is the only medium gate 19 permits.
+	// (the spine's corrected-requirements table). It is the only medium gate 19 permits.
 	MediumRecordStoreSQLite StorageMedium = "record_store_sqlite"
 	// MediumTmpfsHandoffBuffer is the regenerable tmpfs handoff packet. It
 	// does not survive a reboot and holds no disclosure state.
@@ -1251,7 +1251,7 @@ const (
 //
 // # A note for whoever adds this to the record
 //
-// plan/IMPLEMENTATION-PLAN.md section 6 rules that area 40 (internal/record)
+// the first plan's shared-vocabulary review rules that the record area (internal/record)
 // owns every shared enum and that no other area may declare one. This enum is
 // declared HERE because internal/record has no disclosure column today and
 // this packet's write scope is two files in internal/dast/authz. If and when
@@ -1567,13 +1567,14 @@ func (r DisclosureRecord) ScopeHash() ScopeHash { return r.key.ScopeHash() }
 //
 // # NOTHING IMPLEMENTS THIS INTERFACE
 //
-// This comment used to say "D.9/D.10 implement it over the SQLite record
-// store". That was false. plan/50-dast.md:317-348 makes D.9 the
+// This comment used to say "The kernel's build-time guard and target
+// provisioning implement it over the SQLite record store". That was false.
+// plan/design/dynamic-tier.md:317-348 makes the kernel's build-time guard the
 // build-invariant packet (a dependency-graph test and an egress lint) and
-// :349-378 makes D.10 container provisioning under gVisor. Neither writes a
-// disclosure row, and no other plan step schedules one. A repository-wide grep
-// for PutDisclosureState finds this interface, its one call site below, and a
-// test fake — no production implementation.
+// :349-378 makes target provisioning run containers under gVisor. Neither
+// writes a disclosure row, and no other plan step schedules one. A
+// repository-wide grep for PutDisclosureState finds this interface, its one
+// call site below, and a test fake — no production implementation.
 //
 // So gate 19 is a rule with nothing standing behind it today: it says
 // disclosure state lives in the SQLite store of record rather than the tmpfs
@@ -1665,10 +1666,10 @@ func checkDisclosureMedium(medium StorageMedium) GateResult {
 		return gatePassed(g)
 	}
 	detail := "disclosure state may live only in the SQLite store of record " +
-		"(plan/00-SPINE.md S1, gate 19). "
+		"(the spine's corrected-requirements table, gate 19). "
 	switch medium {
 	case MediumTmpfsHandoffBuffer:
-		detail += "The store offered is the tmpfs handoff buffer. S1 is explicit that " +
+		detail += "The store offered is the tmpfs handoff buffer. The spine's corrected-requirements table is explicit that " +
 			"the buffer's \"8 hours\" is a CLAIM TIMEOUT, not a deletion policy and " +
 			"not a confidentiality control, and tmpfs does not survive a reboot at " +
 			"all. A 45-day embargo cannot be held in an 8-hour buffer."
@@ -2110,7 +2111,7 @@ func pushGate(req PushRequest, run RunClock) GateResult {
 // AuditKey is gate 21's join key: an attestation ID and a scope hash, minted
 // together and only from an attestation that is actually bound to that scope.
 //
-// plan/50-dast.md gate 21: every decision is "keyed to attestation ID + scope
+// plan/design/dynamic-tier.md gate 21: every decision is "keyed to attestation ID + scope
 // hash". Building the key from the two values SEPARATELY would let a row be
 // keyed to an attestation that does not cover the scope it names — a row that
 // joins, reads as authoritative, and records nothing true. NewAuditKey refuses
@@ -2177,7 +2178,7 @@ func (k AuditKey) Mode() Mode { return k.mode }
 //
 // It is a sealed type rather than a string parameter because GateRecord.Detail
 // and GateRecord.Target both end up in a log an agent may later read, and
-// plan/00-SPINE.md S7 makes the DAST response body "the highest-risk field —
+// the spine's safety section makes the DAST response body "the highest-risk field —
 // up to 32 KB of attacker-controlled bytes fed to a repo-credentialed agent".
 // Every constructor below builds its text from ALREADY-VALIDATED components —
 // a canonical host, a pinned address, an allowlisted finding ID, an
@@ -2234,10 +2235,10 @@ func (s AuditSubject) String() string {
 
 // phase4PassReasons is the audit token each Phase 4 gate carries on an ALLOW.
 //
-// gatePassed does not take a Reason — D.2's GateResult has no field for one —
+// gatePassed does not take a Reason — the kernel core's GateResult has no field for one —
 // so without this map a Phase 4 allow row would reach GateRecord.Validate with
 // an empty reason and be refused. The same problem, and the same solution, as
-// D.6's phase3PassReasons.
+// per-request enforcement's phase3PassReasons.
 //
 // Each token is deliberately NEUTRAL about which branch permitted. Gate 18
 // permits both an operator-owned finding and a third-party finding whose clock
@@ -2255,16 +2256,16 @@ var phase4PassReasons = map[GateID]Reason{
 // phase1PassReasons is the audit token for a PASSING GateResult from a Phase 1
 // Check function.
 //
-// D.4's CheckGate4/5/6 return gatePassed with no token, and D.4 already
+// Run initiation's CheckGate4/5/6 return gatePassed with no token, and run initiation already
 // declares a pass Reason for each on the Ruling path; this maps the gate to
-// the token D.4 wrote, so no token is invented here. Gate 7's is the one
+// the token run initiation wrote, so no token is invented here. Gate 7's is the one
 // exception and is declared at the top of this file, with the reason.
 //
 // GATES 8, 9, 10 AND 11 ARE ABSENT ON PURPOSE. Gate 10 has TWO pass tokens
 // with different meanings — "the address is not in a reserved range" and "the
 // reserved address is enumerated in lab scope" — and a single map entry would
 // record one of them as the other, which is a false audit row. Gate 11's pass
-// token is D.6's and is already in phase3PassReasons, which auditReasonFor
+// token is per-request enforcement's and is already in phase3PassReasons, which auditReasonFor
 // falls through to. Gates 8 and 9 are left out with 10 rather than half the
 // Phase 2 chain being recordable: their passing GateResults reach the audit
 // through Adjudicate's Ruling path, which carries a real reason.
@@ -2292,7 +2293,7 @@ func auditReasonFor(r GateResult) (Reason, error) {
 			return reason, nil
 		}
 	}
-	// D.6's AuditReason handles every refusal and the Phase 3 pass tokens.
+	// per-request enforcement's AuditReason handles every refusal and the Phase 3 pass tokens.
 	return AuditReason(r)
 }
 
@@ -2433,7 +2434,7 @@ func (a *GateAudit) Record(res GateResult, subject AuditSubject, at Clock) (Audi
 	// the same ReasonAuditKeyIncomplete, before the sink is touched. A
 	// mutation run showed the branch could never be the only thing refusing
 	// anything, so it is gone rather than kept as a layer that cannot fail;
-	// the same reasoning D.6 recorded for AuditReason's missing gate check.
+	// the same reasoning per-request enforcement recorded for AuditReason's missing gate check.
 	// TestGateAuditRefusesAnUnsetClockAndAnEmptySubject still covers the case.
 	if !at.Valid() {
 		return 0, gateFailed(g, ReasonAuditClockUnconstructed,
@@ -2510,9 +2511,9 @@ func (a *GateAudit) Record(res GateResult, subject AuditSubject, at Clock) (Audi
 
 // RecordTrace writes ONE ROW PER GATE in an ordered trace.
 //
-// D.3's critic made this point against Adjudicate: gate 21 asks for "an
+// The kernel-types review made this point against Adjudicate: gate 21 asks for "an
 // immutable audit of every gate decision", and a single row naming the last
-// gate records one gate in eight. D.6's AdmitTraced returns the whole trace
+// gate records one gate in eight. Per-request enforcement's AdmitTraced returns the whole trace
 // precisely so that this function can write all of it.
 //
 // An EMPTY trace is a refusal, for the reason kernel.go's chain runner refuses
@@ -2547,13 +2548,13 @@ func (a *GateAudit) RecordTrace(trace []GateResult, subject AuditSubject, at Clo
 	return last
 }
 
-// AuditedAdmit is the per-request coupling: D.6's interceptor, with gate 21's
+// AuditedAdmit is the per-request coupling: per-request enforcement's interceptor, with gate 21's
 // audit write made part of the decision.
 //
 // # What happens when the audit write fails on an ADMITTED request
 //
 // The lease is RELEASED and the request is refused. That is the whole point:
-// D.6's Admit hands back a concurrency slot on success, and a caller holding a
+// Per-request enforcement's Admit hands back a concurrency slot on success, and a caller holding a
 // lease will issue a request. If the row that records the admission did not
 // land, the admission is not an admission, so the slot goes back and the
 // caller gets a refusal. TestAuditedAdmitReleasesTheLeaseWhenTheWriteFails is
@@ -2721,7 +2722,7 @@ func validateSHA256Hex(s, what string) error {
 // operator- or model-authored text that lands in the record store and may be
 // read back by an agent, so it is bounded where it enters rather than wherever
 // it is rendered. It is never interpolated into a GateFailure.Detail — Detail
-// is Anvil-authored, per plan/00-SPINE.md S6 — so this text has exactly one
+// is Anvil-authored, per the spine's record section — so this text has exactly one
 // destination.
 func boundedEvidence(s string) (string, error) {
 	trimmed := strings.TrimSpace(s)

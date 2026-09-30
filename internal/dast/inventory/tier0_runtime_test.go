@@ -1,4 +1,4 @@
-// Tests for D.18, Tier 0 of the attack-surface inventory.
+// Tests for the runtime spec probe, Tier 0 of the attack-surface inventory.
 //
 // ===========================================================================
 // WHAT IS PROVEN HERE AND WHAT IS ONLY REFUSED
@@ -229,7 +229,7 @@ func mustEndpoints(t *testing.T, paths ...string) EndpointList {
 // The brief: "Design the type so an endpoint cannot exist without both values
 // set." The failure it prevents is arithmetic, not aesthetic — a candidate
 // that reads as confirmed moves into the numerator of endpoint_coverage
-// (plan/50-dast.md:1152) and a scan that probed nothing then reports coverage.
+// (plan/design/dynamic-tier.md:1152) and a scan that probed nothing then reports coverage.
 func TestARouteCannotExistWithoutBothAxes(t *testing.T) {
 	tgt := mustBareTarget(t)
 	good := RouteFacts{
@@ -250,16 +250,16 @@ func TestARouteCannotExistWithoutBothAxes(t *testing.T) {
 		why  string
 	}{
 		{"no provenance", func(f *RouteFacts) { f.Provenance = "" },
-			"a route nobody attributed cannot be aggregated by D.26"},
+			"a route nobody attributed cannot be aggregated by coverage reporting"},
 		{"no confirmation", func(f *RouteFacts) { f.Confirmation = "" },
 			"an unset confirmation reads as neither confirmed nor candidate and both " +
 				"readings corrupt endpoint_coverage"},
 		{"an invented provenance", func(f *RouteFacts) { f.Provenance = "guessed" },
 			"internal/record owns this enum; a fifth literal is an amendment there"},
 		{"an invented confirmation", func(f *RouteFacts) { f.Confirmation = "probably" },
-			"the axis is binary and D.26 partitions on it"},
+			"the axis is binary and coverage reporting partitions on it"},
 		{"no trust", func(f *RouteFacts) { f.Trust = "" },
-			"plan/00-SPINE.md S6 requires a trust label on every string from outside Anvil"},
+			"The spine's record section requires a trust label on every string from outside Anvil"},
 		{"no target", func(f *RouteFacts) { f.Target = authz.Target{} },
 			"the kernel cannot validate a path against a Target it never built"},
 		{"no method", func(f *RouteFacts) { f.Method = "" },
@@ -334,7 +334,7 @@ func TestZeroValuesOfEveryEnumAreNotValues(t *testing.T) {
 
 // TestTrustAnvilGeneratedIsRefusedForEveryProvenance.
 //
-// internal/record's contract records the incident this prevents: "Area B was
+// internal/record's contract records the incident this prevents: "Lane B was
 // found stamping TrustAnvilGenerated on a struct whose Snippet field is
 // verbatim target-repo source." All four inventory provenances name bytes
 // somebody outside Anvil wrote — a served spec, a checked-in spec, repo
@@ -392,7 +392,7 @@ func TestTier0StampsUntrustedOnEverythingItProduces(t *testing.T) {
 
 // TestTheEnumLiteralsAreTheRecordsAndNotACopy. A naming drift between this
 // package and internal/record is exactly the produce/consume defect class
-// IMPLEMENTATION-PLAN.md section 6 ruled on, and it would only surface at
+// the first plan's shared-vocabulary review ruled on, and it would only surface at
 // integration.
 func TestTheEnumLiteralsAreTheRecordsAndNotACopy(t *testing.T) {
 	tgt := mustBareTarget(t)
@@ -409,19 +409,19 @@ func TestTheEnumLiteralsAreTheRecordsAndNotACopy(t *testing.T) {
 		}
 	}
 	// The confirmed/candidate axis has no enum in internal/record; it has two
-	// counters. These literals are chosen to make D.26's aggregation a
+	// counters. These literals are chosen to make coverage reporting's aggregation a
 	// partition rather than a mapping, and this is what pins them.
 	if ConfirmationConfirmed != "confirmed" || ConfirmationCandidate != "candidate" {
 		t.Fatalf("the confirmation literals are %q/%q. record.DastCoverage carries "+
 			"ConfirmedCount and CandidateCount and nothing else; changing these makes "+
-			"D.26 a mapping step nobody wrote",
+			"coverage reporting a mapping step nobody wrote",
 			ConfirmationConfirmed, ConfirmationCandidate)
 	}
 }
 
 // TestAResultComposesIntoARecordDastCoverage proves the handoff shape works,
 // using internal/record's own validator rather than this package's opinion of
-// it. It is the one test that touches the arithmetic D.26 will perform.
+// it. It is the one test that touches the arithmetic coverage reporting will perform.
 func TestAResultComposesIntoARecordDastCoverage(t *testing.T) {
 	tgt := mustBareTarget(t)
 	parsed, err := ParseSpec(tgt, "/openapi.json", "application/json", openAPI3Fixture())
@@ -586,7 +586,7 @@ func TestASpecThatNamesTheTargetIsNotFlaggedAsForeign(t *testing.T) {
 }
 
 // ===========================================================================
-// PARAMETER-TYPED EXTRACTION — plan/50-dast.md:610's required evidence
+// PARAMETER-TYPED EXTRACTION — plan/design/dynamic-tier.md:610's required evidence
 // ===========================================================================
 
 func openAPI3Fixture() []byte {
@@ -621,7 +621,7 @@ func openAPI3Fixture() []byte {
 	}`)
 }
 
-// TestOpenAPI3FixtureYieldsFullyTypedRoutes is D.18's stop condition:
+// TestOpenAPI3FixtureYieldsFullyTypedRoutes is the runtime spec probe's stop condition:
 // "Tier 0 probe returns a fully-typed route list from a fixture target."
 func TestOpenAPI3FixtureYieldsFullyTypedRoutes(t *testing.T) {
 	tgt := mustBareTarget(t)
@@ -1657,7 +1657,7 @@ func TestResultAccessorsHandOutCopies(t *testing.T) {
 }
 
 // resultReferenceFields is the same allowlist discipline for Result, which is
-// the type D.26 reads.
+// the type coverage reporting reads.
 var resultAllFields = map[string]string{
 	"routes":        "[]Route -- deep-copied by cloneRoutes",
 	"specEndpoints": "[]string -- copied by ProbedSpecEndpoints",
@@ -1730,7 +1730,7 @@ func TestNewEndpointListRefusesAnEmptyListRatherThanSubstitutingADefault(t *test
 	for _, in := range [][]string{nil, {}} {
 		list, err := NewEndpointList(in)
 		if err == nil {
-			t.Fatalf("NewEndpointList built a list from %v. plan/50-dast.md forbids a "+
+			t.Fatalf("NewEndpointList built a list from %v. plan/design/dynamic-tier.md forbids a "+
 				"hard-coded probe list, so an empty list must probe NOTHING rather than "+
 				"fall back to the usual suspects. Got: %v", in, list.Paths())
 		}
@@ -1769,7 +1769,7 @@ func TestNewEndpointListRefusesMalformedEntries(t *testing.T) {
 
 // TestNoRequestPathIsHardCodedInThisFile.
 //
-// plan/50-dast.md D.18's Forbidden actions: "The spec-endpoint probe list must
+// The runtime spec probe's forbidden actions: "The spec-endpoint probe list must
 // be config, never hard-coded." A denylist of well-known spec paths
 // (/openapi.json, /v3/api-docs, /swagger.json, /graphql, ...) loses, because
 // the framework whose convention nobody has heard of yet is not on it and the
@@ -1801,7 +1801,7 @@ func TestNoRequestPathIsHardCodedInThisFile(t *testing.T) {
 		if strings.HasPrefix(v, "/") && len(v) > 1 {
 			t.Errorf(`%s contains the path literal %q.
 
-plan/50-dast.md D.18 forbids hard-coding the spec-endpoint probe list. This guard
+The runtime spec probe's design forbids hard-coding the spec-endpoint probe list. This guard
 is an ALLOWLIST rather than a list of banned paths: exactly one slash-leading
 literal is permitted, "/" itself, so a spec convention nobody has heard of is
 caught by default. If this literal is genuinely not a probe path, it still has
@@ -1892,7 +1892,7 @@ func mintAuthorization(t *testing.T) (authz.Authorization, *countingSink) {
 Tier 0 cannot issue a spec fetch without an authz.Authorization, and Adjudicate
 is the only mint. If gate 11 has been put back into kernel.go's admissionChain,
 this whole file's fetch half becomes unreachable again and
-internal/SKIPPED-CONTROLS.md U4 needs reopening for Tier 0 as well as for D.14.`,
+internal/SKIPPED-CONTROLS.md U4 needs reopening for Tier 0 as well as for the nuclei driver.`,
 			dec.Gate(), dec.Reason(), dec.Err())
 	}
 	auth, err := dec.Authorization()
@@ -2257,7 +2257,7 @@ func TestTwoEndpointsServingOneDocumentDoNotDoubleTheInventory(t *testing.T) {
 	if got := res.DenominatorFloor(); got != 6 {
 		t.Logf("DenominatorFloor is %d for 3 real endpoints; the duplicate rows are "+
 			"counted. This is the PESSIMISTIC direction and is recorded as a known limit "+
-			"rather than silently corrected here — D.26 owns the union and must "+
+			"rather than silently corrected here — coverage reporting owns the union and must "+
 			"deduplicate on Route.Key across tiers anyway", got)
 	}
 }
@@ -2730,7 +2730,7 @@ func TestJSONNumbersAndBooleansInPlaceOfStringsDoNotBecomeRoutes(t *testing.T) {
 // claim self-enforcing rather than a sentence somebody has to re-check.
 //
 // It walks EVERY .go file in the package directory, so a second test file
-// added by D.19, the static-extraction packet or the crawl packet is covered
+// added by the repo spec reader, the static-extraction packet or the crawl packet is covered
 // the moment it lands.
 //
 // It matches on the SYNTAX TREE and not on the text, for two reasons. The

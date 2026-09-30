@@ -1,11 +1,11 @@
-// This file is packet D.21: Tier 2, static route extraction from the non-Go
+// This file is non-Go route extraction: Tier 2, static route extraction from the non-Go
 // languages -- Express, Flask, FastAPI, Django, Spring and Rails.
 //
 // ===========================================================================
 // THE FAILURE THIS FILE IS DESIGNED AGAINST
 // ===========================================================================
 //
-// endpoint_coverage (plan/50-dast.md:1152) is confirmed-probed endpoints
+// endpoint_coverage (plan/design/dynamic-tier.md:1152) is confirmed-probed endpoints
 // divided by the UNION of the Tier 0-2 inventory. A language this extractor
 // does not really support does not merely miss endpoints -- it removes them
 // from the DENOMINATOR, and the fraction goes UP. The metric improves exactly
@@ -18,7 +18,7 @@
 //	"this language is supported, was scanned, and no framework was recognised"
 //	"this language is supported and the bytes did not lex"
 //
-// are FOUR different values of ScanOutcome, all four reach D.26 on
+// are FOUR different values of ScanOutcome, all four reach coverage reporting on
 // OtherExtractResult.LanguageReports(), and TestScanOutcomesAreDistinguishable
 // proves a caller can tell them apart. A zero route count on its own never
 // means "clean" anywhere in this file.
@@ -47,7 +47,7 @@
 // THIS IS A LEXER, NOT AN AST -- SAID PLAINLY
 // ===========================================================================
 //
-// D.20 had go/parser. This file has none: modernc.org/sqlite is the module's
+// Go route extraction had go/parser. This file has none: modernc.org/sqlite is the module's
 // only dependency, and there is no JavaScript, Python, Java or Ruby parser in
 // the standard library. What is here is a per-language LEXER (scanSource) plus
 // deterministic token-shape matching over its output.
@@ -59,7 +59,7 @@
 //
 //   - A shape the lexer cannot resolve becomes a CoverageCaveat, never a
 //     guess. A receiver that is not a bound router produces
-//     CaveatRouterNotResolved, exactly as D.20 does, because guessing is how
+//     CaveatRouterNotResolved, exactly as Go route extraction does, because guessing is how
 //     `cache.get("user:1")` becomes an endpoint.
 //   - Bytes the lexer cannot lex (an unterminated string, an unterminated
 //     comment, an unbalanced Ruby block) produce CaveatFileUnparseable and the
@@ -69,8 +69,8 @@
 // EVERY ROUTE THIS FILE PRODUCES IS A CANDIDATE
 // ===========================================================================
 //
-// plan/50-dast.md D.21's Forbidden actions: "every route here is
-// `status: candidate`, never `confirmed`, at extraction time". As in D.20 the
+// Non-Go route extraction's forbidden actions: "every route here is
+// `status: candidate`, never `confirmed`, at extraction time". As in Go route extraction the
 // enforcement is structural rather than editorial: every route goes through
 // ONE function, otherAccumulator.toRoute, which writes ConfirmationCandidate,
 // record.InventoryProvenanceStaticExtraction and record.TrustUntrusted as
@@ -78,22 +78,22 @@
 // KERNEL via NewRoute. There is no second path validator in this file.
 //
 // ===========================================================================
-// WHAT IS REUSED FROM D.18/D.19/D.20 RATHER THAN RESTATED
+// WHAT IS REUSED FROM TIERS 0, 1 AND THE GO EXTRACTOR RATHER THAN RESTATED
 // ===========================================================================
 //
-//	Route, NewRoute, RouteFacts, Param, SortRoutes  -- the endpoint type (D.18)
+//	Route, NewRoute, RouteFacts, Param, SortRoutes  -- the endpoint type (the runtime spec probe)
 //	Refusal, RefusalReason, classifyRouteError      -- the refusal vocabulary
 //	CoverageCaveat, CaveatReason, SortCaveats       -- the caveat vocabulary
-//	HarvestOutcome                                  -- ran vs skipped (D.19)
+//	HarvestOutcome                                  -- ran vs skipped (the repo spec reader)
 //	NewGoSourceFile                                 -- harvested-file validation
-//	canonicalizePattern, joinPrefix, redact         -- D.20's canonicalization
+//	canonicalizePattern, joinPrefix, redact         -- Go route extraction's canonicalization
 //
-// Two D.20 types are Go-SPECIFIC and could not be reused, and this file may
+// Two Go route extraction types are Go-SPECIFIC and could not be reused, and this file may
 // not modify tier2_go_extract.go to widen them:
 //
 //   - Framework is the six Go routers. NonGoFramework is a separate enum and
 //     NonGoCaveat EMBEDS CoverageCaveat so the shared reason vocabulary, the
-//     RaisesDenominatorFloor semantics and D.26's consumption are unchanged
+//     RaisesDenominatorFloor semantics and coverage reporting's consumption are unchanged
 //     while the non-Go framework still travels.
 //   - No new CaveatReason is declared. CaveatReasonValues() lives in
 //     tier2_go_extract.go and CoverageCaveat.Valid() consults it, so a reason
@@ -109,9 +109,9 @@
 // as an assertion that fails, both of which say "the denominator is not
 // complete" rather than "the denominator is one bigger".
 //
-// Sources: plan/50-dast.md D.21 (lines 677-708) and the Coverage Reporting
+// Sources: non-Go route extraction's design (lines 677-708) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
-// 330-341 and its Risk #2; internal/dast/inventory/tier2_go_extract.go (D.20).
+// 330-341 and its Risk #2; internal/dast/inventory/tier2_go_extract.go (Go route extraction).
 package inventory
 
 import (
@@ -200,7 +200,7 @@ const (
 	// LanguageRuby is Ruby.
 	LanguageRuby Language = "ruby"
 
-	// --- supported by D.20, not here ---
+	// --- supported by Go route extraction, not here ---
 
 	// LanguageGo is Go, which tier2_go_extract.go reads.
 	LanguageGo Language = "go"
@@ -244,7 +244,7 @@ const (
 	// LanguageStatusSupported: this file has an extractor for it.
 	LanguageStatusSupported LanguageStatus = "supported_by_this_extractor"
 
-	// LanguageStatusGoExtractor: D.20 reads it, not this file. A .go file
+	// LanguageStatusGoExtractor: Go route extraction reads it, not this file. A .go file
 	// offered here is not a gap, it is a routing mistake in the caller.
 	LanguageStatusGoExtractor LanguageStatus = "supported_by_the_go_extractor"
 
@@ -369,7 +369,7 @@ func classifyURI(uri string) (Language, LanguageStatus) {
 
 // NonGoFramework is the web framework a route was registered with.
 //
-// It is a separate enum from D.20's Framework because that one is the six Go
+// It is a separate enum from Go route extraction's Framework because that one is the six Go
 // routers and tier2_go_extract.go is read-only to this packet. The zero value
 // names nothing and toRoute refuses it.
 type NonGoFramework string
@@ -391,7 +391,7 @@ const (
 	NonGoFrameworkRails NonGoFramework = "rails"
 )
 
-// NonGoFrameworkValues returns the five frameworks D.21 names -- Flask and
+// NonGoFrameworkValues returns the five frameworks non-Go route extraction names -- Flask and
 // FastAPI counted separately, because they are different DSLs that happen to
 // share a language and this file reads them with different code.
 func NonGoFrameworkValues() []NonGoFramework {
@@ -417,7 +417,7 @@ func (f NonGoFramework) Valid() bool {
 
 // FrameworkSupport is what this extractor claims about one framework.
 //
-// BlindTo is the load-bearing half. plan/50-dast.md D.21's Forbidden actions
+// BlindTo is the load-bearing half. Non-Go route extraction's forbidden actions
 // require that reflection-based and computed-path routes are not silently
 // dropped; this is where the classes of them are named, and the Caveat column
 // says which CoverageCaveat a reader will actually see when one is hit.
@@ -436,7 +436,7 @@ type FrameworkSupport struct {
 	Fixture string
 }
 
-// SupportMatrix is the single statement of what D.21 supports.
+// SupportMatrix is the single statement of what non-Go route extraction supports.
 //
 // Nothing here is claimed that a hand-written fixture did not exercise:
 // TestSupportMatrixIsBackedByAFixture matches every row against the fixture
@@ -651,7 +651,7 @@ const (
 	ScanOutcomeLanguageNotSupported ScanOutcome = "language_not_supported"
 
 	// ScanOutcomeHandledByGoExtractor: a .go file was offered to the non-Go
-	// tier. D.20 reads it; this tier did not, and did not fail to.
+	// tier. Go route extraction reads it; this tier did not, and did not fail to.
 	ScanOutcomeHandledByGoExtractor ScanOutcome = "handled_by_the_go_extractor"
 
 	// ScanOutcomeFileTypeUnrecognised: the extension names no language.
@@ -755,7 +755,7 @@ func (f SourceFile) text() string { return f.inner.content }
 
 // ExtractedNonGoRoute is one registration site BEFORE any validation.
 //
-// Like D.20's ExtractedRoute it deliberately cannot express a Confirmation, a
+// Like Go route extraction's ExtractedRoute it deliberately cannot express a Confirmation, a
 // Provenance or a Trust: everything that produces one goes through
 // otherAccumulator.toRoute, which supplies all three as constants. A shape
 // that could carry a Confirmation would be a way to launder a confirmed
@@ -781,10 +781,10 @@ type ExtractedNonGoRoute struct {
 // arose in.
 //
 // It EMBEDS CoverageCaveat rather than redeclaring one: the reason vocabulary,
-// Valid(), String() and RaisesDenominatorFloor() are D.20's and stay D.20's,
-// and D.26 can take the embedded value directly. The two extra fields exist
-// because CoverageCaveat.Framework is the Go-only Framework enum and this
-// packet may not widen it.
+// Valid(), String() and RaisesDenominatorFloor() are Go route extraction's and
+// stay Go route extraction's, and coverage reporting can take the embedded
+// value directly. The two extra fields exist because CoverageCaveat.Framework
+// is the Go-only Framework enum and this packet may not widen it.
 type NonGoCaveat struct {
 	CoverageCaveat
 
@@ -844,7 +844,7 @@ func cloneFileExtractsNonGo(in []NonGoFileExtract) []NonGoFileExtract {
 
 // LanguageReport is one language's whole story for a run.
 //
-// This is the type the honesty requirement lives in. It reaches D.26 for every
+// This is the type the honesty requirement lives in. It reaches coverage reporting for every
 // language present in the offered file set, supported or not.
 type LanguageReport struct {
 	// Language is the language.
@@ -893,7 +893,7 @@ type OtherExtractConfig struct {
 	// a host rather than leaving it a free-floating string.
 	Target authz.Target
 
-	// Harvest says what the SAST pass did. Reused from D.19: it is the only
+	// Harvest says what the SAST pass did. Reused from the repo spec reader: it is the only
 	// thing that can distinguish "this repository has no non-Go source" from
 	// "the handoff was never wired".
 	Harvest HarvestOutcome
@@ -904,7 +904,7 @@ func (c OtherExtractConfig) Constructed() bool {
 	return c.Target.Constructed() && c.Harvest.Valid()
 }
 
-// OtherExtractResult is one D.21 run, sealed.
+// OtherExtractResult is one non-Go route extraction run, sealed.
 type OtherExtractResult struct {
 	routes    []Route
 	refusals  []Refusal
@@ -934,8 +934,9 @@ func (r OtherExtractResult) Refusals() []Refusal { return cloneRefusals(r.refusa
 // Caveats returns a copy of the coverage caveats, with their frameworks.
 func (r OtherExtractResult) Caveats() []NonGoCaveat { return cloneNonGoCaveats(r.caveats) }
 
-// SharedCaveats returns the caveats in D.20's own type, so D.26 can pool the
-// Tier 2 caveat lists from both extractors without knowing about this one.
+// SharedCaveats returns the caveats in Go route extraction's own type, so
+// coverage reporting can pool the Tier 2 caveat lists from both extractors
+// without knowing about this one.
 func (r OtherExtractResult) SharedCaveats() []CoverageCaveat {
 	if r.caveats == nil {
 		return nil
@@ -999,7 +1000,7 @@ func (r OtherExtractResult) FrameworkMix() map[NonGoFramework]int {
 	return out
 }
 
-// SourceOf returns the source file a route key came from, so a candidate D.22
+// SourceOf returns the source file a route key came from, so a candidate route confirmation
 // fails to confirm can be traced to a line a human can read.
 func (r OtherExtractResult) SourceOf(key string) (record.ArtifactLocation, bool) {
 	loc, ok := r.sourceOf[key]
@@ -1061,7 +1062,7 @@ func (r OtherExtractResult) DenominatorIsComplete() bool {
 // from the union, the denominator is too small, and the fraction reads HIGHER
 // than the truth -- the metric improving because the tool got worse.
 //
-// This returns an error so that D.26 cannot compute coverage over an
+// This returns an error so that coverage reporting cannot compute coverage over an
 // incomplete denominator without a line of code saying it chose to.
 func (r OtherExtractResult) AssertDenominatorIsComplete() error {
 	if !r.sealed {
@@ -1105,12 +1106,12 @@ func (r OtherExtractResult) AssertNotSilentlyEmpty() error {
 		"the target", ErrNoNonGoSourceOffered, r.harvest, r.offered, r.scanned)
 }
 
-// AssertEveryRouteIsACandidate is D.21's Forbidden-actions clause, executable.
+// AssertEveryRouteIsACandidate is non-Go route extraction's Forbidden-actions clause, executable.
 func (r OtherExtractResult) AssertEveryRouteIsACandidate() error {
 	for _, rt := range r.routes {
 		if rt.Confirmation() != ConfirmationCandidate {
 			return fmt.Errorf("inventory: %w: %s carries confirmation %q. Every Tier 2 "+
-				"route is a candidate until D.22 confirms it via live probe; a confirmed "+
+				"route is a candidate until route confirmation confirms it via live probe; a confirmed "+
 				"one here enters the numerator of endpoint_coverage without anything "+
 				"having been probed", ErrRefused, rt, rt.Confirmation())
 		}
@@ -1129,13 +1130,13 @@ func (r OtherExtractResult) AssertEveryRouteIsACandidate() error {
 // ExtractNonGoRoutes turns harvested non-Go source into CANDIDATE inventory
 // routes, plus an honest account of what it could not read.
 //
-// The signature deviates from plan/50-dast.md D.21's
+// The signature deviates from non-Go route extraction's design
 // `ExtractRoutes(repoPath string, framework Framework) ([]Route, error)` in
-// three ways, all of them following D.20 rather than inventing anything:
+// three ways, all of them following Go route extraction rather than inventing anything:
 //
-//   - No repoPath. This package opens no files; D.19 established that the
+//   - No repoPath. This package opens no files; the repo spec reader established that the
 //     harvest side hands bytes across, and a package under internal/dast that
-//     walks a filesystem is a containment question D.11 owns.
+//     walks a filesystem is a containment question network containment owns.
 //   - No per-framework parameter. A repository is not one framework, and
 //     asking the CALLER which framework a file uses would make the caller's
 //     guess the extractor's answer. The framework is decided per file from
@@ -1294,7 +1295,7 @@ func (a *otherAccumulator) runFile(f SourceFile) {
 		// The file lexed but did not hold together structurally -- an
 		// unbalanced Rails do/end. Its routes would carry prefixes this file
 		// computed from a scope stack it knows is wrong, and a candidate at a
-		// wrong path looks like the target's fault when D.22 cannot confirm
+		// wrong path looks like the target's fault when route confirmation cannot confirm
 		// it. They are DROPPED and the drop is reported.
 		a.caveat(f, 0, NonGoFrameworkUnset, CaveatFileUnparseable, w.discardWhy)
 		fe.Outcome = ScanOutcomeNothingParsed
@@ -1353,7 +1354,7 @@ func (a *otherAccumulator) caveat(f SourceFile, line int, fw NonGoFramework, rea
 }
 
 // admit is the single funnel. Every route from every language passes through
-// here, which is why "no D.21 route can be confirmed" is a property of the
+// here, which is why "no non-Go route extraction route can be confirmed" is a property of the
 // code rather than of the reviewer's attention.
 func (a *otherAccumulator) admit(er ExtractedNonGoRoute) {
 	a.seen++
@@ -1392,7 +1393,7 @@ func (a *otherAccumulator) admit(er ExtractedNonGoRoute) {
 // This is where ConfirmationCandidate, InventoryProvenanceStaticExtraction and
 // TrustUntrusted are written, as constants, with no branch that can change
 // them. It is also the ONLY place a pattern is canonicalized: the
-// framework-specific placeholder SPELLING is translated first, then D.20's
+// framework-specific placeholder SPELLING is translated first, then Go route extraction's
 // canonicalizePattern produces the kernel-facing form, then NewRoute hands the
 // path to the kernel. This package holds no second path validator.
 func (a *otherAccumulator) toRoute(er ExtractedNonGoRoute) (Route, Refusal, bool) {
@@ -1433,9 +1434,9 @@ func (a *otherAccumulator) toRoute(er ExtractedNonGoRoute) (Route, Refusal, bool
 		Method: m,
 		Path:   path,
 		Target: a.target,
-		// Operation is deliberately EMPTY, for the reason D.20's
+		// Operation is deliberately EMPTY, for the reason Go route extraction's
 		// operationLabel gives: Route.Key() is method, path and operation and
-		// D.26 deduplicates the Tier 0-2 union on it. Putting the handler name
+		// coverage reporting deduplicates the Tier 0-2 union on it. Putting the handler name
 		// or the framework in here would look like richer provenance and would
 		// in fact be denominator inflation -- the same endpoint reached from
 		// an Express route and a Tier 0 spec would become two rows. The
@@ -1524,7 +1525,7 @@ func languageOutcome(rep LanguageReport) ScanOutcome {
 // ---------------------------------------------------------------------------
 
 // translatePlaceholders rewrites a framework's placeholder SPELLING into the
-// "{name}" form D.20's canonicalizePattern already understands.
+// "{name}" form Go route extraction's canonicalizePattern already understands.
 //
 // It is not a second canonicalizer and it deliberately does not act like one:
 // it does not touch slashes, case, dot segments, the leading "/", or anything
@@ -2339,7 +2340,7 @@ func httpMethodForVerb(v string) (string, bool) {
 
 // routeJoin composes a scope prefix with a route pattern.
 //
-// It differs from D.20's joinPrefix in exactly one case: an EMPTY pattern.
+// It differs from Go route extraction's joinPrefix in exactly one case: an EMPTY pattern.
 // joinPrefix("/api/users", "") returns "/api/users/", which is right for a chi
 // Route group and wrong for Spring's bare @GetMapping on a mapped class and
 // for Rails' `resources` index action -- both of those serve "/api/users" with
@@ -2581,10 +2582,10 @@ func (w *fileWalk) expressRouteChain(recv string, args []span, closeIdx, line in
 // emitWithPrefixes resolves Express mount prefixes and emits.
 //
 // A router that no app in this file mounts gets CaveatCallerPrefixNotVisible
-// and is emitted at its bare path. The route is still a CANDIDATE and D.22
+// and is emitted at its bare path. The route is still a CANDIDATE and route confirmation
 // confirms it; the caveat is there so that a candidate at a path the target
 // does not serve reads as Anvil's incompleteness rather than the target's
-// fault. This mirrors D.20's handling of a chi router bound from a parameter.
+// fault. This mirrors Go route extraction's handling of a chi router bound from a parameter.
 func (w *fileWalk) emitWithPrefixes(fw NonGoFramework, routers map[string]jsRouterKind,
 	regs []jsReg, mounts []jsMount) {
 	prefixes := map[string][]string{}

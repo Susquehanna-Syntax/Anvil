@@ -243,7 +243,7 @@ func (b *Bootstrapper) bloblessClone(
 	res.ArchiveSHA256 = head
 	res.ArchiveReused = prior.Phase == PhaseInProgress && prior.ArchiveSHA256 == head
 
-	// The commit is the resume key AND the handoff: it is what A.14's
+	// The commit is the resume key AND the handoff: it is what delta ingestion's
 	// `git fetch` starts from, and it is what makes a cursor meaningful. A
 	// clone that advanced to a new commit restarts the import from file zero,
 	// because a cursor counted over one tree says nothing about another.
@@ -481,13 +481,13 @@ func (b *Bootstrapper) decodeCloneFile(dc *decodeCtx, dir, rel string, meter *re
 }
 
 // ---------------------------------------------------------------------------
-// Fetch handoff — read by A.14, never re-derived by it
+// Fetch handoff — read by delta ingestion, never re-derived by it
 // ---------------------------------------------------------------------------
 
-// FetchArgs is the steady-state `git fetch` A.14 should run against a clone
+// FetchArgs is the steady-state `git fetch` delta ingestion should run against a clone
 // this package produced, given the feed's stored watermark.
 //
-// It lives here rather than in A.14 for one reason: the fetch and the clone
+// It lives here rather than in delta ingestion for one reason: the fetch and the clone
 // must be constrained by the same rule, and a rule that lives in two packages
 // is a rule that will hold in one of them. assertNoShallowFlags runs on the
 // result, so the fetch cannot be shallowed either.

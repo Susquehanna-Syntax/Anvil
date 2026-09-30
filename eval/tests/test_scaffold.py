@@ -1,9 +1,10 @@
-"""Scaffold tests for the Anvil evaluation harness (M0.2).
+"""Scaffold tests for the Anvil evaluation harness (the evaluation-harness scaffold).
 
 These are deliberately offline and dependency-light: they assert that the
 package imports, that its declared on-disk layout is self-consistent, and that
-the S12 carve-out is honoured (``eval/`` is a pure-Python tree — no Go sources).
-Later M0 packets add their own test modules alongside this one.
+the Python carve-out in the spine's Go control-plane decision is honoured (``eval/`` is
+a pure-Python tree — no Go sources). Later evaluation work adds its own test modules
+alongside this one.
 """
 
 from __future__ import annotations
@@ -14,9 +15,9 @@ import pytest
 
 import anvil_eval
 
-#: Paths this packet (M0.2) owns. Scans below are scoped to these so that they
+#: Paths the harness scaffold owns. Scans below are scoped to these so that they
 #: stay fast and do not fail on artifacts legitimately produced by later steps
-#: (e.g. M0.6's model downloads under ``eval/models/``).
+#: (e.g. the candidate-model acquisition's model downloads under ``eval/models/``).
 SCAFFOLD_PATHS = ("pyproject.toml", "requirements.txt", ".gitignore", "src", "tests")
 
 
@@ -54,8 +55,10 @@ def test_declared_subtrees_live_under_eval_root() -> None:
 
 
 def test_result_path_matches_the_registers_artifact_path_convention() -> None:
-    """`plan/10-milestone0-evaluation.md` specifies ``eval/results/<id>.json``."""
-    for experiment_id in ("EXP-01", "EXP-12", "INSTR-01", "S12-RTT"):
+    """`plan/design/evaluation.md` specifies ``eval/results/<id>.json``."""
+    for experiment_id in (
+        "advisory-permutation", "lora-hot-swap", "candidates-per-scan", "encoder-round-trip"
+    ):
         path = anvil_eval.result_path(experiment_id)
         assert path.parent == anvil_eval.RESULTS_DIR
         assert path.name == f"{experiment_id}.json"
@@ -78,9 +81,9 @@ def _scaffold_files() -> list[Path]:
 
 
 def test_scaffold_contains_no_go_sources() -> None:
-    """S12 carve-out #3: the evaluation harness is a pure-Python tree.
+    """The spine's third Python carve-out: the evaluation harness is a pure-Python tree.
 
-    The M0.2 packet is explicit that "no Go code belongs in ``eval/`` at all".
+    The evaluation-harness scaffold is explicit that "no Go code belongs in ``eval/`` at all".
     """
     offenders = [
         p

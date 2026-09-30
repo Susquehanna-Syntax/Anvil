@@ -1,4 +1,4 @@
-// Tests for A.15, the weekly full-baseline self-heal.
+// Tests for the weekly full-baseline self-heal.
 //
 // ===========================================================================
 // WHAT THESE TESTS ARE FOR, AND WHAT A GREEN RUN DOES NOT PROVE
@@ -8,10 +8,10 @@
 // real defect rather than a cosmetic one:
 //
 //  1. THE SELF-HEAL ACTUALLY HEALS, AND SAYS SO.
-//     TestSelfHealRestoresTheRecordsTheDeltaPathDropped is A.15's named
+//     TestSelfHealRestoresTheRecordsTheDeltaPathDropped is the weekly self-heal's named
 //     validation: a live cache deliberately missing three records the fresh
-//     baseline has. It drives the REAL A.8 bootstrapper over an httptest-
-//     served zip, restores through A.14's real write path, and then asserts
+//     baseline has. It drives the REAL bulk bootstrapper over an httptest-
+//     served zip, restores through delta ingestion's real write path, and then asserts
 //     both halves — the three rows are back, AND every unrelated row is
 //     byte-identical including its as_of, which is what proves the repair was
 //     row-scoped rather than a re-import wearing a diff's clothes.
@@ -25,7 +25,7 @@
 //  3. A FAILURE IS LOUD. TestABootstrapFailureIncrementsConsecutiveFailures,
 //     TestAnIncompleteBaselineIsRefusedAndCounted and
 //     TestAnEmptyBaselineIsRefusedAndCounted assert the packet's forbidden
-//     action directly: the counter A.16's staleness mechanism reads moves, and
+//     action directly: the counter drift handling's staleness mechanism reads moves, and
 //     the live cache is not touched.
 //
 //  4. NOTHING FULL-TABLE REACHES THE CACHE.
@@ -44,8 +44,8 @@
 // THE CORPUS IS AUTHORED HERE, NOT DERIVED FROM THE IMPLEMENTATION. The CVE
 // 5.1 documents below are written in this file. The live cache is then built
 // by running the REAL delta writer over a subset of them, which is how the
-// production system builds it — so a divergence between A.8's decoder and
-// A.14's decoder would surface here as a wall of "divergent" rows rather than
+// production system builds it — so a divergence between the bulk bootstrap's decoder and
+// delta ingestion's decoder would surface here as a wall of "divergent" rows rather than
 // hiding until a real self-heal ran.
 //
 // NO TEST HERE REACHES THE NETWORK: the one bulk archive is served by
@@ -175,7 +175,7 @@ func docID(t *testing.T, doc string) string {
 // The licence mirror
 // ---------------------------------------------------------------------------
 
-// cc0Verbatim is the publisher licence text the synthetic mirror pins. A.4
+// cc0Verbatim is the publisher licence text the synthetic mirror pins. The licence gate
 // classifies BODIES, so a fixture that wants an admission has to supply a real
 // permissive one.
 const cc0Verbatim = `Creative Commons Legal Code
@@ -213,10 +213,10 @@ func testFeed(id string) config.FeedConfig {
 	}
 }
 
-// admittingMirror renders the mirror tree A.4 reads: a pinned manifest, the
+// admittingMirror renders the mirror tree the licence gate reads: a pinned manifest, the
 // publisher's acquired text at the digest the pin names, and Anvil's own
 // record. The gate's admission path is exacting and a mirror assembled by
-// guesswork simply refuses, so this mirrors the shape A.4's own fixtures use.
+// guesswork simply refuses, so this mirrors the shape the licence gate's own fixtures use.
 func admittingMirror(t *testing.T, feeds ...config.FeedConfig) fs.FS {
 	t.Helper()
 	fsys := fstest.MapFS{}
@@ -255,7 +255,7 @@ func admittingMirror(t *testing.T, feeds ...config.FeedConfig) fs.FS {
 	return fsys
 }
 
-// emptyMirror pins nothing, so A.4 refuses every feed against it. It is what a
+// emptyMirror pins nothing, so the licence gate refuses every feed against it. It is what a
 // fresh clone looks like.
 func emptyMirror() fs.FS { return fstest.MapFS{} }
 
@@ -488,14 +488,14 @@ func newHealer(t *testing.T, opts Options) *Healer {
 // 1. The self-heal actually heals, and says so
 // ---------------------------------------------------------------------------
 
-// TestSelfHealRestoresTheRecordsTheDeltaPathDropped is A.15's named
+// TestSelfHealRestoresTheRecordsTheDeltaPathDropped is the weekly self-heal's named
 // validation: "a synthetic 'live cache is missing 3 records the fresh baseline
 // has' fixture, asserting the reconcile pass restores all 3 without disturbing
 // unrelated rows."
 //
-// It drives the REAL A.8 bootstrapper over an httptest-served zip, so the path
+// It drives the REAL bulk bootstrapper over an httptest-served zip, so the path
 // under test is the production one end to end: bulk archive -> scratch cache
-// -> merge-join diff -> A.14's row-scoped upsert.
+// -> merge-join diff -> delta ingestion's row-scoped upsert.
 func TestSelfHealRestoresTheRecordsTheDeltaPathDropped(t *testing.T) {
 	const total = 20
 	const dropped = 3
@@ -559,7 +559,7 @@ func TestSelfHealRestoresTheRecordsTheDeltaPathDropped(t *testing.T) {
 			rep.Updated(), rep.AheadInLive, rep.OnlyInLive)
 	}
 	if rep.Restored != dropped {
-		t.Fatalf("restored %d rows, want %d. A.15's stop condition is a NON-ZERO restored count when "+
+		t.Fatalf("restored %d rows, want %d. The weekly self-heal's stop condition is a NON-ZERO restored count when "+
 			"records were deliberately dropped beforehand", rep.Restored, dropped)
 	}
 	if err := rep.CheckTotals(); err != nil {
@@ -611,7 +611,7 @@ func TestSelfHealRestoresTheRecordsTheDeltaPathDropped(t *testing.T) {
 	}
 }
 
-// TestFTSStaysQueryConsistentAfterARepair is the round-trip half of A.14's
+// TestFTSStaysQueryConsistentAfterARepair is the round-trip half of delta ingestion's
 // exit criterion, re-asserted for this pass: a restored row is findable by
 // text immediately, and a row restored OVER a stale one stops matching the
 // stale text.
@@ -675,7 +675,7 @@ func TestFTSStaysQueryConsistentAfterARepair(t *testing.T) {
 	}
 	if got := matches("toucancrossing"); len(got) != 0 {
 		t.Errorf("the SUPERSEDED text still matches after the repair: MATCH toucancrossing gave %v. "+
-			"That is the contentless-FTS phantom-hit failure A.2 carries contentless_delete=1 for", got)
+			"That is the contentless-FTS phantom-hit failure the ingestion cache carries contentless_delete=1 for", got)
 	}
 }
 
@@ -730,8 +730,8 @@ func TestANewerLiveRowIsNeverOverwrittenByAnOlderBaseline(t *testing.T) {
 
 // TestARowGroundTruthLacksIsReportedAndNeverDeleted is the other direction.
 //
-// A.2 exit criterion 22 tombstones withdrawn and REJECTED advisories rather
-// than deleting them, and that is A.16's pass. A self-heal that deleted a row
+// Lane A exit criterion 22 tombstones withdrawn and REJECTED advisories rather
+// than deleting them, and that is drift handling's pass. A self-heal that deleted a row
 // because this week's archive did not carry it would destroy the row a prior
 // finding references.
 func TestARowGroundTruthLacksIsReportedAndNeverDeleted(t *testing.T) {
@@ -859,7 +859,7 @@ func TestEveryDisagreementKindIsClassifiedAndAccountedFor(t *testing.T) {
 
 // TestABootstrapFailureIncrementsConsecutiveFailures is the packet's forbidden
 // action, asserted directly: "a failed weekly self-heal must increment
-// feed_state.consecutive_failures and surface via A.16's staleness mechanism,
+// feed_state.consecutive_failures and surface via drift handling's staleness mechanism,
 // not fail closed and disappear."
 func TestABootstrapFailureIncrementsConsecutiveFailures(t *testing.T) {
 	feed := testFeed("cvelistv5")
@@ -899,7 +899,7 @@ func TestABootstrapFailureIncrementsConsecutiveFailures(t *testing.T) {
 	}
 	n, ok := failuresFor(t, live, feed.ID)
 	if !ok {
-		t.Fatal("no feed_state row was written at all; A.16's staleness mechanism has nothing to read")
+		t.Fatal("no feed_state row was written at all; drift handling's staleness mechanism has nothing to read")
 	}
 	if n != 1 {
 		t.Errorf("feed_state.consecutive_failures is %d, want 1", n)
@@ -1090,10 +1090,11 @@ func TestAFeedWithNoBulkBaselineIsRefused(t *testing.T) {
 // tracing driver and inspects every statement that reached the driver layer
 // during a repair.
 //
-// This is A.2's and A.14's shared rule, re-checked for this pass: FTS5 accepts
-// incremental INSERT/DELETE, so a repair touching three records costs three
-// row-scoped index writes and NOT a rebuild. It is checked as an observation
-// of production statements, not as an assertion about code someone read.
+// This is the ingestion cache's and delta ingestion's shared rule, re-checked
+// for this pass: FTS5 accepts incremental INSERT/DELETE, so a repair touching
+// three records costs three row-scoped index writes and NOT a rebuild. It is
+// checked as an observation of production statements, not as an assertion about
+// code someone read.
 func TestNoFullTableStatementReachesTheLiveCache(t *testing.T) {
 	feed := testFeed("cvelistv5")
 	mirror := admittingMirror(t, feed)
@@ -1129,7 +1130,7 @@ func TestNoFullTableStatementReachesTheLiveCache(t *testing.T) {
 		"drop table", "drop view", "create virtual table", "create table",
 		"alter table", "vacuum", "reindex", "'rebuild'",
 	}
-	// Every DELETE that reaches the cache must be ROW-SCOPED. A.14 legitimately
+	// Every DELETE that reaches the cache must be ROW-SCOPED. Delta ingestion legitimately
 	// replaces one advisory's `affected` and `cve_alias` rows per upsert
 	// (surrogate key, no unique natural key) and deletes one FTS row by rowid;
 	// what must never appear is a delete whose scope is a table.
@@ -1217,7 +1218,7 @@ func TestTheStatementAllowlistIsOnTheLivePath(t *testing.T) {
 // TestTheAllowlistHoldsNoWriteAgainstTheAdvisoryTables. This package must have
 // no second write path for advisory / affected / advisory_fts; those writes
 // belong to delta.Apply so that one writer holds the schema invariants for
-// both A.14 and A.15.
+// both delta ingestion and the weekly self-heal.
 func TestTheAllowlistHoldsNoWriteAgainstTheAdvisoryTables(t *testing.T) {
 	if len(allowedStatements) == 0 {
 		t.Fatal("the allowlist is empty; the guard would refuse everything and the tests above would not pass")
@@ -1442,7 +1443,7 @@ func TestTheScratchBaselineIsCleanedUpUnlessAsked(t *testing.T) {
 }
 
 // TestTheCadenceComesFromTheFeedRowAndForceOverridesIt. There is no weekly
-// constant in this package: A.1 puts every cadence in feeds.yaml so an
+// constant in this package: the feed table puts every cadence in feeds.yaml so an
 // operator can dial the pipeline down on a constrained host.
 func TestTheCadenceComesFromTheFeedRowAndForceOverridesIt(t *testing.T) {
 	feed := testFeed("cvelistv5")
@@ -1779,7 +1780,7 @@ func TestIntegrationNotesForTheManualRun(t *testing.T) {
 		"    records and ~570 MB, and neither the wall time of the merge join nor the disk cost of the",
 		"    scratch database has been measured against one.",
 		"  - go test -race. It cannot run on the Windows dev host (cgo.exe exit 2); CI runs it on Linux.",
-		"  - that A.8's decoder and A.14's decoder agree about every REAL publisher document. They agree",
+		"  - that the bulk bootstrap's decoder and delta ingestion's decoder agree about every REAL publisher document. They agree",
 		"    about the synthetic CVE 5.1 documents in this file, which is what makes the 'matched' count",
 		"    meaningful here; a disagreement on a real corpus would surface as a wall of 'divergent' rows",
 		"    on the first real self-heal, which is a loud failure rather than a silent one.",

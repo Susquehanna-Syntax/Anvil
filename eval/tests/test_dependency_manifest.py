@@ -1,6 +1,6 @@
-"""Tests over the M0.2 dependency manifest itself.
+"""Tests over the evaluation-harness scaffold dependency manifest itself.
 
-These guard the two constraints the M0.2 packet names explicitly:
+These guard the two constraints the evaluation-harness scaffold names explicitly:
 no cgo/Go SQLite dependency has any business in this tree, and no dataset or
 model weight is vendored by the scaffold.
 """
@@ -33,7 +33,7 @@ def test_src_layout_is_declared(pyproject: dict) -> None:
 
 
 def test_no_go_or_cgo_flavoured_dependency_is_declared(pyproject: dict) -> None:
-    """Forbidden action (M0.2): no ``mattn/go-sqlite3``, no cgo dependency."""
+    """Forbidden for the harness scaffold: no ``mattn/go-sqlite3``, no cgo dependency."""
     declared = list(pyproject["project"]["dependencies"])
     for group in pyproject["project"].get("optional-dependencies", {}).values():
         declared.extend(group)
@@ -57,9 +57,9 @@ def test_requirements_file_exists_and_is_pinned() -> None:
 
 
 def test_scaffold_vendors_no_dataset_or_model_weight() -> None:
-    """Forbidden action (M0.2): do not vendor any dataset or model weight.
+    """Forbidden for the harness scaffold: do not vendor any dataset or model weight.
 
-    Scoped to the paths M0.2 owns — ``eval/data/`` and ``eval/models/`` are
+    Scoped to the paths the scaffold owns — ``eval/data/`` and ``eval/models/`` are
     later steps' write scope and are gitignored payload directories.
     """
     weight_suffixes = {".gguf", ".safetensors", ".onnx", ".bin", ".pt", ".pth", ".h5", ".ckpt"}

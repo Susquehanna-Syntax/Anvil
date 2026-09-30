@@ -1,17 +1,17 @@
--- Anvil store of record — complete DDL for schema version 1 (step R.4).
+-- Anvil store of record — complete DDL for schema version 1 (the store schema).
 --
--- plan/00-SPINE.md S1 collapses the originally-specified "8-hour buffer file"
+-- The spine's corrected-requirements table collapses the originally-specified "8-hour buffer file"
 -- into ONE SQLite database plus a `handoff` table plus a regenerable tmpfs
 -- packet. There is no second durable buffer file and no second durable table
--- carrying finding dispositions: plan/IMPLEMENTATION-PLAN.md §6 rulings G9 and
--- G10 make THIS FILE the only definition of `handoff` anywhere in Anvil.
--- Area 70's O.3 migration and area 60's `anvil_ledger` are both deleted and
+-- carrying finding dispositions: the handoff-table and one-ledger rulings
+-- make THIS FILE the only definition of `handoff` anywhere in Anvil.
+-- The control plane's handoff-adapter migration and remediation's `anvil_ledger` are both deleted and
 -- folded in here.
 --
 -- SOURCES, in precedence order:
---   1. plan/40-record-and-storage.md, "Store Schema" — authoritative for
+--   1. plan/design/record-and-store.md, "Store Schema" — authoritative for
 --      `scan_run`, `audit_record`, `finding`, `finding_occurrence`, `handoff`.
---   2. plan/IMPLEMENTATION-PLAN.md §6 (G9, G10) — supersedes (1) where they
+--   2. The handoff-table and one-ledger rulings — supersede (1) where they
 --      disagree: `handoff.state` carries all thirteen dispositions and
 --      `handoff.consumption_class` is present.
 --   3. research/07-database-design.md §2 — carried forward unchanged for every
@@ -20,30 +20,30 @@
 -- WHAT IS DELIBERATELY NOT IN THIS FILE:
 --
 --   * PRAGMA statements. `PRAGMA journal_mode = WAL` cannot run inside a
---     transaction, and R.5 applies this file inside `BEGIN ... COMMIT`. The
---     connection pragmas plan/40-record-and-storage.md specifies are exposed
+--     transaction, and the migration runner applies this file inside `BEGIN ... COMMIT`. The
+--     connection pragmas plan/design/record-and-store.md specifies are exposed
 --     by ddl.go as ConnectionPragmas() and are applied per connection, before
 --     any other store operation. `foreign_keys` in particular is per
 --     connection and OFF by default; this schema depends on it being ON.
---   * `PRAGMA user_version` and the migration ledger's contents. R.5 owns
+--   * `PRAGMA user_version` and the migration ledger's contents. The migration runner owns
 --     both; the `schema_migration` table itself is created here.
 --
 -- CHECK-CONSTRAINT POLICY. A CHECK constraint that names literals freezes a
--- vocabulary, and plan/IMPLEMENTATION-PLAN.md §6 documents what happens when
+-- vocabulary, and the shared-vocabulary review documents what happens when
 -- two areas freeze the same vocabulary differently: one area writes a literal
 -- another area's NOT NULL column cannot accept. So enum CHECKs appear here
 -- ONLY where internal/record/contract.go owns the enum, and ddl_test.go
 -- asserts every such constraint agrees literal-for-literal with the Go values.
 -- Columns whose comment names a vocabulary that contract.go does NOT own
 -- (severity, ecosystem, suppression classification, ...) are left
--- unconstrained on purpose; constraining them here would be area 40 inventing
--- vocabulary for another area, which is the defect §6 exists to stop.
+-- unconstrained on purpose; constraining them here would be the record area inventing
+-- vocabulary for another area, which is the defect the shared-vocabulary review exists to stop.
 --
 -- Every CHECK is NAMED. research/07 Risk #15: batch-recreate tooling silently
 -- drops unnamed CHECK constraints, which on a security tool's schema is an
 -- integrity regression with no error message.
 
--- ============ ADVISORY DOMAIN (feeds owned by area 20) ============
+-- ============ ADVISORY DOMAIN (feeds owned by Lane A) ============
 CREATE TABLE advisory (
   advisory_id     TEXT PRIMARY KEY,          -- 'CVE-2026-1234' | 'GHSA-xxxx-yyyy-zzzz'
   source          TEXT NOT NULL,             -- 'osv' | 'ghsa' | 'nvd' | ...
@@ -73,7 +73,7 @@ CREATE INDEX idx_alias_lookup ON advisory_alias(alias_id);
 --
 -- This is also the schema's built-in FTS5 availability probe: if the driver
 -- lacks FTS5, applying this file fails loudly here rather than at first query.
--- R.5's CheckFTS5 guard still runs independently at every process start.
+-- The migration runner's CheckFTS5 guard still runs independently at every process start.
 --
 -- KNOWN DEFECT, CARRIED FORWARD DELIBERATELY AND REPORTED, NOT SILENTLY
 -- PATCHED. `content='advisory'` makes FTS5 read column values back from
@@ -84,10 +84,10 @@ CREATE INDEX idx_alias_lookup ON advisory_alias(alias_id);
 --     SQL logic error: no such column: T.aliases
 -- Verified empirically on modernc.org/sqlite v1.56.0. Writes into
 -- advisory_fts and rowid-only MATCH queries work; ddl_test.go exercises
--- exactly those. R.4 does not invent a fix because the two candidate repairs
+-- exactly those. The store schema does not invent a fix because the two candidate repairs
 -- (point `content=` at a view that projects the aliases, or drop `aliases`
 -- from the FTS columns and re-derive the bm25 weights) both change an
--- interface area 20's ingestion owns. Flagged to the orchestrator.
+-- interface Lane A's ingestion owns. Flagged to the orchestrator.
 CREATE VIRTUAL TABLE advisory_fts USING fts5(
   summary, details, aliases,
   content='advisory', content_rowid='rowid',
@@ -135,7 +135,7 @@ CREATE TABLE trigger_policy (                -- HARD CONSTRAINT: policy lives in
 );
 CREATE INDEX idx_policy_enabled ON trigger_policy(target_id, kind) WHERE enabled = 1;
 
-CREATE TABLE ingest_watermark (              -- delta scraping cursors (feeds = area 20)
+CREATE TABLE ingest_watermark (              -- delta scraping cursors (feeds = Lane A)
   source          TEXT PRIMARY KEY,
   cursor          TEXT,
   etag            TEXT,
@@ -162,22 +162,23 @@ CREATE TABLE scan_run (
 CREATE INDEX idx_scan_target_time ON scan_run(target_id, started_at DESC);
 CREATE INDEX idx_scan_running     ON scan_run(target_id) WHERE status = 'running';
 
--- ============ AUDIT RECORD — the collapsed store (S1: no second durable buffer file) ============
+-- ============ AUDIT RECORD — the collapsed store (the spine's
+-- corrected-requirements table: no second durable buffer file) ============
 CREATE TABLE audit_record (
   audit_record_id       INTEGER PRIMARY KEY,
   scan_run_id           INTEGER NOT NULL UNIQUE REFERENCES scan_run(scan_run_id),
   schema_version        TEXT NOT NULL,                   -- anvil/schemaVersion
-  audit_version         INTEGER NOT NULL DEFAULT 1,      -- anvil/version; a bump triggers R.11's queue re-cut
+  audit_version         INTEGER NOT NULL DEFAULT 1,      -- anvil/version; a bump triggers the queue re-cut
   state                 TEXT NOT NULL,                   -- anvil/state
   sast_status           TEXT,                            -- per-half status (anvil/status)
   sast_sealed_at        TEXT,
-  dast_status           TEXT NOT NULL DEFAULT 'not_run', -- S6: never NULL, never silently 'completed_clean'
+  dast_status           TEXT NOT NULL DEFAULT 'not_run', -- the spine's record section: never NULL, never silently 'completed_clean'
   dast_sealed_at        TEXT,
-  dast_coverage_json    TEXT,                            -- S6: {probedCount, inventoryUnionCount, inventoryProvenanceMix}
-  target_provenance     TEXT NOT NULL,                   -- S6: a target that failed to boot must be distinguishable from scanned clean
+  dast_coverage_json    TEXT,                            -- the spine's record section: {probedCount, inventoryUnionCount, inventoryProvenanceMix}
+  target_provenance     TEXT NOT NULL,                   -- the spine's record section: a target that failed to boot must be distinguishable from scanned clean
   deadline_at           TEXT NOT NULL,                   -- = scan_run.started_at + claim_timeout_seconds. NEVER recomputed.
   claim_timeout_seconds INTEGER NOT NULL DEFAULT 28800,  -- 8h default, configurable. A CLAIM timeout, not a deletion policy.
-  dast_deadline_seconds INTEGER,                         -- S6: configurable, independent clock from claim_timeout_seconds
+  dast_deadline_seconds INTEGER,                         -- the spine's record section: configurable, independent clock from claim_timeout_seconds
   payload               BLOB,                            -- zstd(canonical SARIF JSON); NULLed by the reaper at deadline_at
   payload_sha256        TEXT NOT NULL,                   -- survives payload deletion: proof of what was handed over
   created_at            TEXT NOT NULL,
@@ -222,7 +223,7 @@ CREATE TABLE code_location (
 CREATE INDEX idx_loc_path ON code_location(repo_relpath, start_line);
 
 -- ============ FINDING: the stable identity ============
--- Extended from research/07 with the S6/S24 fields (evidence_class, verdict,
+-- Extended from research/07 with the spine's and research/24's fields (evidence_class, verdict,
 -- remediable_by_agent). `finding_id` is the permanent key; `fingerprint` is a
 -- lookup key that may be re-derived, because no vendor guarantees fingerprint
 -- stability (research/07 Risk #1).
@@ -234,8 +235,8 @@ CREATE TABLE finding (
   detector            TEXT NOT NULL,          -- finding.detector
   evidence_class      TEXT NOT NULL,          -- anvil/evidenceClass
   rule_id             TEXT NOT NULL,          -- versioned: 'anvil.py.sqli/v3'
-  verdict             TEXT NOT NULL DEFAULT 'true_positive',  -- S6: anvil/verdict
-  remediable_by_agent INTEGER NOT NULL,       -- S6: 0/1; host findings are ALWAYS 0 (S7 read-only host agent)
+  verdict             TEXT NOT NULL DEFAULT 'true_positive',  -- the spine's record section: anvil/verdict
+  remediable_by_agent INTEGER NOT NULL,       -- the spine's record section: 0/1; host findings are ALWAYS 0 (the spine's safety section read-only host agent)
   advisory_id         TEXT REFERENCES advisory(advisory_id),
   component_id        INTEGER REFERENCES component(component_id),
   severity            TEXT NOT NULL,
@@ -264,7 +265,7 @@ CREATE INDEX idx_finding_evclass ON finding(target_id, evidence_class);
 CREATE INDEX idx_finding_verdict ON finding(verdict) WHERE verdict != 'true_positive';
 CREATE INDEX idx_finding_adv     ON finding(advisory_id) WHERE advisory_id IS NOT NULL;
 CREATE INDEX idx_finding_comp    ON finding(component_id) WHERE component_id IS NOT NULL;
--- NOTE on `resolved_by_fix`: research/07 §2 and plan/40's Store Schema both
+-- NOTE on `resolved_by_fix`: research/07 §2 and plan/design/record-and-store.md's Store Schema both
 -- declare it a bare INTEGER, not a REFERENCES clause, because `fix_attempt`
 -- also references `finding` and a mutual FK pair cannot be satisfied by either
 -- insert order without deferred constraints. Carried forward as specified.
@@ -281,7 +282,7 @@ CREATE TABLE finding_fingerprint (
 CREATE INDEX idx_fp_lookup ON finding_fingerprint(kind, value);
 
 -- ============ OCCURRENCE: one row per (finding, scan) ============
--- Extended with the S6 advisory-staleness fields.
+-- Extended with the spine's record section advisory-staleness fields.
 CREATE TABLE finding_occurrence (
   occurrence_id               INTEGER PRIMARY KEY,
   finding_id                  INTEGER NOT NULL REFERENCES finding(finding_id) ON DELETE CASCADE,
@@ -290,9 +291,9 @@ CREATE TABLE finding_occurrence (
   confidence                  REAL,
   message                     TEXT,          -- hashes/pointers only; oversized inserts rejected by trigger
   evidence_ref                TEXT,          -- pointer INTO the sealed payload; never the raw request/response
-  advisory_as_of              TEXT,          -- S6: as_of
-  advisory_staleness_seconds  INTEGER,       -- S6: staleness_seconds
-  advisory_parse_degraded     INTEGER NOT NULL DEFAULT 0,  -- S6: parse_degraded
+  advisory_as_of              TEXT,          -- the spine's record section: as_of
+  advisory_staleness_seconds  INTEGER,       -- the spine's record section: staleness_seconds
+  advisory_parse_degraded     INTEGER NOT NULL DEFAULT 0,  -- the spine's record section: parse_degraded
   UNIQUE (finding_id, scan_run_id),
   CONSTRAINT ck_occurrence_parse_degraded_bool CHECK (advisory_parse_degraded IN (0, 1))
 );
@@ -390,23 +391,25 @@ CREATE TABLE file_state (
   PRIMARY KEY (target_id, repo_relpath)
 );
 
--- ============ HANDOFF — the collapsed buffer replacement (S1: state/lease/attempts/expiry) ============
+-- ============ HANDOFF — the collapsed buffer replacement (the spine's
+-- corrected-requirements table: state/lease/attempts/expiry) ============
 --
--- ONE TABLE, ONE STATE COLUMN. plan/IMPLEMENTATION-PLAN.md §6 G10 traced the
--- concrete bug that a second table produces: area X wrote `skipped_budget` to
--- its own `anvil_ledger` while area 40's ready-set index still saw the finding
+-- ONE TABLE, ONE STATE COLUMN. The one-ledger ruling traced the
+-- concrete bug that a second table produces: remediation wrote `skipped_budget` to
+-- its own `anvil_ledger` while the record area's ready-set index still saw the finding
 -- as 'ready', so the finding was re-leased forever. `anvil_ledger` is deleted;
 -- its four extra dispositions (fixed_incidentally, split_required, withdrawn,
 -- superseded) are values of `state` here.
 --
--- `consumption_class` arrives from area 70's O.3 (§6 G9). Nothing else in this
--- schema can express the gate research/21 §5 requires: `static_only` findings
--- are claimable once the SAST half is sealed, `requires_dynamic_confirmation`
--- findings must wait on the DAST half. It is NOT NULL with NO DEFAULT on
--- purpose — a default would silently grant every row the permissive value, and
--- plan/00-SPINE.md S7 says only a DAST reproduction earns "verified fixed".
+-- `consumption_class` arrives from the control plane's the handoff adapter (the
+-- handoff-table ruling). Nothing else in this schema can express the gate
+-- research/21 §5 requires: `static_only` findings are claimable once the SAST
+-- half is sealed, `requires_dynamic_confirmation` findings must wait on the
+-- DAST half. It is NOT NULL with NO DEFAULT on purpose — a default would
+-- silently grant every row the permissive value, and the spine's safety section
+-- says only a DAST reproduction earns "verified fixed".
 --
--- TWO INDEPENDENT CLOCKS, NEVER CONFLATED (S1):
+-- TWO INDEPENDENT CLOCKS, NEVER CONFLATED (the spine's corrected-requirements table):
 --   handoff.lease_expires_at          15-30 min, heartbeat-renewed, governs ONE
 --                                     coding-agent attempt.
 --   audit_record.claim_timeout_seconds default 8h, governs how long an
@@ -422,8 +425,8 @@ CREATE TABLE handoff (
   fingerprint       TEXT NOT NULL,           -- denormalised for the reaper's WHERE clause
   group_id          TEXT,                    -- fix-group id, assigned by the coding-agent consumption pipeline
   state             TEXT NOT NULL DEFAULT 'ready',
-  consumption_class TEXT NOT NULL,           -- from O.3 per §6 G9; no default, see note above
-  claimed_by        TEXT,                    -- worker_id (O.3's lease_owner)
+  consumption_class TEXT NOT NULL,           -- from the handoff adapter per the handoff-table ruling; no default, see note above
+  claimed_by        TEXT,                    -- worker_id (the handoff adapter's lease_owner)
   lease_expires_at  TEXT,                    -- claim lease. NOT audit_record.claim_timeout_seconds.
   attempts          INTEGER NOT NULL DEFAULT 0,
   max_attempts      INTEGER NOT NULL DEFAULT 2,
@@ -449,7 +452,7 @@ CREATE INDEX idx_handoff_lease ON handoff(lease_expires_at) WHERE state = 'lease
 CREATE INDEX idx_handoff_fp    ON handoff(fingerprint);
 
 -- ============ MIGRATIONS ============
--- Rows are written by R.5's migrate.go, in the same transaction that applies
+-- Rows are written by the migration runner's migrate.go, in the same transaction that applies
 -- the migration and bumps PRAGMA user_version.
 CREATE TABLE schema_migration (
   version    INTEGER PRIMARY KEY,

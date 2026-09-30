@@ -1,6 +1,6 @@
-// delta_test.go is A.14's evidence.
+// delta_test.go is delta ingestion's evidence.
 //
-// The two claims A.14's packet asks to be measured are measured, not asserted:
+// The two claims delta ingestion's design asks to be measured are measured, not asserted:
 //
 //  1. "A 200-row delta batch produces exactly 200 upserts and zero full-table
 //     statements." Counted from a SQL TRACE taken at the driver layer, so it
@@ -19,7 +19,7 @@
 //     them, and a green run over an empty corpus is treated as a broken test
 //     rather than as a pass.
 //   - NO CORPUS COMES FROM THE IMPLEMENTATION. The conformance test compares
-//     this package's decoder against A.8's over the same bytes; the fixture
+//     this package's decoder against the bulk bootstrap's over the same bytes; the fixture
 //     documents are written here and consumed by both.
 //   - NO NETWORK. httptest only, and the licence gate's fixture mirror is an
 //     fstest.MapFS. No test reads the process environment, so a machine with a
@@ -73,7 +73,7 @@ import (
 // names, and is never read by this suite.
 const fixtureToken = "not-a-real-token-0000-test-only"
 
-// cc0Verbatim is the publisher licence body the synthetic mirror pins. A.4
+// cc0Verbatim is the publisher licence body the synthetic mirror pins. The licence gate
 // classifies BODIES, so a fixture that wants an admission has to supply one.
 const cc0Verbatim = `Creative Commons Legal Code
 
@@ -115,7 +115,7 @@ func init() {
 // It does not call cache.Open, which resolves its own driver name: the trace
 // has to sit under this package's statements, and the DSN is taken from
 // cache.DSN so the connection pragmas (WAL, foreign_keys, busy_timeout) are the
-// ones A.2 requires rather than a set assembled here.
+// ones the ingestion cache requires rather than a set assembled here.
 func openTracedCache(t *testing.T) (*sql.DB, *sqlTrace) {
 	t.Helper()
 	dsn, err := cache.DSN(filepath.Join(t.TempDir(), "anvil-cache.sqlite"))
@@ -166,7 +166,7 @@ func digestOf(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// admittingMirror renders the mirror tree A.4 reads: a pinned manifest, the
+// admittingMirror renders the mirror tree the licence gate reads: a pinned manifest, the
 // publisher's acquired text at the digest the pin names, and Anvil's own
 // record.
 //
@@ -237,7 +237,7 @@ func fixtureFeed(id, rawURL string, intervalSeconds, reconcileSeconds, baselineS
 	}
 }
 
-// newTestSyncer wires a Syncer to a REAL A.7 poller pointed at an httptest
+// newTestSyncer wires a Syncer to a REAL poller pointed at an httptest
 // server. Using the real poller is the point: it is what makes the licence
 // gate run before the request, and a fake would let this suite pass with the
 // gate bypassed.
@@ -465,8 +465,9 @@ func (f *fixtureSource) Record(_ context.Context, _ config.FeedConfig, id string
 
 // TestEveryRouteIsListed keeps the enum and its value list from drifting. A
 // Route added without an entry in RouteValues would report Valid() == false
-// about itself, which is the kind of quiet inconsistency §6's single-owner rule
-// exists to prevent for the record contract's own enums.
+// about itself, which is the kind of quiet inconsistency the shared-vocabulary
+// review's single-owner rule exists to prevent for the record contract's own
+// enums.
 func TestEveryRouteIsListed(t *testing.T) {
 	seen := map[Route]bool{}
 	for _, r := range RouteValues() {
@@ -502,7 +503,7 @@ func TestEveryRouteIsListed(t *testing.T) {
 // TestDueTakesEveryCadenceFromTheFeedRow varies only the row's numbers and
 // asserts the schedule follows them.
 //
-// It is the consuming half of A.1's rule. feeds_test.go proves the feed table's
+// It is the consuming half of the feed table's rule. feeds_test.go proves the feed table's
 // own source carries no cadence literal; this proves the consumer does not
 // quietly substitute one when the row says something unusual, which is the
 // defect that would make an operator's `interval_seconds: 86400` on a
@@ -602,9 +603,9 @@ func TestReconcileAndBaselineAreWindowBoundariesNotElapsedTime(t *testing.T) {
 	}
 }
 
-// TestNoCadenceLiteralIsWrittenInThisPackage is A.1's rule applied to the
-// consumer, and it is the assertion A.14's brief names as the defect A.1 has an
-// AST test against.
+// TestNoCadenceLiteralIsWrittenInThisPackage is the feed table's rule applied to the
+// consumer, and it is the assertion delta ingestion's brief names as the defect
+// the feed table has an AST test against.
 //
 // THE SCANNER IS VERIFIED RED against synthetic source in the same run. A
 // scanner that found nothing because it was looking for the wrong thing would
@@ -690,7 +691,7 @@ func readSource(name string) (string, error) {
 // ---------------------------------------------------------------------------
 
 // TestStatementAllowlistRefusesEveryFullTableStatement is the guard behind
-// A.14's forbidden action, "do not rebuild advisory_fts wholesale on any delta
+// delta ingestion's forbidden action, "do not rebuild advisory_fts wholesale on any delta
 // batch, regardless of batch size".
 //
 // It is checked in BOTH directions. A guard that refused everything would pass
@@ -807,7 +808,7 @@ func TestADeltaLogHasNowhereToPutAURL(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// (c) A.14's headline validation
+// (c) delta ingestion's headline validation
 // ---------------------------------------------------------------------------
 
 // fullTablePatterns are the statement shapes that must NEVER appear in a delta
@@ -832,7 +833,7 @@ var unscopedFTSDelete = regexp.MustCompile(`(?is)\bDELETE\s+FROM\s+advisory_fts\
 
 var rowidScoped = regexp.MustCompile(`(?is)\bWHERE\s+rowid\s*=\s*\?`)
 
-// TestTwoHundredRowDeltaBatchCostsExactlyTwoHundredUpserts is the number A.14's
+// TestTwoHundredRowDeltaBatchCostsExactlyTwoHundredUpserts is the number delta ingestion's
 // packet asks for, taken from a driver-layer trace.
 func TestTwoHundredRowDeltaBatchCostsExactlyTwoHundredUpserts(t *testing.T) {
 	const rows = 200
@@ -895,7 +896,7 @@ func TestTwoHundredRowDeltaBatchCostsExactlyTwoHundredUpserts(t *testing.T) {
 	}
 }
 
-// TestFTSStaysQueryConsistentWithAdvisoryAfterABatch is A.14's stop condition.
+// TestFTSStaysQueryConsistentWithAdvisoryAfterABatch is delta ingestion's stop condition.
 //
 // It is a ROUND TRIP: the text is written through the delta path and then read
 // back through a MATCH query joined to `advisory`. It also re-runs the batch
@@ -966,7 +967,7 @@ func TestFTSStaysQueryConsistentWithAdvisoryAfterABatch(t *testing.T) {
 // (d) The cost model
 // ---------------------------------------------------------------------------
 
-// TestTheDeltaLogIsPreferredOverRedownloadingTheCumulativeArchive is A.14's
+// TestTheDeltaLogIsPreferredOverRedownloadingTheCumulativeArchive is delta ingestion's
 // second named validation, and it is measured in bytes.
 //
 // research/06's finding is the whole reason this package exists: the hourly
@@ -1160,7 +1161,7 @@ func TestTheDeltaLogsOwnLinksAreNeverFetched(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// (e) Cross-producer conformance with A.8
+// (e) Cross-producer conformance with the bulk bootstrap
 // ---------------------------------------------------------------------------
 
 // TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows is the guard on the
@@ -1168,8 +1169,8 @@ func TestTheDeltaLogsOwnLinksAreNeverFetched(t *testing.T) {
 //
 // WHAT IT GUARDED, AND WHAT IT GUARDS NOW. It was written when
 // internal/ingest/bootstrap's decoders were unexported and this package had
-// re-derived them: two DECODERS for one wire format, which A.21 ended by
-// extracting internal/ingest/decode (orchestrator ruling G11). Decoding is now
+// re-derived them: two DECODERS for one wire format, which the Lane A exit gate ended by
+// extracting internal/ingest/decode (the one-decoder ruling). Decoding is now
 // one implementation and a decoder divergence is no longer expressible, so
 // this test could have become tautological — a test that cannot fail is worse
 // than no test.
@@ -1178,7 +1179,7 @@ func TestTheDeltaLogsOwnLinksAreNeverFetched(t *testing.T) {
 // cache.UpsertAdvisorySQL from its own staleness, tombstone and licence-column
 // derivation, and delta's writeRecord binds the same statement from its own.
 // Those are the halves that can still drift, and a divergence in either still
-// makes A.15's weekly self-heal restore the same rows forever with nothing
+// makes the weekly self-heal restore the same rows forever with nothing
 // surfacing why. Verified RED at extraction time: perturbing one bound column
 // in bootstrap's writer fails this test on every row.
 //
@@ -1215,7 +1216,7 @@ func TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows(t *testing.T) {
 	feed.BootstrapURL = srv.URL + "/all.zip"
 	mirror := admittingMirror(t, feed)
 
-	// --- A.8's importer. ---
+	// --- the bulk bootstrap's importer. ---
 	bootDB := openPlainCache(t)
 	b := &bootstrap.Bootstrapper{
 		DB:      bootDB,
@@ -1230,7 +1231,7 @@ func TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows(t *testing.T) {
 		t.Fatalf("bootstrap: %v (refused: %s)", err, res.RefusedBecause)
 	}
 	if res.RecordsUpserted == 0 {
-		t.Fatalf("A.8 imported nothing, so there is nothing to compare against")
+		t.Fatalf("The bulk bootstrap imported nothing, so there is nothing to compare against")
 	}
 
 	// --- This package's write path over the same bytes. ---
@@ -1275,14 +1276,14 @@ FROM advisory ORDER BY source, source_id`
 		t.Fatal("the reference cache is empty; the comparison would pass vacuously")
 	}
 	if len(left) != len(right) {
-		t.Fatalf("A.8 wrote %d advisory rows and A.14 wrote %d from the same documents:\nA.8:  %v\nA.14: %v",
+		t.Fatalf("The bulk bootstrap wrote %d advisory rows and delta ingestion wrote %d from the same documents:\nbootstrap: %v\ndelta:     %v",
 			len(left), len(right), rowKeys(left), rowKeys(right))
 	}
 	for i := range left {
 		if left[i] != right[i] {
-			t.Errorf("advisory row %d differs between the two importers.\nA.8:  %s\nA.14: %s\n"+
+			t.Errorf("advisory row %d differs between the two importers.\nbootstrap: %s\ndelta:     %s\n"+
 				"Two producers writing one table from one document must agree; a divergence here makes "+
-				"A.15's weekly self-heal restore the same rows forever with nothing surfacing why.",
+				"the weekly self-heal restore the same rows forever with nothing surfacing why.",
 				i, left[i], right[i])
 		}
 	}
@@ -1293,15 +1294,15 @@ SELECT source, source_id, ecosystem, package, ifnull(purl,''), ifnull(introduced
 FROM affected ORDER BY source, source_id, ecosystem, package, ifnull(introduced,''), ifnull(fixed,'')`
 	la, ra := dumpRows(t, a, affectedQ), dumpRows(t, b, affectedQ)
 	if !reflect.DeepEqual(la, ra) {
-		t.Errorf("the two importers disagree about `affected`:\nA.8:  %v\nA.14: %v", la, ra)
+		t.Errorf("the two importers disagree about `affected`:\nbootstrap: %v\ndelta:     %v", la, ra)
 	}
 
-	// advisory_fts IS COMPARED, and it was not until A.21.
+	// advisory_fts IS COMPARED, and it was not until the Lane A exit gate.
 	//
-	// The omission cost a real divergence: A.8's writer indexed every record
-	// including tombstoned ones while A.14's de-indexed them, so a REJECTED
-	// advisory stayed searchable on one path and not the other — and A.15's
-	// weekly baseline re-runs A.8's path, which would have re-indexed it every
+	// The omission cost a real divergence: the bulk bootstrap's writer indexed every record
+	// including tombstoned ones while delta ingestion's de-indexed them, so a REJECTED
+	// advisory stayed searchable on one path and not the other — and the weekly self-heal's
+	// weekly baseline re-runs the bulk bootstrap's path, which would have re-indexed it every
 	// week forever. Three columns compared and one not is how a cross-producer
 	// guard passes over the producer's actual difference.
 	// The query asks whether an index ROW EXISTS, not what it contains.
@@ -1315,13 +1316,13 @@ FROM advisory a LEFT JOIN advisory_fts f ON f.rowid = a.rowid
 ORDER BY a.source, a.source_id`
 	lf, rf := dumpRows(t, a, ftsQ), dumpRows(t, b, ftsQ)
 	if !reflect.DeepEqual(lf, rf) {
-		t.Errorf("the two importers disagree about `advisory_fts`:\nA.8:  %v\nA.14: %v", lf, rf)
+		t.Errorf("the two importers disagree about `advisory_fts`:\nbootstrap: %v\ndelta:     %v", lf, rf)
 	}
 
 	const aliasQ = `SELECT cve_id, source, source_id FROM cve_alias ORDER BY cve_id, source, source_id`
 	lc, rc := dumpRows(t, a, aliasQ), dumpRows(t, b, aliasQ)
 	if !reflect.DeepEqual(lc, rc) {
-		t.Errorf("the two importers disagree about `cve_alias`:\nA.8:  %v\nA.14: %v", lc, rc)
+		t.Errorf("the two importers disagree about `cve_alias`:\nbootstrap: %v\ndelta:     %v", lc, rc)
 	}
 }
 
@@ -1329,8 +1330,8 @@ ORDER BY a.source, a.source_id`
 // (f) The refusal paths, which are the ORDINARY paths today
 // ---------------------------------------------------------------------------
 
-// TestALicenceRefusalCostsNoRequestAndWritesNoRow is A.7's ordering seen from
-// A.14: the gate runs BEFORE the request, so a feed with no acquired licence
+// TestALicenceRefusalCostsNoRequestAndWritesNoRow is the poller's ordering seen from
+// delta ingestion: the gate runs BEFORE the request, so a feed with no acquired licence
 // body costs no bytes at all.
 //
 // This is the state of a fresh clone — internal/ingest/license currently admits
@@ -1373,7 +1374,7 @@ func TestALicenceRefusalCostsNoRequestAndWritesNoRow(t *testing.T) {
 	}
 }
 
-// TestANotModifiedResponseWritesNothing is the A.2 cache's exit criterion 3
+// TestANotModifiedResponseWritesNothing is Lane A exit criterion 3
 // seen from the delta path.
 func TestANotModifiedResponseWritesNothing(t *testing.T) {
 	const feedID = "cisa-kev"
@@ -1465,7 +1466,7 @@ func TestDelegatedRoutesRefuseLoudly(t *testing.T) {
 			t.Errorf("the refusal does not satisfy ErrNoReconciler: %v", err)
 		}
 		if !strings.Contains(st.Note, "570") {
-			t.Errorf("the note does not say why the route is not defaulted to A.8's importer: %q", st.Note)
+			t.Errorf("the note does not say why the route is not defaulted to the bulk bootstrap's importer: %q", st.Note)
 		}
 	})
 
@@ -1486,7 +1487,7 @@ func TestDelegatedRoutesRefuseLoudly(t *testing.T) {
 // TestABodyInAnUnreadShapeIsARoutingNoteNotADroppedChange.
 //
 // CSAF directory listings, per-branch distro secdb files and the EPSS CSV all
-// reach the cache through A.8's bulk path. When one of them arrives here the
+// reach the cache through the bulk bootstrap's bulk path. When one of them arrives here the
 // correct outcome is a stated routing fact — not a failed sync (which makes a
 // correctly-configured feed look broken) and not a silent success (which loses
 // the change).
@@ -1506,7 +1507,7 @@ func TestABodyInAnUnreadShapeIsARoutingNoteNotADroppedChange(t *testing.T) {
 	if st.Batch.Upserts != 0 {
 		t.Errorf("%d rows were written from a body this path does not decode", st.Batch.Upserts)
 	}
-	if !strings.Contains(st.Note, "A.8") {
+	if !strings.Contains(st.Note, "bulk bootstrap") {
 		t.Errorf("the note does not name the path that does handle it: %q", st.Note)
 	}
 }
@@ -1516,7 +1517,7 @@ func TestABodyInAnUnreadShapeIsARoutingNoteNotADroppedChange(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestApplyRefusesARecordThatSkippedTheSanitizer is the precondition check that
-// makes A.3's obligation true for a caller this package cannot see — A.15
+// makes the sanitizer's obligation true for a caller this package cannot see — the weekly self-heal
 // builds Records from its own baseline read and reaches the same statements.
 //
 // It is verified in both directions in one run: the same record fails with an
@@ -1583,7 +1584,7 @@ func TestApplyRefusesAnUnadmittedLicenceDecision(t *testing.T) {
 	}
 }
 
-// TestATombstonedAdvisoryLeavesTheIndexAndKeepsItsRow is A.2 exit criterion 22
+// TestATombstonedAdvisoryLeavesTheIndexAndKeepsItsRow is Lane A exit criterion 22
 // on the delta path: a REJECTED CVE record is tombstoned, never deleted, so a
 // finding that depended on it becomes invalidated rather than vanishing — and
 // its text stops matching, so nothing retrieves it as live advice.
@@ -1697,10 +1698,10 @@ func TestAZipBodyIsUnpackedIntoItsMembers(t *testing.T) {
 // TestADistroOSVRecordCarriesTheBackportFlag is the other half: research/12 §3
 // records that a distro backports a fix without moving the upstream version, so
 // an upstream range calls a patched package vulnerable. The column only helps
-// A.17 if it is actually set.
+// the comparator if it is actually set.
 func TestADistroOSVRecordCarriesTheBackportFlag(t *testing.T) {
 	// The row is a tier 0 fixture on purpose. The share-alike QUARANTINE is
-	// A.4's own tested territory and needs a share-alike licence BODY to
+	// the licence gate's own tested territory and needs a share-alike licence BODY to
 	// exercise; what is under test here is that a distro's OSV export produces
 	// a backported range whatever tier it is admitted at, because the flag is
 	// a property of the ecosystem and not of the licence.
@@ -1724,7 +1725,7 @@ func TestADistroOSVRecordCarriesTheBackportFlag(t *testing.T) {
 	if n := countRows(t, db, `SELECT count(*) FROM affected WHERE distro_backport = 1`); n != 1 {
 		t.Errorf("%d backported ranges, want 1", n)
 	}
-	// The licence columns come from A.4's DECISION, never from the feed row's
+	// The licence columns come from the licence gate's DECISION, never from the feed row's
 	// own claim: a writer that re-read the YAML would launder an unverified
 	// assertion into the cache.
 	if n := countRows(t, db, `SELECT count(*) FROM advisory WHERE license_tier = ? AND license_spdx = ?`,
@@ -1746,7 +1747,7 @@ func assertNoFullTableStatement(t *testing.T, statements []string) {
 	for _, f := range fullTableFindings(statements) {
 		t.Errorf("a delta batch issued a full-table statement:\n\t%s\n"+
 			"A 200-record delta costs 200 row upserts and NOT a rebuild (internal/ingest/cache), "+
-			"and A.14 forbids it regardless of batch size.", f)
+			"and delta ingestion forbids it regardless of batch size.", f)
 	}
 }
 

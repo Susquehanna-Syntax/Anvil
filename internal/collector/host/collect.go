@@ -1,5 +1,5 @@
-// Package host is Anvil's READ-ONLY host package collector (step A.9 of
-// plan/20-lane-a-ingestion-sca.md).
+// Package host is Anvil's READ-ONLY host package collector (plan node
+// hostcollector; design in plan/design/lane-a.md).
 //
 // It enumerates the packages a Linux host has installed by asking the native
 // package database — `dpkg-query -W`, `rpm -qa`, `apk list --installed` /
@@ -8,7 +8,7 @@
 //
 // # The read-only boundary, and why it is built this way
 //
-// plan/00-SPINE.md S7 states the rule without an exception clause:
+// The spine's safety section states the rule without an exception clause:
 //
 //	The host agent is read-only — no package manager in a mutating mode,
 //	not behind a flag.
@@ -58,7 +58,7 @@
 // argv() stops being a switch over those constants. Its spawn analyser
 // resolves identity through each file's import table rather than matching the
 // source spelling, because an alias, a dot import and a function value are
-// three ways to spell the same call and A.12's review defeated the previous
+// three ways to spell the same call and the read-only-boundary review defeated the previous
 // guard with all three. It carries negative controls: synthetic sources
 // containing `apk add`, `rpm -U`, `dpkg -i`, `apt-get install -y`, an aliased
 // `xc.Command`, a dot-imported `Command`, a function-value `spawn :=
@@ -119,12 +119,12 @@
 // because a launcher that reproduces neither property re-opens the hole.
 //
 // LIMITS OF THIS STATEMENT, so it is not over-read in the other direction:
-// this is a documented property of rpm's BDB backend, recorded because A.12's
-// review found the unconditional claim and could not reproduce the behaviour
-// on a Windows development host. It has NOT been reproduced by this repository
-// on a BDB host, and the sqlite and ndb backends' sidecar behaviour
-// (`rpmdb.sqlite-wal`, `-shm`) has not been examined at all. Nothing is
-// asserted about them in either direction.
+// this is a documented property of rpm's BDB backend, recorded because the
+// read-only-boundary review's review found the unconditional claim and could
+// not reproduce the behaviour on a Windows development host. It has NOT been
+// reproduced by this repository on a BDB host, and the sqlite and ndb backends'
+// sidecar behaviour (`rpmdb.sqlite-wal`, `-shm`) has not been examined at all.
+// Nothing is asserted about them in either direction.
 //
 // # Root-free
 //
@@ -139,7 +139,7 @@
 //
 // # Host findings are never remediable by an agent
 //
-// plan/00-SPINE.md S6 and Lane A exit criterion 21: `remediable_by_agent` is
+// The spine's record section and Lane A exit criterion 21: `remediable_by_agent` is
 // false for 100% of host-collector-sourced records, "with no code path, flag,
 // or config key capable of overriding it". Here it is the untyped constant
 // RemediableByAgent, which is false and cannot be otherwise; Inventory and
@@ -151,13 +151,13 @@
 //
 // Every string in the Inventory except Anvil's own labels came off a host
 // Anvil does not control, through a parser, so it is record.TrustUntrusted
-// (plan/00-SPINE.md S6: the field is required "on every string originating
+// (the spine's record section: the field is required "on every string originating
 // outside Anvil"). Each one passes through internal/ingest/sanitize before it
 // is stored, and Collect fails closed if AssertSanitized then rejects it.
 //
 // # What this package does NOT do
 //
-// It does not match advisories (A.17's comparator does), does not open a
+// It does not match advisories (the comparator does), does not open a
 // database, and does not POST. It deliberately does not import
 // internal/ingest/cache: that package links modernc.org/sqlite, and a
 // collector shipped onto a customer's production server has no business
@@ -195,7 +195,7 @@ import (
 // overriding it. A `const` is the only construct in Go that makes that claim
 // true rather than asserted: there is no assignable location to write to.
 //
-// plan/00-SPINE.md S6 says host findings are false; the coding agent's write
+// The spine's record section says host findings are false; the coding agent's write
 // surface is the git repository only (research/12 Hard boundary #2), so
 // handing it a host finding as actionable asks it to do something it cannot do
 // and must not try.
@@ -229,7 +229,7 @@ const Collector = "host"
 // internal/ingest/cache's `affected.ecosystem` / `finding.ecosystem` columns
 // document ('deb' | 'rpm' | 'apk' | ...). Ecosystem is not one of the record
 // contract's six frozen enums, so declaring the Lane-A-local members here does
-// not violate plan/IMPLEMENTATION-PLAN.md §6's single-owner rule — exactly as
+// not violate the shared-vocabulary review's single-owner rule — exactly as
 // cache declares CollectorHost. They exist so no caller writes a bare literal.
 const (
 	// EcosystemDeb is Debian/Ubuntu and derivatives, enumerated by dpkg-query.
@@ -297,7 +297,7 @@ const rpmFormat = "%{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\t%{ARCH}\n"
 // Each is one Go constant holding a whole argv. Constants are fixed at compile
 // time: no code in this package or any other can append an argument, rewrite
 // an element, or substitute a different binary, because there is no storage to
-// write to. This is the "compile-time constant list" A.9's Expected output
+// write to. This is the "compile-time constant list" the host collector's Expected output
 // schema asks for, and it is the list collect_test.go greps.
 //
 // Every verb here is an ENUMERATION verb. dpkg-query has no mutating mode at
@@ -335,8 +335,9 @@ const (
 // It is a switch over a closed set of constants and nothing else. There is no
 // append, no formatting, no environment lookup and no caller-supplied input:
 // the only way to change what this binary can execute is to edit a constant
-// above and get the change past collect_test.go's verb guard and past A.12's
-// review. An unknown queryID yields nil, which runQuery refuses.
+// above and get the change past collect_test.go's verb guard and past the
+// read-only-boundary review's review. An unknown queryID yields nil, which
+// runQuery refuses.
 func (q queryID) argv() []string {
 	switch q {
 	case queryDpkgList:
@@ -540,7 +541,7 @@ var _ io.Writer = (*cappedBuffer)(nil)
 // ---------------------------------------------------------------------------
 
 // Package is one installed package. This is the `{ecosystem, package, version,
-// arch}` shape A.9's Expected output schema names, with JSON keys matching
+// arch}` shape the host collector's Expected output schema names, with JSON keys matching
 // internal/ingest/cache's `finding` column names where they correspond.
 type Package struct {
 	// Ecosystem is EcosystemDeb, EcosystemRPM or EcosystemAPK.
@@ -553,7 +554,7 @@ type Package struct {
 	// Version is the installed version, verbatim from the package database
 	// apart from sanitising and the RPM epoch normalisation documented on
 	// normaliseRPMVersion. It is NOT parsed or re-rendered here: version
-	// comparison is A.17's, and a collector that reformats a version has
+	// comparison is the comparator's, and a collector that reformats a version has
 	// already lost the comparison.
 	Version string `json:"version"`
 	// Arch is the package architecture, empty when the source did not report
@@ -590,7 +591,7 @@ const (
 	FamilyFailed FamilyStatus = "failed"
 )
 
-// FamilyCoverage is the per-family outcome. plan/00-SPINE.md S6 requires
+// FamilyCoverage is the per-family outcome. The spine's record section requires
 // `inventory_provenance` and Lane A exit criterion 20 requires that a run
 // never report a silent "clean": a zero-package inventory that says every
 // family was absent means something completely different from one that says
@@ -619,7 +620,7 @@ type FamilyCoverage struct {
 	Err string `json:"error,omitempty"`
 }
 
-// Provenance is the `inventory_provenance` plan/00-SPINE.md S6 requires.
+// Provenance is the `inventory_provenance` the spine's record section requires.
 type Provenance struct {
 	// Method is always the native-query method; this collector has one.
 	Method string `json:"method"`
@@ -641,33 +642,33 @@ type Provenance struct {
 	Timeout string `json:"queryTimeout"`
 }
 
-// Inventory is one host's package inventory: the artifact A.9 produces and
-// A.17's version comparator consumes.
+// Inventory is one host's package inventory: the artifact the host collector produces and
+// the version comparator consumes.
 //
 // It is not a finding and carries no fingerprint. anvil-fp/v1 is defined once,
 // in internal/record (FINGERPRINT-SPEC.md is authoritative), and Lane A must
 // not invent a second one — two producers emitting different digests under one
 // name breaks regression matching forever with nothing surfacing it
-// (plan/00-SPINE.md S6).
+// (the spine's record section).
 type Inventory struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Collector     string `json:"collector"`
 	// Trust is record.TrustUntrusted, always. Every package name, version
 	// and os-release value below came off a host Anvil does not control.
 	// Anvil fetched and parsed them, and none of that changes who wrote the
-	// bytes (plan/00-SPINE.md S6).
+	// bytes (the spine's record section).
 	Trust      record.Trust     `json:"trust"`
 	OSRelease  OSRelease        `json:"osRelease"`
 	Packages   []Package        `json:"packages"`
 	Coverage   []FamilyCoverage `json:"coverage"`
 	Provenance Provenance       `json:"provenance"`
 	// ParseDegraded is true when any output line was not understood or any
-	// query failed. plan/00-SPINE.md S6 lists `parse_degraded` as required,
+	// query failed. The spine's record section lists `parse_degraded` as required,
 	// and internal/ingest/cache carries the matching column: degraded data is
 	// PERSISTED and flagged, never dropped.
 	ParseDegraded bool `json:"parseDegraded"`
 	// Sanitizer is internal/ingest/sanitize's per-category removal counts
-	// across every string in this inventory. A.3's contract forbids dropping
+	// across every string in this inventory. The sanitizer's contract forbids dropping
 	// characters without a count.
 	Sanitizer map[string]int `json:"sanitizer,omitempty"`
 	// CollectedAt and AsOf are the same instant for a fresh collection;
@@ -699,7 +700,7 @@ func (inv Inventory) MarshalJSON() ([]byte, error) {
 // FindingSeed is the subset of internal/ingest/cache's `finding` columns this
 // collector is entitled to fill. It is deliberately NOT a finding: `source`,
 // `source_id` and the decision that a package is affected at all belong to
-// A.17's version comparator, which is the only component that has read an
+// the version comparator, which is the only component that has read an
 // advisory.
 type FindingSeed struct {
 	Collector        string `json:"collector"`
@@ -709,7 +710,7 @@ type FindingSeed struct {
 	// InventoryTrust describes the PACKAGE AND VERSION STRINGS, which came
 	// from outside Anvil and are therefore record.TrustUntrusted. It is
 	// deliberately not called `anvil_trust`: the `finding` row's own
-	// anvil_trust is A.17's to set once the comparator has concluded
+	// anvil_trust is the comparator's to set once the comparator has concluded
 	// something, and cache.FindingTrustDefault is the value for that.
 	InventoryTrust   record.Trust `json:"inventory_trust"`
 	AsOf             time.Time    `json:"as_of"`
@@ -723,10 +724,10 @@ func (FindingSeed) RemediableByAgent() bool { return RemediableByAgent }
 
 // MarshalJSON emits the seed with `remediable_by_agent: false` included.
 //
-// This is the artifact that CROSSES to A.17 — the Inventory is this
+// This is the artifact that CROSSES to the comparator — the Inventory is this
 // collector's own record, the seed is what another component consumes — so it
 // is the one that most needs the guarantee to travel in the bytes rather than
-// in a method a consumer has to know to call. A.12's review found the field on
+// in a method a consumer has to know to call. The read-only-boundary review found the field on
 // Inventory and missing here, which is the wrong way round.
 func (seed FindingSeed) MarshalJSON() ([]byte, error) {
 	type alias FindingSeed
@@ -761,7 +762,7 @@ func (inv Inventory) FindingSeeds() []FindingSeed {
 
 // Options are the caller's knobs. THERE ARE TWO AND THEY ARE A DEADLINE AND A
 // CLOCK. There is deliberately no binary path, no argument list, no extra-args
-// escape hatch and no "mode": plan/00-SPINE.md S7's "not behind a flag" is a
+// escape hatch and no "mode": the spine's "not behind a flag" is a
 // statement about what may exist, and TestOptionsCarriesNoCommandSurface
 // fails if a third field is ever added here.
 type Options struct {
@@ -893,7 +894,7 @@ func (c *collector) collect(ctx context.Context) (*Inventory, error) {
 		inv.Sanitizer = counts
 	}
 
-	// Fail closed. A.3's AssertSanitized is the check that a string actually
+	// Fail closed. The sanitizer's AssertSanitized is the check that a string actually
 	// went through Sanitize; running it over the assembled record means a
 	// future field added without sanitising is caught here rather than in the
 	// cache, in a prompt, or not at all.
@@ -910,7 +911,7 @@ func (c *collector) collect(ctx context.Context) (*Inventory, error) {
 // SUCCEEDS is the one used, and a later entry is a fallback for an older
 // package-manager build, not a second source of the same packages.
 //
-// The chain advances on ANY error, not only on a missing binary. A.12's review
+// The chain advances on ANY error, not only on a missing binary. The read-only-boundary review
 // found that advancing only on errBinaryNotFound made argvAPKInfo unreachable
 // under every possible input: the fallback exists for apk-tools builds that
 // predate `apk list`, and such a build HAS the apk binary — it fails with
@@ -988,7 +989,7 @@ func (c *collector) collectFamily(ctx context.Context, chain []queryID) (FamilyC
 	return cov, nil, stats, false
 }
 
-// sanitisePackages runs every externally-sourced field through A.3's
+// sanitisePackages runs every externally-sourced field through the sanitizer's
 // Sanitize. Package names and versions are the fields the comparator matches
 // on, and research/12's own reasoning applies: a zero-width character inside
 // a package name means the comparator MISSES a match, which is quieter than
@@ -1005,7 +1006,7 @@ func sanitisePackages(pkgs []Package) ([]Package, sanitize.SanitizeStats) {
 		stats.Merge(st)
 		if name == "" || version == "" {
 			// Sanitising emptied a field the comparator needs. Dropping the
-			// row silently would be the failure A.3 forbids; the removal is
+			// row silently would be the failure the sanitizer forbids; the removal is
 			// counted in stats, which the Inventory carries.
 			continue
 		}
@@ -1035,7 +1036,7 @@ func sortPackages(pkgs []Package) {
 }
 
 // assertSanitized re-checks every externally-sourced string in the assembled
-// record. It is the fail-closed half of A.3's contract: Sanitize() is what a
+// record. It is the fail-closed half of the sanitizer's contract: Sanitize() is what a
 // writer is supposed to call, and AssertSanitized() is what proves it did.
 func (inv *Inventory) assertSanitized() error {
 	fields := map[string]string{
@@ -1163,7 +1164,7 @@ func unquoteOSRelease(v string) string {
 
 // parseReport is what a parser saw, so that FamilyCoverage can say it. A
 // parser NEVER drops a line without counting it: exit criterion 20's
-// no-silent-clean rule and A.3's no-silent-drop rule are the same rule applied
+// no-silent-clean rule and the sanitizer's no-silent-drop rule are the same rule applied
 // to two different pipelines.
 type parseReport struct {
 	Lines        int

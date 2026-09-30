@@ -12,7 +12,7 @@ import (
 
 // THE REAPER RUNS TWO INDEPENDENT CLOCKS. They are not the same clock, they do
 // not expire together, and they produce different state transitions. Conflating
-// them is the defect plan/00-SPINE.md S1 names outright.
+// them is the defect the spine's corrected-requirements table names outright.
 //
 //	ReclaimExpired      drives handoff.lease_expires_at — Options.Lease, 15-30
 //	                    minutes, heartbeat-renewed. It governs ONE consumer
@@ -84,7 +84,7 @@ type Expired struct {
 	Fingerprint   string
 	AuditRecordID int64
 
-	// DeadlineAt is audit_record.deadline_at, computed once by R.6 from
+	// DeadlineAt is audit_record.deadline_at, computed once by the sealer from
 	// scan_run.started_at + claim_timeout_seconds and never recomputed. The
 	// reaper reads it; it does not derive it, and it does not write it.
 	DeadlineAt time.Time
@@ -247,8 +247,8 @@ func (q *Queue) ReclaimExpiredContext(ctx context.Context) (ReapReport, error) {
 // The transition is 'ready' -> 'expired', the tmpfs packet is unlinked, and
 // the database row stays exactly where it is. Nothing here deletes a record,
 // and nothing here is a confidentiality measure — the same detail lives in the
-// store by design, which is why S1 calls this a claim timeout and not a
-// deletion policy.
+// store by design, which is why the spine's corrected-requirements table calls
+// this a claim timeout and not a deletion policy.
 //
 // Leased rows are not considered at all. That is how "never expire a live
 // claim" is enforced: structurally, by the query, not by a check someone can

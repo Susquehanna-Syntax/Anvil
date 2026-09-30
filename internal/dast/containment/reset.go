@@ -1,4 +1,4 @@
-// This file is packet D.13: the target reset lifecycle.
+// This file is target reset: the reset lifecycle between scan phases.
 //
 // # What this file exists to prevent
 //
@@ -16,9 +16,9 @@
 // "reset by destroy-and-recreate (`docker compose down -v`), not by snapshot.
 // Reserve snapshot/restore for the Firecracker tier, and never restore a
 // snapshot holding a real credential". There is no snapshot path in this file
-// and no option that introduces one. D.1 makes `reset.strategy` a REQUIRED,
+// and no option that introduces one. The target manifest makes `reset.strategy` a REQUIRED,
 // never-defaulted manifest key with destroy_recreate as its only allowlisted
-// value, and this file re-checks it rather than assuming D.1 ran.
+// value, and this file re-checks it rather than assuming the target manifest ran.
 //
 // # VERIFIED, not assumed -- the four things that are actually checked
 //
@@ -37,7 +37,7 @@
 //     containers are all provably new. That is the exact silent-clean shape
 //     this packet exists to catch, and a check that cannot see it is not a
 //     check. It is why ResetSeam widens Docker rather than reusing it.
-//  3. The re-provision goes through D.10's Provision UNCHANGED -- every
+//  3. The re-provision goes through target provisioning's Provision UNCHANGED -- every
 //     containment assertion, the runsc check, the digest pin, the probe-side
 //     reachability probe. Reset does not have a second, laxer path to a live
 //     target.
@@ -121,7 +121,7 @@ var (
 	ErrResetForeignTarget = errors.New("target does not belong to this resetter's manifest")
 
 	// ErrResetStrategyUnsupported: the manifest's reset.strategy is not
-	// destroy_recreate. D.1 already refuses this at parse time; this is the
+	// destroy_recreate. The target manifest already refuses this at parse time; this is the
 	// re-check, because a hand-built &target.Manifest{} has an empty
 	// strategy and a Go zero value must never mean "permitted".
 	ErrResetStrategyUnsupported = errors.New("reset.strategy is not the only strategy v1 supports")
@@ -188,7 +188,7 @@ const (
 	// evidence contradicts it.
 	ResetStageDestroyUnverified ResetStage = "destroy_unverified"
 
-	// ResetStageReprovision: the destroy was verified and D.10's Provision
+	// ResetStageReprovision: the destroy was verified and target provisioning's Provision
 	// refused to bring the target back.
 	ResetStageReprovision ResetStage = "reprovision"
 
@@ -251,8 +251,8 @@ func (s ResetStage) Valid() bool {
 // image would not restart both record boot_failed. The ResetStage carries the
 // difference, it is in the *ResetError's message, and it is what an operator
 // reads. The alternative -- a sixth provenance literal such as
-// `reset_failed` -- is a change to an enum frozen by
-// plan/IMPLEMENTATION-PLAN.md section 6 rulings G4+G7 in area 40, and is not
+// `reset_failed` -- is a change to an enum frozen by the first plan's
+// target-provenance split in the record area, and is not
 // this packet's to make. Reported to the orchestrator.
 func (s ResetStage) Provenance() (record.TargetProvenance, error) {
 	switch s {
@@ -521,7 +521,7 @@ type Resetter struct {
 func NewResetter(p *Provisioner, m *target.Manifest) (*Resetter, error) {
 	if p == nil || p.docker == nil || strings.TrimSpace(p.repoRoot) == "" {
 		return nil, fmt.Errorf("containment: %w: resetter needs a provisioner built by "+
-			"NewProvisioner; re-provisioning goes through D.10's Provision unchanged and "+
+			"NewProvisioner; re-provisioning goes through target provisioning's Provision unchanged and "+
 			"there is no second path to a live target", ErrRefused)
 	}
 	if m == nil {
@@ -572,7 +572,7 @@ func (r *Resetter) Manifest() *target.Manifest {
 	return r.m
 }
 
-// Strategy returns the reset strategy this Resetter enforces. It is D.1's
+// Strategy returns the reset strategy this Resetter enforces. It is the target manifest's
 // constant, never a literal spelled here.
 func (r *Resetter) Strategy() string {
 	if r == nil {
@@ -646,7 +646,7 @@ func captureIdentity(t *Target) resetIdentity {
 // container either way.
 //
 // NOT SAFE FOR CONCURRENT USE with any other reader of the same Target. That
-// is not a limitation in practice: plan/50-dast.md places D.13 in the SERIAL
+// is not a limitation in practice: plan/design/dynamic-tier.md places target reset in the SERIAL
 // group, one target is reset between probe phases, and there is no code path
 // in this package that resets two targets at once.
 func invalidate(t *Target) {
@@ -669,7 +669,7 @@ func invalidate(t *Target) {
 //  2. strategy re-check    -> nothing touched, old target invalidated
 //  3. destroy (`down -v`)  -> old target invalidated from here on, always
 //  4. verify the destroy   -> containers AND volumes gone, or refuse
-//  5. re-provision         -> D.10's Provision, unchanged
+//  5. re-provision         -> target provisioning's Provision, unchanged
 //  6. verify the result    -> same declared state, different instance
 //  7. otherwise            -> the fresh sealed Target
 //
@@ -725,7 +725,7 @@ func (r *Resetter) Reset(ctx context.Context, tgt *Target) (*Target, error) {
 			before.project, before.service, wantProject, svc.Name())
 	}
 
-	// 2. reset.strategy, re-checked. D.1 refuses anything else at parse time
+	// 2. reset.strategy, re-checked. The target manifest refuses anything else at parse time
 	// and NewResetter refuses it again; this is the third check, because the
 	// manifest is a pointer and this is the last moment before a destroy.
 	if r.m.Reset.Strategy != target.ResetStrategyDestroyRecreate {
@@ -739,7 +739,7 @@ func (r *Resetter) Reset(ctx context.Context, tgt *Target) (*Target, error) {
 	// matter which way this call exits.
 	invalidate(tgt)
 
-	// 3. Destroy. teardown() is D.10's, so `down -v` -- volumes included --
+	// 3. Destroy. teardown() is target provisioning's, so `down -v` -- volumes included --
 	// is spelled in exactly one place in this package.
 	if err := teardown(ctx, r.seam, before.project); err != nil {
 		return nil, refuseReset(ResetStageDestroy, ErrDestroyFailed,
@@ -755,7 +755,7 @@ func (r *Resetter) Reset(ctx context.Context, tgt *Target) (*Target, error) {
 		return nil, refuseReset(ResetStageDestroyUnverified, ErrDestroyUnverified, "%v", err)
 	}
 
-	// 5. Re-provision through D.10, unchanged. Every containment assertion,
+	// 5. Re-provision through target provisioning, unchanged. Every containment assertion,
 	// the runsc preflight, the digest pin and the probe-side reachability
 	// check run again -- a target that was contained an hour ago is not
 	// evidence about the one that just came up.

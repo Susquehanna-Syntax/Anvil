@@ -1,10 +1,10 @@
-// D.22 — Tier 2 confirmation: merge the Tier 0-2 inventories into ONE union of
+// Route confirmation (Tier 2): merge the Tier 0-2 inventories into ONE union of
 // endpoints, and promote a candidate to `confirmed` only on a real observation
 // Anvil made through the kernel.
 //
 // # Both sides of endpoint_coverage are decided here
 //
-// plan/50-dast.md:1152 defines endpoint_coverage as confirmed-probed endpoints
+// plan/design/dynamic-tier.md:1152 defines endpoint_coverage as confirmed-probed endpoints
 // over the union of the Tier 0-2 inventory, and says in bold "Never a raw
 // request count." This file computes both halves, and both halves can be
 // corrupted in opposite directions:
@@ -23,7 +23,7 @@
 //	three rows. Nobody investigates that, because it makes coverage look WORSE
 //	— and the number quietly stops meaning what it says. The answer is that the
 //	union is keyed on the address a probe reaches, method plus canonical path,
-//	and the path is canonicalized by D.20's canonicalizePattern — the ONE
+//	and the path is canonicalized by Go route extraction's canonicalizePattern — the ONE
 //	canonicalizer this package has — rather than by a second one here that
 //	could disagree with it. A merge is recorded as a MergeNote and never as a
 //	RefusalDuplicateRoute, because that reason is per-operation and would raise
@@ -51,7 +51,7 @@
 // of any contributor. ConfirmResult.Routes() re-stamps each contributing route
 // with the endpoint's confirmation THROUGH NewRoute while carrying that
 // route's own provenance, trust, operation, params and servedAt across
-// unchanged. D.26 aggregates both axes.
+// unchanged. Coverage reporting aggregates both axes.
 //
 // # A confirmation that cannot be traced to a specific observation is not one
 //
@@ -62,7 +62,7 @@
 // one. AssertEveryConfirmationHasEvidence sweeps the result and fails if a
 // confirmation exists without one.
 //
-// Sources: plan/50-dast.md D.22 (lines 709-737) and the Coverage Reporting
+// Sources: route confirmation's design (lines 709-737) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md line 339
 // ("promote to confirmed only on a non-404 response") and Risk #4 ("more
 // endpoints can mean less coverage" — the phpBB regression from timeout
@@ -174,7 +174,7 @@ const (
 	// THE ONLY OUTCOME THAT CONFIRMS.
 	//
 	// The status code itself is recorded on the Observation and is not folded
-	// away, because plan/50-dast.md D.22's Forbidden actions require it: a 500
+	// away, because route confirmation's forbidden actions require it: a 500
 	// is "route exists, handler errors" and a 200 is "route works", and both
 	// are more informative than 404 without being the same thing.
 	ConfirmOutcomeObservedNon404 ConfirmOutcome = "observed_non_404"
@@ -291,7 +291,7 @@ func answeredOutcomes() map[ConfirmOutcome]bool {
 // MeansAnvilCouldNotLook reports whether this outcome describes ANVIL rather
 // than the target.
 //
-// D.26 needs the distinction to decide whether a coverage number is a
+// Coverage reporting needs the distinction to decide whether a coverage number is a
 // measurement or a floor. Every outcome in which the target never answered is
 // one of these, including the zero value: an endpoint whose outcome nobody set
 // was not looked at.
@@ -423,7 +423,7 @@ type ConfirmResponse struct {
 //
 // # Why this is an interface and not a function that dials
 //
-// D.9's gate 3 tier 1: a socket constructed inside internal/dast outside
+// The build-time guard's gate 3 tier 1: a socket constructed inside internal/dast outside
 // internal/dast/authz fails the build, with no allowlist. This package cannot
 // dial, cannot hold an http.Client, and cannot import a package that could.
 // The implementation lives on the far side of that boundary — in the kernel,
@@ -436,9 +436,9 @@ type EndpointProber interface {
 
 // ClockSource hands the confirmation loop the instant of the NEXT probe.
 //
-// # Why one instant is not enough here, and is enough for D.18
+// # Why one instant is not enough here, and is enough for the runtime spec probe
 //
-// D.18's Probe takes a single authz.Clock because it issues at most
+// The runtime spec probe's Probe takes a single authz.Clock because it issues at most
 // maxEndpointsPerProbe requests from a configured list. Confirmation issues one
 // request per endpoint in the union, which is a number the target's own
 // inventory chooses. Gate 14's token bucket refills from the ELAPSED interval
@@ -519,7 +519,7 @@ const (
 	// templates up to placeholder NAMES — "/users/{id}" and "/users/{userId}".
 	// They are almost certainly one endpoint and they are counted as two,
 	// which INFLATES the denominator. Reported rather than merged: merging
-	// would need a second canonicalizer with an opinion D.20's does not have.
+	// would need a second canonicalizer with an opinion Go route extraction's does not have.
 	MergeNotePlaceholderNamesDiverge MergeNoteReason = "placeholder_names_diverge"
 )
 
@@ -688,7 +688,7 @@ func (e MergedEndpoint) Confirmed() bool {
 	return e.outcome.Confirms() && e.obs.Recorded()
 }
 
-// Confirmation renders the endpoint's confirmation on D.18's axis.
+// Confirmation renders the endpoint's confirmation on the runtime spec probe's axis.
 func (e MergedEndpoint) Confirmation() Confirmation {
 	if e.Confirmed() {
 		return ConfirmationConfirmed
@@ -780,7 +780,7 @@ type ConfirmConfig struct {
 	Confirm bool
 
 	// ProbeBudget is the maximum number of requests this run may ISSUE
-	// against this target for confirmation. plan/50-dast.md D.22 requires it
+	// against this target for confirmation. Route confirmation's design requires it
 	// to be config rather than hard-coded. There is no default: zero with
 	// Confirm true is refused, because a zero budget that meant "unlimited"
 	// would be the exact shape research/22's Risk #4 describes.
@@ -896,7 +896,7 @@ func (r ConfirmResult) Truncated() bool { return r.truncated }
 //
 // It is deliberately NOT the denominator, and callers must not count it:
 // several routes can name one endpoint, which is the whole point of the merge.
-// It exists so D.26 can aggregate the provenance axis per route while counting
+// It exists so coverage reporting can aggregate the provenance axis per route while counting
 // endpoints on the other axis.
 //
 // A route that cannot be rebuilt is DROPPED FROM THIS LISTING ONLY and never
@@ -1006,7 +1006,7 @@ func (r ConfirmResult) UnprobedEndpoints() []MergedEndpoint {
 
 // Coverage renders the result as record.DastCoverage.
 //
-// ProbedCount is CONFIRMED ENDPOINTS, never a request count — plan/50-dast.md
+// ProbedCount is CONFIRMED ENDPOINTS, never a request count — plan/design/dynamic-tier.md
 // :1152 in bold. r.issued, the request count, is deliberately not used here;
 // it is available separately as Issued() so that a reader comparing the two
 // can see how many requests bought how many confirmations.
@@ -1053,7 +1053,7 @@ func (r ConfirmResult) AssertNotSilentlyEmpty() error {
 // exhausted the time budget and produced LOWER coverage than a smaller one.
 // The failure mode is not the budget — a budget is correct — it is publishing
 // the resulting fraction as though every candidate had been asked. This method
-// is what makes D.26 write a line of code to do that.
+// is what makes coverage reporting write a line of code to do that.
 func (r ConfirmResult) AssertBudgetSufficed() error {
 	if !r.sealed {
 		return fmt.Errorf("inventory: %w: AssertBudgetSufficed was called on a ConfirmResult "+
@@ -1124,7 +1124,7 @@ func (r ConfirmResult) AssertNoUnconfirmedEndpointClaimsConfirmation() error {
 // MergeAndConfirm
 // ---------------------------------------------------------------------------
 
-// MergeAndConfirm is plan/50-dast.md D.22's named entry point.
+// MergeAndConfirm is the entry point route confirmation's design names.
 //
 // DEVIATION, stated: the plan's expected schema is
 // `MergeAndConfirm(tiers ...[]Route) ([]Route, error)`. Three things about it
@@ -1134,7 +1134,7 @@ func (r ConfirmResult) AssertNoUnconfirmedEndpointClaimsConfirmation() error {
 //
 //   - Confirmation is a REQUEST. It needs a Governor, a GateAudit, an
 //     Authorization, a Technique and a clock, because every request in Anvil
-//     goes through the kernel; and it needs an egress seam, because D.9's gate
+//     goes through the kernel; and it needs an egress seam, because the build-time guard's gate
 //     3 forbids this package from holding one.
 //   - The plan itself requires "a bounded per-target probe budget (config, not
 //     hard-coded)". There is nowhere in the plan signature to put it.
@@ -1239,7 +1239,7 @@ func validateConfirmConfig(cfg ConfirmConfig) error {
 	}
 	if cfg.ProbeBudget <= 0 {
 		return fmt.Errorf("inventory: %w: the per-target probe budget is %d. "+
-			"plan/50-dast.md D.22 requires a bounded budget that is configuration rather "+
+			"Route confirmation's design requires a bounded budget that is configuration rather "+
 			"than a constant, and there is no default — a zero that meant \"unlimited\" is "+
 			"exactly the shape research/22's Risk #4 describes", ErrRefused, cfg.ProbeBudget)
 	}
@@ -1296,8 +1296,8 @@ func (a *mergeAccumulator) add(out *ConfirmResult, rt Route) bool {
 		return false
 	}
 
-	// ONE canonicalizer. D.20's canonicalizePattern is the package's only
-	// path-template normalizer and D.21 already reuses it; a second one here
+	// ONE canonicalizer. Go route extraction's canonicalizePattern is the package's only
+	// path-template normalizer and non-Go route extraction already reuses it; a second one here
 	// could disagree with it, and the disagreement would be silent — two
 	// spellings of one endpoint sitting in the denominator forever.
 	canon, _, err := canonicalizePattern(rt.Path())
@@ -1462,7 +1462,7 @@ func noteMultiOperationAddresses(out *ConfirmResult) {
 // templates are identical up to placeholder NAMES.
 //
 // It REPORTS and does not merge. Merging "/users/{id}" with "/users/{userId}"
-// needs an opinion D.20's canonicalizePattern deliberately does not have —
+// needs an opinion Go route extraction's canonicalizePattern deliberately does not have —
 // placeholderName refuses to sanitize a name precisely because collapsing two
 // names onto one would merge two rows into one, and over-merging is the
 // direction that makes coverage look BETTER. Under-merging inflates the
@@ -1508,7 +1508,7 @@ func notePlaceholderNameDivergence(out *ConfirmResult) {
 //
 // It is a REPORTING form and never a matcher for the union — nothing keys on
 // it — so it cannot become a second canonicalization that disagrees with
-// D.20's. Literal segments still compare by identity; only the fact that a
+// Go route extraction's. Literal segments still compare by identity; only the fact that a
 // segment IS a placeholder is positional.
 func placeholderShape(path string) string {
 	segs := strings.Split(path, "/")
@@ -1567,7 +1567,7 @@ func confirmEndpoints(ctx context.Context, cfg ConfirmConfig, now authz.Clock, o
 		}
 		if out.issued >= cfg.ProbeBudget {
 			// NOT dropped, NOT defaulted to confirmed, NOT removed from the
-			// union. plan/50-dast.md D.22's Forbidden actions name this case
+			// union. Route confirmation's forbidden actions name this case
 			// by itself: a candidate that never gets probed must remain a
 			// candidate.
 			e.outcome = ConfirmOutcomeBudgetExhausted
@@ -1753,7 +1753,7 @@ func probeOne(ctx context.Context, cfg ConfirmConfig, now authz.Clock, out *Conf
 //
 // "Promote to confirmed only on a non-404 response." The status itself is
 // recorded on the Observation rather than folded away, because a 500 is "route
-// exists, handler errors" and a 200 is "route works" — plan/50-dast.md D.22's
+// exists, handler errors" and a 200 is "route works" — route confirmation's design
 // Forbidden actions require both to be distinguishable after the fact.
 func outcomeForStatus(status int) ConfirmOutcome {
 	if status == 404 {

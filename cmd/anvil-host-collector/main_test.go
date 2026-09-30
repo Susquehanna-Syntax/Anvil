@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestTheBinaryRefusesEveryArgument. S7's "not behind a flag" is a statement
+// TestTheBinaryRefusesEveryArgument. The spine's "not behind a flag" is a statement
 // about what may exist, and the process boundary is the last place an argv
 // surface could be reintroduced after internal/collector/host has closed every
 // other one. `flag` is not imported, and these are the shapes somebody would
@@ -37,13 +37,13 @@ func TestTheBinaryRefusesEveryArgument(t *testing.T) {
 
 // TestTheBinaryEmitsAnInventoryAndTheRightStatus runs the real collection.
 //
-// On a Linux host with a package manager this is A.9's stop condition and
-// A.12's "confirmation the binary runs successfully as a non-root user in the
-// test fixture" — the thing that could not be given before, because there was
-// no binary. Everywhere else (a Windows development host, a Linux container
-// with no package manager) the collector reports no package manager, which is
-// exit status 3 WITH an inventory: the coverage report is the point, and this
-// asserts it is emitted rather than swallowed.
+// On a Linux host with a package manager this is the host collector's stop condition and
+// the read-only-boundary review's "confirmation the binary runs successfully as
+// a non-root user in the test fixture" — the thing that could not be given
+// before, because there was no binary. Everywhere else (a Windows development
+// host, a Linux container with no package manager) the collector reports no
+// package manager, which is exit status 3 WITH an inventory: the coverage
+// report is the point, and this asserts it is emitted rather than swallowed.
 func TestTheBinaryEmitsAnInventoryAndTheRightStatus(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(nil, &stdout, &stderr)

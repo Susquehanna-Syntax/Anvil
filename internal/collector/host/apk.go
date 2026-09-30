@@ -28,7 +28,7 @@ import "strings"
 // remaining fields — origin package, licence, install state — are not carried:
 // an inventory is not a place to accumulate unbounded host-controlled text,
 // and the licence string in particular is NOT a licence determination (spine
-// S8 requires reading LICENSE file bodies, never metadata).
+// the spine's licence section requires reading LICENSE file bodies, never metadata).
 func parseAPKList(out []byte) ([]Package, parseReport) {
 	var pkgs []Package
 	var rep parseReport

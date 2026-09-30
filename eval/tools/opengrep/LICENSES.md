@@ -1,8 +1,8 @@
-# M0.7 — licence findings for the deterministic recall tier
+# The opengrep acquisition — licence findings for the deterministic recall tier
 
 Every claim below was fetched in-session on **2026-08-06** from a primary source and is quoted from
 the LICENSE file body, not from an API `license` metadata field. Where an API field is cited it is
-cited as corroboration only, never as the finding. This follows `plan/00-SPINE.md` S8's compliance
+cited as corroboration only, never as the finding. This follows the spine's compliance
 mechanic ("reads LICENSE file bodies, never API metadata") and the verification discipline in
 `research/13-license-compatibility-audit.md` / `research/14-critique-and-gaps.md`.
 
@@ -22,7 +22,7 @@ Opening lines of the LICENSE body, verbatim:
  Copyright (C) 1991, 1999 Free Software Foundation, Inc.
 ```
 
-**Finding: LGPL-2.1.** Consistent with `plan/00-SPINE.md` S4 and with
+**Finding: LGPL-2.1.** Consistent with the spine's component table and with
 `research/10-prior-art-and-landscape.md` [S11] ("`opengrep/opengrep` is **LGPL-2.1**, ~9,931 commits,
 forked from Semgrep at version 1.100.0").
 
@@ -37,11 +37,11 @@ forked from Semgrep at version 1.100.0").
 
 ### Linkage posture — this is the whole compliance argument, and it is short
 
-opengrep is an **OCaml CLI with zero bindings in any language** (`plan/00-SPINE.md` S12). There is no
+opengrep is an **OCaml CLI with zero bindings in any language** (the spine's Go control-plane decision). There is no
 FFI surface to link against even if someone wanted to. Anvil therefore `exec`s the binary and reads
 its stdout. No cgo, no shared object, no static link, no in-process plugin. LGPL-2.1's combined-work
 obligations (§6) are about works that *link* the library; a program that shells out to a separate
-executable and talks to it over a pipe is not one. `plan/30-lane-b-detection.md` B.1 makes the
+executable and talks to it over a pipe is not one. The opengrep runner's design makes the
 subprocess-only rule a build-enforced invariant on the Go side; this evaluation harness holds the
 same line by construction — `anvil_opengrep/runner.py` only ever calls `subprocess.run`.
 
@@ -49,9 +49,8 @@ same line by construction — `anvil_opengrep/runner.py` only ever calls `subpro
 
 If Anvil ever **distributes** the compiled opengrep binary — e.g. bakes it into a published container
 image — that is conveyance of an LGPL-2.1 work and triggers notice + offer-of-source duties for the
-opengrep binary itself. That is out of scope for M0.7 (the harness fetches the binary at setup time on
-the operator's own machine and ships nothing), and it is already assigned: `plan/30-lane-b-detection.md`
-B.2 owns `data/LICENSES/opengrep-binary-distribution.md`. Recorded here so the deferral is a decision
+opengrep binary itself. That is out of scope for the opengrep acquisition (the harness fetches the binary at setup time on
+the operator's own machine and ships nothing), and it is already assigned: the rule vendoring's design owns `data/LICENSES/opengrep-binary-distribution.md`. Recorded here so the deferral is a decision
 and not an oversight.
 
 ---
@@ -104,7 +103,7 @@ Each rule file also carries its own in-band licence declaration, which is unusua
 
 ## 3. Excluded — recorded so nobody re-adds them
 
-### `opengrep/opengrep-rules` — **HARD EXCLUDED**, `plan/00-SPINE.md` S5
+### `opengrep/opengrep-rules` — **HARD EXCLUDED**, the spine's exclusion list
 
 Re-verified in-session 2026-08-06 via `/repos/opengrep/opengrep-rules`, independently reproducing all
 four values from `research/10` [S12] and `research/14` (V6):
@@ -122,7 +121,7 @@ licence conflict. It is not used, not fetched, and not referenced by any code pa
 reason it appears in this repository at all is as a named exclusion in `MANIFEST.toml [[excluded.repos]]`,
 so that a future contributor reaching for "the obvious substitute" hits a wall with a reason on it.
 
-### Semgrep-maintained rules — **HARD EXCLUDED**, `plan/00-SPINE.md` S5
+### Semgrep-maintained rules — **HARD EXCLUDED**, the spine's exclusion list
 
 Semgrep Rules License v.1.0 permits use "only for your own internal business purposes" and forbids
 distribution. Out in every form, including rules derived by reading them.
@@ -132,7 +131,7 @@ distribution. Out in every form, including rules derived by reading them.
 ## 4. Coverage finding — measured, and it is the thing to actually worry about
 
 The licence question on `AikidoSec/opengrep-rules` is settled and clean. The **coverage** question is
-not, and M0.7 measured it rather than assuming it. At the pinned commit the entire repository is:
+not, and the opengrep acquisition measured it rather than assuming it. At the pinned commit the entire repository is:
 
 ```
 LICENSE
@@ -146,16 +145,15 @@ Two rules. Both `languages: [yaml]`. Both `paths.include`-filtered to `.github/w
 language Anvil targets.
 
 `research/10` already hedged this — "Small and low-visibility, but legally unambiguous... rule coverage
-unassessed" [S13] — and `plan/30-lane-b-detection.md` open issue 6 states outright that first-party
+unassessed" [S13] — and `plan/design/lane-b.md` open issue 6 states outright that first-party
 coverage "is unverified anywhere in" the corpus. This is the verification. The result is that the
 recall tier's *rule corpus*, as picked, is a two-rule GitHub-Actions linter.
 
-This does **not** contradict `plan/00-SPINE.md` S4 or S5 on licence grounds — the picks are correct and
-the exclusions hold. It bears on what INSTR-01 (candidates-per-scan, `plan/10-milestone0-evaluation.md`
-M0.11) will actually measure: against this corpus, a repo with no GitHub Actions workflows yields
+This does **not** contradict the spine's component table or the spine's exclusion list on licence grounds — the picks are correct and
+the exclusions hold. It bears on what the candidates-per-scan instrument will actually measure: against this corpus, a repo with no GitHub Actions workflows yields
 exactly zero candidates, and the adjudicator-precision case that `research/14` M6 says rests on this
 tier existing has almost nothing to adjudicate. The engine is not the problem — opengrep's taint
 support is real. The MIT rule corpus is the problem.
 
-Escalated to the orchestrator, not resolved here: M0.7's scope is acquisition, and choosing a different
-or additional rule source is an S4/S5 component decision that this packet may not make.
+Escalated to the orchestrator, not resolved here: the scope is acquisition, and choosing a different
+or additional rule source is a component decision (the spine's component and exclusion sections) that this step could not make.

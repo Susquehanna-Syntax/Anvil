@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .errors import ManifestError
 
-# Repository roots that plan/00-SPINE.md S5 hard-excludes. Matched as substrings
+# Repository roots that the spine hard-excludes. Matched as substrings
 # against any rule-source path or URL the caller supplies. Cheap, and it turns a
 # licence violation into an exception instead of a code review someone skipped.
 FORBIDDEN_RULE_SOURCES: tuple[str, ...] = (
@@ -138,7 +138,7 @@ def load_manifest(path: str | Path | None = None) -> Manifest:
     if linkage != "subprocess":
         raise ManifestError(
             "MANIFEST.toml: engine.linkage must be 'subprocess'. "
-            "plan/00-SPINE.md S12: opengrep has zero bindings in any language; "
+            "The spine's Go control-plane decision: opengrep has zero bindings in any language; "
             "linking it is not merely discouraged, it is impossible, and claiming "
             "otherwise in the manifest means the manifest is wrong."
         )
@@ -170,7 +170,7 @@ def load_manifest(path: str | Path | None = None) -> Manifest:
     assert_rule_source_permitted(ruleset_name)
     if PERMITTED_RULE_SOURCE.lower() not in ruleset_name.lower():
         raise ManifestError(
-            f"MANIFEST.toml: ruleset.name is {ruleset_name!r}; plan/00-SPINE.md S4 "
+            f"MANIFEST.toml: ruleset.name is {ruleset_name!r}; the spine's component table "
             f"names {PERMITTED_RULE_SOURCE} as the only permitted rule source."
         )
 
@@ -178,7 +178,7 @@ def load_manifest(path: str | Path | None = None) -> Manifest:
     if len(ruleset_sha) != 40:
         raise ManifestError(
             "MANIFEST.toml: ruleset.commit_sha must be a full 40-char SHA. "
-            "plan/00-SPINE.md S7 pins by commit SHA; a branch name or short SHA is not a pin."
+            "The spine's safety section pins by commit SHA; a branch or short SHA is not a pin."
         )
 
     files = tuple(
@@ -218,10 +218,10 @@ def load_manifest(path: str | Path | None = None) -> Manifest:
 
 
 def assert_rule_source_permitted(source: str) -> None:
-    """Raise if `source` names an S5 hard-excluded rule repository.
+    """Raise if `source` names a rule repository on the spine's hard-exclusion list.
 
     Called on the manifest at load time and on every `--config` argument at run
-    time. plan/00-SPINE.md S5 excludes opengrep/opengrep-rules (archived,
+    time. The spine's exclusion list excludes opengrep/opengrep-rules (archived,
     NOASSERTION, LGPL-2.1 + Commons Clause) and all Semgrep-maintained rules.
     """
     from .errors import ForbiddenRuleSource  # local import: keeps manifest import-light
@@ -231,7 +231,7 @@ def assert_rule_source_permitted(source: str) -> None:
         if forbidden.lower() in normalised:
             raise ForbiddenRuleSource(
                 f"rule source {source!r} matches the hard exclusion {forbidden!r}. "
-                "plan/00-SPINE.md S5: opengrep/opengrep-rules is archived, NOASSERTION, "
+                "The spine's exclusion list: opengrep/opengrep-rules is archived, NOASSERTION, "
                 "LGPL-2.1 + Commons Clause; Semgrep-maintained rules are internal-business-use "
                 f"only. Use {PERMITTED_RULE_SOURCE} (MIT)."
             )

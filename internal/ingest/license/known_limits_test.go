@@ -135,7 +135,7 @@ import (
 //
 // That is a real decision with real costs — a licence corpus checked into this
 // repository, a scoring function, a threshold somebody has to defend, and the
-// dependency question A.4 is strict about — and it is deliberately NOT taken
+// dependency question the licence gate is strict about — and it is deliberately NOT taken
 // here. What is taken here is the honesty: the substring gate is what ships,
 // and this file says what it is worth.
 //

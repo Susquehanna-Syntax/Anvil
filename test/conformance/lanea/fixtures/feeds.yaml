@@ -64,7 +64,7 @@ feeds:
 
   # CISA KEV. Its forge metadata reports NOASSERTION over a CC0 body, which is
   # exit criterion 10: the LICENCE FILE BODY decides and the metadata does not,
-  # and the disagreement makes spine S8's manual note mandatory.
+  # and the disagreement makes the manual licence note mandatory.
   - id: cisa-kev-fixture
     url: ${BASE}/kev/known_exploited_vulnerabilities.json
     enabled: true

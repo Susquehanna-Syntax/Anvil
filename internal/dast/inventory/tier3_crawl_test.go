@@ -1,4 +1,4 @@
-// Tests for D.23, Tier 3: the browser-driven crawl.
+// Tests for Tier 3: the browser-driven crawl.
 //
 // A crawler is the most dangerous component in the dynamic tier because every
 // destination it visits after the first one was proposed by the target. So the
@@ -6,7 +6,7 @@
 // and every one of them is driven through the REAL kernel — authz.InitiateRun,
 // authz.Adjudicate, authz.NewRequestIntent, authz.GateAudit.AuditedAdmit,
 // authz.Governor.ObserveResponse — with ClientSpider as the only double,
-// because D.9's gate 3 forbids this package from holding a socket.
+// because the build-time guard's gate 3 forbids this package from holding a socket.
 //
 //	THE WALK-OFF. A link off the admitted origin, a scheme downgrade, a
 //	different port, a cross-host redirect. Refused at the LINK, and the
@@ -54,10 +54,10 @@ import (
 // Harness
 // ---------------------------------------------------------------------------
 
-// c23Spider is the browser seam's double. It serves a fixed link graph and
+// crawlSpider is the browser seam's double. It serves a fixed link graph and
 // RECORDS every CrawlRequest it was handed, so a test can assert what left the
 // process rather than what the loop believes it sent.
-type c23Spider struct {
+type crawlSpider struct {
 	pages    map[string]CrawlPage
 	def      CrawlPage
 	err      error
@@ -79,7 +79,7 @@ type c23Spider struct {
 	calls           int
 }
 
-func (s *c23Spider) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
+func (s *crawlSpider) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
 	s.calls++
 	s.seen = append(s.seen, req)
 	if s.err != nil {
@@ -106,7 +106,7 @@ func (s *c23Spider) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, e
 // Discipline is the declaration validateCrawlConfig checks. The double is a
 // map lookup: it issues nothing at all, let alone a subresource. A test that
 // needs the OTHER answer sets `discipline` explicitly.
-func (s *c23Spider) Discipline() FetchDiscipline {
+func (s *crawlSpider) Discipline() FetchDiscipline {
 	if s.exactDiscipline || s.discipline != FetchDisciplineUnset {
 		return s.discipline
 	}
@@ -114,7 +114,7 @@ func (s *c23Spider) Discipline() FetchDiscipline {
 }
 
 // paths returns every path the spider was actually asked for, in order.
-func (s *c23Spider) paths() []string {
+func (s *crawlSpider) paths() []string {
 	out := make([]string, 0, len(s.seen))
 	for _, r := range s.seen {
 		out = append(out, r.Path())
@@ -124,7 +124,7 @@ func (s *c23Spider) paths() []string {
 
 // labels returns "path@origin/hop" for every request, which is how the
 // redirect tests assert that the LABEL and not only the destination is right.
-func (s *c23Spider) labels() []string {
+func (s *crawlSpider) labels() []string {
 	out := make([]string, 0, len(s.seen))
 	for _, r := range s.seen {
 		out = append(out, fmt.Sprintf("%s@%s/%d", r.Path(), r.Origin(), r.Hop()))
@@ -132,18 +132,18 @@ func (s *c23Spider) labels() []string {
 	return out
 }
 
-func c23Linking(graph map[string][]string) *c23Spider {
+func crawlLinking(graph map[string][]string) *crawlSpider {
 	pages := map[string]CrawlPage{}
 	for p, links := range graph {
 		pages[p] = CrawlPage{Status: 200, Links: links}
 	}
-	return &c23Spider{pages: pages, def: CrawlPage{Status: 200}}
+	return &crawlSpider{pages: pages, def: CrawlPage{Status: 200}}
 }
 
-// c23Robots is the robots.txt the fixture scope is narrowed with. An empty
+// crawlRobots is the robots.txt the fixture scope is narrowed with. An empty
 // body determines the origin and disallows nothing, which is what most tests
 // want: gate 11 has RUN, and it removed nothing.
-func c23Robots(t *testing.T, body string) authz.RobotsDocument {
+func crawlRobots(t *testing.T, body string) authz.RobotsDocument {
 	t.Helper()
 	return authz.RobotsDocument{
 		Host:    fixtureHost,
@@ -153,18 +153,18 @@ func c23Robots(t *testing.T, body string) authz.RobotsDocument {
 	}
 }
 
-// c23NarrowedScope builds the fixture scope with gate 11 APPLIED, which is the
+// crawlNarrowedScope builds the fixture scope with gate 11 APPLIED, which is the
 // state CrawlConfig.Scope documents it expects. Without the narrowing
 // Scope.PermitsPath refuses every path — see
 // TestAScopeNobodyNarrowedPermitsNoPath, which asserts exactly that.
-func c23NarrowedScope(t *testing.T, robotsBody string) authz.Scope {
+func crawlNarrowedScope(t *testing.T, robotsBody string) authz.Scope {
 	t.Helper()
 	scope, err := initiateRun(t).Scope()
 	if err != nil {
 		t.Fatalf("init.Scope: %v", err)
 	}
 	narrowed, res := authz.NarrowScopeToRobots(scope, []authz.RobotsDocument{
-		c23Robots(t, robotsBody),
+		crawlRobots(t, robotsBody),
 	})
 	if !res.Passed() {
 		t.Fatalf("authz.NarrowScopeToRobots refused: %v", res.Err())
@@ -176,7 +176,7 @@ func c23NarrowedScope(t *testing.T, robotsBody string) authz.Scope {
 	return narrowed
 }
 
-type c23Opts struct {
+type crawlOpts struct {
 	trigger    ScanTrigger
 	seeds      []string
 	maxPages   int
@@ -189,8 +189,8 @@ type c23Opts struct {
 	overrides  *authz.CapOverrides
 }
 
-// c23Config assembles a real kernel and a crawl configuration around it.
-func c23Config(t *testing.T, o c23Opts) CrawlConfig {
+// crawlConfig assembles a real kernel and a crawl configuration around it.
+func crawlConfig(t *testing.T, o crawlOpts) CrawlConfig {
 	t.Helper()
 	if o.trigger == ScanTriggerUnset {
 		o.trigger = ScanTriggerScheduledFull
@@ -204,10 +204,10 @@ func c23Config(t *testing.T, o c23Opts) CrawlConfig {
 	if o.maxDepth == 0 {
 		o.maxDepth = 8
 	}
-	opts := c22KernelOpts{robots: o.robotsPol, overrides: o.overrides}
-	gov, audit, _ := c22Kernel(t, opts)
+	opts := confirmKernelOpts{robots: o.robotsPol, overrides: o.overrides}
+	gov, audit, _ := confirmKernel(t, opts)
 	auth, _ := mintAuthorization(t)
-	scope := c23NarrowedScope(t, o.robots)
+	scope := crawlNarrowedScope(t, o.robots)
 	if o.scope != nil {
 		scope = *o.scope
 	}
@@ -225,12 +225,12 @@ func c23Config(t *testing.T, o c23Opts) CrawlConfig {
 		Spider:        o.spider,
 	}
 	if !o.freezeTime {
-		cfg.Clock = c22Advancing(t, time.Second)
+		cfg.Clock = confirmAdvancing(t, time.Second)
 	}
 	return cfg
 }
 
-func c23Run(t *testing.T, cfg CrawlConfig, exclude ...string) CrawlResult {
+func crawlRun(t *testing.T, cfg CrawlConfig, exclude ...string) CrawlResult {
 	t.Helper()
 	res, err := CrawlWithClientSpider(context.Background(), cfg, mustClock(t), exclude)
 	if err != nil {
@@ -239,8 +239,8 @@ func c23Run(t *testing.T, cfg CrawlConfig, exclude ...string) CrawlResult {
 	return res
 }
 
-// c23Ledger renders the visit ledger for a failure message.
-func c23Ledger(res CrawlResult) []string {
+// crawlLedger renders the visit ledger for a failure message.
+func crawlLedger(res CrawlResult) []string {
 	out := make([]string, 0, len(res.Visits()))
 	for _, v := range res.Visits() {
 		out = append(out, fmt.Sprintf("%s -> %s", v.CanonicalPath(), v.Outcome()))
@@ -248,7 +248,7 @@ func c23Ledger(res CrawlResult) []string {
 	return out
 }
 
-func c23RoutePaths(res CrawlResult) []string {
+func crawlRoutePaths(res CrawlResult) []string {
 	out := make([]string, 0, len(res.Routes()))
 	for _, r := range res.Routes() {
 		out = append(out, r.Path())
@@ -257,7 +257,7 @@ func c23RoutePaths(res CrawlResult) []string {
 	return out
 }
 
-func c23OutcomeCount(res CrawlResult, o CrawlOutcome) int {
+func crawlOutcomeCount(res CrawlResult, o CrawlOutcome) int {
 	n := 0
 	for _, v := range res.Visits() {
 		if v.Outcome() == o {
@@ -267,18 +267,18 @@ func c23OutcomeCount(res CrawlResult, o CrawlOutcome) int {
 	return n
 }
 
-func c23Visit(t *testing.T, res CrawlResult, canon string) CrawlVisit {
+func crawlVisit(t *testing.T, res CrawlResult, canon string) CrawlVisit {
 	t.Helper()
 	for _, v := range res.Visits() {
 		if v.CanonicalPath() == canon {
 			return v
 		}
 	}
-	t.Fatalf("no ledger row for %q; the ledger is %v", canon, c23Ledger(res))
+	t.Fatalf("no ledger row for %q; the ledger is %v", canon, crawlLedger(res))
 	return CrawlVisit{}
 }
 
-func c23HasRoute(res CrawlResult, path string) bool {
+func crawlHasRoute(res CrawlResult, path string) bool {
 	for _, r := range res.Routes() {
 		if r.Path() == path {
 			return true
@@ -288,7 +288,7 @@ func c23HasRoute(res CrawlResult, path string) bool {
 }
 
 // ===========================================================================
-// THE TRIGGER GATE — plan/50-dast.md exit gate 14, both halves
+// THE TRIGGER GATE — plan/design/dynamic-tier.md exit gate 14, both halves
 // ===========================================================================
 
 // TestTheCrawlDoesNotExecuteOnAnIncrementalTrigger is exit gate 14's negative
@@ -297,18 +297,18 @@ func c23HasRoute(res CrawlResult, path string) bool {
 // routes is what a skipped crawl and a crawled-but-empty target both look
 // like.
 func TestTheCrawlDoesNotExecuteOnAnIncrementalTrigger(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/a", "/b", "/c"},
 	})
-	cfg := c23Config(t, c23Opts{trigger: ScanTriggerIncremental, spider: spider})
-	res := c23Run(t, cfg)
+	cfg := crawlConfig(t, crawlOpts{trigger: ScanTriggerIncremental, spider: spider})
+	res := crawlRun(t, cfg)
 
 	if res.Executed() {
 		t.Fatal("the crawl reported that it executed on an incremental trigger")
 	}
 	if spider.calls != 0 {
 		t.Fatalf("the spider was called %d time(s) on an incremental trigger; it must be "+
-			"0. plan/50-dast.md D.23: this tier fires on scheduled full scans only",
+			"0. The crawl's design: this tier fires on scheduled full scans only",
 			spider.calls)
 	}
 	if n := len(res.Routes()); n != 0 {
@@ -334,11 +334,11 @@ func TestTheCrawlDoesNotExecuteOnAnIncrementalTrigger(t *testing.T) {
 // TestTheCrawlDoesExecuteOnAScheduledFullScan is exit gate 14's positive half.
 // Without it the negative half is satisfied by a crawl that never runs at all.
 func TestTheCrawlDoesExecuteOnAScheduledFullScan(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/":  {"/a", "/b"},
 		"/a": {"/c"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		trigger: ScanTriggerScheduledFull, spider: spider,
 	}))
 
@@ -352,7 +352,7 @@ func TestTheCrawlDoesExecuteOnAScheduledFullScan(t *testing.T) {
 		t.Fatalf("answered=%d, want 4", got)
 	}
 	want := []string{"/", "/a", "/b", "/c"}
-	if got := c23RoutePaths(res); !reflect.DeepEqual(got, want) {
+	if got := crawlRoutePaths(res); !reflect.DeepEqual(got, want) {
 		t.Fatalf("routes=%v, want %v", got, want)
 	}
 	if err := res.AssertNotSilentlyEmpty(); err != nil {
@@ -395,10 +395,10 @@ func TestOnlyTheScheduledFullTriggerIsEligible(t *testing.T) {
 
 	// And the same answer end to end, not only from the predicate.
 	for _, c := range cases {
-		spider := c23Linking(map[string][]string{"/": {"/a"}})
-		cfg := c23Config(t, c23Opts{spider: spider})
+		spider := crawlLinking(map[string][]string{"/": {"/a"}})
+		cfg := crawlConfig(t, crawlOpts{spider: spider})
 		cfg.Trigger = c.trigger // set AFTER the harness, which defaults it
-		res := c23Run(t, cfg)
+		res := crawlRun(t, cfg)
 		if res.Executed() != c.want {
 			t.Fatalf("trigger %q: Executed()=%v, want %v", c.trigger, res.Executed(), c.want)
 		}
@@ -430,7 +430,7 @@ func TestTheTriggerGateRunsBeforeAnythingElse(t *testing.T) {
 // ===========================================================================
 
 // TestSwaggerUIAndGraphQLPlaygroundsAreExcludedEvenWhenTheLinkGraphOffersThem
-// is D.23's first named validation requirement.
+// is the crawl's first named validation requirement.
 //
 // The fixture target links to eight meta-surface paths from its front page.
 // The assertion is on the exact set of paths that LEFT — the spider's own
@@ -447,30 +447,30 @@ func TestSwaggerUIAndGraphQLPlaygroundsAreExcludedEvenWhenTheLinkGraphOffersThem
 		"/graphql-playground/index.html",
 		"/altair",
 	}
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": append(append([]string{}, meta...), "/orders", "/orders/42"),
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	want := []string{"/", "/orders", "/orders/42"}
 	if got := spider.paths(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("the spider was asked for %v; want exactly %v. plan/50-dast.md D.23 "+
+		t.Fatalf("the spider was asked for %v; want exactly %v. The crawl's design "+
 			"forbids crawling Swagger UI and GraphQL playground routes even when the "+
 			"crawl finds them itself", got, want)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeMetaSurfaceExcluded); got != len(meta) {
+	if got := crawlOutcomeCount(res, CrawlOutcomeMetaSurfaceExcluded); got != len(meta) {
 		t.Fatalf("%d ledger rows say meta_surface_excluded, want %d. The ledger is %v",
-			got, len(meta), c23Ledger(res))
+			got, len(meta), crawlLedger(res))
 	}
 	// An excluded path is meta-surface, not application surface, so it is NOT
 	// in the coverage denominator either.
 	for _, m := range meta {
-		if c23HasRoute(res, m) {
+		if crawlHasRoute(res, m) {
 			t.Fatalf("%s became an inventory route; it is meta-surface", m)
 		}
 	}
 	if got, want := len(res.Routes()), 3; got != want {
-		t.Fatalf("the crawl produced %d routes, want %d: %v", got, want, c23RoutePaths(res))
+		t.Fatalf("the crawl produced %d routes, want %d: %v", got, want, crawlRoutePaths(res))
 	}
 	if err := res.AssertNoExcludedPathWasVisited(); err != nil {
 		t.Fatalf("AssertNoExcludedPathWasVisited: %v", err)
@@ -489,49 +489,49 @@ func TestTheExclusionListMatchesBySegmentAndNotBySubstring(t *testing.T) {
 		"/graphiql-users",
 		"/openapikeys",
 	}
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": append(append([]string{}, siblings...), "/api-docs", "/api-docs/v1"),
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	for _, s := range siblings {
-		if !c23HasRoute(res, s) {
+		if !crawlHasRoute(res, s) {
 			t.Errorf("%s was excluded. It is a different route that merely shares a "+
 				"prefix spelling, and a substring match deletes it from the inventory", s)
 		}
 	}
 	for _, m := range []string{"/api-docs", "/api-docs/v1"} {
-		if c23HasRoute(res, m) {
+		if crawlHasRoute(res, m) {
 			t.Errorf("%s was crawled; the exclusion must cover the prefix itself and "+
 				"everything below it", m)
 		}
 	}
 	if got, want := len(res.Routes()), len(siblings)+1; got != want {
 		t.Fatalf("routes=%d, want %d (the seed plus the five siblings): %v",
-			got, want, c23RoutePaths(res))
+			got, want, crawlRoutePaths(res))
 	}
 }
 
 // TestTheOperatorExclusionListIsHonouredAndAnUnusableOneIsRefused.
 func TestTheOperatorExclusionListIsHonouredAndAnUnusableOneIsRefused(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/admin", "/admin/users", "/adminish", "/public"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}), "/admin")
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}), "/admin")
 
 	want := []string{"/", "/adminish", "/public"}
 	if got := spider.paths(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the spider was asked for %v, want %v", got, want)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeMetaSurfaceExcluded); got != 2 {
+	if got := crawlOutcomeCount(res, CrawlOutcomeMetaSurfaceExcluded); got != 2 {
 		t.Fatalf("%d rows say excluded, want 2 (/admin and /admin/users): %v",
-			got, c23Ledger(res))
+			got, crawlLedger(res))
 	}
 
 	// An exclusion Anvil cannot apply is REFUSED and not dropped: a dropped
 	// exclusion and an honoured one look identical in the output.
 	for _, bad := range []string{"", "admin", "../admin", strings.Repeat("/a", 4096)} {
-		cfg := c23Config(t, c23Opts{spider: c23Linking(nil)})
+		cfg := crawlConfig(t, crawlOpts{spider: crawlLinking(nil)})
 		_, err := CrawlWithClientSpider(context.Background(), cfg, mustClock(t),
 			[]string{bad})
 		if !errors.Is(err, ErrRefused) {
@@ -589,11 +589,11 @@ func TestAssertNoExcludedPathWasVisitedCanSeeTheDamage(t *testing.T) {
 // request count: a crawler that revisits once before noticing is a crawler
 // that revisits n times on a bigger cycle.
 func TestACyclicLinkGraphTerminates(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/a": {"/b"},
 		"/b": {"/a"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		seeds: []string{"/a"}, spider: spider, maxPages: 500, maxDepth: 32,
 	}))
 
@@ -621,10 +621,10 @@ func TestACyclicLinkGraphTerminates(t *testing.T) {
 // TestASelfReferencingPageIsFetchedExactlyOnce. The degenerate cycle, and the
 // one a depth bound alone would not catch cheaply.
 func TestASelfReferencingPageIsFetchedExactlyOnce(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/loop": {"/loop", "/loop", "/loop", "./loop", "/loop#frag", "/loop?"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{seeds: []string{"/loop"}, spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{seeds: []string{"/loop"}, spider: spider}))
 
 	if got := spider.calls; got != 1 {
 		t.Fatalf("the spider was called %d times for a self-referencing page, want 1. "+
@@ -633,7 +633,7 @@ func TestASelfReferencingPageIsFetchedExactlyOnce(t *testing.T) {
 			"the same request", got)
 	}
 	if got := len(res.Routes()); got != 1 {
-		t.Fatalf("routes=%d, want 1: %v", got, c23RoutePaths(res))
+		t.Fatalf("routes=%d, want 1: %v", got, crawlRoutePaths(res))
 	}
 }
 
@@ -643,10 +643,10 @@ func TestASelfReferencingPageIsFetchedExactlyOnce(t *testing.T) {
 func TestAnInfiniteSiteTerminatesOnTheDepthBudget(t *testing.T) {
 	// A generator, not a table: a fixture that cannot produce the breaking
 	// input is the defect. This one is genuinely unbounded.
-	spider := &c23Spider{pages: map[string]CrawlPage{}, def: CrawlPage{Status: 200}}
+	spider := &crawlSpider{pages: map[string]CrawlPage{}, def: CrawlPage{Status: 200}}
 	spider.pages = nil
-	gen := &c23Generator{prefix: "/n"}
-	res := c23Run(t, c23Config(t, c23Opts{
+	gen := &crawlGenerator{prefix: "/n"}
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		seeds: []string{"/n0"}, spider: gen, maxPages: 10000, maxDepth: 4,
 	}))
 
@@ -658,15 +658,15 @@ func TestAnInfiniteSiteTerminatesOnTheDepthBudget(t *testing.T) {
 	if got := res.DeepestReached(); got != 4 {
 		t.Fatalf("deepest=%d, want 4", got)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeDepthExceeded); got != 1 {
-		t.Fatalf("%d rows say depth_budget_exhausted, want 1: %v", got, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomeDepthExceeded); got != 1 {
+		t.Fatalf("%d rows say depth_budget_exhausted, want 1: %v", got, crawlLedger(res))
 	}
 	// The address beyond the budget is NOT dropped. It is surface Anvil saw
 	// and did not probe, and dropping it would improve coverage every time the
 	// crawl ran short.
-	if !c23HasRoute(res, "/n5") {
+	if !crawlHasRoute(res, "/n5") {
 		t.Fatalf("the address past the depth budget left the inventory: %v",
-			c23RoutePaths(res))
+			crawlRoutePaths(res))
 	}
 	if err := res.AssertBudgetSufficed(); !errors.Is(err, ErrProbeBudgetExhausted) {
 		t.Fatalf("AssertBudgetSufficed returned %v; a crawl that ran out of depth "+
@@ -674,16 +674,16 @@ func TestAnInfiniteSiteTerminatesOnTheDepthBudget(t *testing.T) {
 	}
 }
 
-// c23Generator is an infinite site: /nK links to /n(K+1), forever.
-type c23Generator struct {
+// crawlGenerator is an infinite site: /nK links to /n(K+1), forever.
+type crawlGenerator struct {
 	prefix string
 	seen   []string
 }
 
 // Discipline: one request per call, like every double in this file.
-func (g *c23Generator) Discipline() FetchDiscipline { return FetchDisciplineSingleRequest }
+func (g *crawlGenerator) Discipline() FetchDiscipline { return FetchDisciplineSingleRequest }
 
-func (g *c23Generator) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
+func (g *crawlGenerator) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage, error) {
 	g.seen = append(g.seen, req.Path())
 	n, err := strconv.Atoi(strings.TrimPrefix(req.Path(), g.prefix))
 	if err != nil {
@@ -699,8 +699,8 @@ func (g *c23Generator) FetchPage(_ context.Context, req CrawlRequest) (CrawlPage
 // TestAnInfiniteSiteTerminatesOnThePageBudget, with the depth bound raised out
 // of the way so only the page budget can stop it.
 func TestAnInfiniteSiteTerminatesOnThePageBudget(t *testing.T) {
-	gen := &c23Generator{prefix: "/n"}
-	res := c23Run(t, c23Config(t, c23Opts{
+	gen := &crawlGenerator{prefix: "/n"}
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		seeds: []string{"/n0"}, spider: gen, maxPages: 6, maxDepth: 32,
 	}))
 
@@ -708,13 +708,13 @@ func TestAnInfiniteSiteTerminatesOnThePageBudget(t *testing.T) {
 		t.Fatalf("issued=%d, want exactly the budget of 6; the spider saw %v",
 			got, gen.seen)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomePageBudgetExhausted); got != 1 {
-		t.Fatalf("%d rows say page_budget_exhausted, want 1: %v", got, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomePageBudgetExhausted); got != 1 {
+		t.Fatalf("%d rows say page_budget_exhausted, want 1: %v", got, crawlLedger(res))
 	}
 	if got, want := len(res.Routes()), 7; got != want {
 		t.Fatalf("routes=%d, want %d: the six fetched addresses plus the one the budget "+
 			"did not reach, which stays in the denominator: %v",
-			got, want, c23RoutePaths(res))
+			got, want, crawlRoutePaths(res))
 	}
 	if err := res.AssertBudgetSufficed(); !errors.Is(err, ErrProbeBudgetExhausted) {
 		t.Fatalf("AssertBudgetSufficed returned %v", err)
@@ -735,7 +735,7 @@ func TestACrawlBudgetThatIsNotConfiguredIsRefused(t *testing.T) {
 		{"zero depth", 10, 0, "depth budget"},
 		{"depth over the ceiling", 10, codedMaxCrawlDepth + 1, "depth budget"},
 	} {
-		cfg := c23Config(t, c23Opts{spider: c23Linking(nil)})
+		cfg := crawlConfig(t, crawlOpts{spider: crawlLinking(nil)})
 		cfg.MaxPages = c.pages
 		cfg.MaxDepth = c.depth
 		_, err := CrawlWithClientSpider(context.Background(), cfg, mustClock(t), nil)
@@ -756,7 +756,7 @@ func TestACrawlBudgetThatIsNotConfiguredIsRefused(t *testing.T) {
 // TestASeedlessCrawlIsRefused. A crawl with no seed reaches nothing and
 // reports a target with no link graph; those are two different findings.
 func TestASeedlessCrawlIsRefused(t *testing.T) {
-	cfg := c23Config(t, c23Opts{spider: c23Linking(nil)})
+	cfg := crawlConfig(t, crawlOpts{spider: crawlLinking(nil)})
 	cfg.Seeds = nil
 	if _, err := CrawlWithClientSpider(context.Background(), cfg, mustClock(t), nil); !errors.Is(err, ErrRefused) {
 		t.Fatalf("err=%v, want ErrRefused", err)
@@ -783,23 +783,23 @@ func TestALinkOffTheAdmittedOriginIsRefusedAtTheLink(t *testing.T) {
 		"https://" + fixtureHost + ":8443/otherport",
 		"https://user:pass@evil.example.com/creds",
 	}
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": append(append([]string{}, offHost...), "/stay"),
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/", "/stay"}) {
 		t.Fatalf("the spider was asked for %v; nothing off the admitted origin may leave",
 			got)
 	}
-	if got, want := c23OutcomeCount(res, CrawlOutcomeOffHost), len(offHost); got != want {
+	if got, want := crawlOutcomeCount(res, CrawlOutcomeOffHost), len(offHost); got != want {
 		t.Fatalf("%d rows say link_points_off_the_admitted_origin, want %d: %v",
-			got, want, c23Ledger(res))
+			got, want, crawlLedger(res))
 	}
 	// An off-host address is not this target's surface, so it must not enter
 	// this target's denominator either.
 	if got, want := len(res.Routes()), 2; got != want {
-		t.Fatalf("routes=%d, want %d: %v", got, want, c23RoutePaths(res))
+		t.Fatalf("routes=%d, want %d: %v", got, want, crawlRoutePaths(res))
 	}
 }
 
@@ -819,24 +819,24 @@ func TestALinkThatIsNotARequestIsRefused(t *testing.T) {
 		"/:id/edit",
 		"/*/edit",
 	}
-	spider := c23Linking(map[string][]string{"/": append(append([]string{}, junk...), "/ok")})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	spider := crawlLinking(map[string][]string{"/": append(append([]string{}, junk...), "/ok")})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/", "/ok"}) {
 		t.Fatalf("the spider was asked for %v, want [/ /ok]", got)
 	}
-	unusable := c23OutcomeCount(res, CrawlOutcomeLinkUnusable) +
-		c23OutcomeCount(res, CrawlOutcomeOffHost)
+	unusable := crawlOutcomeCount(res, CrawlOutcomeLinkUnusable) +
+		crawlOutcomeCount(res, CrawlOutcomeOffHost)
 	if unusable != len(junk) {
 		t.Fatalf("%d of %d junk links were recorded as unusable or off-host: %v",
-			unusable, len(junk), c23Ledger(res))
+			unusable, len(junk), crawlLedger(res))
 	}
 }
 
 // TestABraceSegmentInALinkIsAnAddressAndNotATemplate.
 //
 // MEASURED, and the opposite of what the author expected: "/{id}/edit" in an
-// href is percent-encoded by URL resolution to "/%7Bid%7D/edit" before D.20's
+// href is percent-encoded by URL resolution to "/%7Bid%7D/edit" before Go route extraction's
 // canonicalizer ever sees it, so it is a concrete address and it is crawled.
 // "/:id/edit" is NOT escaped, the canonicalizer rewrites it to "/{id}/edit",
 // and it is refused — because requesting a template is requesting a path
@@ -845,22 +845,22 @@ func TestALinkThatIsNotARequestIsRefused(t *testing.T) {
 //
 // The distinction is recorded as a test rather than left to be rediscovered.
 func TestABraceSegmentInALinkIsAnAddressAndNotATemplate(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/{id}/edit", "/:id/edit"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	want := []string{"/", "/%7Bid%7D/edit"}
 	if got := spider.paths(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("the spider was asked for %v, want %v", got, want)
 	}
-	if c23HasRoute(res, "/{id}/edit") {
-		t.Fatal("a templated path became a crawl route; D.22 would key it as a template " +
+	if crawlHasRoute(res, "/{id}/edit") {
+		t.Fatal("a templated path became a crawl route; route confirmation would key it as a template " +
 			"the crawl never requested")
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeLinkUnusable); got != 1 {
+	if got := crawlOutcomeCount(res, CrawlOutcomeLinkUnusable); got != 1 {
 		t.Fatalf("%d rows say link_is_not_a_requestable_path, want 1: %v",
-			got, c23Ledger(res))
+			got, crawlLedger(res))
 	}
 }
 
@@ -872,14 +872,14 @@ func TestABraceSegmentInALinkIsAnAddressAndNotATemplate(t *testing.T) {
 // arrives as `initial` at hop 0 reaches the same place and carries no depth to
 // bound.
 func TestARedirectIsReAdmittedAsALabelledHop(t *testing.T) {
-	spider := &c23Spider{
+	spider := &crawlSpider{
 		pages: map[string]CrawlPage{
 			"/old": {Status: 302, Location: "/new"},
 			"/new": {Status: 200, Links: []string{"/leaf"}},
 		},
 		def: CrawlPage{Status: 200},
 	}
-	res := c23Run(t, c23Config(t, c23Opts{seeds: []string{"/old"}, spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{seeds: []string{"/old"}, spider: spider}))
 
 	want := []string{"/old@initial/0", "/new@redirect/1", "/leaf@initial/0"}
 	if got := spider.labels(); !reflect.DeepEqual(got, want) {
@@ -887,10 +887,10 @@ func TestARedirectIsReAdmittedAsALabelledHop(t *testing.T) {
 			"of the label: \"the egress layer records the hop, and a same-host hop is "+
 			"re-issued as a fresh request with OriginRedirect and Hop+1\"", got, want)
 	}
-	if got := c23Visit(t, res, "/old").Outcome(); got != CrawlOutcomeRedirected {
+	if got := crawlVisit(t, res, "/old").Outcome(); got != CrawlOutcomeRedirected {
 		t.Fatalf("/old came out %s, want %s", got, CrawlOutcomeRedirected)
 	}
-	if got := c23Visit(t, res, "/new").Hop(); got != 1 {
+	if got := crawlVisit(t, res, "/new").Hop(); got != 1 {
 		t.Fatalf("the ledger records /new at hop %d, want 1", got)
 	}
 }
@@ -907,8 +907,8 @@ func TestARedirectChainIsBoundedByTheKernelsHopBound(t *testing.T) {
 			Status: 301, Location: fmt.Sprintf("/r%d", i+1),
 		}
 	}
-	spider := &c23Spider{pages: pages, def: CrawlPage{Status: 200}}
-	res := c23Run(t, c23Config(t, c23Opts{
+	spider := &crawlSpider{pages: pages, def: CrawlPage{Status: 200}}
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		seeds: []string{"/r0"}, spider: spider, maxPages: 100, maxDepth: 32,
 	}))
 
@@ -926,7 +926,7 @@ func TestARedirectChainIsBoundedByTheKernelsHopBound(t *testing.T) {
 	if got := spider.calls; got != 6 {
 		t.Fatalf("the spider was called %d times, want 6 (/r0 plus five hops)", got)
 	}
-	v := c23Visit(t, res, "/r6")
+	v := crawlVisit(t, res, "/r6")
 	if v.Outcome() != CrawlOutcomeIntentRejected {
 		t.Fatalf("/r6 came out %s, want %s -- the kernel refuses hop 6 at "+
 			"NewRequestIntent", v.Outcome(), CrawlOutcomeIntentRejected)
@@ -958,20 +958,20 @@ func TestARedirectChainIsBoundedByTheKernelsHopBound(t *testing.T) {
 // TestACrossHostRedirectIsRefused. Gate 13 refuses a cross-host hop OUTRIGHT,
 // and this file refuses it one step earlier by never resolving the name.
 func TestACrossHostRedirectIsRefused(t *testing.T) {
-	spider := &c23Spider{
+	spider := &crawlSpider{
 		pages: map[string]CrawlPage{
 			"/go": {Status: 302, Location: "https://evil.example.com/land"},
 		},
 		def: CrawlPage{Status: 200},
 	}
-	res := c23Run(t, c23Config(t, c23Opts{seeds: []string{"/go"}, spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{seeds: []string{"/go"}, spider: spider}))
 
 	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/go"}) {
 		t.Fatalf("the spider was asked for %v; the cross-host Location must never be "+
 			"requested. This is ZAP issue #2546, which gate 13 is named after", got)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeOffHost); got != 1 {
-		t.Fatalf("%d rows say off-host, want 1: %v", got, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomeOffHost); got != 1 {
+		t.Fatalf("%d rows say off-host, want 1: %v", got, crawlLedger(res))
 	}
 }
 
@@ -985,20 +985,20 @@ func TestACrossHostRedirectIsRefused(t *testing.T) {
 // crawler that admitted six requests and wrote one row would pass a
 // len(rows)>0 check.
 func TestEveryRequestIsAdmittedThroughTheKernelAndAudited(t *testing.T) {
-	gov, audit, sink := c22Kernel(t, c22KernelOpts{})
+	gov, audit, sink := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/a", "/b"}, "/a": {"/c"},
 	})
 	before := sink.n
 	cfg := CrawlConfig{
 		Trigger: ScanTriggerScheduledFull, Governor: gov, Audit: audit,
-		Authorization: auth, Target: mustBareTarget(t), Scope: c23NarrowedScope(t, ""),
+		Authorization: auth, Target: mustBareTarget(t), Scope: crawlNarrowedScope(t, ""),
 		Technique: authz.TechniqueContentDiscovery, Seeds: []string{"/"},
 		MaxPages: 20, MaxDepth: 4, Spider: spider,
-		Clock: c22Advancing(t, time.Second),
+		Clock: confirmAdvancing(t, time.Second),
 	}
-	res := c23Run(t, cfg)
+	res := crawlRun(t, cfg)
 
 	if res.Issued() != 4 {
 		t.Fatalf("issued=%d, want 4", res.Issued())
@@ -1032,21 +1032,21 @@ func TestAScopeNobodyNarrowedPermitsNoPath(t *testing.T) {
 	if raw.Narrowed() {
 		t.Fatal("the fixture scope arrived already narrowed, so this test proves nothing")
 	}
-	spider := c23Linking(map[string][]string{"/": {"/a", "/b"}})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider, scope: &raw}))
+	spider := crawlLinking(map[string][]string{"/": {"/a", "/b"}})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider, scope: &raw}))
 
 	if spider.calls != 0 {
 		t.Fatalf("the spider was called %d times against a scope nobody narrowed; a "+
 			"scope with no robots determination permits no path at all", spider.calls)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeOutsideNarrowedScope); got != 1 {
+	if got := crawlOutcomeCount(res, CrawlOutcomeOutsideNarrowedScope); got != 1 {
 		t.Fatalf("%d rows say outside_the_narrowed_scope, want 1 (the seed; nothing "+
-			"below it was ever discovered): %v", got, c23Ledger(res))
+			"below it was ever discovered): %v", got, crawlLedger(res))
 	}
 	// And the same configuration WITH the narrowing crawls, so the difference
 	// is the narrowing and not something else about the fixture.
-	spider2 := c23Linking(map[string][]string{"/": {"/a", "/b"}})
-	if res2 := c23Run(t, c23Config(t, c23Opts{spider: spider2})); res2.Issued() != 3 {
+	spider2 := crawlLinking(map[string][]string{"/": {"/a", "/b"}})
+	if res2 := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider2})); res2.Issued() != 3 {
 		t.Fatalf("with the scope narrowed, issued=%d, want 3", res2.Issued())
 	}
 }
@@ -1063,10 +1063,10 @@ func TestGate11RemovesAPathAndTheCrawlDoesNotVisitIt(t *testing.T) {
 	if policy.PermitsPath("/private") {
 		t.Fatal("the fixture robots.txt does not actually disallow /private")
 	}
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/private", "/private/keys", "/public"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		spider: spider, robots: body, robotsPol: &policy,
 	}))
 
@@ -1074,13 +1074,13 @@ func TestGate11RemovesAPathAndTheCrawlDoesNotVisitIt(t *testing.T) {
 		t.Fatalf("the spider was asked for %v; a path robots.txt removes must never "+
 			"leave", got)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeOutsideNarrowedScope); got != 2 {
+	if got := crawlOutcomeCount(res, CrawlOutcomeOutsideNarrowedScope); got != 2 {
 		t.Fatalf("%d rows say outside_the_narrowed_scope, want 2: %v",
-			got, c23Ledger(res))
+			got, crawlLedger(res))
 	}
 	// A path removed from SCOPE is not this crawl's surface, so it is not in
 	// the crawl's inventory.
-	if c23HasRoute(res, "/private") {
+	if crawlHasRoute(res, "/private") {
 		t.Fatal("a path gate 11 removed from scope became a crawl route")
 	}
 }
@@ -1094,8 +1094,8 @@ func TestGate14RefusesTheCrawlOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 	for i := 0; i < n; i++ {
 		links = append(links, fmt.Sprintf("/p%02d", i))
 	}
-	spider := c23Linking(map[string][]string{"/": links})
-	res := c23Run(t, c23Config(t, c23Opts{
+	spider := crawlLinking(map[string][]string{"/": links})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		spider: spider, maxPages: n + 1, freezeTime: true,
 	}))
 
@@ -1104,8 +1104,8 @@ func TestGate14RefusesTheCrawlOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 		t.Fatalf("answered=%d, want %d -- the token bucket holds exactly that many and "+
 			"a frozen clock never refills it", got, want)
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeKernelRefused); got != n+1-want {
-		t.Fatalf("%d rows say kernel_refused, want %d: %v", got, n+1-want, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomeKernelRefused); got != n+1-want {
+		t.Fatalf("%d rows say kernel_refused, want %d: %v", got, n+1-want, crawlLedger(res))
 	}
 	// Nothing is dropped: every address is still in the denominator.
 	if got := len(res.Routes()); got != n+1 {
@@ -1114,8 +1114,8 @@ func TestGate14RefusesTheCrawlOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 
 	// The same fixture with an advancing clock reaches every address, so the
 	// difference is Anvil's clock handling and nothing about the target.
-	spider2 := c23Linking(map[string][]string{"/": links})
-	res2 := c23Run(t, c23Config(t, c23Opts{spider: spider2, maxPages: n + 1}))
+	spider2 := crawlLinking(map[string][]string{"/": links})
+	res2 := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider2, maxPages: n + 1}))
 	if res2.Answered() != n+1 {
 		t.Fatalf("with an advancing clock answered=%d, want %d", res2.Answered(), n+1)
 	}
@@ -1125,17 +1125,17 @@ func TestGate14RefusesTheCrawlOverflowWhenTheClockDoesNotAdvance(t *testing.T) {
 // kernel and never tells the kernel what happened has no circuit breaker: gate
 // 16 and gate 17 learn only from Governor.ObserveResponse.
 func TestTheObservationIsFedBackToTheKernel(t *testing.T) {
-	spider := &c23Spider{
+	spider := &crawlSpider{
 		pages: map[string]CrawlPage{
 			"/": {Status: 429, Links: []string{"/a", "/b", "/c"}},
 		},
 		def: CrawlPage{Status: 200},
 	}
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
-	if got := c23OutcomeCount(res, CrawlOutcomeKernelRefused); got == 0 {
+	if got := crawlOutcomeCount(res, CrawlOutcomeKernelRefused); got == 0 {
 		t.Fatalf("a 429 on the seed refused nothing afterwards, so the observation is "+
-			"not reaching gate 17: %v", c23Ledger(res))
+			"not reaching gate 17: %v", crawlLedger(res))
 	}
 	if spider.calls != 1 {
 		t.Fatalf("the spider was called %d times after a 429; the crawl must stop rather "+
@@ -1146,32 +1146,32 @@ func TestTheObservationIsFedBackToTheKernel(t *testing.T) {
 // TestTheKernelValidatesTheCrawlPathRatherThanASecondValidator.
 func TestTheKernelValidatesTheCrawlPathRatherThanASecondValidator(t *testing.T) {
 	// A path the kernel refuses on its charset rule, offered as a seed.
-	cfg := c23Config(t, c23Opts{
-		spider: c23Linking(nil),
+	cfg := crawlConfig(t, crawlOpts{
+		spider: crawlLinking(nil),
 		seeds:  []string{"/ok", "/bad\x7f", "/bad\tspace"},
 	})
-	res := c23Run(t, cfg)
-	if got := c23OutcomeCount(res, CrawlOutcomeLinkUnusable); got != 2 {
-		t.Fatalf("%d seeds were refused, want 2: %v", got, c23Ledger(res))
+	res := crawlRun(t, cfg)
+	if got := crawlOutcomeCount(res, CrawlOutcomeLinkUnusable); got != 2 {
+		t.Fatalf("%d seeds were refused, want 2: %v", got, crawlLedger(res))
 	}
-	if !c23HasRoute(res, "/ok") {
+	if !crawlHasRoute(res, "/ok") {
 		t.Fatal("the legal seed was refused too, so the guard is refusing everything")
 	}
 }
 
 // ===========================================================================
-// THE NUMERATOR — ruling 7
+// THE NUMERATOR — the inventory ruling
 // ===========================================================================
 
 // TestEveryCrawlRouteIsACandidateEvenWhenTheTargetAnswered200.
 //
 // The crawl fetched these addresses and the target answered 200 to a request
 // the kernel admitted. They are STILL candidates: there is one writer of
-// ConfirmationConfirmed in this package and it is D.22's, because a second one
+// ConfirmationConfirmed in this package and it is route confirmation's, because a second one
 // is a second numerator.
 func TestEveryCrawlRouteIsACandidateEvenWhenTheTargetAnswered200(t *testing.T) {
-	spider := c23Linking(map[string][]string{"/": {"/a", "/b"}})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	spider := crawlLinking(map[string][]string{"/": {"/a", "/b"}})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	if res.Answered() != 3 {
 		t.Fatalf("answered=%d, want 3; without a real 200 this test proves nothing",
@@ -1223,7 +1223,7 @@ func TestConfirmedIsNeverWrittenInThisTier(t *testing.T) {
 	}
 	if len(confirmed) != 0 {
 		t.Fatalf("ConfirmationConfirmed appears at lines %v in tier3_crawl.go. Tier 3 "+
-			"discovers candidates; D.22 confirms them", confirmed)
+			"discovers candidates; route confirmation confirms them", confirmed)
 	}
 	if candidates == 0 {
 		t.Fatal("the scanner found zero uses of ConfirmationCandidate, which the file " +
@@ -1231,18 +1231,18 @@ func TestConfirmedIsNeverWrittenInThisTier(t *testing.T) {
 	}
 }
 
-// TestCrawlRoutesFeedD22AndOnlyD22Confirms drives the real handoff: the crawl
+// TestCrawlRoutesFeedRouteConfirmationAndOnlyItConfirms drives the real handoff: the crawl
 // produces candidates, MergeAndConfirm probes them, and the confirmation
 // carries an Observation with a gate-21 audit sequence.
-func TestCrawlRoutesFeedD22AndOnlyD22Confirms(t *testing.T) {
-	spider := c23Linking(map[string][]string{"/": {"/a", "/gone"}})
-	crawl := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+func TestCrawlRoutesFeedRouteConfirmationAndOnlyItConfirms(t *testing.T) {
+	spider := crawlLinking(map[string][]string{"/": {"/a", "/gone"}})
+	crawl := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 	if len(crawl.Routes()) != 3 {
 		t.Fatalf("the crawl produced %d routes, want 3", len(crawl.Routes()))
 	}
 
-	prober := c22Answering(200, map[string]int{"/gone": 404})
-	res := c22Run(t, c22Confirming(t, prober, 10), crawl.Routes())
+	prober := confirmAnswering(200, map[string]int{"/gone": 404})
+	res := confirmRun(t, confirmConfirming(t, prober, 10), crawl.Routes())
 
 	if got := res.EndpointCount(); got != 3 {
 		t.Fatalf("the union is %d endpoints, want 3", got)
@@ -1257,7 +1257,7 @@ func TestCrawlRoutesFeedD22AndOnlyD22Confirms(t *testing.T) {
 	if err := res.AssertEveryConfirmationHasEvidence(); err != nil {
 		t.Fatalf("AssertEveryConfirmationHasEvidence: %v", err)
 	}
-	e := c22Endpoint(t, res, authz.MethodGet, "/a")
+	e := confirmEndpoint(t, res, authz.MethodGet, "/a")
 	obs, ok := e.Observation()
 	if !ok || !obs.Recorded() || obs.AuditSeq() == 0 {
 		t.Fatalf("/a is confirmed and its observation is %v", obs)
@@ -1314,8 +1314,8 @@ func TestAssertEveryRouteIsACandidateCanSeeTheDamage(t *testing.T) {
 // ===========================================================================
 
 // TestTheToolAbsentPathRefusesLoudly. This host has no ZAP, so it has no
-// Client Spider, and SystemClientSpider says so by CALLING D.15 rather than by
-// asserting what D.15 would say.
+// Client Spider, and SystemClientSpider says so by CALLING the ZAP driver rather than by
+// asserting what the ZAP driver would say.
 func TestTheToolAbsentPathRefusesLoudly(t *testing.T) {
 	spider, err := SystemClientSpider()
 	if err == nil {
@@ -1329,7 +1329,7 @@ func TestTheToolAbsentPathRefusesLoudly(t *testing.T) {
 	if !errors.Is(err, ErrNoClientSpider) {
 		t.Fatalf("err=%v, want ErrNoClientSpider", err)
 	}
-	// The refusal is D.15's own, unwrapped, so a host that GROWS a ZAP runner
+	// The refusal is the ZAP driver's own, unwrapped, so a host that GROWS a ZAP runner
 	// changes this answer rather than leaving a stale string behind.
 	if !errors.Is(err, engines.ErrEngineUnavailable) {
 		t.Fatalf("err=%v does not unwrap to engines.ErrEngineUnavailable, so it is not "+
@@ -1341,12 +1341,12 @@ func TestTheToolAbsentPathRefusesLoudly(t *testing.T) {
 // the kernel's rate budget or write a gate-21 row for a request that cannot
 // leave: an audit log claiming requests Anvil never issued is worse than none.
 func TestANilSpiderIsALoudRefusalAndNotAnEmptyLinkGraph(t *testing.T) {
-	gov, audit, sink := c22Kernel(t, c22KernelOpts{})
+	gov, audit, sink := confirmKernel(t, confirmKernelOpts{})
 	auth, _ := mintAuthorization(t)
 	before := sink.n
 	cfg := CrawlConfig{
 		Trigger: ScanTriggerScheduledFull, Governor: gov, Audit: audit,
-		Authorization: auth, Target: mustBareTarget(t), Scope: c23NarrowedScope(t, ""),
+		Authorization: auth, Target: mustBareTarget(t), Scope: crawlNarrowedScope(t, ""),
 		Technique: authz.TechniqueContentDiscovery, Seeds: []string{"/", "/a"},
 		MaxPages: 10, MaxDepth: 4,
 		// Spider is nil.
@@ -1369,10 +1369,10 @@ func TestANilSpiderIsALoudRefusalAndNotAnEmptyLinkGraph(t *testing.T) {
 	// The seeds are still in the inventory: their absence is a fact about
 	// Anvil, and a shorter inventory would report better coverage for it.
 	if got := len(res.Routes()); got != 2 {
-		t.Fatalf("routes=%d, want 2: %v", got, c23RoutePaths(res))
+		t.Fatalf("routes=%d, want 2: %v", got, crawlRoutePaths(res))
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeFetchFailed); got != 2 {
-		t.Fatalf("%d rows say fetch_failed, want 2: %v", got, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomeFetchFailed); got != 2 {
+		t.Fatalf("%d rows say fetch_failed, want 2: %v", got, crawlLedger(res))
 	}
 }
 
@@ -1380,15 +1380,15 @@ func TestANilSpiderIsALoudRefusalAndNotAnEmptyLinkGraph(t *testing.T) {
 // the bound a lost response would look like a page that exists.
 func TestASpiderThatReturnsNothingIsNotAnAnswer(t *testing.T) {
 	for _, status := range []int{0, -1, 99, 600, 1000} {
-		spider := &c23Spider{
+		spider := &crawlSpider{
 			def:   CrawlPage{Status: status, Latency: time.Millisecond},
 			exact: true,
 		}
-		res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+		res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 		if res.Answered() != 0 {
 			t.Errorf("status %d was counted as an answer", status)
 		}
-		if got := c23OutcomeCount(res, CrawlOutcomeFetchFailed); got != 1 {
+		if got := crawlOutcomeCount(res, CrawlOutcomeFetchFailed); got != 1 {
 			t.Errorf("status %d produced %d fetch_failed rows, want 1", status, got)
 		}
 		if err := res.AssertNotSilentlyEmpty(); !errors.Is(err, ErrCrawlFoundNothing) {
@@ -1400,10 +1400,10 @@ func TestASpiderThatReturnsNothingIsNotAnAnswer(t *testing.T) {
 
 // TestASpiderErrorIsCountedAndDoesNotStopTheCrawl.
 func TestASpiderErrorIsCountedAndDoesNotStopTheCrawl(t *testing.T) {
-	spider := &c23Spider{err: errors.New("the browser died")}
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider, seeds: []string{"/a", "/b"}}))
-	if got := c23OutcomeCount(res, CrawlOutcomeFetchFailed); got != 2 {
-		t.Fatalf("%d rows say fetch_failed, want 2: %v", got, c23Ledger(res))
+	spider := &crawlSpider{err: errors.New("the browser died")}
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider, seeds: []string{"/a", "/b"}}))
+	if got := crawlOutcomeCount(res, CrawlOutcomeFetchFailed); got != 2 {
+		t.Fatalf("%d rows say fetch_failed, want 2: %v", got, crawlLedger(res))
 	}
 	if got := len(res.Refusals()); got != 2 {
 		t.Fatalf("%d refusals, want 2", got)
@@ -1422,17 +1422,17 @@ func TestASpiderErrorIsCountedAndDoesNotStopTheCrawl(t *testing.T) {
 // But the crawl must still REQUEST the query, or it fetches a page the link
 // did not point at.
 func TestTheQueryIsRequestedAndTheAddressIsNot(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/search?q=1", "/search?q=2&lang=en", "/search"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 
 	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/", "/search?q=1"}) {
 		t.Fatalf("the spider was asked for %v; the first spelling is requested WITH its "+
 			"query and the later ones are the same address", got)
 	}
 	want := []string{"/", "/search"}
-	if got := c23RoutePaths(res); !reflect.DeepEqual(got, want) {
+	if got := crawlRoutePaths(res); !reflect.DeepEqual(got, want) {
 		t.Fatalf("routes=%v, want %v", got, want)
 	}
 	for _, r := range res.Routes() {
@@ -1461,8 +1461,8 @@ func TestCrawlOutputIsDeterministic(t *testing.T) {
 		"/a/1": {"/"},
 	}
 	render := func() ([]string, []string) {
-		res := c23Run(t, c23Config(t, c23Opts{spider: c23Linking(graph)}))
-		return c23Ledger(res), c23RoutePaths(res)
+		res := crawlRun(t, crawlConfig(t, crawlOpts{spider: crawlLinking(graph)}))
+		return crawlLedger(res), crawlRoutePaths(res)
 	}
 	l1, r1 := render()
 	l2, r2 := render()
@@ -1484,11 +1484,11 @@ func TestCrawlOutputIsDeterministic(t *testing.T) {
 // Route's params are a separate allocation from the Route, so they are the
 // field a shallow copy leaves shared.
 func TestCrawlResultAccessorsReturnDeepCopies(t *testing.T) {
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/a?x=1", "/broken", "mailto:z@y"},
 	})
 	spider.errPaths = map[string]error{"/broken": errors.New("the browser died")}
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider}))
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider}))
 	if len(res.Routes()) == 0 || len(res.Visits()) == 0 || len(res.Refusals()) == 0 {
 		t.Fatalf("the fixture left one of the three lists empty (%d routes, %d visits, "+
 			"%d refusals), so mutating it would prove nothing",
@@ -1609,8 +1609,8 @@ func TestTheZeroCrawlResultClaimsNothing(t *testing.T) {
 func TestACancelledCrawlDoesNotReportAPartialInventoryAsAMeasurement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	cfg := c23Config(t, c23Opts{
-		spider: c23Linking(map[string][]string{"/": {"/a"}}),
+	cfg := crawlConfig(t, crawlOpts{
+		spider: crawlLinking(map[string][]string{"/": {"/a"}}),
 		seeds:  []string{"/", "/b"},
 	})
 	res, err := CrawlWithClientSpider(ctx, cfg, mustClock(t), nil)
@@ -1620,8 +1620,8 @@ func TestACancelledCrawlDoesNotReportAPartialInventoryAsAMeasurement(t *testing.
 	if res.Issued() != 0 {
 		t.Fatalf("issued=%d after cancellation", res.Issued())
 	}
-	if got := c23OutcomeCount(res, CrawlOutcomeCancelled); got != 2 {
-		t.Fatalf("%d rows say cancelled, want 2: %v", got, c23Ledger(res))
+	if got := crawlOutcomeCount(res, CrawlOutcomeCancelled); got != 2 {
+		t.Fatalf("%d rows say cancelled, want 2: %v", got, crawlLedger(res))
 	}
 	if err := res.AssertBudgetSufficed(); !errors.Is(err, ErrProbeBudgetExhausted) {
 		t.Fatalf("err=%v; a cancelled crawl is a coverage FLOOR", err)
@@ -1634,8 +1634,8 @@ func TestOnePageCannotEnqueueAnUnboundedFrontier(t *testing.T) {
 	for i := range links {
 		links[i] = fmt.Sprintf("/l%05d", i)
 	}
-	spider := c23Linking(map[string][]string{"/": links})
-	res := c23Run(t, c23Config(t, c23Opts{spider: spider, maxPages: 3}))
+	spider := crawlLinking(map[string][]string{"/": links})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{spider: spider, maxPages: 3}))
 
 	// The seed plus the bounded link set; the 50 beyond the bound were never
 	// read, and the refusal says so rather than dropping them quietly.
@@ -1657,7 +1657,7 @@ func TestOnePageCannotEnqueueAnUnboundedFrontier(t *testing.T) {
 // STRUCTURAL GUARDS
 // ===========================================================================
 
-func c23Source(t *testing.T) string {
+func crawlSource(t *testing.T) string {
 	t.Helper()
 	src, err := os.ReadFile("tier3_crawl.go")
 	if err != nil {
@@ -1808,10 +1808,10 @@ func TestTheCanonicalizerIsD20sAndNotASecondOne(t *testing.T) {
 	})
 	if calls["canonicalizePattern"] == 0 {
 		t.Fatal("tier3_crawl.go never calls canonicalizePattern, so it is keying its " +
-			"addresses on something D.22 does not key its union on")
+			"addresses on something route confirmation does not key its union on")
 	}
 	if calls["endpointKey"] == 0 {
-		t.Fatal("tier3_crawl.go never calls endpointKey, so its visited set and D.22's " +
+		t.Fatal("tier3_crawl.go never calls endpointKey, so its visited set and route confirmation's " +
 			"union are keyed by two different functions")
 	}
 	if calls["kernelAcceptsPath"] == 0 {
@@ -1819,7 +1819,7 @@ func TestTheCanonicalizerIsD20sAndNotASecondOne(t *testing.T) {
 			"thing validating its paths")
 	}
 	// And the host comparison is the kernel's, not a local one.
-	src := c23Source(t)
+	src := crawlSource(t)
 	if !strings.Contains(src, "authz.Canonicalize(") {
 		t.Fatal("tier3_crawl.go does not compare hosts through authz.Canonicalize, so it " +
 			"holds a second opinion about what two hosts being equal means")
@@ -1830,15 +1830,15 @@ func TestTheCanonicalizerIsD20sAndNotASecondOne(t *testing.T) {
 // NON-CANONICAL SPELLINGS — the third time this codebase has lost to one
 // ===========================================================================
 
-// c23DotSpellings is every spelling of a dot segment a link or a Location
+// crawlDotSpellings is every spelling of a dot segment a link or a Location
 // header can carry. Each one resolves, in a browser, to a path the fixture
 // robots.txt has removed from scope.
 //
 // The list is the GENERATOR, and a generator that cannot produce the breaking
-// input is the defect: it carries the three spellings the D.25 critic measured
+// input is the defect: it carries the three spellings the crawl-and-auth review measured
 // AND the ones it did not — double-encoded, mixed case, overlong, backslash
 // separators, and a triple that only becomes a dot segment after two decodes.
-func c23DotSpellings() []string {
+func crawlDotSpellings() []string {
 	return []string{
 		"/%2e%2e/admin",
 		"/x/%2e%2e/admin",
@@ -1857,7 +1857,7 @@ func c23DotSpellings() []string {
 // TestANonCanonicalSpellingOfARemovedPathIsNeverRequested.
 //
 // Gate 11's narrowing removed /admin. A browser resolves every spelling in
-// c23DotSpellings to /admin or to a path under it, so a crawl that requests
+// crawlDotSpellings to /admin or to a path under it, so a crawl that requests
 // any of them has walked outside the narrowed scope by spelling alone.
 func TestANonCanonicalSpellingOfARemovedPathIsNeverRequested(t *testing.T) {
 	const body = "User-agent: *\nDisallow: /admin\n"
@@ -1866,9 +1866,9 @@ func TestANonCanonicalSpellingOfARemovedPathIsNeverRequested(t *testing.T) {
 		t.Fatal("the fixture robots.txt does not actually disallow /admin, so this test " +
 			"would pass against a crawler with no narrowing at all")
 	}
-	links := append([]string{"/admin"}, c23DotSpellings()...)
-	spider := c23Linking(map[string][]string{"/": links})
-	res := c23Run(t, c23Config(t, c23Opts{
+	links := append([]string{"/admin"}, crawlDotSpellings()...)
+	spider := crawlLinking(map[string][]string{"/": links})
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		spider: spider, robots: body, robotsPol: &policy, maxPages: 200,
 	}))
 
@@ -1881,15 +1881,15 @@ func TestANonCanonicalSpellingOfARemovedPathIsNeverRequested(t *testing.T) {
 	if got, want := len(res.Visits()), 1+len(links); got != want {
 		t.Fatalf("the ledger has %d row(s) and %d link(s) were offered plus the seed; a "+
 			"spelling that was dropped without a row is one an operator cannot audit: %v",
-			got, want, c23Ledger(res))
+			got, want, crawlLedger(res))
 	}
 	for _, sp := range links {
-		if c23HasRoute(res, sp) {
+		if crawlHasRoute(res, sp) {
 			t.Fatalf("%q became a crawl route; a spelling of a removed path is not "+
 				"surface this crawl may report", sp)
 		}
 	}
-	if c23HasRoute(res, "/admin") {
+	if crawlHasRoute(res, "/admin") {
 		t.Fatal("/admin became a crawl route through an encoded spelling")
 	}
 }
@@ -1900,14 +1900,14 @@ func TestANonCanonicalSpellingOfARemovedPathIsNeverRequested(t *testing.T) {
 func TestANonCanonicalLocationHeaderIsNeverFollowed(t *testing.T) {
 	const body = "User-agent: *\nDisallow: /admin\n"
 	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
-	for _, loc := range c23DotSpellings() {
-		spider := &c23Spider{
+	for _, loc := range crawlDotSpellings() {
+		spider := &crawlSpider{
 			pages: map[string]CrawlPage{
 				"/": {Status: 302, Location: loc, Latency: time.Millisecond},
 			},
 			def: CrawlPage{Status: 200},
 		}
-		res := c23Run(t, c23Config(t, c23Opts{
+		res := crawlRun(t, crawlConfig(t, crawlOpts{
 			spider: spider, robots: body, robotsPol: &policy, maxPages: 200,
 		}))
 		if got := spider.paths(); !reflect.DeepEqual(got, []string{"/"}) {
@@ -1916,7 +1916,7 @@ func TestANonCanonicalLocationHeaderIsNeverFollowed(t *testing.T) {
 		}
 		if len(res.Visits()) != 2 {
 			t.Fatalf("a Location of %q produced %d ledger row(s), want 2 (the seed and "+
-				"the refused hop): %v", loc, len(res.Visits()), c23Ledger(res))
+				"the refused hop): %v", loc, len(res.Visits()), crawlLedger(res))
 		}
 	}
 }
@@ -1949,8 +1949,8 @@ func TestEachNonCanonicalSpellingIsClassifiedRatherThanMerelyDropped(t *testing.
 		{"/%2e%2e%2fadmin", CrawlOutcomeLinkUnusable, "parent plus encoded slash"},
 	}
 	for _, tc := range cases {
-		spider := c23Linking(map[string][]string{"/": {tc.link}})
-		res := c23Run(t, c23Config(t, c23Opts{
+		spider := crawlLinking(map[string][]string{"/": {tc.link}})
+		res := crawlRun(t, crawlConfig(t, crawlOpts{
 			spider: spider, robots: body, robotsPol: &policy,
 		}))
 		if spider.calls != 1 {
@@ -1965,7 +1965,7 @@ func TestEachNonCanonicalSpellingIsClassifiedRatherThanMerelyDropped(t *testing.
 		}
 		if len(got) != 1 {
 			t.Fatalf("%q: %d non-fetched ledger row(s), want exactly 1: %v",
-				tc.link, len(got), c23Ledger(res))
+				tc.link, len(got), crawlLedger(res))
 		}
 		if got[0].Outcome() != tc.want {
 			t.Fatalf("%q (%s): the ledger says %q, want %q. Detail: %s",
@@ -1984,10 +1984,10 @@ func TestEachNonCanonicalSpellingIsClassifiedRatherThanMerelyDropped(t *testing.
 func TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount(t *testing.T) {
 	const body = "User-agent: *\nDisallow: /admin\n"
 	policy := authz.ParseRobotsTxt(fixtureHost, 443, []byte(body))
-	spider := c23Linking(map[string][]string{
+	spider := crawlLinking(map[string][]string{
 		"/": {"/x/%2e%2e/public", "/public", "/%2e/public", "/caf%c3%a9"},
 	})
-	res := c23Run(t, c23Config(t, c23Opts{
+	res := crawlRun(t, crawlConfig(t, crawlOpts{
 		spider: spider, robots: body, robotsPol: &policy,
 	}))
 
@@ -1999,10 +1999,10 @@ func TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount(t *testing.T) {
 			"ONE address, and a percent-encoded segment that is not a dot segment is an "+
 			"ordinary path that must still be crawled", got, want)
 	}
-	if !c23HasRoute(res, "/public") {
-		t.Fatalf("/public is not in the inventory: %v", c23RoutePaths(res))
+	if !crawlHasRoute(res, "/public") {
+		t.Fatalf("/public is not in the inventory: %v", crawlRoutePaths(res))
 	}
-	if c23HasRoute(res, "/x/%2e%2e/public") {
+	if crawlHasRoute(res, "/x/%2e%2e/public") {
 		t.Fatal("the pre-canonical spelling became a second route, which is one endpoint " +
 			"counted twice in the coverage denominator")
 	}
@@ -2014,7 +2014,7 @@ func TestCanonicalizationPreservesCoverageAndDoesNotDoubleCount(t *testing.T) {
 		}
 	}
 	if n != 1 {
-		t.Fatalf("/public has %d ledger row(s), want 1: %v", n, c23Ledger(res))
+		t.Fatalf("/public has %d ledger row(s), want 1: %v", n, crawlLedger(res))
 	}
 }
 
@@ -2034,10 +2034,10 @@ var sessionBearingFieldNames = []string{
 	"apikey", "login",
 }
 
-// c23BaseTypeName is a type's own name with the package qualifier, pointers,
+// crawlBaseTypeName is a type's own name with the package qualifier, pointers,
 // slices and maps peeled off: *authz.Governor is "Governor", []http.Cookie is
 // "Cookie", and an unnamed type is "".
-func c23BaseTypeName(t reflect.Type) string {
+func crawlBaseTypeName(t reflect.Type) string {
 	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		t = t.Elem()
 	}
@@ -2050,7 +2050,7 @@ func c23BaseTypeName(t reflect.Type) string {
 // TestNoCrawlRequestCanCarryASession is the guard under CoverageOfVisit's
 // hard-coded CarriedSession false.
 //
-// D.24 partitions a run's timeline into windows in which the session was
+// The authentication helper partitions a run's timeline into windows in which the session was
 // alive. Joining a crawl visit's instant against that partition and calling
 // the result "authenticated coverage" is a claim about WALL CLOCK, not about
 // the request — and it is only a defensible one if a crawl request cannot
@@ -2096,7 +2096,7 @@ func TestNoCrawlRequestCanCarryASession(t *testing.T) {
 		//    credential and the guard would be turned off within a week.
 		for i := 0; i < typ.NumField(); i++ {
 			f := typ.Field(i)
-			hay := strings.ToLower(f.Name + " " + c23BaseTypeName(f.Type))
+			hay := strings.ToLower(f.Name + " " + crawlBaseTypeName(f.Type))
 			for _, bad := range sessionBearingFieldNames {
 				if !strings.Contains(hay, bad) {
 					continue
@@ -2167,14 +2167,14 @@ func TestARenderingSpiderIsRefusedRatherThanDriven(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			spider := c23Linking(map[string][]string{"/": {"/a"}})
+			spider := crawlLinking(map[string][]string{"/": {"/a"}})
 			spider.exactDiscipline = true
 			spider.discipline = tc.d
 			if got := spider.Discipline(); got != tc.d {
 				t.Fatalf("the double repaired the discipline to %q; a generator that "+
 					"cannot produce the breaking input is the defect", got)
 			}
-			cfg := c23Config(t, c23Opts{spider: spider})
+			cfg := crawlConfig(t, crawlOpts{spider: spider})
 
 			if got := cfg.Constructed(); got != tc.want {
 				t.Fatalf("CrawlConfig.Constructed() = %v, want %v — Constructed and "+
@@ -2278,14 +2278,14 @@ func TestGate13CannotBeTheOffHostDefenceForThisLoop(t *testing.T) {
 		"http://" + fixtureHost + "/x",
 		"https://" + fixtureHost + ":8443/x",
 	}
-	spider := c23Linking(map[string][]string{"/": offHost})
-	cfg := c23Config(t, c23Opts{spider: spider})
-	res := c23Run(t, cfg)
+	spider := crawlLinking(map[string][]string{"/": offHost})
+	cfg := crawlConfig(t, crawlOpts{spider: spider})
+	res := crawlRun(t, cfg)
 
 	// 1. resolveLinkPath refused every one of them, BY NAME. Assert the count.
-	if got, want := c23OutcomeCount(res, CrawlOutcomeOffHost), len(offHost); got != want {
+	if got, want := crawlOutcomeCount(res, CrawlOutcomeOffHost), len(offHost); got != want {
 		t.Fatalf("%d of %d off-host links were recorded as %s: %v",
-			got, want, CrawlOutcomeOffHost, c23Ledger(res))
+			got, want, CrawlOutcomeOffHost, crawlLedger(res))
 	}
 	// 2. NOTHING LEFT. The seed and nothing else.
 	if got := spider.paths(); !reflect.DeepEqual(got, []string{"/"}) {

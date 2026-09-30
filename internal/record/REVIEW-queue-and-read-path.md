@@ -1,22 +1,22 @@
-# CRITIQUE-03 — Critic Gate 3 (step R.15)
+# Review: the queue re-cut, correlation, the read path and the GitHub projection
 
-**Scope reviewed:** R.11 `internal/store/queue.go` (+ test), R.12 `internal/record/correlation.go`
-(+ test), R.13 `internal/record/readpath.go` / `taskcard.go` (+ test), R.14
+**Scope reviewed:** the queue re-cut `internal/store/queue.go` (+ test), correlation `internal/record/correlation.go`
+(+ test), the read path `internal/record/readpath.go` / `taskcard.go` (+ test), the GitHub projection
 `internal/record/sarif_github.go` (+ test).
 
-**Verdict: FAIL.** One blocker, four majors, four minors. The three verdicts R.15's packet
+**Verdict: FAIL.** One blocker, four majors, four minors. The three verdicts this review's packet
 names are recorded separately in §1 and are (a) PASS, (b) PASS-with-caveat, (c) PASS; the
-blocker is outside that list but inside `plan/IMPLEMENTATION-PLAN.md` §6, which the
+blocker is outside that list but inside the shared-vocabulary review, which the
 orchestrator's instruction makes binding over the packet.
 
 ---
 
 ## 0. What kind of critic this was — read this before trusting the verdict
 
-**This was a SAME-FAMILY adversarial critic.** `plan/00-ROUTING.md`'s cross-family critique
+**This was a SAME-FAMILY adversarial critic.** `plan/design/routing.md`'s cross-family critique
 rule was *not* satisfied here and this document does not claim it was. The OWNER DECISION
-block dated 2026-08-07 at the top of `00-ROUTING.md` withdrew all OpenCode/OpenRouter routes
-because running one copies private repository contents to a third-party provider; R.15's
+block dated 2026-08-07 at the top of `routing.md` withdrew all OpenCode/OpenRouter routes
+because running one copies private repository contents to a third-party provider; this review's
 packet still says `OpenCode route (openai/gpt-5.5)` and that route is dead.
 
 The replacement is an Anthropic subagent given an explicit instruction to **refute rather than
@@ -34,11 +34,11 @@ file.
 
 ---
 
-## 1. The three verdicts R.15's packet requires
+## 1. The three verdicts this review's packet requires
 
 | # | Claim | Verdict |
 |---|---|---|
-| (a) | `correlation.go` carries a code comment pointing at `plan/40-record-and-storage.md`'s patent Open Question **without attempting to resolve it** | **PASS** |
+| (a) | `correlation.go` carries a code comment pointing at `plan/design/record-and-store.md`'s patent Open Question **without attempting to resolve it** | **PASS** |
 | (b) | `sarif_github.go` cannot exceed GitHub's caps on any tested input | **PASS, with a recorded caveat** (finding M4) |
 | (c) | `queue.go`'s reservation fraction is config-driven | **PASS** |
 
@@ -48,15 +48,15 @@ file.
 assignee Denim Group Ltd. / Coalfire Systems), state precisely which three implemented signals
 are materially similar to the patent's claims (`CorrelationSignalRouteTable`,
 `CorrelationSignalParameterName`, `CorrelationSignalCweMatch`), point at
-`plan/40-record-and-storage.md` Open Questions #1 by name, quote research/18 Risk #1's
+`plan/design/record-and-store.md` Open Questions #1 by name, quote research/18 Risk #1's
 instruction verbatim ("Escalate to the owner; do not assume this is fine"), and say "It is
 flagged, not settled." It records that Open Questions #1 requires owner escalation **before the
 output ships in a release**. No resolution is attempted; no licence conclusion is drawn.
 `TestPatentRiskIsFlaggedInSource` reads the source and fails if the three markers disappear.
 
-I confirmed the pointed-at text exists: `plan/40-record-and-storage.md` line 968 ff., Open
-Questions #1, and `plan/00-SPINE.md` S8. **I am not resolving the patent question and this
-document takes no position on it** — that is an owner/legal decision and out of scope for R.15.
+I confirmed the pointed-at text exists: `plan/design/record-and-store.md` line 968 ff., Open
+Questions #1, and the spine's licence section. **I am not resolving the patent question and this
+document takes no position on it** — that is an owner/legal decision and out of scope for this review.
 
 ### (b) GitHub caps — PASS, with a caveat
 
@@ -121,17 +121,17 @@ nothing. All nine mutations were killed.
 | **K** — ledger `dropResult` made a no-op (silent loss) | `TestGitHubDastOnlyExclusionIsCountedNotSilent`, `TestGitHubLedgerReconciles`, +2 |
 | **L** — no-sharding on the results-per-run cap | `TestGitHubShardsBeyondResultsPerRunCap` |
 
-Mutation **B** is the one R.15's packet specifically asks for: the reservation test does not
+Mutation **B** is the one this review's packet specifically asks for: the reservation test does not
 merely pass with the reservation present, it **fails when the reservation is pointed the wrong
 way**. The `queue_test.go` design that makes this work is `runArrivalSequence(fraction, …)` —
 one knob, identical fixture, identical arrival order — plus a `ReserveFraction(0)` control arm
-that reproduces S6's inversion end to end. That is the right shape and I could not break it.
+that reproduces the spine's inversion end to end. That is the right shape and I could not break it.
 
 ---
 
 ## 4. The queue re-cut vs `internal/handoff` — probed, and clean
 
-R.15's failure mode 2 asks whether the re-cut fights `checkRecordVersion` or the one-live-lease
+This review's failure mode 2 asks whether the re-cut fights `checkRecordVersion` or the one-live-lease
 guard. I wrote an interaction probe **in `internal/handoff`** (which can import `internal/store`
 — the edge only runs one way) driving `store.Recutter` against the real `Queue`:
 
@@ -146,7 +146,7 @@ Claim(5): fingerprint 0505… is terminal (skipped_budget): …
 ```
 
 - the live lease taken at `audit_version` 1 **survives** a version-bump re-cut, holder intact
-  (research/08 §4 point 2, and CRITIQUE-02 verdict (e) stays PASS);
+  (research/08 §4 point 2, and the sealing, claims and masking review's verdict (e) stays PASS);
 - the stale `Handle` still gets `ErrRecordVersionChanged` from `RenewLease` — the re-cut has not
   papered over handoff's own guard;
 - rows the re-cut deferred are **genuinely unclaimable through the real `Claim` path**, not
@@ -155,14 +155,14 @@ Claim(5): fingerprint 0505… is terminal (skipped_budget): …
 `ready → skipped_budget` is a legal edge of `legalTransitions` and `skipped_budget` is terminal
 there, so the cut is monotone. The decision recorded in `queue.go`'s header — that a re-cut
 never writes `superseded` and never touches a leased row — is the right call and it closes
-CRITIQUE-02 §7's open question in the safe direction.
+the sealing, claims and masking review §7's open question in the safe direction.
 
 One residual I am flagging as an observation, not a finding: `internal/store` writes
 `handoff.state` with raw SQL, outside `internal/handoff`'s state machine, because the import
 edge forbids the call. The guard is `WHERE state = 'ready'`, which reproduces the machine's edge
 correctly today. Nothing enforces that it keeps doing so — there is no DB trigger over
 `handoff.state` transitions. It is a second writer to a protocol another package owns, which is
-the shape §6 G9/G10 exist to prevent, even though this instance is currently correct.
+the shape the handoff-table and one-ledger rulings exist to prevent, even though this instance is currently correct.
 
 ---
 
@@ -170,7 +170,7 @@ the shape §6 G9/G10 exist to prevent, even though this instance is currently co
 
 I grepped all nine reviewed files for every literal of the ten frozen §6 enums plus the
 `evidenceClass` / `consumptionClass` / `correlationSignal` sets. **No bare enum literal is used
-as a value anywhere in R.11–R.14.** The only hits are:
+as a value anywhere in everything from the queue re-cut to the GitHub projection.** The only hits are:
 
 - `queue_test.go:786` — a `map[string]int64` whose keys are *test labels*, not values;
 - `correlation_test.go:832` — `"sast" + FingerprintFieldSeparator + "1"`, a deliberately
@@ -196,7 +196,7 @@ addition safe rather than merely correct today:
 **Where:** `internal/record/sarif_github.go`, `ProjectForGitHub` / `projectResults` — no call to
 `IsReadableHalfStatus` anywhere in the file.
 
-`plan/IMPLEMENTATION-PLAN.md` §6 ruling **G5** is explicit: *"`sealed` is load-bearing: R.6
+The shared-vocabulary review's half-status ruling is explicit: *"`sealed` is load-bearing: the sealer
 makes it the hard read gate ('do not allow a consumer to read a half's results before that
 half's `status` equals `sealed`')."* `readpath.go` enforces it (`readOrder` skips any run whose
 `Properties.Status` is not `HalfStatusSealed`, and mutation **J** proves the test covers it).
@@ -231,7 +231,7 @@ Consequences, in order of how much they matter:
    permitted, it is invisible.
 
 The projection also does not call `AssertMasked`, where `readpath.go` refuses an unmasked record
-outright with the reasoning "the read path feeds a repo-credentialed agent; masking is R.8's
+outright with the reasoning "the read path feeds a repo-credentialed agent; masking is secrets masking's
 step and runs before this one". I could **not** demonstrate a secret leak through this second
 gap — every surface `MaskRecord` covers (headers, parameters, URL, command line, bodies) is
 independently stripped from the GitHub projection — so I am recording it as part of this finding
@@ -243,7 +243,7 @@ added the masking post-condition is not there to catch it.
 and record the loss — a new `GitHubDropReason` (e.g. `half_not_sealed`) so the count is
 enumerable exactly like every other refusal, with the run's `anvil/status` in the ledger entry.
 Add `AssertMasked` at the top of `ProjectForGitHub` for the same reason `readpath.go` has it.
-Note the interaction with §6 G5 in the file header, which already documents every other
+Note the interaction with the half-status ruling in the file header, which already documents every other
 external constraint it honours.
 
 ---
@@ -257,7 +257,7 @@ ignoring `l.Properties.State`.
 `sealing.go` defines the whole gate as `IsReadableHalfStatus(h.Status) && h.AuditState !=
 StateExpired`, and its comment on `HalfSeal.AuditState` says why in as many words:
 
-> CRITIQUE-02 F6: ReadHalf refuses an expired audit and Inspect handed out the same HalfSeal
+> The sealing, claims and masking review's finding F6: ReadHalf refuses an expired audit and Inspect handed out the same HalfSeal
 > values with no state check at all, so `Inspect(...).Sast.Readable()` said true on an audit
 > ReadHalf refused. `Readable()` is exported and is what a caller branches on; two exported
 > readiness paths giving two answers is a gate that is only advisory.
@@ -307,7 +307,7 @@ shard count. This contradicts the file's own stated principle, in the `ghStripTa
 
 > a ledger that over-reports loss is as untrustworthy as one that under-reports it.
 
-The ledger is the entire mechanism by which R.14 answers research/18 Risk #6 ("if anyone treats
+The ledger is the entire mechanism by which the GitHub projection answers research/18 Risk #6 ("if anyone treats
 the GitHub UI as the audit…"). A number that inflates with sharding makes the honest answer
 unavailable on precisely the large audits the ledger exists for.
 
@@ -355,7 +355,7 @@ Two consequences:
 
 1. Tier 0 is documented as "always read … tells the agent what exists and in what order to
    work". Above the crossover it tells the agent counts and seal states and nothing else; the
-   order requires a Tier-2 fetch. R.13's forbidden action ("do not have the default read order
+   order requires a Tier-2 fetch. The read path's forbidden action ("do not have the default read order
    be anything other than clusters → SAST-by-rank → DAST-by-rank") is *not* violated — the order
    is preserved in the blob — but the tier stops doing its job while three-quarters of its
    budget sits idle.
@@ -412,7 +412,7 @@ documented to say otherwise. Add the corresponding check to `WithinCaps`.
 
 A DAST-only member of a cluster borrows its SAST peer's file, line range, enclosing symbol and
 code snippet. The record is untouched and each finding keeps its own card, so this is **not** a
-merge in R.12's sense and the forbidden action is not breached. But the read-side effect is a
+merge in correlation's sense and the forbidden action is not breached. But the read-side effect is a
 duplicated patch task. Probe (`TestR15ProbeClusterPeerEvidenceBorrowing`) on the fixture's own
 cluster:
 
@@ -446,12 +446,12 @@ without re-checking `CorrelationSignal.SufficientForVerified` over `co.Signals`.
 the card is what the agent receives* and "if a record reaches this package with a host finding
 marked remediable — a malformed producer, a hand-edited row, a future column default — the card
 must still not hand the agent a task it is forbidden to perform." The `verified` bit is the same
-class of S7 gate and gets no such treatment. Probe
+class of the spine's safety section gate and gets no such treatment. Probe
 (`TestR15ProbeCardTrustsRecordVerifiedWithoutRechecking`):
 
 ```
 contract.go Validate() rejects it: anvil/correlation.verified is true but no "responseStackTrace"
-  or "rerunFlip" signal is present; confidence alone never qualifies (00-SPINE.md S7)
+  or "rerunFlip" signal is present; confidence alone never qualifies (the spine's safety section)
 card correlation: verified=true signals=[cweMatch parameterName]
 CheckAgainstRecord reports no disagreement
 ```
@@ -520,7 +520,7 @@ Recorded so a later reader knows which parts were actually attacked rather than 
   differently). Continuing to scan for something that fits is genuinely how a budget re-orders
   itself behind the priority scheme's back.
 - **`ResolveAuditRecordID`.** Rejects the empty string, blanks, `0`, negatives, a UUID, and
-  `"1; DROP TABLE handoff"`. Correctly distinguished from CRITIQUE-02 F7 (that was about
+  `"1; DROP TABLE handoff"`. Correctly distinguished from the sealing, claims and masking review's finding F7 (that was about
   *exporting* a rowid as portable identity; this is a local lookup key that is never emitted).
 - **Correlation determinism.** Union-find with a lexicographic tie-break, sorted root iteration,
   signals ordered by the enum's own declaration order rather than by map iteration,
@@ -602,35 +602,34 @@ source assertion, not a self-regenerating golden.
    is safe (pure function of candidate set, budget and config; only write is
    `ready → skipped_budget`; monotone) held up under reading and under the single-process
    probes, but I did not run two processes against one database file.
-6. **`plan/00-SPINE.md` S6's exact wording** is quoted from `queue.go`'s header and from the R.11
-   packet; I read the packet and §6 directly but did not re-read `00-SPINE.md` in full.
+6. **The spine's exact wording** is quoted from `queue.go`'s header and from the queue re-cut; I read the packet and §6 directly but did not re-read `spine.md` in full.
 
 ---
 
 ## 9. Recommendation
 
-**R.14 (`sarif_github.go`) does not pass.** B1 is a §6 G5 violation and §6 wins over the packet.
-M2 and M4 are in the same file. Reroute R.14 with B1, M2 and M4 in the packet; the caps, the
+**The GitHub projection (`sarif_github.go`) does not pass.** B1 is the half-status ruling violation and §6 wins over the packet.
+M2 and M4 are in the same file. Reroute the GitHub projection with B1, M2 and M4 in the packet; the caps, the
 strip discipline, the shard policy and the loss vocabulary are otherwise well built and should
 be kept — this is a fix, not a rewrite.
 
-**R.13 (`readpath.go` / `taskcard.go`) needs a second pass** for M1 and M3, both of which are
+**The read path (`readpath.go` / `taskcard.go`) needs a second pass** for M1 and M3, both of which are
 gate/degradation defects rather than structural ones. m1, m2 and m3 can ride along.
 
-**R.11 (`queue.go`) passes.** The reservation is correct, config-driven, applied to *remaining*
+**The queue re-cut (`queue.go`) passes.** The reservation is correct, config-driven, applied to *remaining*
 budget on every re-cut, triggered only by an `audit_version` bump, and it does not fight
 `internal/handoff`. Mutation-proved in four directions and interaction-proved against the real
 claim protocol.
 
-**R.12 (`correlation.go`) passes.** Links, never merges; the ≥2-signal rule and the CWE-only ban
+**Correlation (`correlation.go`) passes.** Links, never merges; the ≥2-signal rule and the CWE-only ban
 are enforced by `contract.go`'s own `validateCorrelation` rather than by a second copy;
 `Verified` asks `SufficientForVerified` and nothing else; the patent is flagged and not resolved.
 Mutation-proved in three directions.
 
 **The patent question (Open Questions #1) remains open and is escalated, not answered here.**
-Per `plan/40-record-and-storage.md`, it must reach the owner before R.12's output ships in a
+Per `plan/design/record-and-store.md`, it must reach the owner before correlation's output ships in a
 release.
 
 **And once more, because the routing file asks for it explicitly: this gate was satisfied by a
-SAME-FAMILY adversarial critic. The cross-family requirement in `plan/00-ROUTING.md` is not
+SAME-FAMILY adversarial critic. The cross-family requirement in `plan/design/routing.md` is not
 met by this document.**

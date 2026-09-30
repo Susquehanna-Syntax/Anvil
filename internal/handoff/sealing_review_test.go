@@ -1,4 +1,5 @@
-// Regression tests for the defects CRITIQUE-02 found and the fix round closed.
+// Regression tests for the defects the sealing, claims and masking review found
+// and the fix round closed.
 //
 // Each test here reproduces one ORIGINAL defect. They were written by the
 // critic and the re-verifier as probes -- to prove a defect existed, and then
@@ -29,8 +30,9 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Independent re-verification probes for CRITIQUE-02 B1 / B2 / M2 / M4 / M5.
-// Each is written to reproduce the ORIGINAL defect, not to confirm the fix.
+// Independent re-verification probes for the sealing, claims and masking
+// review's findings B1 / B2 / M2 / M4 / M5. Each is written to reproduce the
+// ORIGINAL defect, not to confirm the fix.
 // ---------------------------------------------------------------------------
 
 // enqueueOn seeds one ready row for an existing finding on a given audit
@@ -189,7 +191,7 @@ func TestProbeB1GuardDoesNotWedgeTheQueue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// B2 — a consumed audit must not shut the eligibility gate (S1 re-entrancy).
+// B2 — a consumed audit must not shut the eligibility gate (the spine's re-entrancy requirement).
 // ---------------------------------------------------------------------------
 
 func TestProbeB2ConsumedAuditKeepsTheQueueOpen(t *testing.T) {

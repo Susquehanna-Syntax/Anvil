@@ -1,10 +1,10 @@
-// Tests for A.19's record emission.
+// Tests for the record emission.
 //
 // ===========================================================================
 // WHAT THESE TESTS ARE BUILT TO CATCH, AND WHERE THEIR INPUTS COME FROM
 // ===========================================================================
 //
-// Two properties are load-bearing and A.20 exists to attack them:
+// Two properties are load-bearing and the emission review exists to attack them:
 //
 //  1. remediable_by_agent is FALSE for every host finding, with no code path,
 //     flag or config key able to override it. It is an authorization decision
@@ -15,7 +15,7 @@
 // function that computes it (TestRemediableByAgentIsAnAllowlistOverItsWholeInputSpace),
 // then again END TO END on the SERIALISED BYTES of every shape that leaves
 // this package, and then again on the task card — the artifact that actually
-// reaches the agent. Testing the struct field alone is what A.12 found
+// reaches the agent. Testing the struct field alone is what the read-only-boundary review found
 // insufficient one lane over.
 //
 // THE FINGERPRINT CORPUS IS NOT THIS PACKAGE'S. TestEmittedFingerprintMatches
@@ -35,7 +35,7 @@
 // NO TEST HERE MAY USE AN INPUT FIELD AS ITS OWN EXPECTED VALUE
 // ===========================================================================
 //
-// A.20 found two tests in this file that could not fail for the reason they
+// The emission review found two tests in this file that could not fail for the reason they
 // claimed. The staleness test set `StalenessSeconds` on the input row and
 // asserted the same number came out, which proves copy-through and nothing
 // else — and copy-through was the defect. Its "fresh" control was worse: it
@@ -216,7 +216,7 @@ func mustEmit(t *testing.T, m match.MatchResult, a AdvisoryRow) Emission {
 // the guarantee on every point of it. There are no untested combinations left
 // for a config key or a future collector to hide in.
 //
-// THE ECOSYSTEM IS ONE OF THE ENUMERATED DIMENSIONS. A.20 found it missing:
+// THE ECOSYSTEM IS ONE OF THE ENUMERATED DIMENSIONS. The emission review found it missing:
 // the other four arms were covered exhaustively while an OS package arriving
 // under the repo-SCA label went through as agent-fixable. The enumeration below
 // includes the three host ecosystems, three repository ones, the empty string
@@ -259,7 +259,7 @@ func TestRemediableByAgentIsAnAllowlistOverItsWholeInputSpace(t *testing.T) {
 								if got {
 									t.Fatalf("remediableByAgent(%q,%q,%q,%q,%q,%t) = true; "+
 										"an OS package is not agent-fixable and a host finding is "+
-										"never remediable (00-SPINE.md S7)",
+										"never remediable (the spine's safety section)",
 										c, k, cl, eco, f, d)
 								}
 								continue
@@ -287,7 +287,7 @@ func TestRemediableByAgentIsAnAllowlistOverItsWholeInputSpace(t *testing.T) {
 		t.Fatal("no input produced true; a guard that can never say yes has not been exercised")
 	}
 	if hostEcoPoints == 0 {
-		t.Fatal("no point of the space carried a host ecosystem, so the arm A.20 found " +
+		t.Fatal("no point of the space carried a host ecosystem, so the arm the emission review found " +
 			"missing is still not covered")
 	}
 	if want := len(collectors) * len(kinds) * len(classes) * len(ecosystems) * len(fixed) * len(degraded); points != want {
@@ -295,14 +295,14 @@ func TestRemediableByAgentIsAnAllowlistOverItsWholeInputSpace(t *testing.T) {
 	}
 }
 
-// TestAnOSPackageUnderTheRepoLabelIsNotRemediableInTheSERIALISEDBytes is A.20's
+// TestAnOSPackageUnderTheRepoLabelIsNotRemediableInTheSERIALISEDBytes is the emission review's
 // finding 2, end to end.
 //
 // A repo-SCA MatchResult whose ecosystem is deb, rpm or apk is an OS package
 // that a repository collector noticed. The coding agent's write surface is the
 // git repository either way, so it cannot bump an apt package however the
 // finding was labelled — and being handed "bump openssl in Dockerfile" as
-// actionable work is the same authorization defect S7 exists to prevent.
+// actionable work is the same authorization defect the spine's safety section exists to prevent.
 //
 // The path is unreachable today only because internal/collector/repo refuses
 // Trivy's os-pkgs class. That is one lane up. This asserts it here.
@@ -387,7 +387,7 @@ func TestHostFindingsAreNeverRemediableInTheSERIALISEDBytes(t *testing.T) {
 						assertJSONBool(t, em.Result, "properties/anvil~1remediableByAgent", false)
 						assertJSONBool(t, em, "remediableByAgent", false)
 						// BOTH LEVELS of the crossing object, not just the
-						// mirror: A.20 found them able to disagree.
+						// mirror: the emission review found them able to disagree.
 						assertJSONBool(t, em, "result/properties/anvil~1remediableByAgent", false)
 						assertJSONBool(t, Results([]Emission{em})[0],
 							"properties/anvil~1remediableByAgent", false)
@@ -453,7 +453,7 @@ func TestTheArtifactThatReachesTheAgentSaysHostIsNotActionable(t *testing.T) {
 	assertJSONBool(t, repoCard, "remediableByAgent", true)
 }
 
-// TestParseDegradedDemotesARepoFindingRatherThanDroppingIt pins A.16's flag
+// TestParseDegradedDemotesARepoFindingRatherThanDroppingIt pins drift handling's flag
 // end to end: the finding is still emitted, it carries parseDegraded in the
 // bytes, its verdict is insufficient_context (report-only, never dropped), and
 // it is not offered to the agent.
@@ -515,7 +515,7 @@ func TestTrustDefaultIsUntrustedOnEveryEmission(t *testing.T) {
 			t.Fatalf("the advisory excerpt is %q, not the row's own trust",
 				em.Result.Properties.Advisory.Excerpt.Trust)
 		}
-		// record's own check, which is the one that caught area B.
+		// record's own check, which is the one that caught Lane B.
 		if err := record.ValidateResultTrust(&em.Result); err != nil {
 			t.Fatalf("ValidateResultTrust: %v", err)
 		}
@@ -605,8 +605,8 @@ func TestAnAdvisoryRowClaimingAnvilGeneratedIsRefused(t *testing.T) {
 // as_of / staleness_seconds
 // ---------------------------------------------------------------------------
 
-// TestStaleAdvisorySurfacesItsStalenessRatherThanReportingClean is A.19's
-// second named validation item, rebuilt after A.20 showed the original could
+// TestStaleAdvisorySurfacesItsStalenessRatherThanReportingClean is record emission's
+// second named validation item, rebuilt after the emission review showed the original could
 // not fail.
 //
 // THE ORIGINAL WAS CIRCULAR. It set `StalenessSeconds` on the input row and
@@ -628,7 +628,7 @@ func TestStaleAdvisorySurfacesItsStalenessRatherThanReportingClean(t *testing.T)
 		// The interval the test asserts, computed here and nowhere else.
 		wantStaleness = 21 * 24 * 3600
 		// What the outage froze in the cache: an hour, and wrong by a factor
-		// of 504. Emitting THIS is the blocker A.20 found.
+		// of 504. Emitting THIS is the blocker the emission review found.
 		frozenPublisherLag = 3600
 	)
 	watermark := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
@@ -696,7 +696,7 @@ func TestStaleAdvisorySurfacesItsStalenessRatherThanReportingClean(t *testing.T)
 			"of this data: %q", frozenPublisherLag, reasoning)
 	}
 
-	// 6. THE CONTROL, and it is CLOCK-FREE. A.20's second circular finding was
+	// 6. THE CONTROL, and it is CLOCK-FREE. The emission review's second circular finding was
 	//    that the old control depended on the wall-clock distance to a
 	//    hard-coded fixture date, so it would have begun failing on a calendar
 	//    day rather than on a code change. Here the same watermark one hour
@@ -1064,13 +1064,13 @@ func TestThisPackageComputesNoDigestOfItsOwn(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The seven fields, over A.17's own output
+// The seven fields, over the comparator's own output
 // ---------------------------------------------------------------------------
 
 // TestEveryRecordFromTheComparatorCarriesTheSevenLaneAFields runs the REAL
 // comparator over a real inventory, emits every result it produces, and
 // asserts all seven Lane-A-owned fields on the SERIALISED bytes of each one.
-// The findings are A.17's, not this test's construction.
+// The findings are the comparator's, not this test's construction.
 func TestEveryRecordFromTheComparatorCarriesTheSevenLaneAFields(t *testing.T) {
 	ranges := []match.AffectedRange{
 		{
@@ -1431,12 +1431,12 @@ func TestCvssV4BaseIsSetOnlyForAV4Vector(t *testing.T) {
 // The crossing bytes, for a Result this package did not build
 // ---------------------------------------------------------------------------
 
-// TestAResultThatDidNotComeFromEmitIsClampedInTheCrossingBytes is A.20's
+// TestAResultThatDidNotComeFromEmitIsClampedInTheCrossingBytes is the emission review's
 // finding 3, made true rather than deleted.
 //
 // Emission.RemediableByAgent's doc claims a Result arriving from anywhere other
 // than Emit — hand-built, deserialised, or mutated after emission — cannot
-// present a host finding as actionable. A.20 showed the clamp reached the
+// present a host finding as actionable. The emission review showed the clamp reached the
 // top-level mirror only: the nested canonical record inside the SAME object,
 // and Results(), both still said true. An object that disagrees with itself is
 // not a guarantee, and this project's standard is that a claim which cannot be
@@ -1522,7 +1522,7 @@ func TestAResultThatDidNotComeFromEmitIsClampedInTheCrossingBytes(t *testing.T) 
 // The advisory excerpt, and the trust it claims
 // ---------------------------------------------------------------------------
 
-// TestTheAdvisoryExcerptBoundIsCheckedRatherThanAssumed: A.19 asserted the
+// TestTheAdvisoryExcerptBoundIsCheckedRatherThanAssumed: record emission asserted the
 // excerpt was pre-trimmed by ingestion and copied it through unexamined, so a
 // 24 KB excerpt reached the record and the store. The read path's cap trims
 // only the agent-facing card, so "bounded downstream" was not bounded here.
@@ -1559,7 +1559,7 @@ func TestTheAdvisoryExcerptBoundIsCheckedRatherThanAssumed(t *testing.T) {
 
 // TestVerifiedTrustMustNameItsValidationStep: record.Trust defines `verified`
 // as bytes that "passed an explicit validation step that is named in the record
-// ... Never a default". A.19 passed the level through with no step named
+// ... Never a default". Record emission passed the level through with no step named
 // anywhere, which publishes the label without the thing that gives it meaning.
 //
 // Not live today — internal/ingest/delta always binds `untrusted` — so this is
@@ -1735,8 +1735,8 @@ func stripComments(t *testing.T, name string, src []byte) string {
 
 // sealedLog wraps results in a minimal sealed SAST-half record, so the read
 // path and the contract validator can be exercised over what this package
-// emits. The envelope belongs to the scan controller (O.2); this is a stand-in
-// for a test and nothing more.
+// emits. The envelope belongs to the scan controller (the controller's state
+// wiring); this is a stand-in for a test and nothing more.
 func sealedLog(t *testing.T, results []record.Result) record.SARIFLog {
 	t.Helper()
 	created := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)

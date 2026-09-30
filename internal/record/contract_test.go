@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// The six enums IMPLEMENTATION-PLAN.md section 6 froze, pinned here as literal
+// The six enums the shared-vocabulary review froze, pinned here as literal
 // strings.
 //
 // These are not a restatement of the code for its own sake. Ten confirmed
@@ -29,11 +29,11 @@ var frozenEnums = map[string][]string{
 	"anvil/status": {
 		"running", "sealed", "failed", "timed_out", "skipped",
 	},
-	// TEN values since the section 6 amendment: `completed_failed` was added
+	// TEN values since the shared-vocabulary amendment: `completed_failed` was added
 	// between completed_partial and target_boot_failed because the nine-value
 	// set had no image for "the DAST half itself broke", and DeriveDastStatus
 	// was folding that case into completed_partial -- which makes dast_coverage
-	// uninterpretable for the same reason S6 requires a failed target to be
+	// uninterpretable for the same reason the spine's record section requires a failed target to be
 	// distinguishable from one scanned clean.
 	"anvil/dastStatus": {
 		"not_run", "skipped_no_manifest", "running", "completed_clean", "completed_findings",
@@ -107,26 +107,26 @@ func TestPreRulingLiteralsAreRejected(t *testing.T) {
 		validate  func(string) error
 		wasUsedBy string
 	}{
-		{"anvil/state", "open", ValidateState, "area O's old 4-state machine"},
-		{"anvil/state", "sealed", ValidateState, "area O -- collides with the per-half token"},
-		{"anvil/status", "complete", ValidateHalfStatus, "area O keyed its transitions on this"},
-		{"anvil/dastStatus", "clean", ValidateDastStatus, "area D"},
-		{"anvil/dastStatus", "findings", ValidateDastStatus, "area D"},
-		{"anvil/dastStatus", "failed_to_boot", ValidateDastStatus, "area D"},
-		{"anvil/dastStatus", "partial", ValidateDastStatus, "area D -- now completed_partial"},
+		{"anvil/state", "open", ValidateState, "The control plane's old 4-state machine"},
+		{"anvil/state", "sealed", ValidateState, "The control plane -- collides with the per-half token"},
+		{"anvil/status", "complete", ValidateHalfStatus, "The control plane keyed its transitions on this"},
+		{"anvil/dastStatus", "clean", ValidateDastStatus, "The dynamic tier"},
+		{"anvil/dastStatus", "findings", ValidateDastStatus, "The dynamic tier"},
+		{"anvil/dastStatus", "failed_to_boot", ValidateDastStatus, "The dynamic tier"},
+		{"anvil/dastStatus", "partial", ValidateDastStatus, "The dynamic tier -- now completed_partial"},
 		{"anvil/target.provenance", "ephemeral_manifest", ValidateTargetProvenance,
-			"area D wrote the provisioning path into the provenance field"},
-		{"anvil/target.provenance", "live_url_authorized", ValidateTargetProvenance, "area D"},
-		{"anvil/verdict", "EXHIBITS", ValidateVerdict, "area B -- B.12 must map, not pass through"},
-		{"anvil/verdict", "DOES_NOT_EXHIBIT", ValidateVerdict, "area B"},
+			"The dynamic tier wrote the provisioning path into the provenance field"},
+		{"anvil/target.provenance", "live_url_authorized", ValidateTargetProvenance, "The dynamic tier"},
+		{"anvil/verdict", "EXHIBITS", ValidateVerdict, "Lane B -- the Lane B pipeline must map, not pass through"},
+		{"anvil/verdict", "DOES_NOT_EXHIBIT", ValidateVerdict, "Lane B"},
 		{"anvil/verdict", "INSUFFICIENT_CONTEXT", ValidateVerdict,
-			"area B -- the record uses lowercase; case normalisation is B.12's job"},
+			"Lane B -- the record uses lowercase; case normalisation is the Lane B pipeline's job"},
 	}
 	for _, c := range cases {
 		t.Run(c.field+"/"+c.literal, func(t *testing.T) {
 			if err := c.validate(c.literal); err == nil {
 				t.Errorf("%q accepted as a legal %s. It was used by %s and the ruling "+
-					"in IMPLEMENTATION-PLAN.md section 6 replaced it; accepting it "+
+					"in the shared-vocabulary review replaced it; accepting it "+
 					"re-opens a produce/consume break.", c.literal, c.field, c.wasUsedBy)
 			}
 		})
@@ -151,9 +151,9 @@ func TestEveryFrozenValueValidates(t *testing.T) {
 	}
 }
 
-// The thirteen handoff dispositions, which are the union of area 40's original
-// set and the four that existed only in area 60's rival `anvil_ledger` table.
-// That table is deleted by ruling G10; if these four are missing, area X's exit
+// The thirteen handoff dispositions, which are the union of the record area's original
+// set and the four that existed only in remediation's rival `anvil_ledger` table.
+// That table is deleted by the one-ledger ruling; if these four are missing, remediation's exit
 // criterion 14 ("every disposition has a reachable code path and a test")
 // becomes unsatisfiable.
 func TestHandoffStateCoversTheDeletedLedgerDispositions(t *testing.T) {
@@ -162,22 +162,23 @@ func TestHandoffStateCoversTheDeletedLedgerDispositions(t *testing.T) {
 	}
 	for _, v := range fromLedgerOnly {
 		if err := ValidateHandoffState(v); err != nil {
-			t.Errorf("handoff.state rejects %q, which area 60's anvil_ledger carried. "+
-				"Ruling G10 collapsed that table into handoff; dropping the value "+
+			t.Errorf("handoff.state rejects %q, which remediation's anvil_ledger carried. "+
+				"The one-ledger ruling collapsed that table into handoff; dropping the value "+
 				"loses the disposition entirely: %v", v, err)
 		}
 	}
 	if len(HandoffStateValues()) != 13 {
-		t.Errorf("handoff.state has %d values, ruling G10 specifies 13",
+		t.Errorf("handoff.state has %d values, the one-ledger ruling specifies 13",
 			len(HandoffStateValues()))
 	}
 }
 
-// S6: anvil/trust is required on every string originating outside Anvil, and a
-// repo source snippet is `untrusted` even though Anvil assembled the struct
-// holding it. Area B was found stamping `anvil_generated` on exactly that,
-// which would disable area X's containment check on the string that most needs
-// it -- attacker-influenced source text heading for a repo-credentialed agent.
+// The spine's record section: anvil/trust is required on every string
+// originating outside Anvil, and a repo source snippet is `untrusted` even
+// though Anvil assembled the struct holding it. Lane B was found stamping
+// `anvil_generated` on exactly that, which would disable remediation's
+// containment check on the string that most needs it -- attacker-influenced
+// source text heading for a repo-credentialed agent.
 func TestTrustLegalityForExternalStrings(t *testing.T) {
 	cases := []struct {
 		trust Trust
@@ -199,14 +200,14 @@ func TestTrustLegalityForExternalStrings(t *testing.T) {
 	}
 }
 
-// S7: correlation links, never merges, and requires >=2 independent signals. A
-// CWE match alone is explicitly banned as a sole signal -- it is the cheapest
-// and least specific thing two findings can share.
+// The spine's safety section: correlation links, never merges, and requires >=2
+// independent signals. A CWE match alone is explicitly banned as a sole signal
+// -- it is the cheapest and least specific thing two findings can share.
 func TestCweMatchAloneNeverQualifiesAsVerified(t *testing.T) {
 	for _, s := range CorrelationSignalValues() {
 		sufficient := s.SufficientForVerified()
 		if string(s) == "cweMatch" && sufficient {
-			t.Error("a CWE match alone qualifies as verified; S7 bans it as a sole signal")
+			t.Error("a CWE match alone qualifies as verified; the spine's safety section bans it as a sole signal")
 		}
 	}
 }
@@ -238,12 +239,12 @@ func TestUnknownValuesAreRejectedNotIgnored(t *testing.T) {
 }
 
 // ===========================================================================
-// anvil/specHarvest -- the slot D.19's Ruling-7 reconciliation found missing
+// anvil/specHarvest -- the slot the repo spec reader's Ruling-7 reconciliation found missing
 // ===========================================================================
 //
-// D.19 (internal/dast/inventory/tier1_repospec.go) consumes spec files the SAST
+// The repo spec reader (internal/dast/inventory/tier1_repospec.go) consumes spec files the SAST
 // pass harvested and turns them into inventory routes. It may not harvest them
-// itself: plan/50-dast.md:628-630 assigns that to the SAST tier by name. So it
+// itself: plan/design/dynamic-tier.md:628-630 assigns that to the SAST tier by name. So it
 // can only ever see a slice somebody handed it, and an EMPTY slice has three
 // meanings that a bare file list cannot tell apart:
 //
@@ -382,7 +383,7 @@ func TestASpeclessRepositoryAndAnUnwiredHandoffAreDifferentRecords(t *testing.T)
 	}
 }
 
-// D.19 built inventory.HarvestOutcome locally, with these exact literals, while
+// The repo spec reader built inventory.HarvestOutcome locally, with these exact literals, while
 // this slot did not exist. Pinning them here is what makes the handoff identity
 // rather than a mapping -- and internal/record cannot import
 // internal/dast/inventory to assert it directly, because inventory imports this
@@ -395,7 +396,7 @@ func TestSpecHarvestOutcomeLiteralsMatchTheTierOneVocabulary(t *testing.T) {
 		got = append(got, string(v))
 	}
 	if len(got) != len(want) {
-		t.Fatalf("anvil/specHarvest.outcome has %d literals %q, D.19 declares %d %q",
+		t.Fatalf("anvil/specHarvest.outcome has %d literals %q, the repo spec reader declares %d %q",
 			len(got), got, len(want), want)
 	}
 	for i := range want {
@@ -403,7 +404,7 @@ func TestSpecHarvestOutcomeLiteralsMatchTheTierOneVocabulary(t *testing.T) {
 			t.Errorf("anvil/specHarvest.outcome[%d] = %q, inventory.HarvestOutcome declares "+
 				"%q. These two must stay literal-for-literal identical: the moment they "+
 				"differ the handoff needs a mapping, and a mapping is the produce/consume "+
-				"shape IMPLEMENTATION-PLAN.md section 6 exists to close", i, got[i], want[i])
+				"shape the shared-vocabulary review exists to close", i, got[i], want[i])
 		}
 	}
 	if _, mapped := AreaMappingOwners["anvil/specHarvest.outcome"]; !mapped {
@@ -528,7 +529,7 @@ func TestSpecHarvestFileRefusesUnauditableBytes(t *testing.T) {
 		"anvil_generated trust": {
 			func(f *SpecHarvestFile) { f.Trust = TrustAnvilGenerated },
 			"a spec file committed to the target repository is external text whatever Anvil " +
-				"did to assemble the struct around it -- the exact mislabelling found in area B",
+				"did to assemble the struct around it -- the exact mislabelling found in Lane B",
 		},
 		"empty trust": {
 			func(f *SpecHarvestFile) { f.Trust = "" },
@@ -594,10 +595,11 @@ func TestSpecHarvestFileRefusesUnauditableBytes(t *testing.T) {
 	})
 }
 
-// One durable statement of one fact. plan/50-dast.md:628-630 assigns spec
+// One durable statement of one fact. plan/design/dynamic-tier.md:628-630 assigns spec
 // harvesting to the SAST tier and forbids the DAST tier from re-deriving it, so
 // a copy on the DAST run is a second durable copy that can disagree with the
-// first -- the shape S1 and ruling G10 both refuse.
+// first -- the shape the spine's corrected-requirements table and the
+// one-ledger ruling both refuse.
 func TestSpecHarvestIsRefusedOnTheDastRun(t *testing.T) {
 	legal := &SpecHarvest{Outcome: SpecHarvestRan, Files: []SpecHarvestFile{}, OmittedFileCount: chInt(0)}
 
@@ -605,7 +607,7 @@ func TestSpecHarvestIsRefusedOnTheDastRun(t *testing.T) {
 	dast.Runs[0].Properties.SpecHarvest = legal
 	if err := dast.Validate(); err == nil {
 		t.Errorf("%s was accepted on the DAST run. The DAST tier may not harvest spec files "+
-			"(plan/50-dast.md:628-630), so a statement here is a second durable copy of the "+
+			"(plan/design/dynamic-tier.md:628-630), so a statement here is a second durable copy of the "+
 			"SAST half's fact, and two copies drift", PropRunSpecHarvest)
 	}
 
@@ -623,7 +625,7 @@ func TestSpecHarvestIsRefusedOnTheDastRun(t *testing.T) {
 }
 
 // ===========================================================================
-// anvil/advisory.licenseManualNote -- S8's quoted operative sentence
+// anvil/advisory.licenseManualNote -- the spine's quoted operative sentence
 // ===========================================================================
 
 // chAdvisoryResult is the smallest SAST result that passes (*Result).validate,
@@ -713,7 +715,7 @@ func TestLicenseManualNoteRefusesTheAbsentValueInLegitimateClothes(t *testing.T)
 		"empty text": {
 			&TrustedString{Text: "", Trust: TrustUntrusted},
 			"a present note carrying nothing satisfies \"a note exists\" while establishing " +
-				"nothing, which is exactly the reading S8 needs to be impossible",
+				"nothing, which is exactly the reading the spine's licence section needs to be impossible",
 		},
 		"whitespace text": {
 			&TrustedString{Text: "   \t\n ", Trust: TrustUntrusted},
@@ -741,8 +743,9 @@ func TestLicenseManualNoteRefusesTheAbsentValueInLegitimateClothes(t *testing.T)
 	}
 
 	// POSITIVE CONTROLS. Both legal external classifications pass, and so does
-	// an absent note -- the record is not the S8 enforcement point (that ruling
-	// stands), so a finding whose SPDX id resolves owes no note at all.
+	// an absent note -- the record is not the spine's licence section
+	// enforcement point (that ruling stands), so a finding whose SPDX id
+	// resolves owes no note at all.
 	for _, trust := range []Trust{TrustUntrusted, TrustVerified} {
 		t.Run("admitted/"+string(trust), func(t *testing.T) {
 			r := chAdvisoryResult()
@@ -759,7 +762,7 @@ func TestLicenseManualNoteRefusesTheAbsentValueInLegitimateClothes(t *testing.T)
 		r.Properties.Advisory.LicenseSpdx = "CC-BY-4.0"
 		if err := r.validate(HalfSast); err != nil {
 			t.Errorf("a finding whose SPDX id resolves, carrying no manual note, was "+
-				"refused: %v. The record does not enforce S8 -- the CI gate does -- and "+
+				"refused: %v. The record does not enforce the spine's licence section -- the CI gate does -- and "+
 				"refusing here would be this area claiming a subject that is not its own", err)
 		}
 	})

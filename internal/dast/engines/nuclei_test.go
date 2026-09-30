@@ -1,4 +1,4 @@
-// D.14's evidence.
+// The nuclei driver's evidence.
 //
 // ===========================================================================
 // WHAT THIS SUITE CAN PROVE ON THIS HOST, AND WHAT IT CANNOT
@@ -84,7 +84,7 @@ http:
       - "{{BaseURL}}/"
 `
 
-// codeTemplate is the spine S5 hard exclusion, written out.
+// codeTemplate is the spine's hard exclusion, written out.
 const codeTemplate = `id: anvil-fixture-code
 info:
   name: code protocol fixture
@@ -133,7 +133,7 @@ func rejectionFor(rej []RejectedTemplate, path string) (RejectedTemplate, bool) 
 // THE `code:` PROTOCOL — rejected at load, and provably absent afterwards
 // ---------------------------------------------------------------------------
 
-// TestCodeProtocolIsRejectedAtLoadAndCannotBeFired is D.14's named validation:
+// TestCodeProtocolIsRejectedAtLoadAndCannotBeFired is the nuclei driver's named validation:
 // "Test with a synthetic `code:` protocol template asserting it is rejected at
 // LoadTemplates time and never reaches Fire".
 //
@@ -156,11 +156,11 @@ func TestCodeProtocolIsRejectedAtLoadAndCannotBeFired(t *testing.T) {
 	if !ok {
 		t.Fatalf("the `code:` template was not reported as rejected at all. Rejections: %v. "+
 			"A rejection nobody can see is indistinguishable from a file that was never "+
-			"there, and plan/50-dast.md D.14 requires rejection AT LOAD TIME", rej)
+			"there, and the nuclei driver's design requires rejection AT LOAD TIME", rej)
 	}
 	if r.Reason != RejectCodeProtocol {
 		t.Fatalf("the `code:` template was rejected as %q; want %q so the message names "+
-			"the spine S5 hard exclusion rather than a generic allowlist miss",
+			"the spine's hard exclusion rather than a generic allowlist miss",
 			r.Reason, RejectCodeProtocol)
 	}
 	if r.Protocol != ProtocolCode {
@@ -443,7 +443,7 @@ func TestAnEmptyTemplateDirectoryIsNotACleanScan(t *testing.T) {
 	})
 }
 
-// TestTemplateDigestIsOverTheExactBytes anchors the value D.17 pins against.
+// TestTemplateDigestIsOverTheExactBytes anchors the value template pinning pins against.
 //
 // It is computed here from the fixture's own bytes rather than copied from the
 // loader, so a loader that hashed something else — the normalised text, the
@@ -459,7 +459,7 @@ func TestTemplateDigestIsOverTheExactBytes(t *testing.T) {
 	if tpls[0].Digest() != want {
 		t.Fatalf("Digest() = %q; want the SHA-256 of the file's EXACT bytes, %q. The "+
 			"loader normalises CRLF and strips a BOM before analysing; if it also hashed "+
-			"the normalised text, a D.17 pin computed from the file on disk would never "+
+			"the normalised text, a template pinning pin computed from the file on disk would never "+
 			"match", tpls[0].Digest(), want)
 	}
 }
@@ -736,7 +736,7 @@ func TestEveryDefensiveCopyIsReal(t *testing.T) {
 // PDCPUpload — forbidden outright
 // ---------------------------------------------------------------------------
 
-// spyEngine records what was asked of it. It is the mock D.14's validation
+// spyEngine records what was asked of it. It is the mock the nuclei driver's validation
 // asks for: "test asserting PDCPUpload is never invoked (mock SDK client,
 // assert method not called)".
 type spyEngine struct {
@@ -798,7 +798,7 @@ func TestPDCPUploadAppearsInNoCallExpressionInThisPackage(t *testing.T) {
 			case *ast.CallExpr:
 				sel, ok := v.Fun.(*ast.SelectorExpr)
 				if ok && sel.Sel.Name == "WithPDCPUpload" {
-					t.Errorf("%s:%d calls WithPDCPUpload. plan/50-dast.md D.14 forbidden "+
+					t.Errorf("%s:%d calls WithPDCPUpload. The nuclei driver's design forbidden "+
 						"actions: \"Never call WithPDCPUpload(scanID, teamID)\". The method "+
 						"exists on the Engine interface so that its absence from the call "+
 						"graph is provable, not so that it can be used",
@@ -884,7 +884,7 @@ func TestInteractshAndCloudUploadAreOffOnEveryConstructedPlan(t *testing.T) {
 		t.Fatalf("NewRunPlan refused a well-formed plan: %v", err)
 	}
 	if plan.InteractshEnabled() {
-		t.Fatal("a constructed RunPlan has interactsh enabled. plan/50-dast.md D.14: " +
+		t.Fatal("a constructed RunPlan has interactsh enabled. The nuclei driver's design: " +
 			"interactsh/OAST must be off by default, and there is meant to be no argument " +
 			"to this constructor that turns it on")
 	}
@@ -903,7 +903,7 @@ func TestInteractshAndCloudUploadAreOffOnEveryConstructedPlan(t *testing.T) {
 
 // TestNoOutOfBandOriginCanBeProposed is interactsh's default made structural.
 //
-// D.14's validation asks for a test "asserting interactsh callback URLs are
+// The nuclei driver's validation asks for a test "asserting interactsh callback URLs are
 // absent from generated requests by default". A test that grepped generated
 // requests for known OAST hostnames would be a denylist of somebody else's
 // domain names. This asserts the mechanism instead: there is no ORIGIN under
@@ -1005,7 +1005,7 @@ func TestARequestProposalCannotBeMadeFromUnvalidatedFacts(t *testing.T) {
 	}
 }
 
-// TestRequestProposalHoldsNothingThatCouldOpenASocket is plan/50-dast.md exit
+// TestRequestProposalHoldsNothingThatCouldOpenASocket is plan/design/dynamic-tier.md exit
 // criterion 19, proven by reflection: "The RequestProposal type has zero
 // methods or fields capable of performing network I/O".
 func TestRequestProposalHoldsNothingThatCouldOpenASocket(t *testing.T) {
@@ -1110,7 +1110,7 @@ func TestSystemEngineRefusesRatherThanReturningANoOp(t *testing.T) {
 //
 // One code across Anvil for "the engine or the ruleset is not present", so an
 // operator's wrapper needs no per-tool table. It is asserted by READING the
-// other package's source rather than by importing it: D.9's tier-wide gate 2
+// other package's source rather than by importing it: the build-time guard's tier-wide gate 2
 // check permits a DAST package to link only the stdlib, the DAST tree and
 // internal/record, and linking the SCA collector to reach one integer would
 // widen that surface for nothing.
@@ -1674,7 +1674,7 @@ address.`, spec.PinnedAddr())
 // TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate is the first evidence
 // in this repository that the gate stack PERMITS anything.
 //
-// Everything else in this file, and everything D.14 wrote before this, proves
+// Everything else in this file, and everything the nuclei driver wrote before this, proves
 // the kernel refuses. A stack that has only ever been shown to refuse could be
 // refusing for the wrong reason — an unconstructed value, a typo in a gate
 // name, a chain that returns short — and every negative result would look
@@ -2454,7 +2454,7 @@ func TestThisFileSkipsNothing(t *testing.T) {
 
 // TestThisPackageConstructsNoSocket is a local restatement of gate 3 tier 1.
 //
-// D.9's scanner already covers this package (its walk includes _test.go files
+// The build-time guard's scanner already covers this package (its walk includes _test.go files
 // inside internal/dast), and that is the authority. This is a fast local
 // echo so that the failure lands in the package being edited rather than
 // three directories away, and it is deliberately narrower: it asserts the
@@ -2620,7 +2620,7 @@ func repoRoot(t *testing.T) string {
 // A generator that cannot produce the breaking input is the defect, so this
 // one carries every class that has to be neutralised BEFORE a string from an
 // external engine reaches an operator's terminal, the gate-21 audit or, one
-// hop later, a prompt-bound agent (plan/00-SPINE.md S6, S7): the invisible
+// hop later, a prompt-bound agent (the spine's record and safety sections): the invisible
 // smuggling channels, the renders-differently-than-it-compares channels, the
 // log-injection channel, malformed UTF-8, and length used as a payload.
 //
@@ -2733,7 +2733,7 @@ bound back to the kernel's, or export the kernel's and call it.`, mine, err)
 // TestNoRefusalInThisPackageQuotesAnUntrustedIdentifierRaw sweeps every refusal
 // that echoes an identifier this package did not mint.
 //
-// The ones the D.16 critic found were `%s` interpolations of
+// The ones the driver review found were `%s` interpolations of
 // identityKey(TemplateID, TemplateDigest) and of a proposal's plan digest —
 // both of which come straight from an external engine or from a caller. Fixing
 // only the named sites would be a denylist of the ones somebody happened to

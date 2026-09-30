@@ -1,6 +1,6 @@
 # `go-apispec` — pin, licence determination, and maintenance assessment
 
-This directory is packet **D.20**'s licence half. It holds the two files Apache-2.0 attribution is
+This directory is packet **Go route extraction**'s licence half. It holds the two files Apache-2.0 attribution is
 made of — the licence body and the NOTICE body — read from the upstream repository at a pinned
 commit, archived verbatim, and hashed so the determination is reproducible rather than asserted.
 
@@ -37,14 +37,14 @@ git -C go-apispec cat-file -p 53a81eb07666e55adbd6a5732b1f5ee9a2af5f82:NOTICE  |
 | Tag at that commit (provenance, **not** identity) | `v0.4.25` |
 | `main` at time of reading (**not** the pin) | `63f249957ee855c0516dd6c1438c72922ead378c`, `2026-06-24T13:00:37+02:00` |
 
-### 1.1 The peel check, which here does NOT come out the way D.17's did
+### 1.1 The peel check, which here does NOT come out the way template pinning's did
 
 `cmd/anvil-dast/pin-templates.go` records that `projectdiscovery/nuclei-templates` returns **zero**
 peeled refs, so a tag SHA is a commit SHA there and no peeling step is being skipped.
 
 **`antst/go-apispec` is not like that.** `git ls-remote --tags` returns `^{}` peeled refs for most of
 its tags — `v0.4.24`'s tag ref is `f8c809d6…`, and `git cat-file -t f8c809d6…` answers `tag`, not
-`commit`. A worker who copied D.17's reasoning across without re-running the check would have pinned
+`commit`. A worker who copied template pinning's reasoning across without re-running the check would have pinned
 a tag object and believed it was a commit.
 
 `v0.4.25` happens to be lightweight — it has no `^{}` companion — and `git cat-file -t` on it answers
@@ -55,7 +55,7 @@ usable as a commit pin.
 
 ## 2. Licence determination — read from the file BODY
 
-`plan/00-SPINE.md` S8: read LICENSE file bodies, never API metadata. Seven artifacts in
+The spine's licence section: read LICENSE file bodies, never API metadata. Seven artifacts in
 `research/13-license-compatibility-audit.md` return `NOASSERTION` over a real licence and one is
 tagged permissively while its own NOTICE places it under a restrictive licence.
 
@@ -83,7 +83,7 @@ restriction. As corroboration from a second independent direction, `sha256sum ca
 
 ### 2.1 Share-alike posture: NOT share-alike, so no quarantine
 
-Checked explicitly, because `plan/00-SPINE.md` S8 quarantines share-alike sources under
+Checked explicitly, because the spine's licence section quarantines share-alike sources under
 `data/share-alike/` and `mirror/tier2/`, and putting one in `third_party/` instead is a compliance
 defect rather than a filing preference.
 
@@ -107,13 +107,13 @@ no `go-apispec` code (§5), so the duty that is live today is discharged by this
 licence body and the NOTICE body travel with the pin, verbatim, hash-checked in CI.
 
 The moment anybody vendors `go-apispec` **source** under this directory, the duty widens to the
-aggregated root `NOTICE`, and D.20's stop condition ("NOTICE aggregation verified") becomes
+aggregated root `NOTICE`, and Go route extraction's stop condition ("NOTICE aggregation verified") becomes
 reachable and required. `TestVendoringGoSourceWouldWidenTheNoticeDuty` in
 `internal/dast/inventory/tier2_go_extract_test.go` is that trigger: it fails the build if a `.go`
 file appears under `third_party/go-apispec/` while the root `NOTICE` does not carry the body above.
 The control is armed now and passes now for a stated, true reason.
 
-**Outstanding, and outside D.20's write scope:** appending this NOTICE body to the root `NOTICE`, and
+**Outstanding, and outside Go route extraction's write scope:** appending this NOTICE body to the root `NOTICE`, and
 adding a `go-apispec` row to `THIRD-PARTY-LICENSES.md`. Neither is required until source is vendored;
 both are pre-requisites for vendoring it.
 
@@ -121,7 +121,7 @@ both are pre-requisites for vendoring it.
 
 ## 3. Maintenance spike — VENDOR vs FORK
 
-`plan/50-dast.md:1269-1271` left this open: "Whether go-apispec's maintenance state and test coverage
+`plan/design/dynamic-tier.md:1269-1271` left this open: "Whether go-apispec's maintenance state and test coverage
 justify VENDORING vs FORKING was not independently assessed here."
 
 Measured on **2026-08-23** from this host. Commit and tag figures come from a full clone of the
@@ -182,7 +182,7 @@ read from the workflow file at the pinned commit.
 
 ## 4. What `go-apispec` would be used for
 
-`plan/50-dast.md` D.20 specifies its pipeline for Tier 2 static route extraction: package load +
+Go route extraction's design specifies its pipeline for Tier 2 static route extraction: package load +
 type check → AST traversal → call graph from router registration to handler → OpenAPI emission, over
 `chi`, `gin`, `net/http`, `echo`, `fiber` and `gorilla/mux`.
 
@@ -212,24 +212,24 @@ The consequence follows from `CheckGate3EgressChokePoint` in
 egress must be covered by `nonKernelEgressAllowlist` or it is a finding. `go-apispec` imports
 `golang.org/x/tools`, `gopkg.in/yaml.v3` and `github.com/stretchr/testify`, and none of the three is
 on `inertImports`. Vendoring its source therefore requires editing `nonKernelEgressAllowlist` —
-outside D.20's write scope, and a widening that deserves its own reviewed diff rather than riding
+outside Go route extraction's write scope, and a widening that deserves its own reviewed diff rather than riding
 along inside a vendoring commit. (Limit 5 in that file's header anticipates exactly this for
 `vendor/`; `third_party/` reopens it.)
 
 The measurement above could not be observed end-to-end today because gate 3 already fails on an
 unrelated pre-existing finding — `internal/dast/inventory/tier1_repospec.go:152 import "encoding/xml"`,
-D.19's, with `encoding/xml` absent from `inertImports` — and tier-1 findings are reported first and
+the repo spec reader's, with `encoding/xml` absent from `inertImports` — and tier-1 findings are reported first and
 short-circuit the tier-2 report. The file-count delta is the part that was measured; the tier-2
 verdict is read from the code above and is stated as such.
 
-**(b) `go.mod` and `go.sum` are outside D.20's write scope.** A vendored tree that does not compile is
+**(b) `go.mod` and `go.sum` are outside Go route extraction's write scope.** A vendored tree that does not compile is
 worse than an absent one: it sits unbuilt, unexercised, and still creates the §4(d) duty in §2.2
 against a root `NOTICE` this packet may not write.
 
 Worth flagging beyond scope, because it is a security property and not a packaging one: `go-apispec`'s
 pipeline begins with `golang.org/x/tools/go/packages` in a type-checking mode, which **runs `go list`
 over the target repository** — module downloads, and with cgo the C toolchain. Against an untrusted
-target repository that is a code-execution surface, and it belongs behind D.11's containment rather
+target repository that is a code-execution surface, and it belongs behind network containment rather
 than in-process. `TypeCheckedExtractor` being an interface is what leaves room for that.
 
 The extraction that ships **today** is `ExtractionModeSyntactic`, built on `go/ast`, `go/parser` and

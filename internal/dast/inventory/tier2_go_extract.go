@@ -1,4 +1,4 @@
-// This file is packet D.20: Tier 2, static route extraction from Go source.
+// This file is Go route extraction: Tier 2, static route extraction from Go source.
 //
 // ===========================================================================
 // WHAT TIER 2 IS
@@ -21,9 +21,9 @@
 // EVERY ROUTE THIS FILE PRODUCES IS A CANDIDATE. THERE IS NO OTHER PATH.
 // ===========================================================================
 //
-// plan/50-dast.md D.20's Forbidden actions: "Do not mark any Tier 2 output as
+// Go route extraction's forbidden actions: "Do not mark any Tier 2 output as
 // `status: confirmed` at extraction time -- every route from this step is
-// `status: candidate` until D.22 confirms it via live probe."
+// `status: candidate` until route confirmation confirms it via live probe."
 //
 // The enforcement is not a review convention. Every Route leaving this file
 // goes through ONE function, toRoute, which writes ConfirmationCandidate as a
@@ -31,19 +31,19 @@
 // produce ConfirmationConfirmed here, and TestNoRouteFromThisTierIsEverConfirmed
 // asserts it over every fixture in the suite including the hostile ones.
 //
-// The arithmetic is why. plan/50-dast.md:1152 defines endpoint_coverage as
+// The arithmetic is why. plan/design/dynamic-tier.md:1152 defines endpoint_coverage as
 // confirmed-probed endpoints over the union of the Tier 0-2 inventory. A
 // source file contains route registrations that never run -- behind a build
 // tag, in dead code, in a handler wired to a mux that is never served. Marking
 // those confirmed puts them in the NUMERATOR, and a scan that probed nothing
-// then reports coverage. Promotion is D.22's job and inflating it here
+// then reports coverage. Promotion is route confirmation's job and inflating it here
 // corrupts endpoint_coverage downstream.
 //
 // ===========================================================================
 // TARGET SOURCE IS ATTACKER-AUTHORED INPUT
 // ===========================================================================
 //
-// D.19 recorded the lesson in its own header: 169.254.169.254 was a legal
+// The repo spec reader recorded the lesson in its own header: 169.254.169.254 was a legal
 // Compose service name, so a committed file could point Anvil's health check
 // at the cloud metadata endpoint. A route pattern in a .go file is the same
 // shape of thing, and gate 11's asymmetry applies here verbatim:
@@ -68,11 +68,11 @@
 // THIS FILE OPENS NOTHING, AND KNOWS NO REPOSITORY PATH
 // ===========================================================================
 //
-// DEVIATION FROM plan/50-dast.md D.20's stated signature, which is
+// DEVIATION FROM the signature Go route extraction's design states, which is
 // `ExtractGoRoutes(repoPath string) ([]Route, error)`. Stated, not hidden.
 //
-// D.19 established the opposite shape for this package and gave the reason:
-// plan/50-dast.md:628-630 makes repository harvesting the SAST tier's job, and
+// The repo spec reader established the opposite shape for this package and gave the reason:
+// plan/design/dynamic-tier.md:628-630 makes repository harvesting the SAST tier's job, and
 // TestTier1KnowsNoRepositoryPathAndOpensNothing enforces it by parsing that
 // file's own syntax tree. A repoPath parameter here would put os and
 // path/filepath into this package, and then Tier 2 would be walking an
@@ -81,17 +81,17 @@
 //
 // So ExtractGoRoutes keeps its name and changes its parameters: it takes
 // GoSourceFile values the harvest pass already produced, each carrying a
-// record.ArtifactLocation and a record.ArtifactContent, exactly as D.19's
-// SpecFile does. RULING 7 made D.19's input shape internal/record rather than
-// a placeholder; this is the same shape one tier later.
-// TestTier2OpensNothingAndKnowsNoRepositoryPath parses THIS file's syntax tree
-// and fails on any filesystem import.
+// record.ArtifactLocation and a record.ArtifactContent, exactly as the repo spec reader's
+// SpecFile does. THE INVENTORY RULING made the repo spec reader's input shape
+// internal/record rather than a placeholder; this is the same shape one tier
+// later. TestTier2OpensNothingAndKnowsNoRepositoryPath parses THIS file's
+// syntax tree and fails on any filesystem import.
 //
 // ===========================================================================
 // TWO MODES, AND WHY THE ONE THAT SHIPS IS THE WEAKER ONE
 // ===========================================================================
 //
-// plan/50-dast.md D.20 specifies go-apispec's pipeline: package load + type
+// Go route extraction's design specifies go-apispec's pipeline: package load + type
 // check -> AST traversal -> call graph from router registration to handler ->
 // OpenAPI emission. That pipeline resolves things a parser cannot: a path
 // built from a constant in another package, a router stored in a struct field
@@ -101,9 +101,9 @@
 // It is also golang.org/x/tools/go/packages in a type-checking mode, which
 // RUNS `go list` OVER THE TARGET REPOSITORY -- module downloads, and with cgo
 // the C toolchain. Against an untrusted target repository that is a
-// code-execution surface, and it belongs behind D.11's containment rather than
+// code-execution surface, and it belongs behind network containment rather than
 // in this process. third_party/go-apispec/PIN.md section 5 records the two
-// measured blockers to vendoring it inside D.20's write scope.
+// measured blockers to vendoring it inside Go route extraction's write scope.
 //
 // So there are two modes and the seam between them is an interface:
 //
@@ -154,8 +154,8 @@
 //	CaveatHostPatternDiscarded         a net/http 1.22 pattern carrying a host
 //	CaveatFileUnparseable              a .go file that did not parse
 //
-// A caveat is not a Refusal. D.18's RefusalReason vocabulary is closed and
-// lives in tier0_runtime.go; D.19 added none and neither does this file. A
+// A caveat is not a Refusal. The runtime spec probe's RefusalReason vocabulary is closed and
+// lives in tier0_runtime.go; the repo spec reader added none and neither does this file. A
 // Refusal here means "this tier saw a concrete route and could not represent
 // it"; a caveat means "this tier knows it did not see everything".
 //
@@ -167,7 +167,7 @@
 // spells it ":id". fiber spells it ":id". net/http 1.22 spells it "{id}" and a
 // trailing wildcard "{path...}". gorilla/mux allows a regex, "{id:[0-9]+}".
 //
-// D.26 deduplicates the Tier 0-2 union on Route.Key(), which is method, path
+// Coverage reporting deduplicates the Tier 0-2 union on Route.Key(), which is method, path
 // and operation. Six spellings of one endpoint are six rows in a denominator
 // that is supposed to be auditable, so this file canonicalizes EVERY
 // placeholder to the OpenAPI spelling "{name}" -- the spelling Tier 0 and Tier
@@ -197,7 +197,7 @@
 // A receiver that does not resolve produces CaveatRouterNotResolved, never a
 // guess. Guessing is how `cache.Get("/etc/passwd")` becomes an endpoint.
 //
-// Sources: plan/50-dast.md D.20 (lines 644-676) and the Coverage Reporting
+// Sources: Go route extraction's design (lines 644-676) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 330-341; third_party/go-apispec/PIN.md; internal/record/contract.go.
 package inventory
@@ -283,18 +283,18 @@ const (
 )
 
 // ---------------------------------------------------------------------------
-// Framework — the six D.20 names, as an enum
+// Framework — the six frameworks Go route extraction names, as an enum
 // ---------------------------------------------------------------------------
 
 // Framework is the Go HTTP router a route was registered with.
 //
-// plan/50-dast.md D.20's expected output schema requires every Route to be
+// Go route extraction's design expected output schema requires every Route to be
 // tagged `framework: <chi|gin|net_http|echo|fiber|gorilla_mux>`; these literals
 // are those six, spelled exactly.
 //
 // The zero value names nothing and is refused everywhere it matters. A route
 // whose framework nobody set is not a weaker route, it is one whose extraction
-// path cannot be audited -- and when D.22 finds a candidate that never
+// path cannot be audited -- and when route confirmation finds a candidate that never
 // confirms, "which extractor produced this" is the first question.
 type Framework string
 
@@ -315,7 +315,7 @@ const (
 	FrameworkGorillaMux Framework = "gorilla_mux"
 )
 
-// FrameworkValues returns the six frameworks D.20 names, in a stable order.
+// FrameworkValues returns the six frameworks Go route extraction names, in a stable order.
 func FrameworkValues() []Framework {
 	return []Framework{
 		FrameworkChi, FrameworkGin, FrameworkNetHTTP,
@@ -356,7 +356,7 @@ const (
 	ExtractionModeSyntactic ExtractionMode = "syntactic"
 
 	// ExtractionModeTypeChecked delegates to a TypeCheckedExtractor -- the
-	// go-apispec pipeline of plan/50-dast.md D.20. Nothing is wired today, so
+	// go-apispec pipeline of Go route extraction's design. Nothing is wired today, so
 	// selecting it produces ErrNoTypeCheckedExtractor.
 	ExtractionModeTypeChecked ExtractionMode = "type_checked"
 )
@@ -446,7 +446,7 @@ const (
 	//
 	// The path emitted here is "/users"; the application serves
 	// "/api/v1/users". The route is still emitted -- it is a CANDIDATE and
-	// D.22 confirms it -- but a candidate at a path the target does not serve
+	// route confirmation confirms it -- but a candidate at a path the target does not serve
 	// looks like the target's fault when it fails to confirm, so the
 	// incompleteness is REPORTED. Resolving it needs the call graph, which is
 	// precisely what the type-checked pipeline buys.
@@ -577,7 +577,7 @@ func SortCaveats(cs []CoverageCaveat) {
 // GoSourceFile — one harvested source file
 // ---------------------------------------------------------------------------
 
-// GoSourceFileFacts is NewGoSourceFile's input. It mirrors D.19's
+// GoSourceFileFacts is NewGoSourceFile's input. It mirrors the repo spec reader's
 // SpecFileFacts, in internal/record's own vocabulary for naming and carrying a
 // file from the target repository.
 type GoSourceFileFacts struct {
@@ -609,7 +609,7 @@ func NewGoSourceFile(f GoSourceFileFacts) (GoSourceFile, error) {
 	uri := f.Location.URI
 	if uri == "" {
 		return GoSourceFile{}, fmt.Errorf("inventory: %w: the harvested source file has no "+
-			"artifact URI. A route with no file behind it cannot be reviewed, and D.22 "+
+			"artifact URI. A route with no file behind it cannot be reviewed, and route confirmation "+
 			"cannot tell an operator where a candidate it failed to confirm came from",
 			ErrRefused)
 	}
@@ -691,14 +691,14 @@ type ExtractedRoute struct {
 }
 
 // TypeCheckedExtractor is the seam to the go-apispec pipeline of
-// plan/50-dast.md D.20.
+// Go route extraction's design.
 //
 // It is an interface, and the implementation lives OUTSIDE internal/dast, for
-// the same reason SpecFetcher does: D.9's gate 3 tier 1 fails the build if any
+// the same reason SpecFetcher does: the build-time guard's gate 3 tier 1 fails the build if any
 // package under internal/dast outside internal/dast/authz imports something
 // that can construct a connection, with no allowlist -- and the type-checked
 // pipeline runs `go list` over the target repository, which is a subprocess
-// with network and toolchain reach that belongs behind D.11's containment.
+// with network and toolchain reach that belongs behind network containment.
 //
 // Nothing implements this today. third_party/go-apispec/PIN.md section 5
 // records the two measured blockers. internal/SKIPPED-CONTROLS.md is where the
@@ -728,11 +728,11 @@ type ExtractConfig struct {
 	// at gate 11.
 	Target authz.Target
 
-	// Harvest says what the SAST pass did. Reused from D.19 rather than
+	// Harvest says what the SAST pass did. Reused from the repo spec reader rather than
 	// redeclared: it is the only thing that can distinguish "this repository
 	// has no Go source" from "the handoff was never wired", and a second enum
-	// for the same question is exactly the produce/consume break section 6 of
-	// plan/IMPLEMENTATION-PLAN.md exists to prevent.
+	// for the same question is exactly the produce/consume break the first
+	// plan's shared-vocabulary review exists to prevent.
 	Harvest HarvestOutcome
 
 	// Mode selects the pipeline. Required; the zero value is refused.
@@ -836,7 +836,7 @@ func (r ExtractResult) Seen() int { return r.seen }
 func (r ExtractResult) Truncated() bool { return r.truncate }
 
 // FrameworkMix is the per-framework candidate count -- the Tier 2 half of what
-// D.26 aggregates. A copy; the internal map is never handed out.
+// coverage reporting aggregates. A copy; the internal map is never handed out.
 func (r ExtractResult) FrameworkMix() map[Framework]int {
 	out := make(map[Framework]int, len(r.byFW))
 	for k, v := range r.byFW {
@@ -846,7 +846,7 @@ func (r ExtractResult) FrameworkMix() map[Framework]int {
 }
 
 // SourceOf returns the source file a route key came from, in
-// internal/record's vocabulary, so a candidate D.22 fails to confirm can be
+// internal/record's vocabulary, so a candidate route confirmation fails to confirm can be
 // traced to a line a human can read.
 func (r ExtractResult) SourceOf(key string) (record.ArtifactLocation, bool) {
 	loc, ok := r.sourceOf[key]
@@ -900,7 +900,7 @@ func (r ExtractResult) AssertNotSilentlyEmpty() error {
 		ErrNothingExtracted, r.harvest, r.offered, HarvestSkipped)
 }
 
-// AssertEveryRouteIsACandidate is D.20's Forbidden-actions clause, executable.
+// AssertEveryRouteIsACandidate is Go route extraction's Forbidden-actions clause, executable.
 //
 // It is not defensive programming: it is the assertion the whole packet turns
 // on, available to any caller that wants to check rather than trust, and it is
@@ -909,7 +909,7 @@ func (r ExtractResult) AssertEveryRouteIsACandidate() error {
 	for _, rt := range r.routes {
 		if rt.Confirmation() != ConfirmationCandidate {
 			return fmt.Errorf("inventory: %w: %s carries confirmation %q. Every Tier 2 "+
-				"route is a candidate until D.22 confirms it via live probe; a confirmed "+
+				"route is a candidate until route confirmation confirms it via live probe; a confirmed "+
 				"one here enters the numerator of endpoint_coverage without anything "+
 				"having been probed", ErrRefused, rt, rt.Confirmation())
 		}
@@ -927,9 +927,9 @@ func (r ExtractResult) AssertEveryRouteIsACandidate() error {
 
 // ExtractGoRoutes turns harvested Go source into CANDIDATE inventory routes.
 //
-// The signature deviates from plan/50-dast.md D.20's
+// The signature deviates from Go route extraction's design
 // `ExtractGoRoutes(repoPath string) ([]Route, error)`; this file's header
-// records why, and the short version is that D.19 already established that
+// records why, and the short version is that the repo spec reader already established that
 // this package opens nothing and knows no repository path.
 func ExtractGoRoutes(ctx context.Context, cfg ExtractConfig, srcs []GoSourceFile) (ExtractResult, error) {
 	if !cfg.Target.Constructed() {
@@ -1146,7 +1146,7 @@ func (a *extractAccumulator) toRoute(er ExtractedRoute) (Route, Refusal, bool) {
 // operationLabel names the operation within the path, and for Tier 2 that is
 // DELIBERATELY EMPTY unless a producer supplied one.
 //
-// Route.Key() is method, path and operation, and D.26 deduplicates the
+// Route.Key() is method, path and operation, and coverage reporting deduplicates the
 // Tier 0-2 union on it. Putting the framework or the enclosing function name
 // in here would look like richer provenance and would in fact be denominator
 // inflation: the same endpoint registered on a chi router and on a legacy
@@ -2342,7 +2342,7 @@ func canonicalizePattern(pat string) (string, []Param, error) {
 				Required: true,
 				// Type is empty and stays empty. Syntactic extraction cannot
 				// know a parameter's type; inventing "string" would make
-				// Param.Typed() -- the predicate plan/50-dast.md:610's
+				// Param.Typed() -- the predicate plan/design/dynamic-tier.md:610's
 				// "parameter-typed" claim is measured by -- lie.
 			})
 		}

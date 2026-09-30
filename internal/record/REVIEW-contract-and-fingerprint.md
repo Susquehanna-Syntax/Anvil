@@ -1,10 +1,10 @@
-# CRITIQUE-01 — R.3, critique of R.1 (Record Field Contract) and R.2 (Fingerprint Specification)
+# Review: the record contract (Record Field Contract) and the fingerprint (Fingerprint Specification)
 
-**Step:** R.3 · **Reviewed:** `internal/record/contract.go`, `internal/record/CONTRACT.md`,
+**Step:** this review · **Reviewed:** `internal/record/contract.go`, `internal/record/CONTRACT.md`,
 `schemas/anvil-record-v1.schema.json`, `internal/record/fingerprint.go`,
 `internal/record/fingerprint_test.go`, `testdata/fingerprint_corpus/*.json`, against
-`plan/40-record-and-storage.md` (Record Field Contract + Fingerprint Specification),
-`plan/00-SPINE.md` S1/S6/S7/S12, and `plan/IMPLEMENTATION-PLAN.md` §6.
+`plan/design/record-and-store.md` (Record Field Contract + Fingerprint Specification),
+the spine's corrected-requirements, record, safety and Go control-plane sections, and the shared-vocabulary review.
 
 **Date:** 2026-08-08 · **Branch:** `feat/phase1-record-store` · **No code was modified by this pass.**
 
@@ -12,14 +12,14 @@
 
 ## 0. WHICH GUARANTEE THIS DOCUMENT ACTUALLY PROVIDES — READ THIS FIRST
 
-**This was a SAME-FAMILY critic.** The critic and both implementers (R.1, R.2) are Anthropic models.
-`plan/00-ROUTING.md` originally required a **different model family** here precisely so that a shared
+**This was a SAME-FAMILY critic.** The critic and both implementers (the record contract, the fingerprint) are Anthropic models.
+`plan/design/routing.md` originally required a **different model family** here precisely so that a shared
 blind spot could not survive review; the owner withdrew external routes on 2026-08-07 because running
 them means copying `plan/` — deliberately private — to a third-party provider. See the OWNER DECISION
-block at the top of `00-ROUTING.md`.
+block at the top of `routing.md`.
 
 **A later reader must not record this as a cross-family critique.** The cross-family guarantee
-`00-ROUTING.md` asked for on data-integrity work has *not* been obtained, and nothing in this document
+`routing.md` asked for on data-integrity work has *not* been obtained, and nothing in this document
 supplies it. What compensation was applied:
 
 - Findings were sought by refutation, not assessment: the implementations were assumed wrong.
@@ -42,21 +42,21 @@ outside vocabulary.
 
 ## 1. VERDICT
 
-| Question R.3 must answer | Verdict |
+| Question this review must answer | Verdict |
 |---|---|
-| Every `00-SPINE.md` S6 field present in the contract | **PASS** (§3, field by field) |
+| Every field of the spine's record section present in the contract | **PASS** (§3, field by field) |
 | Fingerprint determinism | **PASS** — proved cross-process (§4) |
 | Fingerprint excludes volatile fields | **PASS with one reservation** — package version, line, column, host, port, scheme, payload, timestamp all excluded and proved; the *ruleset* version is hashed and its churn is unbounded (finding 6) |
 | Six frozen enums (§6) match, no second copy | **PASS** — literal by literal, three sources agree (§5) |
 | Goldens are committed and compared, not regenerated | **PASS** (§6) |
-| `CONTRACT.md` ⇄ `contract.go` ⇄ schema agree | **PASS** on all six enums and all S6 fields; one open decision unrecorded (finding 11) |
-| **Is `anvil-fp/v1` "one algorithm, defined once" as S6 requires?** | **FAIL** — findings 1 and 2 |
+| `CONTRACT.md` ⇄ `contract.go` ⇄ schema agree | **PASS** on all six enums and all the spine's record section fields; one open decision unrecorded (finding 11) |
+| **Is `anvil-fp/v1` "one algorithm, defined once" as the spine's record section requires?** | **FAIL** — findings 1 and 2 |
 
-**Overall: FAIL.** Two blockers. Per the packet's stop condition, R.4 must not start until they are ruled
+**Overall: FAIL.** Two blockers. Per the packet's stop condition, the store schema must not start until they are ruled
 on. Note carefully that **neither blocker is a bug in the Go code**: the code is clean, well-tested and
-internally consistent. Both are failures of the *written specification* to be the thing S6 says it must
+internally consistent. Both are failures of the *written specification* to be the thing the spine's record section says it must
 be — the single, reproducible definition. Fixing them is an orchestrator ruling on
-`plan/40-record-and-storage.md`, not a rewrite of `fingerprint.go`.
+`plan/design/record-and-store.md`, not a rewrite of `fingerprint.go`.
 
 ---
 
@@ -82,27 +82,27 @@ $ go test -count=1 -v ./internal/record/ | grep -c "^--- PASS"
 129
 ```
 
-R.1's `contract_test.go` still passes alongside R.2's additions. Go 1.26.5.
+The record contract's `contract_test.go` still passes alongside the fingerprint's additions. Go 1.26.5.
 
 ---
 
-## 3. `00-SPINE.md` S6 — one verdict per required field
+## 3. The spine's record section — one verdict per required field
 
-S6's required set, in the order S6 lists it. "Where" cites the Go symbol; every row was additionally
+The spine's required set, in the order the spine's record section lists it. "Where" cites the Go symbol; every row was additionally
 checked to exist in `schemas/anvil-record-v1.schema.json` and to be described identically in
 `CONTRACT.md`.
 
-| # | S6 field | Verdict | One-line reason |
+| # | The spine's record section field | Verdict | One-line reason |
 |---|---|---|---|
 | 1 | `anvil/state` | **PASS** | `State` + `PropAuditState`; six literals exactly as §6 froze them. |
 | 2 | `anvil/version` | **PASS** | `PropAuditVersion = "anvil/version"`, present in schema and CONTRACT.md; correctly **not** hashed by any fingerprint tier. |
-| 3 | per-half `status` | **PASS** | `HalfStatus` + `PropRunStatus`; `running\|sealed\|failed\|timed_out\|skipped`, matching §6's G5 ruling including the added `timed_out`. |
+| 3 | per-half `status` | **PASS** | `HalfStatus` + `PropRunStatus`; `running\|sealed\|failed\|timed_out\|skipped`, matching the half-status ruling including the added `timed_out`. |
 | 4 | per-half `sealedAt` | **PASS** | `PropRunSealedAt`; required in schema on a sealed half. |
-| 5 | `anvil/trust` on every string originating outside Anvil | **PASS** | `Trust` with the three S6 literals, carried as an *object* not a bare enum (CONTRACT.md deviation 3) so one result can hold several provenances; `LegalForExternalString()` enforces the rule at the type level. The richer container is a strict improvement over the plan's table and does not change the literals. |
-| 6 | `dast_status` | **PASS** | `DastStatus` + `PropAuditDastStatus`; all nine §6 literals, `skipped_no_manifest` kept distinct from `not_run` as G3+G6 requires. |
+| 5 | `anvil/trust` on every string originating outside Anvil | **PASS** | `Trust` with the three the spine's record section literals, carried as an *object* not a bare enum (CONTRACT.md deviation 3) so one result can hold several provenances; `LegalForExternalString()` enforces the rule at the type level. The richer container is a strict improvement over the plan's table and does not change the literals. |
+| 6 | `dast_status` | **PASS** | `DastStatus` + `PropAuditDastStatus`; all nine §6 literals, `skipped_no_manifest` kept distinct from `not_run` as the dastStatus ruling requiress. |
 | 7 | `dast_coverage` | **PASS** | `PropRunDastCoverage`. |
-| 8 | `target_provenance` | **PASS** | `TargetProvenance`, five literals; the G4+G7 split is honoured — the boot/reachability meaning is kept here and D's provisioning-path enum is the separate `TargetProvisioning` (`ephemeral_manifest\|live_url_authorized`). Both fields exist; neither was merged. |
-| 9 | `remediable_by_agent` (host findings `false`) | **PASS** | `PropResultRemediableByAgent`; `Validate()` rejects `EvidenceClassHost` with `RemediableByAgent == true` (contract.go ~line 2317). Enforced in code, per S7's instruction. |
+| 8 | `target_provenance` | **PASS** | `TargetProvenance`, five literals; the target-provenance split is honoured — the boot/reachability meaning is kept here and D's provisioning-path enum is the separate `TargetProvisioning` (`ephemeral_manifest\|live_url_authorized`). Both fields exist; neither was merged. |
+| 9 | `remediable_by_agent` (host findings `false`) | **PASS** | `PropResultRemediableByAgent`; `Validate()` rejects `EvidenceClassHost` with `RemediableByAgent == true` (contract.go ~line 2317). Enforced in code, per the spine's instruction. |
 | 10 | `INSUFFICIENT_CONTEXT` as a verdict, not a confidence float | **PASS** | `VerdictInsufficientContext = "insufficient_context"`; a separate `anvil/confidence` exists but the verdict is a first-class enum value. |
 | 11 | `as_of` | **PASS** | `Advisory.AsOf`; `Validate()` rejects a zero value when an advisory is linked. |
 | 12 | `staleness_seconds` | **PASS** | `Advisory.StalenessSeconds`; non-negative enforced. |
@@ -112,11 +112,11 @@ checked to exist in `schemas/anvil-record-v1.schema.json` and to be described id
 | 16 | sanitizer state on any reproducer | **PASS** | `Repro.Env.Sanitizers []string`, `json:"sanitizers"`, schema-required; `Validate()` rejects `nil` and demands an empty array for a stock build, which is the right call — `null` and "no sanitizers" are different claims. |
 | 17 | ASLR state on any reproducer | **PASS** | `Repro.Env.AslrEnabled bool`, `json:"aslrEnabled"`, schema-required. Key spelling identical in all three sources. |
 | 18 | **One fingerprint algorithm, defined once, in the record** | **FAIL** | See findings 1 and 2. The algorithm is defined once *in Go*; the written specification is not sufficient to reproduce it, and one specified step of it is not implemented at all. |
-| 19 | Ship a conformance test asserting identical digests on a fixed corpus | **PASS for R.2, at risk for R.16** | The corpus exists (7 fixtures, exceeding the 2/2/1/1 minimum) and is asserted. R.16's *independent* conformance oracle cannot currently be written to pass — finding 1. |
+| 19 | Ship a conformance test asserting identical digests on a fixed corpus | **PASS for the fingerprint, at risk for the fingerprint conformance harness** | The corpus exists (7 fixtures, exceeding the 2/2/1/1 minimum) and is asserted. The fingerprint conformance harness' *independent* conformance oracle cannot currently be written to pass — finding 1. |
 
-S6's closing "Ordering" paragraph (re-cut the queue on every version bump; reserve a configurable
+The closing "Ordering" paragraph of the spine's record section (re-cut the queue on every version bump; reserve a configurable
 fraction of budget for late DAST arrivals) is a scheduler requirement, not a record field, and is not
-in R.1's or R.2's scope. **It is not checked here and must not be assumed covered.**
+in the record contract's or the fingerprint's scope. **It is not checked here and must not be assumed covered.**
 
 ---
 
@@ -175,7 +175,7 @@ IDENTICAL
 
 Every digest also equals the `expected_digest` committed in the corresponding fixture.
 
-**Verdict: determinism PASS.** R.2's own `TestCorpusDigestsAreStableAcrossProcesses` is a genuine
+**Verdict: determinism PASS.** The fingerprint's own `TestCorpusDigestsAreStableAcrossProcesses` is a genuine
 cross-process check and not theatre; this critic re-ran the same property independently of it.
 
 ### 4.3 Windows vs POSIX path separators
@@ -197,7 +197,7 @@ platform. Checked specifically:
 
 ## 5. THE SIX FROZEN ENUMS — compared literal by literal against §6
 
-`plan/IMPLEMENTATION-PLAN.md` §6's enum block was compared character by character against
+The shared-vocabulary review's enum block was compared character by character against
 `internal/record/contract.go`, `schemas/anvil-record-v1.schema.json` and `internal/record/CONTRACT.md`.
 
 | Enum | §6 literals | contract.go | schema `$defs` | CONTRACT.md |
@@ -213,7 +213,7 @@ platform. Checked specifically:
 No drift, no omission, no extra literal, no case difference, no ordering difference in any of the three
 sources. §6's "lowercase snake_case is the record's convention" holds for all six.
 
-**Did R.2 introduce a second, drifting copy? No.** `fingerprint.go` declares **no enum type**. It
+**Did the fingerprint introduce a second, drifting copy? No.** `fingerprint.go` declares **no enum type**. It
 consumes `DetectorKindSCA`, `DetectorKindHost`, `InjectionPoint` and `EvidenceSignal` from
 `contract.go`, and validates the latter two through `ValidateInjectionPoint`/`ValidateEvidenceSignal`
 rather than re-listing their literals. `TestTierValidationRejectsIncompleteInput` proves a
@@ -244,16 +244,16 @@ explicitly. Consistent across all three sources. **No finding.**
   output in §4.2. So the fixtures are internally consistent and the Go code agrees with them.
 
 **The reservation:** that check proves `expected_digest = H(hashed_fields)`. It does **not** prove
-`hashed_fields` is what the *written specification* produces from `input`. That is exactly what R.16
+`hashed_fields` is what the *written specification* produces from `input`. That is exactly what the fingerprint conformance harness
 exists to prove, and finding 1 shows it currently cannot.
 
 ---
 
 ## 7. NUMBERED GAPS
 
-### BLOCKER 1 — `normalized_match` is defined only in Go, so R.16's mandated independent oracle cannot reproduce the SAST goldens
+### BLOCKER 1 — `normalized_match` is defined only in Go, so the fingerprint conformance harness' mandated independent oracle cannot reproduce the SAST goldens
 
-`plan/40-record-and-storage.md` defines the SAST tier's hardest field in four clauses:
+`plan/design/record-and-store.md` defines the SAST tier's hardest field in four clauses:
 
 ```
 normalized_match := strip comments; collapse whitespace runs to a single space;
@@ -288,17 +288,17 @@ sast-02-python-shell-command
   *** DIVERGES ***
 ```
 
-**Why this is a blocker and not a nit.** R.16's packet requires an oracle that "re-implements the
+**Why this is a blocker and not a nit.** The fingerprint conformance harness' packet requires an oracle that "re-implements the
 algorithm text above from scratch, **not** by importing `internal/record/fingerprint.go`, so the oracle
-is independent". Any such oracle produces the digests on the left. R.16 then has exactly two ways to go
+is independent". Any such oracle produces the digests on the left. The fingerprint conformance harness then has exactly two ways to go
 green, and the plan forbids both: read `fingerprint.go` (destroys independence) or copy
 `expected_digest` (the test file's own header at lines 31–33 forbids it, correctly). The spine-mandated
 conformance gate is therefore unsatisfiable as written.
 
-It is also the S6 failure itself, one level up. S6's rule is "**One fingerprint algorithm, defined
+It is also the spine's record section failure itself, one level up. The spine's rule is "**One fingerprint algorithm, defined
 once, in the record.**" Today the authoritative definition of `normalized_match` is Go source. A second
 producer — the plan's whole premise is that there will be more than one — implementing from
-`plan/40-record-and-storage.md` will emit different digests and nothing will surface it. The header
+`plan/design/record-and-store.md` will emit different digests and nothing will surface it. The header
 comment of `fingerprint_test.go` asserts the `hashed_fields` "were derived BY HAND from the algorithm
 text"; for the two SAST fixtures that derivation must have used knowledge not present in the algorithm
 text, and this critic could not reproduce it. **Claim not supported by the artifact.**
@@ -307,9 +307,9 @@ text, and this critic could not reproduce it. **Claim not supported by the artif
 the full normalization: the reserved-word list verbatim, the selector/callee/scope-resolution rules, the
 comment syntaxes, the string delimiters and escape handling, the number-token grammar, CRLF folding and
 the trim — and state that any edit to that list is an `anvil-fp/v2` event, which `fingerprint.go` line
-1118 already says. Alternatively rule the other way and re-route R.2 to the literal four-clause text,
+1118 already says. Alternatively rule the other way and re-route the fingerprint to the literal four-clause text,
 accepting the loss of discriminating power the implementer argues against at lines 900–907. Either
-ruling is defensible; leaving it undecided is not, because R.16 will hit it and the cheapest thing R.16
+ruling is defensible; leaving it undecided is not, because the fingerprint conformance harness will hit it and the cheapest thing the fingerprint conformance harness
 can do is quietly weaken its own oracle.
 
 ---
@@ -327,10 +327,10 @@ fragment, collapses slash runs, adds a leading slash and trims a trailing one. I
 segment templating. `DastInput`'s doc comment (line 575) reassigns the work to the caller —
 "RouteTemplate is the path with volatile segments templated" — which the plan does not say.
 
-Consequence, and it is precisely S6's named failure: two producers observing the same defect at
+Consequence, and it is precisely the spine's named failure: two producers observing the same defect at
 `/api/users/12345/orders` will emit `/api/users/12345/orders`, `/api/users/{id}/orders` and
 `/api/users/:id/orders` respectively. Three digests, one defect, no error, regression matching silently
-dead. Worse than the SAST case, because the DAST tier is the one that earns "verified fixed" under S7 —
+dead. Worse than the SAST case, because the DAST tier is the one that earns "verified fixed" under the spine's safety section —
 a DAST reproduction that cannot be matched to its prior finding cannot prove a fix.
 
 All three DAST fixtures (`dast-01`, `dast-02`, `dast-03`) arrive **already templated**
@@ -341,8 +341,8 @@ test anywhere that feeds a concrete numeric or UUID segment.
 all-digits, a UUID, and a long hex/base32/base64 run with a single frozen placeholder token, with the
 patterns written into the specification — and add a DAST fixture whose input carries
 `/api/v1/users/12345/orders` and a UUID segment, with a mutation proving a different id yields the same
-digest. If the orchestrator instead rules that templating belongs to the DAST producer (area D), then
-`plan/40-record-and-storage.md` must say so, D's packet must own it with a named test, and the
+digest. If the orchestrator instead rules that templating belongs to the DAST producer (the dynamic tier), then
+`plan/design/record-and-store.md` must say so, the dynamic tier's packet must own it with a named test, and the
 specification's `route_template :=` line must be struck — otherwise two areas each believe the other
 does it.
 
@@ -350,23 +350,23 @@ does it.
 
 ### MAJOR 3 — `primaryLocationLineHash` is required by the contract, assigned to the fingerprint engine by the plan, and implemented by nobody
 
-- `plan/40-record-and-storage.md` line 653 lists `result.partialFingerprints["primaryLocationLineHash"]`
+- `plan/design/record-and-store.md` line 653 lists `result.partialFingerprints["primaryLocationLineHash"]`
   as **"required when a physical location exists"**, producer column **"fingerprint engine"**, consumer
-  column "GitHub upload path only (R.14)".
+  column "GitHub upload path only (the GitHub projection)".
 - `contract.go:2328` makes it a hard `Validate()` failure:
   `partialFingerprints["primaryLocationLineHash"] is required when a physical code location exists`.
-- `fingerprint.go:77–83` declines to implement it and reassigns production to R.14: *"It is not an
+- `fingerprint.go:77–83` declines to implement it and reassigns production to the GitHub projection: *"It is not an
   anvil-fp/v1 tier … it lives under `PartialFingerprintPrimaryLocationLineHash` and is owned by the
-  GitHub projection (R.14)."*
+  GitHub projection (the GitHub projection)."*
 
 The technical argument for keeping a line-dependent hash out of this file is good. But the plan's
-producer column says fingerprint engine, and R.2 unilaterally moved it. Net effect **today**: no code in
-the tree can construct a SARIF result with a physical code location that passes `Validate()`. R.4 (the
+producer column says fingerprint engine, and the fingerprint unilaterally moved it. Net effect **today**: no code in
+the tree can construct a SARIF result with a physical code location that passes `Validate()`. The store schema (the
 store) and every SAST producer will hit this.
 
-**Proposed fix:** an explicit ruling on the owner, plus whichever of these follows — R.2 ships a
+**Proposed fix:** an explicit ruling on the owner, plus whichever of these follows — the fingerprint ships a
 separate `PrimaryLocationLineHash(...)` helper in its own file (identity untouched, no line number one
-import from `Digest`), or R.14's packet is amended to own it and `plan/40`'s producer column is corrected
+import from `Digest`), or the GitHub projection's design is amended to own it and `plan/design/record-and-store.md`'s producer column is corrected
 to say so. Do not leave `Validate()` enforcing a field with no producer.
 
 ---
@@ -429,7 +429,7 @@ rule."
 
 The argument is sound for a rule whose semantics changed. It is applied, however, to a token that moves
 on the **ruleset's** release cadence — the fixtures use `opengrep…@2026.07.1` and
-`nuclei:…@2026.07.1`. opengrep and nuclei-templates ship routinely; S7 already requires nuclei-templates
+`nuclei:…@2026.07.1`. opengrep and nuclei-templates ship routinely; the spine's safety section already requires nuclei-templates
 to be "pinned by commit SHA and diffed before promotion", i.e. bumped deliberately and often. Every such
 bump resolves and re-opens **the entire SAST and DAST finding population at once**, resetting
 `first_seen_at`, resetting age-based ranking, dropping every fingerprint-keyed suppression, and orphaning
@@ -437,13 +437,13 @@ every `handoff` row — with no error anywhere. The plan's only migration protoc
 `v2` for one retention cycle) covers **algorithm** version changes, not rule-version changes, so nothing
 absorbs this.
 
-R.3's remit is explicitly "exclusion of volatile fields". A token that turns over on a weekly-to-monthly
+This review's remit is explicitly "exclusion of volatile fields". A token that turns over on a weekly-to-monthly
 cadence, driven by an upstream project rather than by the scanned code, is volatile.
 
 **Proposed fix (one of):** hash the rule id **without** its version and carry the version as an unhashed
 result attribute — the rule's *identity* is stable even when its ruleset ships; or extend the dual-write
 migration protocol to cover ruleset bumps, with the store matching `old_rule_version OR new_rule_version`
-for one cycle; or record an explicit accepted-risk ruling in `plan/40-record-and-storage.md` stating that
+for one cycle; or record an explicit accepted-risk ruling in `plan/design/record-and-store.md` stating that
 ruleset bumps mass-reset finding identity and naming what compensates. The current position — hash it,
 pin the behaviour in a test, say nothing about the consequence — is the one that fails silently.
 
@@ -460,7 +460,7 @@ be hashed at all**.
 `Digest`'s rejection is right — a field carrying `U+001F` would move a field boundary. The gap is that
 `NormalizeMatch` does not guarantee its output is hashable, so the failure lands on the producer as a
 hard error. If any caller drops errored findings (the natural thing to do in a scan loop), a real
-vulnerability on a line containing a stray control byte becomes invisible. S7's threat model makes this
+vulnerability on a line containing a stray control byte becomes invisible. The spine's threat model makes this
 worth closing: an attacker who can land a byte in a source file, a generated file or a vendored blob can
 make the finding on that line unreportable.
 
@@ -498,8 +498,8 @@ rewrite.
 
 ### MINOR 9 — five undocumented canonicalizations sit between fixture input and hashed field
 
-Each is defensible; none appears in `plan/40-record-and-storage.md`'s algorithm text, and each is another
-way R.16's oracle will diverge (same root cause as finding 1, listed separately because writing them
+Each is defensible; none appears in `plan/design/record-and-store.md`'s algorithm text, and each is another
+way the fingerprint conformance harness' oracle will diverge (same root cause as finding 1, listed separately because writing them
 down is nearly free):
 
 | Canonicalization | Where | In the spec text? |
@@ -534,17 +534,17 @@ explaining why the tier token is not the evidence class.
 
 ---
 
-### MINOR 11 — an R.2 decision that `CONTRACT.md` explicitly assigns to R.2 was never recorded
+### MINOR 11 — a fingerprint decision that `CONTRACT.md` explicitly assigns to the fingerprint was never recorded
 
-`CONTRACT.md` deviation 2 (lines 429–432): *"`partialFingerprints["regionSha256"]` reserved … **R.2
-decides whether to populate it**, and R.2 may strike it if the algorithm has no use for it."*
+`CONTRACT.md` deviation 2 (lines 429–432): *"`partialFingerprints["regionSha256"]` reserved … **the fingerprint
+decides whether to populate it**, and the fingerprint may strike it if the algorithm has no use for it."*
 
 `fingerprint.go` never mentions `regionSha256`. The decision is neither made nor struck; it has silently
 become nobody's. `research/24` names `fingerprint.region_sha256` non-negotiable for the coding-agent
-handoff, so R.9/R.10 will meet it again with no ruling to consult.
+handoff, so the retention document and the sealing, claims and masking review will meet it again with no ruling to consult.
 
-**Proposed fix:** R.2 (or the orchestrator) records one sentence in `CONTRACT.md` — populated by X, or
-struck — before R.4.
+**Proposed fix:** the fingerprint (or the orchestrator) records one sentence in `CONTRACT.md` — populated by X, or
+struck — before the store schema.
 
 ---
 
@@ -553,12 +553,12 @@ struck — before R.4.
 Stated so the gap is visible rather than assumed covered:
 
 - **No cross-family review was obtained.** See §0.
-- `contract.go` is ~104 KB. Its **six frozen enums, every S6 field, and the validation rules touching
+- `contract.go` is ~104 KB. Its **six frozen enums, every field of the spine's record section, and the validation rules touching
   them** were read closely. Its SARIF projection, JSON round-trip and the remainder of `Validate()` were
   not audited line by line; `contract_test.go`'s 129 passing assertions were re-run, not re-derived.
-- The **schema** was compared for enum literals and S6 field presence. It was not validated against a
+- The **schema** was compared for enum literals and the spine's record section field presence. It was not validated against a
   JSON Schema meta-schema, and no instance document was validated against it by this pass.
-- S6's **ordering / budget-reservation** requirement is out of R.1's and R.2's scope and was not checked
+- The spine's **ordering / budget-reservation** requirement is out of the record contract's and the fingerprint's scope and was not checked
   anywhere.
 - Finding 7 is reasoned from the code path, not executed — this packet forbids adding a test file.
 - The claim that the corpus `hashed_fields` were "derived by hand from the algorithm text" is
@@ -567,19 +567,19 @@ Stated so the gap is visible rather than assumed covered:
 
 ---
 
-## 9. WHAT R.4 MAY AND MAY NOT ASSUME
+## 9. WHAT the store schema MAY AND MAY NOT ASSUME
 
 **May assume, now proved:** the six frozen enums are correct and singly-sourced across Go, schema and
-prose; every S6 field exists; digests are 64 lowercase hex, never truncated, deterministic across
+prose; every field of the spine's record section exists; digests are 64 lowercase hex, never truncated, deterministic across
 processes and platforms; the package version, line, column, host, port, scheme, payload and timestamps
 are all excluded by construction and by test; `UNIQUE (target_id, fingerprint)` is safe to build on for
 the SCA and host tiers.
 
-**May not assume:** that a second producer implementing from `plan/40-record-and-storage.md` will emit
+**May not assume:** that a second producer implementing from `plan/design/record-and-store.md` will emit
 the same SAST or DAST digest (findings 1, 2); that `route_template` is normalized by anything
 (finding 2); that a SAST finding's identity survives an unrelated deletion in the same file (finding 4)
 or a ruleset bump (finding 6); that `primaryLocationLineHash` has a producer (finding 3).
 
-Findings 1 and 2 are blockers. Per the packet's stop condition, R.1 or R.2 — or, more likely here, the
-Fingerprint Specification section of `plan/40-record-and-storage.md` — must be rerouted and re-reviewed
-to all-PASS before R.4 starts.
+Findings 1 and 2 are blockers. Per the packet's stop condition, the record contract or the fingerprint — or, more likely here, the
+Fingerprint Specification section of `plan/design/record-and-store.md` — must be rerouted and re-reviewed
+to all-PASS before the store schema starts.

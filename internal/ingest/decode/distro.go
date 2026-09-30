@@ -296,8 +296,8 @@ var rpmArchSuffixes = map[string]bool{
 // (research/12 §3) reintroduced by the decoder, on the one path Lane A relies
 // on to defeat it.
 //
-// Found by A.21's end-to-end harness, and invisible from inside this package:
-// A.8's own CSAF test asserts that a backported rpm range EXISTS and never
+// Found by the Lane A exit gate's end-to-end harness, and invisible from inside this package:
+// The bulk bootstrap's own CSAF test asserts that a backported rpm range EXISTS and never
 // asserts what its `fixed` value is, so nothing compared the string to a real
 // installed version until a comparator was put on the other end of it.
 func stripArchSuffix(version string) string {

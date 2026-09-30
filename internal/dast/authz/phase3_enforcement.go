@@ -22,7 +22,7 @@
 // ===========================================================================
 //
 // A gateFunc is `func(Target, Scope, Attestation, Clock) Ruling`. Those four
-// values are plan/00-SPINE.md S7's whole world for the ADMISSION decision, and
+// values are the spine's whole world for the ADMISSION decision, and
 // widening them is the change gate 12 exists to prevent. Not one of gates
 // 13–17 is a function of them:
 //
@@ -32,7 +32,7 @@
 //	gate 14  needs mutable per-target state — a token bucket, an in-flight
 //	         count, a request tally, a start instant. A gateFunc reading
 //	         package-level mutable state would make Decide a function of
-//	         ambient state, which is the S7 violation wearing a hat.
+//	         ambient state, which is a safety-section violation wearing a hat.
 //	gate 15  needs the technique being attempted, the HTTP method and the
 //	         path. None of the three is in a Target.
 //	gate 16  needs the target's observed health history.
@@ -41,7 +41,7 @@
 // So each is an exported Check function that really refuses, called per
 // request by the egress layer, and the Governor at the bottom of this file is
 // the interceptor that calls all five in one place and in one order. Gate 11
-// (D.5's CheckGate11RobotsDeny) is absent from the admission chain for the same
+// (per-target admission's CheckGate11RobotsDeny) is absent from the admission chain for the same
 // class of reason and is called the same way; the Governor calls it too, so a
 // run does not have to remember to.
 //
@@ -57,11 +57,12 @@
 // CAPS, FLOORS AND THE DIRECTION CONFIGURATION MAY MOVE
 // ===========================================================================
 //
-// D.3's critic demonstrated a real hole in D.2's Cap: NewCap was exported and
-// unvalidated, so `authz.NewCap(10*365*24*time.Hour)` minted a "coded floor" of
-// ten years, and gate 5's ceiling was a caller-supplied parameter. types.go now
-// unexports the constructor and NewAttestation re-checks against the const;
-// gate 5's own gateFunc re-checks it a third time, in the chain.
+// The kernel-types review demonstrated a real hole in the kernel core's Cap:
+// NewCap was exported and unvalidated, so `authz.NewCap(10*365*24*time.Hour)`
+// minted a "coded floor" of ten years, and gate 5's ceiling was a
+// caller-supplied parameter. types.go now unexports the constructor and
+// NewAttestation re-checks against the const; gate 5's own gateFunc re-checks
+// it a third time, in the chain.
 //
 // Gate 14 and gate 16 close it structurally instead. Caps and HealthThresholds
 // have UNEXPORTED FIELDS and exactly one constructor each — CodedCaps and
@@ -192,7 +193,7 @@ const (
 )
 
 // requestOrigins is the allowlist, returned as a FRESH SLICE on every call so
-// that no caller can retain and mutate it. The same shape D.5 used for the
+// that no caller can retain and mutate it. The same shape per-target admission used for the
 // reserved ranges, for the same reason.
 func requestOrigins() []RequestOrigin {
 	return []RequestOrigin{
@@ -293,7 +294,7 @@ type RequestFacts struct {
 	Admitted Target
 	// Next is the target this request would ACTUALLY reach. For an initial
 	// request it equals Admitted; for a redirect hop it is the Location
-	// header's destination, canonicalized and pinned by D.5's PinTarget.
+	// header's destination, canonicalized and pinned by per-target admission's PinTarget.
 	Next Target
 	// Method is the HTTP method. Required.
 	Method Method
@@ -420,7 +421,7 @@ func (i RequestIntent) Attempt() int { return i.attempt }
 //
 // The comparison is on the CANONICAL form and the port, and it is exact. There
 // is deliberately no registrable-domain, eTLD+1 or "same site" comparison
-// anywhere in this file: plan/50-dast.md D.6's forbidden actions say "never
+// anywhere in this file: per-request enforcement's forbidden actions say "never
 // follow a cross-host redirect, under any circumstance, including
 // same-registrable-domain-but-different-host cases", and the only way to be
 // sure a same-site rule is not implemented is for there to be no public-suffix
@@ -442,7 +443,7 @@ func (i RequestIntent) CrossHost() bool {
 //
 // GATE 5 IS IN THAT CHAIN BECAUSE AN ATTESTATION EXPIRES AT AN INSTANT. Gate 14
 // permits thirty minutes of wall clock per target and a run has many targets,
-// so an attestation can expire mid-run; D.9's critic measured a Revalidate at
+// so an attestation can expire mid-run; the build-time guard's review measured a Revalidate at
 // base+365d permitting an attestation whose window ended at base+29d, and this
 // function passing an OriginInitial intent at the same instant. Gate 5 is
 // "refuse to probe without a live attestation" per REQUEST, and it is gate 5's
@@ -450,7 +451,7 @@ func (i RequestIntent) CrossHost() bool {
 // here, which would be a second implementation that can disagree with the
 // first.
 //
-// plan/50-dast.md D.6 specifies "re-runs gates 8–10", and gates 8–10 are not
+// Per-request enforcement's design specifies "re-runs gates 8–10", and gates 8–10 are not
 // enough. None of the three asks whether the host is in the allow list, so a
 // redirect to a host that is routable, non-reserved and on no deny list passed
 // them cleanly — a host nobody put in the scope file. research/20 gate 13's own
@@ -464,7 +465,7 @@ func (i RequestIntent) CrossHost() bool {
 // as ReasonRevalidationRefused, which tells an operator that revalidation said
 // no but not that the reason was scope; so when the chain refuses AT GATE 4,
 // this function reports ReasonHopOutsideScope and names the destination. The
-// token is the one D.6 wrote and the check is the one the kernel owns.
+// token is the one per-request enforcement wrote and the check is the one the kernel owns.
 //
 // # The redirect rule
 //
@@ -517,7 +518,7 @@ func CheckGate13Revalidate(intent RequestIntent, scope Scope, att Attestation, c
 		if intent.CrossHost() {
 			return gateFailed(g, ReasonCrossHostRedirect,
 				"the Location header points at a different host or port from the one Phase "+
-					"2 admitted. plan/50-dast.md D.6: never follow a cross-host redirect, "+
+					"2 admitted. Per-request enforcement's design: never follow a cross-host redirect, "+
 					"under any circumstance, INCLUDING same-registrable-domain-but-"+
 					"different-host cases. The hop is recorded and this branch stops; it "+
 					"is not followed, and no scope entry makes it followable.",
@@ -632,7 +633,7 @@ var _ func(*http.Request, []*http.Request) error = RefuseAllRedirects
 // GATE 14 — the hard caps, as coded floors configuration may only LOWER
 // ===========================================================================
 
-// The six coded floors. plan/50-dast.md gate 14 and research/20 gate 14 name
+// The six coded floors. plan/design/dynamic-tier.md gate 14 and research/20 gate 14 name
 // each of them, for `external` mode, as a value "no config may raise".
 //
 // They are exported CONSTS so that a caller can see what it is lowering from
@@ -658,8 +659,8 @@ const (
 //
 // EVERY FIELD IS UNEXPORTED AND THERE IS EXACTLY ONE CONSTRUCTOR. CodedCaps
 // takes no argument and reads the consts above, so there is no way to hand
-// this package a cap — which is the structural answer to the hole D.3's critic
-// found in D.2's Cap (NewCap was exported and unvalidated, so a caller could
+// this package a cap — which is the structural answer to the hole the kernel-types review
+// found in the kernel core's Cap (NewCap was exported and unvalidated, so a caller could
 // mint a "coded floor" of any size). Configuration reaches Caps only through
 // Lower, which takes plain numbers and compares them against the floors.
 //
@@ -703,7 +704,7 @@ func (c Caps) Constructed() bool { return c.sealed }
 // The values are read and copied at the moment Lower runs. A caller that keeps
 // its pointers and writes through them afterwards cannot change a Caps that
 // was already built — TestCapOverridesAreCopiedNotAliased proves it, because
-// the same class of aliasing bug is what D.3's critic demonstrated in Scope.
+// the same class of aliasing bug is what the kernel-types review demonstrated in Scope.
 type CapOverrides struct {
 	RequestsPerSecondPerHost *int
 	ConcurrentPerHost        *int
@@ -719,7 +720,7 @@ type CapOverrides struct {
 // EFFECTIVE value — so a single override above the floor is refused, and so is
 // a SEQUENCE of Lower calls walking a cap back up (lower to 4, then "lower" to
 // 9). That second property is what makes "no combination of config values can
-// raise a cap" true rather than hoped for, and it is D.2's Cap that provides
+// raise a cap" true rather than hoped for, and it is the kernel core's Cap that provides
 // it; this function's job is to make sure every path into a Caps goes through
 // it.
 //
@@ -797,7 +798,7 @@ func lowerInt(c Cap[int], v *int, what string) (Cap[int], GateResult) {
 func capRaised(what string, err error) GateResult {
 	return gateFailed(Gate14HardCaps, ReasonCapRaiseAttempted,
 		"configuration tried to set a gate 14 cap above its coded floor, or to walk one "+
-			"back up through a sequence of settings. plan/50-dast.md gate 14: caps may "+
+			"back up through a sequence of settings. plan/design/dynamic-tier.md gate 14: caps may "+
 			"only be LOWERED; no combination of settings raises any cap above its coded "+
 			"floor. The kernel refuses the configuration rather than clamping it, so the "+
 			"operator learns that what they wrote is not what would run.",
@@ -1073,7 +1074,7 @@ var ErrBodyExceedsCap = fmt.Errorf("%w: gate14: the body exceeded the coded size
 //
 // Because a 4 GiB response would then be four gigabytes in this process's heap
 // before anyone noticed it was too big — and the response body is
-// attacker-controlled (plan/00-SPINE.md S7 names it "the highest-risk field").
+// attacker-controlled (the spine's safety section names it "the highest-risk field").
 // A resource-exhaustion probe pointed at Anvil is still a
 // resource-exhaustion probe.
 //
@@ -1169,10 +1170,10 @@ func (b *BoundedBody) Limit() int64 {
 //
 // # This is a denylist AND an allowlist, and both are load-bearing
 //
-// plan/50-dast.md gate 15 and D.6's forbidden actions both specify a STATIC
-// COMPILED-IN DENYLIST, "never a model judgement". That denylist is
-// destructiveTechniques below, and it is what produces the specific refusal an
-// operator reads.
+// plan/design/dynamic-tier.md gate 15 and per-request enforcement's forbidden
+// actions both specify a STATIC COMPILED-IN DENYLIST, "never a model
+// judgement". That denylist is destructiveTechniques below, and it is what
+// produces the specific refusal an operator reads.
 //
 // This project's standing rule is that a denylist loses, and it is right here
 // too: a technique nobody thought to name would arrive PERMITTED under a
@@ -1310,7 +1311,7 @@ type EndpointAllowance struct {
 // state-changing probe is permitted anywhere, which is what a run that never
 // configured one should get. It is sealed so that Permits can tell "the
 // operator allowed nothing" from "nobody built this value" — the same
-// distinction D.5's RobotsDetermination exists for.
+// distinction per-target admission's RobotsDetermination exists for.
 func NewEndpointAllowance(rules ...EndpointRule) (EndpointAllowance, error) {
 	set := make(map[string]struct{}, len(rules))
 	for i, r := range rules {
@@ -1384,7 +1385,7 @@ func CheckGate15DestructiveTechnique(t Technique, m Method, path string, allow E
 			"this probe's technique is on gate 15's compiled-in destructive denylist. The "+
 				"list is a set of Go constants in the kernel: no environment variable, "+
 				"CLI flag, config key or model-authored value reaches it, and nothing "+
-				"infers membership — plan/50-dast.md gate 15 requires a static list, "+
+				"infers membership — plan/design/dynamic-tier.md gate 15 requires a static list, "+
 				"never a model judgement.",
 			"technique: "+redactUntrusted(string(t)))
 	}
@@ -1418,7 +1419,7 @@ func CheckGate15DestructiveTechnique(t Technique, m Method, path string, allow E
 // GATE 16 — the target-health circuit breaker
 // ===========================================================================
 
-// The coded thresholds and windows. plan/50-dast.md gate 16: "Trip at 5xx>10%
+// The coded thresholds and windows. plan/design/dynamic-tier.md gate 16: "Trip at 5xx>10%
 // or p95>3× baseline sustained 30s; quarantine target for rest of run"; the
 // Configurable column says "Thresholds may be tightened; the floor is not
 // configurable upward".
@@ -1549,7 +1550,7 @@ func (h HealthThresholds) Lower(o ThresholdOverrides) (HealthThresholds, GateRes
 
 func thresholdRaised(what string, err error) GateResult {
 	return gateFailed(Gate16CircuitBreaker, ReasonThresholdRaise,
-		"configuration tried to loosen a gate 16 threshold. plan/50-dast.md gate 16: "+
+		"configuration tried to loosen a gate 16 threshold. plan/design/dynamic-tier.md gate 16: "+
 			"thresholds may be tightened; the floor is not configurable upward. A run "+
 			"that wants to keep probing a target answering 500 to a third of its "+
 			"requests is asking for the breaker to be removed, not adjusted.",
@@ -1729,7 +1730,7 @@ func (m *HealthMonitor) observe(status int, latency time.Duration, hasResponse b
 			if rate := float64(m.serverError) / float64(m.total); rate > ceiling {
 				return m.tripLocked(ReasonBreakerServerErrors, fmt.Sprintf(
 					"%d of %d requests to this target answered 5xx (%.1f%%) and the "+
-						"threshold is %.1f%%. plan/50-dast.md gate 16 trips here and "+
+						"threshold is %.1f%%. plan/design/dynamic-tier.md gate 16 trips here and "+
 						"quarantines the target for the rest of the run; research/20 "+
 						"calls the breaker \"the mechanical evidence that Anvil operates "+
 						"in a manner designed to avoid any harm\".",
@@ -2243,10 +2244,10 @@ func (b *BackoffLedger) BackoffUntil() (time.Time, bool) {
 // THE PER-REQUEST INTERCEPTOR
 // ===========================================================================
 
-// Governor is Phase 3 for one target: gates 13, 14, 15, 16 and 17, plus D.5's
+// Governor is Phase 3 for one target: gates 13, 14, 15, 16 and 17, plus per-target admission's
 // gate 11, in one value with one order.
 //
-// D.6's expected output schema asks for "a per-request interceptor". This is
+// Per-request enforcement's expected output schema asks for "a per-request interceptor". This is
 // it. The point of having one is that a request layer cannot enforce four of
 // the five gates and forget the fifth: there is a single Admit call, and every
 // gate is inside it.
@@ -2278,7 +2279,7 @@ type GovernorConfig struct {
 	// configuration if it lowered them.
 	Caps       Caps
 	Thresholds HealthThresholds
-	// Robots is D.5's determined policy for this origin, consulted per
+	// Robots is per-target admission's determined policy for this origin, consulted per
 	// request by gate 11. A RobotsUnset policy refuses every path, which is
 	// gate 11's fail-closed behaviour and not this type's business to
 	// soften.
@@ -2376,7 +2377,7 @@ func (g *Governor) Admit(intent RequestIntent, t Technique, now Clock) (*Lease, 
 // AdmitTraced is Admit with the whole trace.
 //
 // It returns ONE GateResult PER GATE CONSULTED, in the order they ran, and
-// stops at the first refusal. D.3's critic made this point against
+// stops at the first refusal. The kernel-types review made this point against
 // Adjudicate's audit writer — gate 21 asks for "an immutable audit of every
 // gate decision" and a single row naming the last gate records one gate in
 // eight. The audit path for Phase 3 therefore gets the whole trace and can
@@ -2554,15 +2555,15 @@ func GovernorGateOrder() []GateID { return append([]GateID(nil), governorGateOrd
 
 // ReasonRobotsRemovesNothing is gate 11's PASS token.
 //
-// It is declared here rather than in phase2_admission.go because D.5's file is
+// It is declared here rather than in phase2_admission.go because per-target admission's file is
 // outside this packet's write scope and because the need for it is Phase 3's:
 // gate 11 is consulted per request, by the Governor, and gate 21 wants a token
-// on the allow row as well as on the deny row. D.5 declares gate 11's refusal
+// on the allow row as well as on the deny row. Per-target admission declares gate 11's refusal
 // tokens and this adds the one shape it had no caller for.
 const ReasonRobotsRemovesNothing Reason = "gate11.robots_txt_removes_nothing"
 
 // phase3PassReasons is the audit token each gate in the interceptor carries on
-// an ALLOW. gatePassed does not take a Reason — D.2's GateResult has no field
+// an ALLOW. gatePassed does not take a Reason — the kernel core's GateResult has no field
 // for one — so without this map a Phase 3 allow row would reach gate 21's
 // audit with an empty reason, and an audit row that records "gate 14 allowed"
 // with no token is a row an operator cannot grep for.
@@ -2590,7 +2591,7 @@ func AuditReason(r GateResult) (Reason, error) {
 	// Failure() is nil for a value nobody minted and the refusal already
 	// fires. A mutation run confirmed the branch could never be the only
 	// thing refusing anything, so it is gone rather than commented, the same
-	// way D.2 removed a subsumed branch in Cap.Lower.
+	// way the kernel core removed a subsumed branch in Cap.Lower.
 	if !r.Passed() {
 		f := r.Failure()
 		if f == nil || f.Reason.Validate() != nil {

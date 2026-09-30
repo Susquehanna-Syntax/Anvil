@@ -1,4 +1,4 @@
-// Tests for A.8, the one-time bulk-archive bootstrap.
+// Tests for the bulk bootstrap (the one-time bulk-archive import).
 //
 // ===========================================================================
 // WHAT THESE TESTS ARE FOR, AND WHAT A GREEN RUN DOES NOT PROVE
@@ -118,7 +118,7 @@ func testFeed(id string, mech config.BootstrapMechanism) config.FeedConfig {
 	return f
 }
 
-// admittingMirror renders the mirror tree A.4 reads: a pinned manifest, the
+// admittingMirror renders the mirror tree the licence gate reads: a pinned manifest, the
 // publisher's acquired text at the digest the pin names, and Anvil's own
 // record. It is built the way internal/ingest/license's own fixtures are built,
 // because the gate's admission path is exacting and a mirror assembled by
@@ -275,7 +275,7 @@ func readWatermark(t *testing.T, db *sql.DB, feedID string) string {
 // 1. The importer streams
 // ---------------------------------------------------------------------------
 
-// TestStreamingUnzipNeverLoadsTheWholeArchive is A.8's named validation.
+// TestStreamingUnzipNeverLoadsTheWholeArchive is the bulk bootstrap's named validation.
 //
 // The claim under test is not "the code contains no io.ReadAll" — it is that
 // peak memory attributable to the import is bounded by ONE RECORD and one read
@@ -383,7 +383,7 @@ func TestAnOversizedMemberIsRefused(t *testing.T) {
 // It also asserts the invariant that makes the resume sound: the number of rows
 // actually in the cache equals the number the cursor claims. Those two move in
 // one transaction, so any interleaving that broke the claim would break this
-// equality — which is the same shape of bug R.7's lease protocol shipped with
+// equality — which is the same shape of bug the lease protocol shipped with
 // the first time it was written.
 func TestACrashMidImportIsVisible(t *testing.T) {
 	const members = 900
@@ -459,7 +459,7 @@ func TestACrashMidImportIsVisible(t *testing.T) {
 // The duplicate case is not hypothetical. `affected` has an autoincrement
 // primary key and no unique constraint over its natural key, so a resumed batch
 // that re-imports an advisory duplicates every version range unless the writer
-// REPLACES the set. A.17's comparator would then see one advisory as several.
+// REPLACES the set. The comparator would then see one advisory as several.
 func TestResumeCompletesAndDoesNotDuplicate(t *testing.T) {
 	const members = 900
 	entries := make([]zipEntry, 0, members)
@@ -776,7 +776,7 @@ func TestImportingFromAShallowCloneIsRefused(t *testing.T) {
 
 // TestGHSABootstrapsByBloblessCloneAndImportsIt is the packet's stop condition
 // for GHSA: a blobless clone, not a bulk zip, and the resolved commit handed
-// over for A.14's fetch.
+// over for delta ingestion's fetch.
 func TestGHSABootstrapsByBloblessCloneAndImportsIt(t *testing.T) {
 	feed := testFeed("ghsa", config.BootstrapBloblessClone)
 	feed.LicenseTier = config.LicenseTier1
@@ -824,7 +824,7 @@ func TestGHSABootstrapsByBloblessCloneAndImportsIt(t *testing.T) {
 		t.Fatal("no clone was run")
 	}
 
-	// The handoff A.14 needs, read through this package rather than re-parsed.
+	// The handoff delta ingestion needs, read through this package rather than re-parsed.
 	wm := readWatermark(t, db, feed.ID)
 	ref, ok := Handoff(wm)
 	if !ok || ref != head {
@@ -1088,7 +1088,7 @@ func TestEveryMirroredFeedInTheFeedTableHasABootstrapPath(t *testing.T) {
 		config.BootstrapIncrementalAPI: true,
 		config.BootstrapNone:           true,
 	}
-	// Every value of A.1's enum must be dispatched, so that adding one without
+	// Every value of the feed table's enum must be dispatched, so that adding one without
 	// teaching this package goes red here rather than silently importing zero
 	// rows in production.
 	for _, m := range config.BootstrapMechanismValues() {
@@ -1226,7 +1226,7 @@ func TestDecodersAreChosenByContentAndNotByFeed(t *testing.T) {
 	}
 
 	// The CWE catalog is Lane B's label space, not advisory content, and the
-	// A.2 cache has no table for it. Declining is the honest outcome; inventing
+	// the ingestion cache has no table for it. Declining is the honest outcome; inventing
 	// an advisory row shape for a weakness class would be worse.
 	if n := countRows(t, db, `SELECT count(*) FROM advisory WHERE source_id LIKE 'CWE%'`); n != 0 {
 		t.Errorf("%d CWE rows were written into `advisory`", n)
@@ -1358,7 +1358,7 @@ func TestReleaseManifestResolvesTheLargestArchiveAsset(t *testing.T) {
 }
 
 // TestAZstdArtifactIsRefusedByName. Adding a codec is a dependency, and a
-// dependency is a licence decision (spine S8), not an implementation detail.
+// dependency is a licence decision (the spine's licence section), not an implementation detail.
 func TestAZstdArtifactIsRefusedByName(t *testing.T) {
 	body := append([]byte{0x28, 0xb5, 0x2f, 0xfd}, bytes.Repeat([]byte{0}, 64)...)
 	feed := testFeed("redhat-csaf", config.BootstrapBulkArchive)
@@ -1377,12 +1377,12 @@ func TestAZstdArtifactIsRefusedByName(t *testing.T) {
 // Sanitizing and the fingerprint rule
 // ---------------------------------------------------------------------------
 
-// TestExternalTextIsSanitizedBeforeItReachesTheCache. spine S7 puts prompt
-// injection at INGEST, not at prompt time, and A.3's post-condition is what
+// TestExternalTextIsSanitizedBeforeItReachesTheCache. The spine's safety section puts prompt
+// injection at INGEST, not at prompt time, and the sanitizer's post-condition is what
 // makes "every writer sanitizes" checkable.
 func TestExternalTextIsSanitizedBeforeItReachesTheCache(t *testing.T) {
 	// A summary carrying a zero-width joiner, a bidi override and an HTML
-	// comment — the shapes A.3 removes.
+	// comment — the shapes the sanitizer removes.
 	const (
 		zwsp    = "\u200b" // zero-width space
 		zwj     = "\u200d" // zero-width joiner
@@ -1447,7 +1447,7 @@ func TestExternalTextIsSanitizedBeforeItReachesTheCache(t *testing.T) {
 		"affected.ecosystem":   eco,
 	} {
 		if err := sanitize.AssertSanitized(got); err != nil {
-			t.Errorf("%s failed A.3's post-condition: %v", name, err)
+			t.Errorf("%s failed the sanitizer's post-condition: %v", name, err)
 		}
 		if strings.ContainsAny(got, zwsp+zwj+rlo) {
 			t.Errorf("%s still carries an invisible character", name)
@@ -1470,7 +1470,7 @@ func TestExternalTextIsSanitizedBeforeItReachesTheCache(t *testing.T) {
 	}
 }
 
-// TestLaneAEmitsNoFingerprint. plan/00-SPINE.md S6 permits exactly one
+// TestLaneAEmitsNoFingerprint. The spine's record section permits exactly one
 // fingerprint algorithm, anvil-fp/v1, owned by internal/record. Two producers
 // emitting different digests under one name breaks regression matching forever
 // with nothing surfacing it, so this package emits none at all — it writes no
@@ -1487,12 +1487,12 @@ func TestLaneAEmitsNoFingerprint(t *testing.T) {
 		// them, and a test that banned the words would punish the explanation
 		// rather than the behaviour.
 		if strings.Contains(text, `"github.com/Susquehanna-Syntax/Anvil/internal/record"`) {
-			t.Errorf("%s imports internal/record; A.8 has no reason to, and the only reason it "+
-				"would is to compute a fingerprint that spine S6 forbids a second producer of", name)
+			t.Errorf("%s imports internal/record; the bulk bootstrap has no reason to, and the only reason it "+
+				"would is to compute a fingerprint that the spine's record section forbids a second producer of", name)
 		}
 		for _, banned := range []string{"INSERT INTO finding", "insert into finding", "sha256.Sum256(canonical"} {
 			if strings.Contains(text, banned) {
-				t.Errorf("%s contains %q; A.8 writes no findings", name, banned)
+				t.Errorf("%s contains %q; the bulk bootstrap writes no findings", name, banned)
 			}
 		}
 	}
@@ -1502,7 +1502,7 @@ func TestLaneAEmitsNoFingerprint(t *testing.T) {
 // The integration note the packet asks for
 // ---------------------------------------------------------------------------
 
-// TestIntegrationNotesForTheManualRun carries A.8's second required piece of
+// TestIntegrationNotesForTheManualRun carries the bulk bootstrap's second required piece of
 // evidence: a description of the one-time manual run against a real feed.
 //
 // IT IS A LOG, NOT AN ASSERTION, AND THE RUN HAS NOT HAPPENED. No test in this
@@ -1528,7 +1528,7 @@ MANUAL ONE-TIME RUN — NOT YET PERFORMED. Prerequisites, in order:
 
 Expected shapes, from the corpus rather than from a run:
   cvelistv5   ~570,845,537 B baseline zip (research/06 S8), ~300k CVE records
-  osv-merged  ~1.32 GiB all.zip (A.8 packet), all ecosystems
+  osv-merged  ~1.32 GiB all.zip (per the bulk bootstrap's design), all ecosystems
   osv-pypi    per-ecosystem all.zip, thousands of records
   cisa-kev    one JSON document, ~1,400 records
   ghsa        blobless clone, ~250k advisory files, NEVER --depth=1

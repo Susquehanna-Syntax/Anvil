@@ -298,9 +298,9 @@ func TestZeroValueAccessorsRefuseIndividually(t *testing.T) {
 // with no implementation compiled in, or GateUnspecified if the stack is
 // complete.
 //
-// Several tests below branch on it rather than hard-coding "D.2 is the only
+// Several tests below branch on it rather than hard-coding "The kernel core is the only
 // packet that has landed". A test that must be edited before the next packet
-// can compile is a test that blocks the next packet, and D.4–D.7 cannot edit
+// can compile is a test that blocks the next packet, and the kernel's gate phases cannot edit
 // this file: it is outside their write scope.
 func firstUnregisteredAdmissionGate() GateID {
 	for _, g := range admissionChain {
@@ -317,8 +317,8 @@ func firstUnregisteredAdmissionGate() GateID {
 //
 // It uses fully valid inputs on purpose: every precondition passes, so the
 // only thing left to refuse is the incomplete stack. Today that is gates 4–11,
-// all of them. As D.4–D.6 land the assertion narrows on its own rather than
-// needing an edit.
+// all of them. As the run, admission and request gates land the assertion
+// narrows on its own rather than needing an edit.
 func TestDecideNeverPermitsThroughAnIncompleteChain(t *testing.T) {
 	scope := mustScope(t, ModeExternal)
 	att := mustAttestation(t, fixtureScopeHash)
@@ -360,8 +360,8 @@ func TestDecideNeverPermitsThroughAnIncompleteChain(t *testing.T) {
 }
 
 // TestEveryRegisteredGateIsLegal is the standing guard on the registry. It
-// holds whether the registry is empty (today) or full (after D.4–D.6), so it
-// never has to be edited to let a later packet land.
+// holds whether the registry is empty (today) or full (after the run, admission
+// and request gates), so it never has to be edited to let a later packet land.
 func TestEveryRegisteredGateIsLegal(t *testing.T) {
 	inAChain := map[GateID]bool{}
 	for _, g := range admissionChain {
@@ -379,7 +379,7 @@ func TestEveryRegisteredGateIsLegal(t *testing.T) {
 		}
 		if g == Gate12SecurityTxtReportingChannel {
 			t.Errorf("gate 12 (security.txt) is registered as an admission gate. RFC 9116 " +
-				"and plan/00-SPINE.md S7: it resolves a reporting channel and never " +
+				"and the spine's safety section: it resolves a reporting channel and never " +
 				"grants permission")
 		}
 		if p := g.Phase(); p == 0 || p == 4 {
@@ -569,8 +569,8 @@ func TestGate12IsInNoChain(t *testing.T) {
 		for _, g := range ch {
 			if g == Gate12SecurityTxtReportingChannel {
 				t.Fatalf("gate 12 (security.txt) is in a chain. RFC 9116 and "+
-					"plan/00-SPINE.md S7 both say security.txt resolves a reporting "+
-					"channel and NEVER grants permission; plan/50-dast.md gate 12 "+
+					"The spine's safety section both say security.txt resolves a reporting "+
+					"channel and NEVER grants permission; plan/design/dynamic-tier.md gate 12 "+
 					"requires it to be structurally excluded from the admission "+
 					"decision's input type. Chain: %v", ch)
 			}
@@ -587,7 +587,7 @@ func TestGate12CannotBeRegistered(t *testing.T) {
 		})
 	if err == nil {
 		t.Fatal("gate 12 was registered as an admission gate. security.txt resolves a " +
-			"reporting channel and never grants permission (RFC 9116; plan/00-SPINE.md S7)")
+			"reporting channel and never grants permission (RFC 9116; the spine's safety section)")
 	}
 	if !errors.Is(err, ErrRefused) {
 		t.Fatalf("registration refusal does not unwrap to ErrRefused: %v", err)
@@ -604,8 +604,8 @@ func TestGate12CannotBeRegistered(t *testing.T) {
 // fails on anything that could be an extension point: an interface, a func, a
 // channel, an unsafe.Pointer, or any type that embeds ReportingChannelOnly.
 // A closed closure means there is no way to hand the admission decision a
-// security.txt result without editing types.go — which is D.2's write scope and
-// explicitly not D.5's.
+// security.txt result without editing types.go — which is the kernel core's write scope and
+// explicitly not per-target admission's.
 //
 // Types from outside this module are treated as opaque leaves. Their
 // unexported fields cannot be set by Anvil code, so they cannot smuggle
@@ -614,7 +614,7 @@ func TestGate12CannotBeRegistered(t *testing.T) {
 func TestAdmissionInputClosureIsClosed(t *testing.T) {
 	decideType := reflect.TypeOf(Decide)
 	if decideType.NumIn() != 4 {
-		t.Fatalf("Decide takes %d parameters; plan/00-SPINE.md S7 fixes the kernel as a "+
+		t.Fatalf("Decide takes %d parameters; the spine's safety section fixes the kernel as a "+
 			"pure function of exactly (target, scope, attestation, clock)", decideType.NumIn())
 	}
 	gateFuncType := reflect.TypeOf(gateFunc(nil))
@@ -643,7 +643,7 @@ func TestAdmissionInputClosureIsClosed(t *testing.T) {
 			t.Errorf("%s is an interface (%s). An interface in the admission input closure "+
 				"is an open extension point: any type satisfying it can be passed, "+
 				"including one carrying a security.txt result, and a type assertion inside "+
-				"a gate can read it back out. plan/50-dast.md gate 12 requires the "+
+				"a gate can read it back out. plan/design/dynamic-tier.md gate 12 requires the "+
 				"exclusion to be structural.", path, typ)
 			return
 		case reflect.Func, reflect.Chan, reflect.UnsafePointer:
@@ -655,7 +655,7 @@ func TestAdmissionInputClosureIsClosed(t *testing.T) {
 		if typ.Implements(reflect.TypeOf((*excludedFromAdmission)(nil)).Elem()) ||
 			reflect.PointerTo(typ).Implements(reflect.TypeOf((*excludedFromAdmission)(nil)).Elem()) {
 			t.Errorf("%s (%s) embeds ReportingChannelOnly and is therefore reachable from "+
-				"the admission decision's input type. plan/00-SPINE.md S7: security.txt "+
+				"the admission decision's input type. The spine's safety section: security.txt "+
 				"resolves a reporting channel and never grants permission.", path, typ)
 			return
 		}
@@ -837,7 +837,7 @@ func TestDecideRefusesAnAttestationForADifferentScope(t *testing.T) {
 // GATE 4 IS IN THE CHAIN, and that is the orchestrator's ruling. Gates 8-10
 // canonicalize, pin and screen reserved ranges; not one of them asks whether
 // the host is in scope, so a redirect to a routable, non-reserved host that
-// nobody put in the scope file passed {8,9,10} cleanly. plan/50-dast.md's gate
+// nobody put in the scope file passed {8,9,10} cleanly. plan/design/dynamic-tier.md's gate
 // 13 row is "re-validate scope on every request including every redirect hop",
 // and the scope allow-list match is gate 4.
 func TestRevalidateRunsTheRedirectChain(t *testing.T) {
@@ -883,8 +883,8 @@ func TestRevalidateRunsTheRedirectChain(t *testing.T) {
 	// implemented, so the chain refuses at the first of them) and must go on
 	// being refused once they are (gate 10's reserved-range denylist in
 	// external mode, and the host is out of scope besides). The assertion
-	// therefore survives D.5 landing without an edit, which matters because
-	// D.5 cannot edit this file.
+	// therefore survives per-target admission landing without an edit, which matters because
+	// per-target admission cannot edit this file.
 	metadata := mustTarget(t, "metadata.example.net", 80, "169.254.169.254")
 	if r := Revalidate(metadata, scope, att, clk); r.Permits() {
 		t.Fatalf("Revalidate permitted a redirect hop to %s, which is the cloud metadata "+
@@ -892,12 +892,12 @@ func TestRevalidateRunsTheRedirectChain(t *testing.T) {
 	}
 }
 
-// TestRevalidateDocNamesTheChainItRuns is D.9's LOW 8.
+// TestRevalidateDocNamesTheChainItRuns is finding LOW 8 of the kernel's build-time guard review.
 //
 // Revalidate's doc comment said it "re-runs gates 8, 9 and 10 for gate 13"
-// after Ruling 3 had put gate 4 in the chain. A reader of the EXPORTED API
+// after the revalidation-chain ruling had put gate 4 in the chain. A reader of the EXPORTED API
 // would have concluded that gate 13 does not re-check scope membership — the
-// exact misreading Ruling 3 was issued to correct, and the one ZAP issue #2546
+// exact misreading the revalidation-chain ruling was issued to correct, and the one ZAP issue #2546
 // is a record of. Gate 5 has since joined the chain too.
 //
 // A doc comment is not usually pinnable, but this one is: it makes a checkable
@@ -933,7 +933,7 @@ func TestRevalidateDocNamesTheChainItRuns(t *testing.T) {
 			"doc of the exported function is where a caller learns what gate 13 "+
 			"re-checks. The older wording said \"re-runs gates 8, 9 and 10\" after gate "+
 			"4 had been added, so the exported API described a gate 13 that does NOT "+
-			"re-check scope membership — the misreading Ruling 3 was issued to correct.\n"+
+			"re-check scope membership — the misreading the revalidation-chain ruling was issued to correct.\n"+
 			"\ndoc: %s", want, revalidationChain, doc)
 	}
 }
@@ -1024,8 +1024,8 @@ func TestStructuralRefusalNamesTheGateItRefusesAt(t *testing.T) {
 	}
 }
 
-// TestAdjudicateWritesAuditRowsForARealChainDenial is D.9's HIGH 1, written as
-// the measurement the critic made.
+// TestAdjudicateWritesAuditRowsForARealChainDenial is finding HIGH 1 of the
+// kernel's build-time guard review, written as the measurement the critic made.
 //
 // WHAT WAS MEASURED, AND WHY NOTHING SAW IT. chain.runTraced minted the
 // missing-implementation refusal as refuse(Gate11RobotsDeny,
@@ -1070,7 +1070,7 @@ func TestAdjudicateWritesAuditRowsForARealChainDenial(t *testing.T) {
 		}
 		if d.Reason() == ReasonAuditKeyIncomplete {
 			t.Fatalf("the decision came back as %q. That is the kernel saying it could "+
-				"not build a keyable row for its own refusal — the D.9 HIGH 1 shape",
+				"not build a keyable row for its own refusal — the shape of the kernel review's HIGH 1 finding",
 				string(ReasonAuditKeyIncomplete))
 		}
 		last := sink.rows[len(sink.rows)-1]
@@ -1294,7 +1294,7 @@ func TestAdjudicateAuditsDenialsToo(t *testing.T) {
 	}
 }
 
-// TestGate21WritesOneRowPerGateDecision is D.3's critic's gate-21 finding as a
+// TestGate21WritesOneRowPerGateDecision is the kernel-types review's gate-21 finding as a
 // test: "Eight gates consulted, one row."
 //
 // Adjudicate used to build ONE record from the chain's last permitting ruling.
@@ -1358,7 +1358,7 @@ func TestAdjudicateRefusesAnUnkeyableDecision(t *testing.T) {
 // TestAdjudicateRefusesWithoutAnEnablement is gate 1 as a precondition rather
 // than a decoration.
 //
-// D.3's critic reached Adjudicate without ever calling EnableDAST. The zero
+// The kernel-types review reached Adjudicate without ever calling EnableDAST. The zero
 // DastEnablement is what such a caller holds — and, because no reflective
 // decoder can write an unexported field, it is also what a config file
 // produces — so it must authorize nothing.
@@ -1426,7 +1426,7 @@ func (s *rewindingSink) WriteGateDecision(GateRecord) (AuditSeq, error) {
 //
 // Now that one adjudication writes several rows, a sink that returns the same
 // sequence for each of them has either overwritten a row or is not counting. It
-// is consistent with D.7's GateAudit.Record, which makes the same check across
+// is consistent with the disclosure phase's GateAudit.Record, which makes the same check across
 // a run; this one is within a single adjudication, which is the part Adjudicate
 // can see.
 func TestAdjudicateRefusesASinkThatDoesNotAdvance(t *testing.T) {
@@ -1452,7 +1452,7 @@ func TestAdjudicateRefusesASinkThatDoesNotAdvance(t *testing.T) {
 	}
 }
 
-// TestDecisionLayersEachRefuseOnTheirOwn is the LOW finding D.3's critic left
+// TestDecisionLayersEachRefuseOnTheirOwn is the LOW finding the kernel-types review left
 // on the denial path: two of the three layers were subsumed by the first, and
 // mutating either left the suite green.
 //
@@ -1583,8 +1583,9 @@ func TestAuthorizationCannotBeObtainedWithoutAnAuditedAllow(t *testing.T) {
 	// The real kernel, through the real registry, against a target that no
 	// complete gate stack may ever permit: a host on no scope list, pinned to
 	// the cloud metadata endpoint, in external mode. Today it is refused
-	// because the chain is unimplemented; after D.4-D.6 it is refused by
-	// gates 4, 8 and 10. Either way there is no Authorization.
+	// because the chain is unimplemented; after the run, admission and request
+	// gates it is refused by gates 4, 8 and 10. Either way there is no
+	// Authorization.
 	metadata := mustTarget(t, "metadata.example.net", 80, "169.254.169.254")
 	if _, err := Adjudicate(&recordingSink{}, en, metadata, scope, att, clk).Authorization(); err == nil {
 		t.Fatalf("an Authorization was minted for %s, which is on no scope list and is the "+
@@ -1607,7 +1608,7 @@ func TestAuthorizationCannotBeObtainedWithoutAnAuditedAllow(t *testing.T) {
 		t.Fatal("the Authorization minted from an audited allow reports Valid() == false")
 	}
 
-	// The accessors D.6's per-request enforcement and D.7's disclosure gates
+	// The accessors the per-request enforcement and the disclosure phase's disclosure gates
 	// read. Each must carry the token back to the exact decision it came
 	// from, and each must refuse on the zero value.
 	if got, err := auth.Target(); err != nil || got != tgt {
@@ -1778,7 +1779,7 @@ func TestTargetStaysComparable(t *testing.T) {
 // no authz.Authorization could be minted outside this package at all. That was
 // fail-closed and therefore not wrong, but it meant the kernel could admit
 // nothing. Gate 11 turned out not to be an admission predicate: its row in
-// plan/50-dast.md is a SCOPE NARROWING, it is implemented as
+// plan/design/dynamic-tier.md is a SCOPE NARROWING, it is implemented as
 // NarrowScopeToRobots, and it was removed from the chain.
 //
 // This test uses the EXPORTED Adjudicate over the compiled-in registry — no

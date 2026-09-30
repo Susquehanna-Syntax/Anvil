@@ -1,10 +1,10 @@
-// D.9, gate 2: the kernel's dependency graph, measured.
+// The kernel's build-time guard, gate 2: the kernel's dependency graph, measured.
 //
 // ===========================================================================
 // WHAT MAKES THIS GUARD DIFFERENT FROM A CONVENTION
 // ===========================================================================
 //
-// plan/00-SPINE.md S7: "The authorization kernel is a pure function of
+// The spine's safety section: "The authorization kernel is a pure function of
 // (target, scope, attestation, clock), compiled separately from the model
 // runtime, with a build-time test that fails if the dependency graph inverts.
 // No model ever holds a network handle."
@@ -14,7 +14,7 @@
 // warning -- when the kernel reaches something it must not reach.
 //
 // The judgment lives in CheckGate2KernelCompiledSeparately (phase0_build.go,
-// D.2), which holds kernelImportAllowlist. This file only MEASURES, by
+// the kernel core), which holds kernelImportAllowlist. This file only MEASURES, by
 // shelling out to `go list -deps`. That split is why the gate cannot be handed
 // a convenient graph by the code it judges.
 //
@@ -46,7 +46,7 @@
 // Gate 1's positive half is a different story and is NOT fixed here.
 // `go list -deps ./cmd/anvil-dast | grep internal/dast` returns NOTHING:
 // neither shipped binary links the kernel, because cmd/anvil-dast is still the
-// bootstrap placeholder plan step O.16 owns. So "anvil does not reach the DAST
+// bootstrap placeholder the binary build owns. So "anvil does not reach the DAST
 // tree" is currently satisfied by the DAST tree appearing in no binary at all,
 // and it would keep passing if the kernel were deleted.
 //
@@ -151,7 +151,7 @@ func TestGate2KernelClosureIsStdlibPlusTheAllowlist(t *testing.T) {
 // TestGate2NoDastPackageReachesTheInferenceLayer widens gate 2 from the kernel
 // to the whole dynamic tier.
 //
-// S7's sentence is about the kernel, but its reason -- "no model ever holds a
+// The spine's sentence is about the kernel, but its reason -- "no model ever holds a
 // network handle" -- is about the tier. A crawler or a request layer that
 // linked the model runtime would satisfy gate 2 as written and defeat what it
 // is for, because the kernel would still be clean while the process holding
@@ -215,7 +215,7 @@ func TestGate2NoDastPackageReachesTheInferenceLayer(t *testing.T) {
 				sort.Strings(bad)
 				t.Fatalf("%s reaches %d package(s) outside the standard library, the "+
 					"DAST tree and the kernel's import allowlist:\n  %s\n\n"+
-					"plan/00-SPINE.md S7 keeps the model runtime out of the tier that "+
+					"The spine's safety section keeps the model runtime out of the tier that "+
 					"holds the sockets. A DAST package that links something the KERNEL "+
 					"may not link puts it in the same process as the network handles.",
 					pkg, len(bad), strings.Join(bad, "\n  "))
@@ -426,7 +426,7 @@ func TestGate1CoreArtifactSplitAndTheVacuityOfItsPositiveHalf(t *testing.T) {
 		"also reaches no DAST package, so the split is currently satisfied by "+
 		"EMPTINESS rather than by separation, and would keep passing if the kernel "+
 		"were deleted.\n"+
-		"SETTLING CONDITION: plan step O.16 wires cmd/anvil-dast to the kernel. On "+
+		"SETTLING CONDITION: the binary build wires cmd/anvil-dast to the kernel. On "+
 		"that day this test's positive branch starts enforcing by itself; nothing "+
 		"here needs to be remembered.",
 		len(core.Deps()), len(dast.Deps()))

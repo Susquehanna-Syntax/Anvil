@@ -1,4 +1,4 @@
-// Tests for the R.12 correlation policy: LINK, NEVER MERGE.
+// Tests for the correlation policy: LINK, NEVER MERGE.
 //
 // The two the packet names explicitly are TestCweOnlyMatchProducesZeroClusters
 // and TestVerifiedRequiresAStackTraceOrRerunFlipSignalSpecifically. The rest
@@ -184,7 +184,7 @@ func hasSignal(sw []SignalWeight, want CorrelationSignal) bool {
 }
 
 // ---------------------------------------------------------------------------
-// The two assertions R.12's packet names
+// The two assertions correlation's design names
 // ---------------------------------------------------------------------------
 
 // research/18, Table 2: a CWE class match is "necessary, never sufficient" —
@@ -219,7 +219,7 @@ func TestCweOnlyMatchProducesZeroClusters(t *testing.T) {
 	}
 }
 
-// plan/00-SPINE.md S7: "Only a DAST reproduction that now fails earns 'verified
+// The spine's safety section: "Only a DAST reproduction that now fails earns 'verified
 // fixed.' A clean SAST rescan does not." Verified is a question about the KIND
 // of evidence; no amount of confidence answers it.
 func TestVerifiedRequiresAStackTraceOrRerunFlipSignalSpecifically(t *testing.T) {
@@ -450,7 +450,7 @@ func TestEveryEmittedCorrelationSatisfiesTheContractValidator(t *testing.T) {
 				t.Fatalf("member %q has no correlation view", id)
 			}
 			if err := validateCorrelation(corr); err != nil {
-				t.Errorf("correlation for %q fails R.1's own validator: %v", id, err)
+				t.Errorf("correlation for %q fails the record contract's own validator: %v", id, err)
 			}
 			if len(corr.Peers) == 0 {
 				t.Errorf("correlation for %q has no peers", id)
@@ -554,7 +554,7 @@ func TestClusterIDIsDerivedFromMembershipAndIsUUIDShaped(t *testing.T) {
 // Untrusted bytes
 // ---------------------------------------------------------------------------
 
-// plan/00-SPINE.md S7 names the DAST response body the highest-risk field in
+// The spine's safety section names the DAST response body the highest-risk field in
 // the system. Correlation reads it to compute booleans; not one byte of it,
 // nor of any payload value or repo snippet, may reach the record through this
 // file's output.
@@ -889,12 +889,12 @@ func TestConfidenceIsBoundedMonotoneAndNeverCertain(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The patent flag R.15's critic is required to find
+// The patent flag the queue and read-path review is required to find
 // ---------------------------------------------------------------------------
 
-// plan/40-record-and-storage.md Open Questions #1 requires this step to flag
+// plan/design/record-and-store.md Open Questions #1 requires this step to flag
 // the US10043004B2 patent risk in code, pointing at that document, without
-// attempting to resolve it. R.15's critic verifies the flag exists. This test
+// attempting to resolve it. The queue and read-path review verifies the flag exists. This test
 // keeps a later refactor from quietly deleting it.
 func TestPatentRiskIsFlaggedInSource(t *testing.T) {
 	src, err := os.ReadFile("correlation.go")
@@ -903,12 +903,12 @@ func TestPatentRiskIsFlaggedInSource(t *testing.T) {
 	}
 	for _, want := range []string{
 		"US10043004B2",
-		"plan/40-record-and-storage.md",
+		"plan/design/record-and-store.md",
 		"Open Questions",
 	} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("correlation.go no longer mentions %q; the patent flag is required by "+
-				"plan/40-record-and-storage.md Open Questions #1 and verified by R.15", want)
+				"plan/design/record-and-store.md Open Questions #1 and verified by the queue and read-path review", want)
 		}
 	}
 }

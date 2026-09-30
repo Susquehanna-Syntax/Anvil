@@ -14,19 +14,19 @@
 // CheckGate5Attestation, CheckGate6ModeDeclaration and
 // CheckGate7TriggerProvenance take the facts each gate is actually about
 // (bytes on disk, a declared mode string, a CI trigger context) and return
-// D.2's typed failure, GateResult. This is the same shape Phase 0 uses, and it
-// is what plan/50-dast.md D.4's expected-output schema asks for: "Four gate
-// functions matching D.2's typed-failure convention."
+// the kernel core's typed failure, GateResult. This is the same shape Phase 0 uses, and it
+// is what run initiation's design expected-output schema asks for: "Four gate
+// functions matching the kernel core's typed-failure convention."
 //
 // InitiateRun runs all four in one call and, if every one passes, mints the
 // Scope, the Attestation, the ModeDeclaration and the DastEnablement that the
 // rest of the run is built from. It is the only function here that produces a
 // DastEnablement, and it produces one by calling EnableDAST, which gives that
-// type the consumer D.3's critic correctly observed it did not have.
+// type the consumer the kernel-types review correctly observed it did not have.
 //
 // HALF TWO — the per-target residue, registered into the kernel's admission
 // chain as gateFuncs. A gateFunc sees exactly (target, scope, attestation,
-// clock) — plan/00-SPINE.md S7's four inputs and nothing else — so it can only
+// clock) — the spine's four inputs and nothing else — so it can only
 // re-assert the part of a Phase 1 gate that is a function of those four. That
 // residue is real and is not a formality:
 //
@@ -50,18 +50,19 @@
 // Trigger provenance is not a function of (target, scope, attestation, clock).
 // It is a function of the CI event, the repository, the actor and how the
 // actor's permission was determined — none of which appear in gateFunc's
-// signature, and gateFunc's signature is declared in D.2's write scope
+// signature, and gateFunc's signature is declared in the kernel core's write scope
 // precisely so that it cannot be widened by a packet that finds it
 // inconvenient.
 //
 // There were three ways out and two of them are worse:
 //
 //  1. Widen gateFunc, or thread a run object through Decide. That is a change
-//     to plan/00-SPINE.md S7's "pure function of (target, scope, attestation,
-//     clock)" and to D.2's file. Not D.4's call, and not D.4's write scope.
+//     to the spine's "pure function of (target, scope, attestation,
+//     clock)" and to the kernel core's file. Not run initiation's call, and not
+//     run initiation's write scope.
 //  2. Register a gate 7 that consults process-level state written at run
 //     initiation. That makes Decide a function of ambient mutable state, which
-//     is the same S7 violation wearing a hat, and it makes the kernel's
+//     is the same safety-section violation wearing a hat, and it makes the kernel's
 //     behaviour depend on test execution order.
 //  3. Register a gate 7 that permits whenever the four inputs are well formed.
 //     That is a gate that has never refused anything — the exact shape
@@ -74,9 +75,9 @@
 // pull_request_target paths), and it is not a gateFunc.
 //
 // THE ORCHESTRATOR RULED ON THIS. Gate 7 does not belong in the admission chain
-// at all: plan/50-dast.md:1032's own table puts it in Phase 1, it is evaluated
+// at all: plan/design/dynamic-tier.md:1032's own table puts it in Phase 1, it is evaluated
 // ONCE PER RUN before any target exists, and widening gateFunc to carry trigger
-// provenance would break S7's pure-function property — the property that makes
+// provenance would break the spine's pure-function property — the property that makes
 // the admission decision auditable. It was removed from admissionChain, and
 // kernel.go's registerInto now REFUSES to register it, so the separation is
 // enforced rather than described. Gate 7's pass is a PRECONDITION of obtaining
@@ -103,7 +104,7 @@
 // ===========================================================================
 //
 // A scope file and an attestation file are `anvil/trust: untrusted` per
-// plan/00-SPINE.md S6: they originate outside Anvil. Every Detail string
+// the spine's record section: they originate outside Anvil. Every Detail string
 // produced in this file is Anvil-authored and contains no bytes from the
 // parsed document — not the unknown field's name, not the rejected host, not
 // encoding/json's own error text (which quotes the offending field). Where an
@@ -249,7 +250,7 @@ const AttestationFileSchemaVersion = 1
 // list or an attestation identifier can legitimately contain — and everything
 // else becomes '?'. A denylist of dangerous characters would have to
 // anticipate every encoding trick that might reach an agent's prompt through
-// the audit log (plan/00-SPINE.md S7); an allowlist has to anticipate nothing.
+// the audit log (the spine's safety section); an allowlist has to anticipate nothing.
 // The result is also truncated, because length is its own payload.
 func redactUntrusted(s string) string {
 	const max = 64
@@ -444,7 +445,7 @@ type scopeEntryDoc struct {
 //
 // It is the ONLY producer of a ScopeHash that any Scope carries: sealScope
 // calls it on the bytes gate 4 just parsed, and there is no path on which a
-// caller supplies a hash of its own. D.3's critic raised the earlier shape,
+// caller supplies a hash of its own. The kernel-types review raised the earlier shape,
 // where NewScope took an asserted hash and never saw the bytes.
 func ScopeHashOf(raw []byte) ScopeHash {
 	sum := sha256.Sum256(raw)
@@ -482,7 +483,7 @@ func LoadScopeFile(path string, decl ModeDeclaration) (Scope, GateResult) {
 // # The caller's bytes are read exactly once
 //
 // An earlier shape read the caller's slice TWICE: decodeStrict parsed it, and
-// then sealScope hashed it with ScopeHashOf. D.9's critic demonstrated the gap
+// then sealScope hashed it with ScopeHashOf. The build-time guard's review demonstrated the gap
 // between the two reads in a scratch module — two same-length scope documents,
 // 1000 entries so that the decode takes about 1.4ms, one goroutine calling
 // NewScope while another rewrote the buffer — and produced a Scope whose
@@ -612,7 +613,7 @@ func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
 		return Scope{}, gateFailed(Gate4ScopeFile, ReasonScopeFileSchemaInvalid,
 			"the kernel's own scope-entry schema rejected this file. The offending value is "+
 				"not reproduced here: a scope file is `anvil/trust: untrusted` input "+
-				"(plan/00-SPINE.md S6) and a GateFailure's Detail is Anvil-authored text.",
+				"(the spine's record section) and a GateFailure's Detail is Anvil-authored text.",
 			"entry rejected at: "+redactUntrusted(err.Error()))
 	}
 	return scope, gatePassed(Gate4ScopeFile)
@@ -623,7 +624,7 @@ func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
 // Each entry is built with a FRESHLY ALLOCATED ports slice, so nothing outside
 // this function ever holds a reference to the backing array. sealScope
 // deep-copies again on the way in and AllowEntries/DenyEntries deep-copy on the
-// way out; between them, D.3's aliasing finding is closed on every path a
+// way out; between them, the kernel-types review's aliasing finding is closed on every path a
 // Ports array can travel.
 func scopeEntriesFromDoc(entries []scopeEntryDoc, list string) ([]ScopeEntry, GateResult) {
 	if len(entries) > maxScopeEntries {
@@ -698,7 +699,7 @@ type attestationDocument struct {
 // into an AttestationCeiling, and is the ONLY function in Anvil that a config
 // value may reach on its way to becoming one.
 //
-// plan/50-dast.md gate 5: the expiry ceiling "may be lowered from the 30-day
+// plan/design/dynamic-tier.md gate 5: the expiry ceiling "may be lowered from the 30-day
 // recommended default; presence/validity checking is not optional". "Lower
 // only" is encoded structurally rather than checked politely:
 //
@@ -943,7 +944,7 @@ func checkAttestationLiveness(att Attestation, clock Clock) GateResult {
 //
 // # Irreversibility, and what actually enforces it
 //
-// D.3's critic was right that nothing in the kernel ties a run to one
+// The kernel-types review was right that nothing in the kernel ties a run to one
 // declaration, because there is no run object for it to be irreversible
 // within. What this file adds is a chain of bindings that makes a second,
 // different declaration detectable rather than a claim in a comment:
@@ -1042,7 +1043,7 @@ const (
 
 // policyEligibleEvents is the ALLOWLIST of events a TriggerPolicy may contain.
 //
-// plan/50-dast.md gate 7: "Which trigger sources are permitted is
+// plan/design/dynamic-tier.md gate 7: "Which trigger sources are permitted is
 // configurable; whether provenance is checked is not." This constant is where
 // that line is drawn. Configuration chooses a SUBSET of this list; it cannot
 // add to it, because NewTriggerPolicy refuses to construct a policy naming
@@ -1053,7 +1054,7 @@ const (
 // to keep pace with every event GitHub adds, and a new event type would arrive
 // permitted. Here a new event type arrives unrecognised, which refuses.
 //
-// D.4's forbidden actions name this explicitly: "No relaxation of gate 7's
+// Run initiation's forbidden actions name this explicitly: "No relaxation of gate 7's
 // provenance check for a documented 'trusted fork' exception." There is no
 // argument to NewTriggerPolicy that produces one.
 var policyEligibleEvents = []TriggerEvent{
@@ -1172,7 +1173,7 @@ const (
 
 // TriggerFacts is the inert input struct NewTriggerContext validates.
 //
-// Its fields are exported because D.10's CI adapter has to fill them in from
+// Its fields are exported because target provisioning's CI adapter has to fill them in from
 // the environment. That is safe for the same reason ScopeEntry's fields are
 // exported: the struct on its own authorises nothing, and the only way its
 // contents reach gate 7 is through NewTriggerContext, which validates every
@@ -1209,7 +1210,7 @@ type TriggerContext struct {
 	sealed     bool
 }
 
-// NewTriggerContext validates the facts D.10 measured about the trigger.
+// NewTriggerContext validates the facts target provisioning measured about the trigger.
 //
 // It validates SHAPE only — that the event is a token this package recognises,
 // that the repository names are well formed, that the permission and its
@@ -1323,7 +1324,7 @@ func NewTriggerPolicy(events ...TriggerEvent) (TriggerPolicy, error) {
 				return TriggerPolicy{}, fmt.Errorf("trigger policy: %w: %q may never be "+
 					"permitted to authorise probing. It is an event whose inputs, head "+
 					"ref or privilege an outside contributor can influence, and "+
-					"plan/50-dast.md D.4 forbids a documented exception for it",
+					"Run initiation's design forbids a documented exception for it",
 					ErrRefused, string(e))
 			}
 			return TriggerPolicy{}, fmt.Errorf("trigger policy: %w: %q is not an event "+
@@ -1436,7 +1437,7 @@ func CheckGate7TriggerProvenance(tc TriggerContext, policy TriggerPolicy, scopeR
 		return gateFailed(Gate7TriggerProvenance, ReasonTriggerForkPullRequest,
 			"the changes that started this run came from a different repository than the "+
 				"one the workflow ran in — a FORK run. research/20 gate 7 refuses it "+
-				"outright, and D.4's forbidden actions rule out a 'trusted fork' "+
+				"outright, and run initiation's forbidden actions rule out a 'trusted fork' "+
 				"exception: the whole content of a fork run is written by somebody "+
 				"without write access to the scope file.",
 			"workflow repository: "+redactUntrusted(tc.repository),
@@ -1539,13 +1540,13 @@ func validateActorName(s string) error {
 
 // RunRequest is everything Phase 1 needs to decide whether a run may start.
 //
-// Its fields are exported because D.10 fills them in from files and the
+// Its fields are exported because target provisioning fills them in from files and the
 // environment. Nothing here authorises anything: the only thing that reads a
 // RunRequest is InitiateRun, and it validates every field through the four
 // gates.
 type RunRequest struct {
 	// Artifact must be ArtifactDAST. The core binary can never enable DAST
-	// (plan/00-SPINE.md S9-AMENDED), and EnableDAST is what enforces it.
+	// (the two-artifact split), and EnableDAST is what enforces it.
 	Artifact Artifact
 	// Mode is the operator's literal mode declaration (gate 6). It is not
 	// trimmed or repaired.
@@ -1628,7 +1629,7 @@ func InitiateRun(req RunRequest) (RunInitiation, GateResult) {
 				"DAST for this run. Gates 4, 5 and 6 have already checked the scope, "+
 				"the attestation and the mode, so what is left is the artifact: only "+
 				"`anvil-dast` may probe, and no configuration changes that "+
-				"(plan/00-SPINE.md S9-AMENDED).",
+				"(the two-artifact split).",
 			"artifact declared: "+redactUntrusted(string(req.Artifact)))
 	}
 	if !enablement.Enabled() {
@@ -1766,11 +1767,11 @@ func gate4ScopeFile(target Target, scope Scope, _ Attestation, _ Clock) Ruling {
 //
 // # The coded ceiling re-check, and why it is here
 //
-// D.3's critic demonstrated that NewAttestation compares an attestation's
+// The kernel-types review demonstrated that NewAttestation compares an attestation's
 // lifetime against a CALLER-SUPPLIED ceiling, and that NewCap is an exported
 // constructor, so `NewCap(10*365*24*time.Hour)` produces a ceiling that admits
-// a ten-year attestation. That is a hole in D.2's contract and D.2's file is
-// outside this packet's write scope.
+// a ten-year attestation. That is a hole in the kernel core's contract and the
+// kernel core's file is outside this packet's write scope.
 //
 // What IS inside this packet's scope is refusing such an attestation HERE, in
 // the admission chain, against the compiled-in const:

@@ -1,4 +1,5 @@
-// Regression tests for the defects CRITIQUE-02 found and the fix round closed.
+// Regression tests for the defects the sealing, claims and masking review found
+// and the fix round closed.
 //
 // Each test here reproduces one ORIGINAL defect. They were written by the
 // critic and the re-verifier as probes -- to prove a defect existed, and then
@@ -26,9 +27,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Independent re-verification probes for CRITIQUE-02 B3 / M1 / M3, plus the
-// completed_failed and DeriveDastStatus-totality claims. Written from the
-// critique text, not from the shipped tests.
+// Independent re-verification probes for the sealing, claims and masking
+// review's findings B3 / M1 / M3, plus the completed_failed and
+// DeriveDastStatus-totality claims. Written from the critique text, not from
+// the shipped tests.
 // ---------------------------------------------------------------------------
 
 func probeMarshal(t *testing.T, l *SARIFLog) string {
@@ -43,7 +45,7 @@ func probeMarshal(t *testing.T, l *SARIFLog) string {
 // probeMinimalLog builds a record with NOTHING planted anywhere. Each probe
 // then plants exactly one secret in exactly one field, so nothing can pass by
 // propagation from a header the masker was already looking at. That
-// propagation-false-confidence pattern is CRITIQUE-02 F11.
+// propagation-false-confidence pattern is the sealing, claims and masking review's finding F11.
 func probeMinimalLog() *SARIFLog {
 	return &SARIFLog{
 		Version: "2.1.0",
@@ -336,7 +338,7 @@ func TestProbeM3InspectHonoursExpiry(t *testing.T) {
 	t.Logf("expired: Inspect Sast=%+v Readable=%v; ReadHalf err=%v", seal.Sast, seal.Sast.Readable(), readErr)
 }
 
-// M3 must not overshoot: a CONSUMED audit is still readable (S1 re-entrancy).
+// M3 must not overshoot: a CONSUMED audit is still readable (the spine's re-entrancy requirement).
 func TestProbeM3InspectStillReadableWhenConsumed(t *testing.T) {
 	now := time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC)
 	s := NewSealer()
@@ -354,7 +356,7 @@ func TestProbeM3InspectStillReadableWhenConsumed(t *testing.T) {
 	}
 	seal, _ := s.Inspect("probe-a2")
 	if !seal.Sast.Readable() {
-		t.Errorf("a consumed audit reports Sast.Readable()=false; S1 requires a RE-ENTRANT consumer")
+		t.Errorf("a consumed audit reports Sast.Readable()=false; the spine's corrected-requirements table requires a RE-ENTRANT consumer")
 	}
 	if _, err := s.ReadHalf("probe-a2", HalfSast); err != nil {
 		t.Errorf("ReadHalf refused a consumed audit: %v", err)

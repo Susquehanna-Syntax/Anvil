@@ -1,8 +1,8 @@
 // Package bootstrap fills a feed's ingestion cache ONCE, from a bulk artifact,
-// so that the conditional-GET poller (A.7) only ever has to carry deltas.
+// so that the conditional-GET poller only ever has to carry deltas.
 //
-// This is step A.8 of plan/20-lane-a-ingestion-sca.md. Lane A is the
-// zero-inference half of Anvil (plan/00-SPINE.md S1): CVE/OSV/GHSA describe
+// This is the bulk bootstrap (plan node bootstrap). Lane A is the
+// zero-inference half of Anvil (the spine's corrected-requirements table): CVE/OSV/GHSA describe
 // vulnerable PACKAGE VERSIONS and a version comparator answers that exactly and
 // for free. Nothing in this package infers anything, calls a model, or emits a
 // fingerprint.
@@ -34,7 +34,7 @@
 //
 // # The two gates. Nothing reaches the cache without both.
 //
-//   - A.4's licence gate runs FIRST, before a byte is fetched. license.Resolve
+//   - The licence gate runs FIRST, before a byte is fetched. license.Resolve
 //     decides the tier and the one directory this feed's data may occupy, and
 //     every one of its errors satisfies license.ErrLicenseRefused. A refusal
 //     ends the bootstrap with no request made and no row written.
@@ -47,7 +47,7 @@
 //     ordinary path today, and BootstrapResult.Refused says so plainly rather
 //     than looking like a successful import of zero rows.
 //
-//   - A.3's sanitizer runs on every string projected out of a fetched document
+//   - The sanitizer runs on every string projected out of a fetched document
 //     into a queryable column or the FTS index, and sanitize.AssertAllSanitized
 //     re-checks the whole bind set immediately before the parameters go to the
 //     driver. internal/ingest/sanitize's writer guard walks this package's AST
@@ -76,7 +76,7 @@
 //	feed is not bootstrapped, whatever the row count says.
 //
 // And the progress cursor moves in THE SAME TRANSACTION as the rows it
-// describes. This is the property R.7's lease protocol needed and did not have
+// describes. This is the property the lease protocol needed and did not have
 // on the first attempt, so it is worth stating as the crash argument rather
 // than as an assertion:
 //
@@ -104,7 +104,7 @@
 //     inside the same transaction. This is not tidiness. `affected` has an
 //     autoincrement primary key and no unique constraint over its natural key,
 //     so a plain re-INSERT on a resumed batch DUPLICATES every version range,
-//     and A.17's comparator would then see one advisory as several. Replacing
+//     and the comparator would then see one advisory as several. Replacing
 //     the set is the only shape that is idempotent.
 //   - advisory_fts is INSERT OR REPLACE by the rowid the advisory upsert
 //     returned, which genuinely replaces the old terms because the table
@@ -116,13 +116,13 @@
 //
 // # What this package does NOT do
 //
-//   - It does not poll. A.7 owns steady state; this runs once per feed.
-//   - It does not invent a fingerprint. plan/00-SPINE.md S6 permits exactly one
+//   - It does not poll. The poller owns steady state; this runs once per feed.
+//   - It does not invent a fingerprint. The spine's record section permits exactly one
 //     algorithm, anvil-fp/v1, owned by internal/record. Lane A's cache has a
 //     lane-local `finding.id` and this package writes no findings at all.
-//   - It does not decide a licence. It presents the feed row to A.4 and obeys.
+//   - It does not decide a licence. It presents the feed row to the licence gate and obeys.
 //   - It does not name a feed. There is no feed id, URL, cadence or format
-//     mapping compiled into this file. Which feeds exist comes from A.1's feed
+//     mapping compiled into this file. Which feeds exist comes from the feed
 //     table; what an artifact CONTAINS is decided by looking at the bytes.
 package bootstrap
 
@@ -163,7 +163,7 @@ import (
 const (
 	// DefaultMaxArchiveBytes bounds a single downloaded artifact. The largest
 	// thing in the feed table is OSV's merged all.zip at ~1.32 GiB measured
-	// (A.8's packet), with cvelistV5's midnight baseline at 570,845,537 B
+	// (the bulk bootstrap's design), with cvelistV5's midnight baseline at 570,845,537 B
 	// (research/06 S8). 4 GiB is ~3x the largest known artifact: enough head
 	// room that a growing feed does not trip it, small enough that a
 	// misconfigured URL pointing at something enormous is a refusal rather
@@ -222,7 +222,7 @@ var (
 	ErrNotConfigured = errors.New("bootstrap: bootstrapper is not configured")
 
 	// ErrUnsupportedMechanism reports a bootstrap_mechanism this package does
-	// not implement. It exists so that adding a value to A.1's enum without
+	// not implement. It exists so that adding a value to the feed table's enum without
 	// teaching this dispatch produces a refusal instead of a silent no-op that
 	// looks like a successful import of zero rows.
 	ErrUnsupportedMechanism = errors.New("bootstrap: unsupported bootstrap_mechanism")
@@ -233,7 +233,7 @@ var (
 	ErrAlreadyBootstrapped = errors.New("bootstrap: feed is already bootstrapped")
 
 	// ErrForeignWatermark reports a watermark this package did not write and
-	// cannot read. It means some other component — A.7's poller, A.14's git
+	// cannot read. It means some other component — the poller, delta ingestion's git
 	// fetch — owns the cursor now, which only happens to a feed already in
 	// service. Overwriting it would destroy that component's position and
 	// silently cost a full re-sync window, so it takes Options.Force too.
@@ -260,7 +260,7 @@ var (
 
 	// ErrDependencyRequired reports a container whose codec is not in the Go
 	// standard library — zstd, xz, bzip2-in-a-tar. Adding one is a NEW
-	// DEPENDENCY and therefore a licence decision for the owner (spine S8), so
+	// DEPENDENCY and therefore a licence decision for the owner (the spine's licence section), so
 	// this package refuses and names the artifact rather than quietly picking
 	// a library.
 	ErrDependencyRequired = errors.New("bootstrap: archive codec needs a dependency Anvil does not have")
@@ -329,11 +329,11 @@ func (p Phase) Valid() bool {
 // Progress is the token this package writes into feed_state.watermark, and the
 // only thing that distinguishes a half-imported cache from a whole one.
 //
-// It lives in `watermark` because that is the column A.8's packet names for the
+// It lives in `watermark` because that is the column the bulk bootstrap's design names for the
 // clone ref, and because feed_state has no other per-feed column that is not
 // already owned by conditional GET. That makes the format a shared vocabulary
-// with A.7 and A.14, so it is parsed in exactly one place — ParseWatermark —
-// and A.14 reads the clone ref through Handoff rather than by string surgery.
+// with the poller and delta ingestion, so it is parsed in exactly one place — ParseWatermark —
+// and delta ingestion reads the clone ref through Handoff rather than by string surgery.
 //
 // The JSON is a single line with a self-identifying first key, so a human
 // reading the column, and a parser deciding whether the value is ours, both get
@@ -376,7 +376,7 @@ type Progress struct {
 
 	// Handoff is the value the STEADY-STATE sync mechanism starts from once
 	// the bootstrap completes: the resolved commit for a blobless clone (which
-	// is what A.14's `git fetch` needs), the artifact digest for a bulk
+	// is what delta ingestion's `git fetch` needs), the artifact digest for a bulk
 	// archive. Read it through Handoff, never by re-implementing this struct.
 	Handoff string `json:"handoff,omitempty"`
 
@@ -459,7 +459,7 @@ func Bootstrapped(watermark string) bool {
 // Handoff returns the value a steady-state sync mechanism should start from,
 // and whether the bootstrap that produced it completed.
 //
-// A.14's `git fetch` calls this to get the clone's resolved commit rather than
+// Delta ingestion's `git fetch` calls this to get the clone's resolved commit rather than
 // parsing the watermark itself; a second parser for one format is how the two
 // halves of a handover drift apart.
 func Handoff(watermark string) (string, bool) {
@@ -506,7 +506,7 @@ type BootstrapResult struct {
 	// ResumedFromEntry is the entry index the run started at.
 	ResumedFromEntry int
 
-	// Tier and Dir are A.4's decision: the licence tier and the ONE directory
+	// Tier and Dir are the licence gate's decision: the licence tier and the ONE directory
 	// this feed's data may be written under.
 	Tier int
 	Dir  string
@@ -522,7 +522,7 @@ type BootstrapResult struct {
 	// EntriesRead is archive members opened; EntriesSkipped is members that
 	// held nothing this package recognised as an advisory. A CWE catalog is
 	// the worked example of the second: it is Lane B's label space, it is not
-	// advisory content, and it has no table in the A.2 cache.
+	// advisory content, and it has no table in the ingestion cache.
 	EntriesRead    int
 	EntriesSkipped int
 
@@ -542,7 +542,7 @@ type BootstrapResult struct {
 	PeakReadBytes   int
 	BytesRead       int64
 
-	// Sanitizer is the merged report of everything A.3 removed across the
+	// Sanitizer is the merged report of everything the sanitizer removed across the
 	// import. A non-zero count is not an error; it is the ordinary state of
 	// text written by strangers.
 	Sanitizer sanitize.SanitizeStats
@@ -557,17 +557,17 @@ type BootstrapResult struct {
 
 // Bootstrapper carries everything a bootstrap needs that is not per-feed.
 //
-// Bootstrap's signature is the one A.8's packet names — (ctx, feed) ->
+// Bootstrap's signature is the one the bulk bootstrap's design names — (ctx, feed) ->
 // (BootstrapResult, error) — and the environment hangs off the receiver rather
 // than off a third parameter, so that a cache handle, an HTTP client and a git
 // runner are configured once and cannot vary per call.
 type Bootstrapper struct {
-	// DB is the A.2 ingestion cache, already migrated. It is NOT
+	// DB is the ingestion cache, already migrated. It is NOT
 	// internal/store: that is the audit store of record and nothing here may
 	// touch it.
 	DB *sql.DB
 
-	// Mirror is the filesystem A.4 reads pinned licence evidence from. Nil
+	// Mirror is the filesystem the licence gate reads pinned licence evidence from. Nil
 	// means the process working directory, which is what a daemon wants and
 	// what a test must never rely on.
 	Mirror fs.FS
@@ -656,7 +656,7 @@ func (b *Bootstrapper) check() error {
 
 // Bootstrap fills one feed's slice of the cache from its bulk artifact.
 //
-// It is the entry point A.8's packet names. The order of what it does is the
+// It is the entry point the bulk bootstrap's design names. The order of what it does is the
 // argument for why it is safe:
 //
 //  1. The LICENCE GATE runs before anything is fetched. A refusal means no
@@ -740,7 +740,7 @@ func (b *Bootstrapper) Bootstrap(ctx context.Context, feed config.FeedConfig) (B
 		return b.bloblessClone(ctx, feed, decision, prior, res)
 	case config.BootstrapIncrementalAPI, config.BootstrapNone:
 		// Neither fetches a bulk artifact, and neither is a no-op: the feed
-		// still needs a feed_state row carrying its licence tier before A.7
+		// still needs a feed_state row carrying its licence tier before the poller
 		// can poll it, and it still needs the durable fact that its bootstrap
 		// is not pending. Writing PhaseComplete with zero entries is the
 		// truth — there was nothing to import — and it is what stops an
@@ -769,7 +769,7 @@ func (b *Bootstrapper) Bootstrap(ctx context.Context, feed config.FeedConfig) (B
 type forceKey struct{}
 
 // WithOptions attaches per-run options to a context, because Bootstrap's
-// signature is fixed at (ctx, feed) by A.8's packet and Force is a per-run
+// signature is fixed at (ctx, feed) by the bulk bootstrap's design and Force is a per-run
 // choice rather than a property of the Bootstrapper.
 func WithOptions(ctx context.Context, o Options) context.Context {
 	return context.WithValue(ctx, forceKey{}, o)
@@ -808,7 +808,7 @@ func readFeedState(ctx context.Context, db *sql.DB, feedID string) (feedState, e
 }
 
 // writeFeedState upserts the row OUTSIDE a batch transaction. It preserves
-// etag/last_modified/last_ok_at, because those are A.7's conditional-GET state
+// etag/last_modified/last_ok_at, because those are the poller's conditional-GET state
 // and a bootstrap has no business moving them.
 func writeFeedState(ctx context.Context, db *sql.DB, feedID string, st feedState, watermark string, tier int) error {
 	_, err := db.ExecContext(ctx, cache.UpsertFeedStateSQL,
@@ -973,7 +973,7 @@ func (b *Bootstrapper) stageArchive(ctx context.Context, feed config.FeedConfig,
 // artifact.
 //
 // Most rows point straight at one. cvelistV5 points at a releases endpoint that
-// returns a MANIFEST, and A.8's packet requires resolving the baseline asset
+// returns a MANIFEST, and the bulk bootstrap's design requires resolving the baseline asset
 // from it. That resolution is done by looking at the manifest — an assets array
 // of {name, browser_download_url, size} — and never by knowing which feed this
 // is: the rule is "among assets whose name ends in a container extension this
@@ -1102,7 +1102,7 @@ func (b *Bootstrapper) request(ctx context.Context, feed config.FeedConfig, targ
 }
 
 // redactURL strips any userinfo and query from a URL before it appears in an
-// error. A.1 already refuses inline credentials in the feed table, so this
+// error. The feed table's loader already refuses inline credentials, so this
 // guards the one case it cannot: a redirect target or a resolved asset URL that
 // carries a signed query parameter.
 func redactURL(raw string) string {
@@ -1254,7 +1254,7 @@ func walkArchive(s *stagedArchive, skipTo int, skipName string, fn func(index in
 	case bytes.HasPrefix(head, []byte{0x28, 0xb5, 0x2f, 0xfd}):
 		return refuse(ErrDependencyRequired,
 			"the artifact is zstd-compressed; Go's standard library has no zstd decoder, so opening "+
-				"it would add a dependency, and a dependency is a licence decision (spine S8), not "+
+				"it would add a dependency, and a dependency is a licence decision (the spine's licence section), not "+
 				"an implementation detail")
 	case bytes.HasPrefix(head, []byte("BZh")):
 		return refuse(ErrDependencyRequired,
@@ -1389,7 +1389,7 @@ type writer struct {
 	progress Progress
 	asOf     time.Time
 
-	// staleness is spine S6's staleness_seconds for every row this import
+	// staleness is the spine's staleness_seconds for every row this import
 	// writes: the age of the ARTIFACT, measured from its Last-Modified header,
 	// not the age of the import. research/06 Risk #5 is the reason it exists —
 	// a feed outage must never fail a scan, it must serve stale data with the
@@ -1537,7 +1537,7 @@ func (w *writer) commit(ctx context.Context, entries int, cursor string, final b
 // writeAdvisory binds ONE record. Every externally-sourced string reaching a
 // parameter here has been through sanitize.Sanitize in the decoder, and
 // sanitize.AssertAllSanitized re-proves it on the exact values about to be
-// bound — the post-condition A.3 exists to make checkable rather than merely
+// bound — the post-condition the sanitizer exists to make checkable rather than merely
 // documented.
 //
 // raw_json is bound VERBATIM and deliberately: cvelistV5's CVE-TOU obliges
@@ -1607,15 +1607,16 @@ func writeAdvisory(ctx context.Context, tx *sql.Tx, w *writer, rec advisoryRecor
 	// matching, because anything that retrieves it retrieves it as live
 	// advice.
 	//
-	// A.14's writer has always done this and this one had not, which is the
-	// divergence A.21's end-to-end harness found. It was invisible from inside
+	// Delta ingestion's writer has always done this and this one had not, which is the
+	// divergence the Lane A exit gate's end-to-end harness found. It was invisible from inside
 	// either package: each writer's own tests were internally consistent, and
-	// the A.14 cross-producer conformance test compared `advisory`, `affected`
+	// the delta ingestion cross-producer conformance test compared `advisory`, `affected`
 	// and `cve_alias` but not `advisory_fts`. It is the exact failure ruling
-	// G11 describes, one layer down from the decoders: A.15's weekly baseline
-	// self-heal runs THIS path, so every advisory the delta path had correctly
-	// de-indexed would be re-indexed once a week, forever, with nothing
-	// surfacing why. The conformance test now compares the index too.
+	// the one-decoder ruling describes, one layer down from the decoders: the
+	// weekly self-heal's weekly baseline self-heal runs THIS path, so every
+	// advisory the delta path had correctly de-indexed would be re-indexed once
+	// a week, forever, with nothing surfacing why. The conformance test now
+	// compares the index too.
 	if rec.State == cache.AdvisoryPublished {
 		if _, err := tx.ExecContext(ctx, cache.UpsertAdvisoryFTSSQL, rowid, rec.Description, rec.ReferencesText()); err != nil {
 			return fmt.Errorf("bootstrap: indexing %s/%s: %w", rec.Source, rec.SourceID, err)
@@ -1627,7 +1628,7 @@ func writeAdvisory(ctx context.Context, tx *sql.Tx, w *writer, rec advisoryRecor
 	// Replace, never append. `affected` has an autoincrement primary key and
 	// no unique constraint over its natural key, so a resumed batch that
 	// re-imports an advisory would otherwise duplicate every version range and
-	// A.17's comparator would see one advisory as several.
+	// the comparator would see one advisory as several.
 	if _, err := tx.ExecContext(ctx, deleteAffectedSQL, rec.Source, rec.SourceID); err != nil {
 		return fmt.Errorf("bootstrap: clearing affected for %s/%s: %w", rec.Source, rec.SourceID, err)
 	}
@@ -1655,11 +1656,12 @@ func writeAdvisory(ctx context.Context, tx *sql.Tx, w *writer, rec advisoryRecor
 // The four statements internal/ingest/cache does not export.
 //
 // cache/schema.go exports the advisory and FTS write shapes precisely so that
-// A.7, A.8, A.14, A.15 and A.16 do not each compose their own; it exports
-// nothing for `affected` or `cve_alias`, so these are composed here. They are
-// kept together, named, and commented for the same reason the exported ones
-// are: the next writer should copy these rather than invent a fifth shape.
-// Reported to the orchestrator as a gap in A.2's exported surface.
+// the poller, the bulk bootstrap, delta ingestion, the weekly self-heal and
+// drift handling do not each compose their own; it exports nothing for
+// `affected` or `cve_alias`, so these are composed here. They are kept
+// together, named, and commented for the same reason the exported ones are: the
+// next writer should copy these rather than invent a fifth shape. Reported to
+// the orchestrator as a gap in the ingestion cache's exported surface.
 const (
 	deleteAffectedSQL = `DELETE FROM affected WHERE source = ? AND source_id = ?`
 
@@ -1690,9 +1692,9 @@ func boolInt(v bool) int {
 //
 // THEY ARE GO TYPE ALIASES AND NOT CONVERSIONS. This package and
 // internal/ingest/delta write ONE table from ONE wire format (orchestrator
-// ruling G11), and a converter between two structurally identical record types
+// the one-decoder ruling), and a converter between two structurally identical record types
 // is precisely where a field gets carried on one side and dropped on the other
-// — which A.15's weekly self-heal would then restore forever, each importer
+// — which the weekly self-heal would then restore forever, each importer
 // undoing the other, with nothing surfacing why.
 type (
 	affectedRange  = decode.AffectedRange
@@ -1706,7 +1708,7 @@ type (
 // decodeEntry decodes one archive member and emits every advisory in it.
 //
 // THE FORMAT IS DECIDED BY LOOKING AT THE BYTES. There is no feed-id-to-parser
-// table here, for the same reason A.1 exists: a format mapping compiled into Go
+// table here, for the same reason the feed table exists: a format mapping compiled into Go
 // is a hard-coded feed table wearing a different hat, and it breaks the moment
 // an operator points a row at a mirror. What the entry IS, is a property of the
 // entry.
@@ -1733,8 +1735,8 @@ func (dc *decodeCtx) decodeEntry(name string, r io.Reader, emit func(advisoryRec
 	switch {
 	case trimmed[0] == '<':
 		// XML. The CWE catalog is the only XML in the feed table and it is not
-		// advisory content: it is Lane B's label space (spine S1 requirement
-		// 8), 944 classes, and the A.2 cache has no table for it. Recognising
+		// advisory content: it is Lane B's label space (the spine's corrected
+		// requirement 8), 944 classes, and the ingestion cache has no table for it. Recognising
 		// it and declining is the honest outcome; inventing an advisory row
 		// shape for a weakness class would be worse than not importing it.
 		return 0, nil
@@ -1814,14 +1816,15 @@ func (dc *decodeCtx) decodeSingle(
 // ---------------------------------------------------------------------------
 
 // decodeCtx is this import's binding to internal/ingest/decode: which feed the
-// rows belong to, and the running report of everything A.3 removed.
+// rows belong to, and the running report of everything the sanitizer removed.
 //
 // EVERY WIRE FORMAT IS DECODED IN internal/ingest/decode AND NOWHERE ELSE.
 // This package used to hold its own OSV, CVE 5.x and KEV decoders, unexported,
 // which forced internal/ingest/delta to re-derive them — two producers writing
-// one table from one wire format. A.14 guarded the duplication with a
+// one table from one wire format. Delta ingestion guarded the duplication with a
 // conformance test, but two implementations agreeing on a fixture is a smoke
-// alarm and not a fix, so A.21 extracted the shared package (ruling G11).
+// alarm and not a fix, so the Lane A exit gate extracted the shared package
+// (the one-decoder ruling).
 //
 // WHAT STAYS HERE IS DISPATCH, and it stays here because it is genuinely
 // different from delta's. This importer walks 300,000 archive members written
@@ -1848,7 +1851,7 @@ func newDecodeCtx(feedID string) *decodeCtx {
 // stats is everything the sanitizer removed across this import.
 //
 // A feed that ships zero-width joiners, bidi overrides or HTML comments inside
-// an advisory description is not a curiosity — spine S7 puts prompt injection
+// an advisory description is not a curiosity — the spine's safety section puts prompt injection
 // at ingest, and the counts are the only place the fact is visible after the
 // bytes are clean. BootstrapResult.Sanitizer carries the merged total.
 func (dc *decodeCtx) stats() sanitize.SanitizeStats { return dc.dec.Stats() }
@@ -1857,7 +1860,7 @@ func (dc *decodeCtx) stats() sanitize.SanitizeStats { return dc.dec.Stats() }
 //
 // The traversal is this package's — a 570 MB archive member is never held in
 // memory — and the per-entry mapping is the shared one, which is exactly the
-// split ruling G11 asked for: delta reads the same catalogue out of a body the
+// split the one-decoder ruling asked for: delta reads the same catalogue out of a body the
 // poller already buffered, and both write the same row.
 func (dc *decodeCtx) decodeKEV(br *bufio.Reader, emit func(advisoryRecord) error) (int, error) {
 	n := 0

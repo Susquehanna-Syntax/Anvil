@@ -1,4 +1,4 @@
-// This file is packet D.19: Tier 1, the repo-spec route.
+// This file is the repo spec reader: Tier 1, the repo-spec route.
 //
 // ===========================================================================
 // WHAT TIER 1 IS, AND WHAT IT IS NOT
@@ -8,7 +8,7 @@
 // repository — openapi.yaml, swagger.json, *.wsdl, schema.graphql, AsyncAPI
 // documents, Postman collections — and turns them into inventory routes.
 //
-// plan/50-dast.md:628-630 forbids this step from harvesting anything itself:
+// plan/design/dynamic-tier.md:628-630 forbids this step from harvesting anything itself:
 // "Do not have this step or its dependents re-derive spec harvesting from the
 // repo directly — that is explicitly the SAST tier's job." That is not a
 // convention here. This file opens no file, knows no repository path, and
@@ -29,7 +29,7 @@
 // A NETWORK DESTINATION SUPPLIED BY THE REPOSITORY — and they are treated
 // exactly as hostile as that manifest's health.url.
 //
-// So gate 11's asymmetry, which D.18 applied to a document served by a live
+// So gate 11's asymmetry, which the runtime spec probe applied to a document served by a live
 // target, applies here verbatim:
 //
 //	A SPEC FILE FROM THE REPOSITORY MAY ONLY ADD DENIES, NEVER GRANTS.
@@ -51,18 +51,18 @@
 // and neither does the file.
 //
 // ===========================================================================
-// CONFIRMATION IS D.22's, NOT THIS PACKET's
+// CONFIRMATION IS ROUTE CONFIRMATION'S, NOT THIS FILE'S
 // ===========================================================================
 //
-// DEVIATION FROM plan/50-dast.md:632-635, stated rather than hidden. That block
+// DEVIATION FROM plan/design/dynamic-tier.md:632-635, stated rather than hidden. That block
 // says every Tier 1 route is "status: confirmed (a spec checked into the repo
 // is authoritative for what the developer intended, though still worth Tier-0
 // cross-checking where both exist)". This file does not do that, on the
 // orchestrator's standing instruction, and the instruction is right for the
-// same reason D.18's equivalent deviation is right:
+// same reason the runtime spec probe's equivalent deviation is right:
 //
 //	`confirmed` is the direction that moves an endpoint into the NUMERATOR of
-//	endpoint_coverage (plan/50-dast.md:1152). What Anvil observed here is that
+//	endpoint_coverage (plan/design/dynamic-tier.md:1152). What Anvil observed here is that
 //	A FILE EXISTS IN THE REPOSITORY AND PARSED. That `DELETE /internal/admin`
 //	appears inside it is the repository's claim about a service Anvil has not
 //	touched. A repo whose openapi.yaml is six months stale — which is the
@@ -71,13 +71,13 @@
 //
 // research/22-attack-surface-discovery.md's own instruction for the adjacent
 // tier is "promote to `confirmed` only on a non-404 response". Tier 1 stamps
-// ConfirmationCandidate unconditionally; D.22 owns the promotion.
+// ConfirmationCandidate unconditionally; route confirmation owns the promotion.
 //
 // ===========================================================================
-// THE INPUT SHAPE, RECONCILED AGAINST internal/record (RULING 7)
+// THE INPUT SHAPE, RECONCILED AGAINST internal/record (THE INVENTORY RULING)
 // ===========================================================================
 //
-// plan/50-dast.md:625-627 told this packet to "treat the input as an injected
+// plan/design/dynamic-tier.md:625-627 told this packet to "treat the input as an injected
 // []SpecFile{Path, Format, Content} slice and flag the exact record field name
 // as a TODO for reconciliation with the SAST plan", and :1246-1248 records the
 // input shape as an open question. The record schema is now built, committed
@@ -120,7 +120,7 @@
 // predicate that makes the caller choose between the three.
 //
 // ===========================================================================
-// THERE IS ONE OpenAPI PARSER IN THIS PACKAGE AND IT IS D.18's
+// THERE IS ONE OpenAPI PARSER IN THIS PACKAGE AND IT IS the runtime spec probe's
 // ===========================================================================
 //
 // Every format below converges on parseOpenAPI (tier0_runtime.go), which
@@ -141,7 +141,7 @@
 // WSDL and GraphQL SDL have no OpenAPI equivalent and are parsed here, each
 // ending at the same NewRoute.
 //
-// Sources: plan/50-dast.md D.19 (lines 617-643) and the Coverage Reporting
+// Sources: the repo spec reader's design (lines 617-643) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 325-328; internal/record/contract.go (InventoryProvenance, Trust,
 // ArtifactLocation, ArtifactContent, DastCoverage).
@@ -216,14 +216,14 @@ const (
 )
 
 // ---------------------------------------------------------------------------
-// Formats this tier reads, added to D.18's SpecFormat vocabulary
+// Formats this tier reads, added to the runtime spec probe's SpecFormat vocabulary
 // ---------------------------------------------------------------------------
 
 // These are constants of tier0_runtime.go's SpecFormat, not a parallel type.
 // Four packets share this package and a second format enum is precisely the
-// produce/consume break section 6 of plan/IMPLEMENTATION-PLAN.md exists to
+// produce/consume break the first plan's shared-vocabulary review exists to
 // prevent. FormatUnrecognised, FormatOpenAPI3, FormatSwagger2 and
-// FormatGraphQLIntrospection are D.18's and are reused as-is.
+// FormatGraphQLIntrospection are the runtime spec probe's and are reused as-is.
 const (
 	// FormatOpenAPI3YAML is an OpenAPI 3.x document written in YAML.
 	FormatOpenAPI3YAML SpecFormat = "openapi3_yaml"
@@ -485,7 +485,7 @@ type IngestConfig struct {
 	// Target is the kernel Target the resulting routes live on. Required for
 	// the reason RouteFacts.Target is required: it is what makes the
 	// KERNEL's own path validation possible, and it is what pins a route to
-	// a host instead of leaving it a free-floating string that D.26 cannot
+	// a host instead of leaving it a free-floating string that coverage reporting cannot
 	// union with Tier 0's.
 	//
 	// It is authz.NewTarget's output and carries no authorization. Tier 1
@@ -517,7 +517,7 @@ func (c IngestConfig) Constructed() bool { return c.Target.Constructed() && c.Ha
 
 // FileResult is what one harvested file produced.
 //
-// It embeds D.18's ParseResult so the accounting identity — Seen equals routes
+// It embeds the runtime spec probe's ParseResult so the accounting identity — Seen equals routes
 // plus per-operation refusals — is the SAME check, not a second one that could
 // drift from it. AssertAccountedFor is inherited.
 type FileResult struct {
@@ -546,7 +546,7 @@ func (f FileResult) Readable() bool { return readableRepoSpecFormats()[f.Format]
 
 // IngestResult is one Tier 1 ingest over one repository's harvested files.
 //
-// It carries counters and refusals alongside the routes for D.18's reason: "no
+// It carries counters and refusals alongside the routes for the runtime spec probe's reason: "no
 // routes" has several meanings and a bare []Route cannot tell them apart.
 type IngestResult struct {
 	routes   []Route
@@ -590,7 +590,7 @@ func (r IngestResult) Seen() int { return r.seen }
 // Truncated reports that a harvested file exceeded the coded route bound.
 func (r IngestResult) Truncated() bool { return r.truncate }
 
-// DenominatorFloor is the smallest number of endpoints D.26 may use in the
+// DenominatorFloor is the smallest number of endpoints coverage reporting may use in the
 // Tier 1 half of endpoint_coverage's denominator: the routes PLUS every
 // per-operation refusal. An operation this tier saw and could not represent is
 // attack surface that exists, and leaving it out shrinks the denominator,
@@ -609,7 +609,7 @@ func (r IngestResult) DenominatorFloor() int {
 // SourceOf returns the harvested file a route came from, by Route.Key.
 //
 // Route has no field for a repository path — ServedAt is documented as a
-// well-known ENDPOINT and D.18's GraphQL path uses it as a request path, so
+// well-known ENDPOINT and the runtime spec probe's GraphQL path uses it as a request path, so
 // putting a repo URI there would be putting a filename where a later packet
 // looks for an address. The mapping lives here instead. The gap is reported to
 // the orchestrator: Route wants a tier-neutral source reference.
@@ -678,11 +678,11 @@ func cloneFileResults(in []FileResult) []FileResult {
 // repository-authored — the harvester classifies on the path it found, and the
 // path is in the repository — so letting either choose the parser would let a
 // committed file choose how Anvil reads it. That is one step short of choosing
-// what Anvil reads. D.18 made the same call about a served Content-Type:
+// what Anvil reads. The runtime spec probe made the same call about a served Content-Type:
 // "a target choosing its own Content-Type header is the target choosing how
 // Anvil parses its document".
 func DetectRepoSpecFormat(body []byte) SpecFormat {
-	// U+FEFF is written as an escape for the reason D.18 records: Go's
+	// U+FEFF is written as an escape for the reason the runtime spec probe records: Go's
 	// scanner refuses a byte-order mark mid-file even inside a string
 	// literal. A committed file that begins with one would otherwise
 	// classify as FormatUnrecognised, and "Anvil could not read it" would be
@@ -799,7 +799,7 @@ func detectYAMLSpec(trimmed string) SpecFormat {
 		case strings.HasPrefix(line, "paths:"):
 			// Provisional. A document with `paths:` and no dialect key is
 			// read as OpenAPI 3 YAML; the converted JSON is re-classified
-			// by D.18's DetectFormat before anything is parsed, and a
+			// by the runtime spec probe's DetectFormat before anything is parsed, and a
 			// document that is neither dialect is refused there.
 			found = FormatOpenAPI3YAML
 		}
@@ -862,7 +862,7 @@ func detectGraphQLSDL(trimmed string) bool {
 // wrong.
 //
 // ServedAt is deliberately dropped. It is documented as a well-known ENDPOINT
-// path and D.18's GraphQL extraction uses it as a request path; putting a
+// path and the runtime spec probe's GraphQL extraction uses it as a request path; putting a
 // repository filename there would put a filename where a later packet looks
 // for an address. IngestResult.SourceOf carries the file instead.
 func retagAsRepoSpec(target authz.Target, r Route) (Route, error) {
@@ -916,7 +916,7 @@ func retagAll(target authz.Target, pr ParseResult) ParseResult {
 //
 // It is a PURE function of (config, file). It opens nothing, dials nothing,
 // and cannot: Tier 1 issues no request at all, which is why this whole packet
-// is exercisable today while D.18's fetch half depends on the kernel
+// is exercisable today while the runtime spec probe's fetch half depends on the kernel
 // admitting. There is no t.Skip anywhere in this tier and nothing in
 // internal/SKIPPED-CONTROLS.md belongs to it.
 func IngestSpecFile(cfg IngestConfig, f SpecFile) (FileResult, error) {
@@ -978,7 +978,7 @@ func IngestSpecFile(cfg IngestConfig, f SpecFile) (FileResult, error) {
 	return out, nil
 }
 
-// parseOpenAPIBody calls D.18's parser and folds its error return into a
+// parseOpenAPIBody calls the runtime spec probe's parser and folds its error return into a
 // refusal. parseOpenAPI's signature returns an error it never actually
 // produces — every failure is already a Refusal row — and folding it here
 // keeps the one-parser property without inventing a second error convention.
@@ -998,7 +998,7 @@ func parseOpenAPIBody(target authz.Target, format SpecFormat, body []byte) Parse
 // IngestRepoSpecs — the packet's entry point
 // ---------------------------------------------------------------------------
 
-// IngestRepoSpecs is plan/50-dast.md D.19's named entry point.
+// IngestRepoSpecs is the entry point the repo spec reader's design names.
 //
 // DEVIATION, stated: the plan's expected schema is
 // `IngestRepoSpecs(specs []SpecFile) ([]Route, error)`. Three things about it
@@ -1006,7 +1006,7 @@ func parseOpenAPIBody(target authz.Target, format SpecFormat, body []byte) Parse
 // refusal this signature makes impossible:
 //
 //   - A route with no authz.Target names no host, so the kernel cannot
-//     validate its path and D.26 cannot union it with Tier 0's. The Target is
+//     validate its path and coverage reporting cannot union it with Tier 0's. The Target is
 //     in IngestConfig. It carries no authorization and grants nothing: Tier 1
 //     issues no request.
 //   - A bare []Route return cannot distinguish "this repository ships no spec
@@ -1074,11 +1074,11 @@ func IngestRepoSpecs(cfg IngestConfig, specs []SpecFile) (IngestResult, error) {
 		//
 		// The duplicate still gets a row, and that row is per-operation, so
 		// DenominatorFloor counts the endpoint once as a route and once as a
-		// refusal. That is D.18's established behaviour for the same case
+		// refusal. That is the runtime spec probe's established behaviour for the same case
 		// (Probe, two spec endpoints serving one document) and it errs
 		// pessimistically: a denominator that is too large makes coverage
 		// look WORSE, which is the only direction coverage arithmetic is
-		// allowed to fail in. D.26 should prefer the deduplicated union of
+		// allowed to fail in. Coverage reporting should prefer the deduplicated union of
 		// Routes() where it has it.
 		kept := make([]Route, 0, len(fr.Routes))
 		for _, rt := range fr.Routes {
@@ -1105,11 +1105,11 @@ func IngestRepoSpecs(cfg IngestConfig, specs []SpecFile) (IngestResult, error) {
 // ===========================================================================
 // OpenAPI / Swagger IN YAML
 //
-// D.18 refuses a SERVED YAML document by name (RefusalYAMLUnsupported) on the
+// The runtime spec probe refuses a SERVED YAML document by name (RefusalYAMLUnsupported) on the
 // grounds that go.mod requires only modernc.org/sqlite and "adding one is a
 // dependency decision, not a local edit". That ruling stands for tier 0 and it
 // is not overturned here — no dependency is added. What is added is a reader
-// for a STRICT BLOCK-YAML SUBSET, because D.19's stop condition requires
+// for a STRICT BLOCK-YAML SUBSET, because the repo spec reader's stop condition requires
 // `openapi.yaml` to parse and YAML is the format most repositories actually
 // commit.
 //
@@ -1157,7 +1157,7 @@ func IngestRepoSpecs(cfg IngestConfig, specs []SpecFile) (IngestResult, error) {
 // ingestOpenAPIYAML converts a committed YAML spec to JSON and hands it to the
 // one OpenAPI parser this package has.
 //
-// The DIALECT is decided by D.18's DetectFormat over the CONVERTED bytes, not
+// The DIALECT is decided by the runtime spec probe's DetectFormat over the CONVERTED bytes, not
 // by the YAML scan that classified the file. detectYAMLSpec is allowed to be
 // provisional (a document with `paths:` and no dialect key is read as OpenAPI
 // 3); this is where that guess is checked against the actual document, and a
@@ -1826,11 +1826,11 @@ func hexDigit(c byte) int {
 
 // serverURLPath extracts ONLY the path component of an absolute URL.
 //
-// It is the deliberate counterpart of D.18's serverURLHost, and the split is
+// It is the deliberate counterpart of the runtime spec probe's serverURLHost, and the split is
 // the whole control: the HOST half of a committed URL is read only so
 // declaresForeignOrigin can record that the file pointed somewhere else, and
 // the PATH half is the only part any route is ever built from. A path cannot
-// move a host — gate 9 pins that — which is why the same asymmetry D.18
+// move a host — gate 9 pins that — which is why the same asymmetry the runtime spec probe
 // applies to a served document's `servers` block is safe to apply to a WSDL
 // address location and a Postman request URL.
 //
@@ -1857,7 +1857,7 @@ func serverURLPath(raw string) (string, bool) {
 	return p, true
 }
 
-// noteForeignOrigin reuses D.18's foreign-origin check by handing it the URL
+// noteForeignOrigin reuses the runtime spec probe's foreign-origin check by handing it the URL
 // as if it were a `servers` entry.
 //
 // It is the SAME comparison the served-document path makes, against the same
@@ -2167,7 +2167,7 @@ func defaultGraphQLRoots() []string { return []string{"Query", "Mutation", "Subs
 
 // ingestGraphQLIntrospection reads a committed introspection dump.
 //
-// It is D.18's parseGraphQL, retagged. The one thing this tier must add is the
+// It is the runtime spec probe's parseGraphQL, retagged. The one thing this tier must add is the
 // PATH: an introspection response served by a live target arrived on a known
 // endpoint, and a JSON file committed to a repository did not.
 func ingestGraphQLIntrospection(cfg IngestConfig, body []byte) ParseResult {
@@ -2188,7 +2188,7 @@ func ingestGraphQLIntrospection(cfg IngestConfig, body []byte) ParseResult {
 }
 
 // countIntrospectionRootFields counts the root fields of a committed
-// introspection dump using D.18's OWN decoder types.
+// introspection dump using the runtime spec probe's OWN decoder types.
 //
 // It is a different PROJECTION of the same decode, not a second parser: it
 // reads gqlDoc exactly as parseGraphQL does and returns only a count. A number
@@ -3033,7 +3033,7 @@ func postmanBodyMedia(mode string) string {
 // as `:id` in the URL itself and carries no parameter object beside it, so the
 // segment IS the declaration; converting it to OpenAPI's `{id}` without also
 // declaring the parameter would produce a route whose path is templated and
-// whose parameter list is empty, and D.22 would have nothing to fill.
+// whose parameter list is empty, and route confirmation would have nothing to fill.
 //
 // The type is left EMPTY, which is the honest answer: a Postman collection
 // declares no type for a path variable. Param.Typed() then reports false and
@@ -3058,7 +3058,7 @@ func postmanPathParams(path string) []map[string]any {
 // that cannot be probed sitting permanently in the coverage denominator's
 // numerator-eligible pool. `:id` path variables ARE translated, to OpenAPI's
 // `{id}`, because that is the same templated-segment concept OpenAPI already
-// has and D.18's parser already carries.
+// has and the runtime spec probe's parser already carries.
 func postmanRequestPath(raw string) (string, bool, string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

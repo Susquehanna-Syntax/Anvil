@@ -27,7 +27,7 @@ different reasons:
    `modernc.org/sqlite`, `net/http` and `internal/store` therefore reported
    SUCCESS in exactly the environments where it could not check: a hermetic
    build, a container with no toolchain, a CI job with a broken `PATH`. It now
-   `t.Fatalf`s, and its comment (A.12 m4) records why.
+   `t.Fatalf`s, and its comment (the read-only-boundary review's finding m4) records why.
 
 The shape is the same in both cases and it is worth naming precisely: **a guard
 that vanishes silently when it cannot run is worse than no guard, because the
@@ -139,12 +139,12 @@ today). With the gate on and no binary, it **fails**.
 
 | | |
 |---|---|
-| **File** | `internal/handoff/critique02_regression_test.go:485` (before the fix) |
+| **File** | `internal/handoff/sealing_review_test.go:485` (before the fix) |
 | **Trigger** | `f.tryNewAudit(...)` returned **any** error |
 | **Skipped here?** | **No — measured.** The schema admits every `dast_status` today |
 | **Skips in CI?** | No — the condition is platform-independent and the schema is checked in |
 | **Property unverified** | M5: a `requires_dynamic_confirmation` finding must not reach `validated` when no DAST reproduction can exist |
-| **Security control?** | **YES.** It is the integrity gate behind "verified fixed" (`plan/00-SPINE.md` S7) |
+| **Security control?** | **YES.** It is the integrity gate behind "verified fixed" (the spine's safety section) |
 | **Verdict** | **HAZARD** |
 
 The sibling test `TestValidatedRequiresDynamicEvidence`
@@ -181,7 +181,7 @@ fires today, so the suite stays green.
 
 | | |
 |---|---|
-| **File** | `internal/record/critique03_regression_test.go:318` (before the fix) |
+| **File** | `internal/record/readpath_review_test.go:318` (before the fix) |
 | **Trigger** | `ProjectForGitHub` returned zero results for the case — **unconditionally**, for any subtest |
 | **Skipped here?** | **YES — measured**, for `loc0_rel3000` only |
 | **Skips in CI?** | Yes, same subtest. The condition is pure logic, platform-independent |
@@ -207,7 +207,7 @@ ledgered (`TotalDropped() != 0`) before the skip is allowed.
 | **Trigger** | `config.Load("../config/feeds.example.yaml")` failed; or the table declared no feeds |
 | **Skipped here?** | **No — measured.** The file is checked in and parses |
 | **Skips in CI?** | No |
-| **Property unverified** | That `feed_state` accepts every `feed_id` the shipped config declares — the produce/consume edge between A.1 and A.2 |
+| **Property unverified** | That `feed_state` accepts every `feed_id` the shipped config declares — the produce/consume edge between the feed table and the ingestion cache |
 | **Security control?** | **No** — a data-integrity contract between two packages |
 | **Verdict** | **HAZARD** |
 
@@ -317,7 +317,7 @@ After H3, `TestRealTrivyScansAFixtureRepo` skips honestly on any machine that
 did not ask for it. But **no machine asks**: `.github/workflows/ci.yml` neither
 installs Trivy nor sets `ANVIL_TRIVY_E2E`, so the silent-clean control is
 proven nowhere. Closing this needs a workflow step (install the pinned Trivy
-release, warm the DB cache via A.11's accelerator, export `ANVIL_TRIVY_E2E=1`).
+release, warm the DB cache via the accelerator, export `ANVIL_TRIVY_E2E=1`).
 `.github/` is out of scope for this sweep, so it is reported, not changed.
 
 ### N2 — junction resolution in the write-path guard
@@ -376,7 +376,7 @@ looking for "what does the green tick not cover" should find one document.
 | **Skipped here?** | No — nothing skips. Every gate-19 test passes |
 | **Skips in CI?** | No |
 | **Property unverified** | That a finding's disclosure state — the 45-day embargo clock — actually survives a process restart, because it was written to the SQLite store of record rather than the tmpfs handoff packet |
-| **Security control?** | **YES.** Gate 19 is what makes gate 18's embargo a durable fact. `plan/00-SPINE.md` S1 is explicit that the handoff buffer's "8 hours" is a claim timeout, not a deletion policy, and tmpfs does not survive a reboot at all. An embargo that forgets itself is an embargo that publishes |
+| **Security control?** | **YES.** Gate 19 is what makes gate 18's embargo a durable fact. The spine's corrected-requirements table is explicit that the handoff buffer's "8 hours" is a claim timeout, not a deletion policy, and tmpfs does not survive a reboot at all. An embargo that forgets itself is an embargo that publishes |
 | **Verdict** | **UNPROVEN CONTROL** |
 
 **What is proven.** Every refusal: a nil store, a store declaring
@@ -397,16 +397,16 @@ today disclosure state lives **nowhere**, and the sentence gate 19 enforces —
 "it lives in the DB, not the buffer" — has no positive instance.
 
 **The false attribution that used to stand here.** The doc comment on
-`DisclosureStore` read "D.9/D.10 implement it over the SQLite record store".
-That is not what those steps are. `plan/50-dast.md:317-348` makes D.9 the
+`DisclosureStore` read "The kernel's build-time guard and target provisioning implement it over the SQLite record store".
+That is not what those steps are. `plan/design/dynamic-tier.md:317-348` makes the kernel's build-time guard the
 build-invariant packet — a dependency-graph test and an egress lint — and
-`:349-378` makes D.10 container provisioning under gVisor `runsc`. Neither
+`:349-378` makes target provisioning run containers under gVisor `runsc`. Neither
 writes a disclosure row, and no other step in the plan schedules one. The
 attribution has been deleted and replaced with a plain statement of the gap.
 
 **What would settle it.** A plan step that owns a `disclosure_state` table in
-`internal/record` (area 40 owns every shared enum per
-`plan/IMPLEMENTATION-PLAN.md` section 6, so the `DisclosureState` literals
+`internal/record` (the record area owns every shared enum per the shared-vocabulary
+review in `plan/design/first-plan.md`, so the `DisclosureState` literals
 currently declared in `phase4_disclosure.go` should move there and be aliased),
 an implementation of `DisclosureStore` over `internal/store`, and one
 integration test that: opens an embargo, persists it, **closes and reopens the
@@ -538,7 +538,7 @@ is not a parameter". The second half was not true and has been deleted rather
 than qualified.
 
 **What is not closed.** A run's clock is still the instant the operator's
-harness handed `InitiateRun`. `plan/00-SPINE.md` S7 makes the kernel a pure
+harness handed `InitiateRun`. The spine's safety section makes the kernel a pure
 function of `(target, scope, attestation, clock)`, so this package reads no
 ambient time and cannot. An operator who initiates **two** runs — one claiming
 January, one claiming August — can still assemble the sequence across them.
@@ -599,7 +599,7 @@ the attack surface and it is why the seal was worth adding. It is not a bound
 on the attack, and this entry no longer says it is.
 
 **So: the residual is UNBOUNDED by anything in this repository**, and it is
-accepted for one reason — the kernel is a pure function of its inputs by S7, so
+accepted for one reason — the kernel is a pure function of its inputs by the spine's safety section, so
 the fix cannot live in this package. It has to live in what an attestation IS.
 
 **What would bound it,** each of which is a change to gate 5's file and another
@@ -624,7 +624,7 @@ deadlines are distinguishable from one honest disclosure. That is a change to
 `GateAudit.Record`'s allow-row construction and is worth doing regardless of
 which of the three lands, because it costs nothing and today the allow row
 records only that a gate said yes.
-## U1 — DAST network containment (D.11) has never run against a kernel
+## U1 — DAST network containment has never run against a kernel
 
 | | |
 |---|---|
@@ -632,7 +632,7 @@ records only that a gate said yes.
 | **`t.Skip` sites** | **Zero.** Every test in the package runs and asserts on every platform. This entry is here because a green package is still not a proven control |
 | **Skipped here?** | N/A — nothing skips. What is missing is not a test, it is a kernel |
 | **Skips in CI?** | N/A — same |
-| **Property unverified** | That `nft` installs the generated ruleset; that a Linux kernel actually drops a packet addressed to `169.254.169.254` / `fd00:ec2::254` from inside the namespace; that the `ConnectProbe` implementation (owned by the anvil-dast binary, D.14/D.15 — it does not exist yet) turns a real dropped connect into the `DialFailure` this package's classifier expects; that `ip netns exec` places the canary where `ReadNetnsInode` stat'd |
+| **Property unverified** | That `nft` installs the generated ruleset; that a Linux kernel actually drops a packet addressed to `169.254.169.254` / `fd00:ec2::254` from inside the namespace; that the `ConnectProbe` implementation (owned by the anvil-dast binary, the nuclei driver and the ZAP driver — it does not exist yet) turns a real dropped connect into the `DialFailure` this package's classifier expects; that `ip netns exec` places the canary where `ReadNetnsInode` stat'd |
 | **Security control?** | **Yes, and it is the one that authorizes probing at all.** "The sandbox is contained" is the claim that lets Anvil fire a DAST probe. A containment layer that reported contained-when-unverified is the failure that gets someone breached |
 | **Verdict** | **OPEN. Not legitimate, not accepted — unexecuted.** |
 
@@ -647,7 +647,7 @@ and all of it is tested:
   and "the accept is present" would pass on a ruleset with them the wrong way
   round, which is a ruleset where the metadata endpoint is reachable.
 - `TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity` sweeps 393,264
-  addresses (measured, after the D.12 fix round) and asserts
+  addresses (measured, after the containment review fix round) and asserts
   `authz.AddressIsReserved(a) ⇒ DeniedByRuleset(a)`. 36,112 of them are
   reserved, so the implication is not vacuous, and the test fails if that count
   reaches zero. The generator now also emits ZONED and IPv4-MAPPED spellings;
@@ -661,7 +661,7 @@ and all of it is tested:
   reported `DialFailure`, and a silent timeout that did not wait out its
   declared bound.
 - `TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns` is the SECOND HALF
-  of D.11's stop condition and only the second half: 20 runs against a canary
+  of network containment's stop condition and only the second half: 20 runs against a canary
   reporting `reachable` (the empty-ruleset fixture, research 19 risk #5's
   shape), 20 aborts; then 20 runs against a correctly blocked report, 20
   passes, so the first half is not passing because the function refuses
@@ -713,7 +713,7 @@ What would settle it, in order of decreasing cost:
 ### The open dependency
 
 `AssertContainment` execs the canary through `Commander` (os/exec, which gate 3
-treats as inert and whose justification line already names D.11). The canary
+treats as inert and whose justification line already names network containment). The canary
 itself is `CanaryMain`, which lives here — but the `ConnectProbe` it needs is
 **not implemented anywhere in the tree**, because gate 3 refuses a socket
 inside `internal/dast` and there is no allowlist for it. The implementation
@@ -722,7 +722,7 @@ means it must be added to `nonKernelEgressAllowlist` in `phase0_build.go` with
 a written justification. That edit is the review gate 3 exists to force and it
 is deliberately not made here.
 
-**Until that lands, D.11 is a specification plus a verdict, not a running
+**Until that lands, network containment is a specification plus a verdict, not a running
 probe.** `AssertContainment` fails closed in the meantime — a canary that
 cannot run is refused, not waved through — so the failure direction is safe,
 but no scan can pass the containment gate at all yet.
@@ -734,7 +734,7 @@ as success; it returns an error on every platform where it cannot check.
 
 ### U1a — the canary proves the `output` path; the `forward` path is proved only on paper
 
-Opened by the D.12 critic's finding that the generated ruleset hooked `output`
+Opened by the containment review's finding that the generated ruleset hooked `output`
 only, which does not see forwarded traffic. The ruleset now installs the
 identical rule list into an `egress` chain at `output` and an `egress_forward`
 chain at `forward`, because a Compose project on a bridge inside the namespace
@@ -800,15 +800,15 @@ mean "the container is contained by gVisor" and would NOT mean "its egress is
 default-deny and the metadata endpoint is unreachable" — which is what a
 reader of that value will assume.
 
-**Whose it is:** the integration packet (D.31) plus the scan path, not D.10 or
-D.11. **What would settle it:** a wiring point that (a) builds the `Netns`,
+**Whose it is:** the integration packet (the dynamic tier exit gate) plus the scan path, not target provisioning or
+network containment. **What would settle it:** a wiring point that (a) builds the `Netns`,
 (b) calls `SetupNetns`, (c) calls `AssertContainment` and refuses on error,
 BEFORE any probe engine starts, and a test asserting that ordering by call log
-— D.12's verdict criterion is explicit that `AssertContainment` must run
+— the containment review's verdict criterion is explicit that `AssertContainment` must run
 before the probe engines fire, and today there is nothing to assert that
 against.
 
-## U2 — DAST target provisioning (D.10) has never run against a Docker daemon
+## U2 — DAST target provisioning has never run against a Docker daemon
 
 | | |
 |---|---|
@@ -842,7 +842,7 @@ all of it is tested — 112 passing assertions, 0 skips, clean under `go test
 - `TestNoStageCanBeReadAsScannedClean` sweeps all 14 stages × all 5
   `HalfStatus` values through `record.DeriveDastStatus` and asserts none
   derives a status where `MeansDynamicallyScannedClean()` holds. That pins the
-  *relation* S6 requires, not the literals.
+  *relation* the spine's record section requires, not the literals.
 - Each of the five `record.TargetProvenance` values has its own test, and the
   two failure families are separated by 6 + 16 recorded-shape cases.
 - `containmentViolations` is pure. 21 cases break one guard each, with an
@@ -898,7 +898,7 @@ In order of decreasing cost:
 
 ### U2a — the build budget and the health budget are two numbers no runner has ever honoured
 
-Opened by the D.12 critic's finding that `health.timeout_seconds` was applied
+Opened by the containment review's finding that `health.timeout_seconds` was applied
 as the total budget for build + pull + create + start + health, with the
 DEADLINE checked ahead of the runner's own reported status — so a seam
 answering `UpStatusBuildFailed` after the deadline was recorded `boot_failed`.
@@ -937,7 +937,7 @@ between an unprovable boot and a record that says `booted_clean`.
 
 ---
 
-## U3 — DAST target reset (D.13) has never destroyed a real container, and cannot replay a seed at all
+## U3 — DAST target reset has never destroyed a real container, and cannot replay a seed at all
 
 | | |
 |---|---|
@@ -967,7 +967,7 @@ are exercised rather than described:
   must refuse. Without that second test the first one asserts nothing.
 - **The order, not only the calls.**
   `TestResetVerifiesTheDestroyBeforeReProvisioning` pins the exact call
-  sequence — `down`, then both listings, then D.10's `Provision` unchanged.
+  sequence — `down`, then both listings, then target provisioning's `Provision` unchanged.
   Moving the verification after the re-provision was tried, live: it does not
   merely stop catching the damage, it reports a false positive, because the
   containers it sees are the ones `up` just made.
@@ -1009,8 +1009,8 @@ are exercised rather than described:
    `seed:` section (`ErrResetSeedNotReplayable`), because a destroy-and-recreate
    discards the seed's effects and nothing in this tree replays them: the
    target it would hand back is an *unseeded* one, and calling that "the
-   declared initial state" is precisely the silent substitution D.13 exists to
-   prevent. plan/50-dast.md declares `seed.command` at line 1106 and assigns no
+   declared initial state" is precisely the silent substitution target reset exists to
+   prevent. plan/design/dynamic-tier.md declares `seed.command` at line 1106 and assigns no
    packet to execute it. What settles this: a component that runs
    `seed.command` in exec form after health passes, plus a seam here that
    replays it after each re-provision **with evidence that it ran** — the same
@@ -1020,19 +1020,19 @@ are exercised rather than described:
 3. **`Target` invalidation under concurrency**, cheapest and narrowest.
    `invalidate` writes `Target.sealed` and `Target` carries no mutex, so a
    caller resetting one target while another goroutine reads the same handle is
-   a data race. plan/50-dast.md places D.13 in the **serial** group and nothing
+   a data race. plan/design/dynamic-tier.md places target reset in the **serial** group and nothing
    in this package resets two targets at once, so no test exercises it and
    `go test -race` (PowerShell, 26 packages, 0 races) says nothing about it.
    What would settle it: a mutex on `Target` — an edit to `provision.go`, which
-   is outside D.13's write scope — or a documented single-owner contract
-   enforced at the call site when the probe engine (D.14+) lands.
+   is outside target reset's write scope — or a documented single-owner contract
+   enforced at the call site when the probe engines (the nuclei driver onwards) land.
 
 Until (1) exists, **`Reset` is a control that runs in zero CI lanes against a
 container engine**, and this entry is the standing record of that.
 
 ---
 
-## U4 — the Nuclei driver (D.14) has never executed an engine. It CAN now fire a request through the kernel, and does.
+## U4 — the Nuclei driver has never executed an engine. It CAN now fire a request through the kernel, and does.
 
 | | |
 |---|---|
@@ -1172,7 +1172,7 @@ anti-vacuity message, so the generator can produce the breaking input.
   There is no argument to any constructor that turns the other three on.
 - **`RequestProposal` holds nothing that could open a socket**, proven by a
   recursive reflection walk over its fields and its methods' return types
-  (plan/50-dast.md exit criterion 19, done early). `net/netip` is the one
+  (plan/design/dynamic-tier.md exit criterion 19, done early). `net/netip` is the one
   stop-point, by package path, for the reason `authz` lists it inert.
 - **Twelve guards were broken one at a time, watched go red, and restored
   byte-for-byte** — `nuclei.go` SHA-256 `31FBF061…232A` before and after every
@@ -1180,7 +1180,7 @@ anti-vacuity message, so the generator can produce the breaking input.
   `d.Type()&os.ModeSymlink != 0` makes the **Windows directory junction** walk
   straight through (this host reports a junction as `os.ModeIrregular`,
   `IsDir()==false`, symlink bit **clear** — the H1 primitive again), and adding
-  `net/http` to the package is caught both by the local echo *and* by D.9's
+  `net/http` to the package is caught both by the local echo *and* by the build-time guard's
   authoritative tier-1 scanner over the real tree.
 
 ### What it does not prove, and exactly what would settle it
@@ -1191,7 +1191,7 @@ anti-vacuity message, so the generator can produce the breaking input.
    below is (a), and it **is** a host problem.
 2. **A CI lane with the pinned Nuclei engine, and an `Engine` adapter.** It
    must run, **positively**: load the pinned `nuclei-templates` snapshot
-   (D.17), execute against a fixture target, and assert
+   (template pinning), execute against a fixture target, and assert
    `AssertNotSilentlyEmpty` returns nil *and* at least one known finding
    appears. And **negatively**, without which it proves nothing:
    - the same lane with the engine binary removed must exit
@@ -1204,9 +1204,9 @@ anti-vacuity message, so the generator can produce the breaking input.
    line signed by projectdiscovery. **Nothing here verifies it**, and no
    assumption is made that anything did: every template is analysed
    structurally regardless of source, and a SHA-256 of its exact bytes is
-   recorded so D.17's pin can be checked against what was actually loaded.
+   recorded so template pinning's pin can be checked against what was actually loaded.
    What would settle it: projectdiscovery's public key plus their verifier,
-   wired into D.17's promotion step — and, in the meantime, D.17's
+   wired into template pinning's promotion step — and, in the meantime, template pinning's
    diff-before-promotion is the control, not this package.
 4. **`internal/ingest/sanitize` is out of reach**, so this package carries a
    deliberately smaller local scrub. **Measured**: `go test -run
@@ -1217,7 +1217,7 @@ anti-vacuity message, so the generator can produce the breaking input.
    characters and invalid UTF-8 and bounds the length; it does **not** do
    sanitize's hidden-markup analysis. What would settle it: an entry for
    `internal/ingest/sanitize` in `kernelImportAllowlist` — a `phase0_build.go`
-   edit, which is D.9's write scope — or moving the shared scrub into
+   edit, which is the build-time guard's write scope — or moving the shared scrub into
    `internal/record`, which is already on the list.
 
 **The Nuclei driver's admit-and-issue path now runs locally and in every CI
@@ -1227,7 +1227,7 @@ runs in zero lanes is the **engine**: (a) above, and item 2 below.
 
 ---
 
-## U5 — the ZAP driver (D.15) has never started a JVM, and ZAP's memory footprint is still unquantified
+## U5 — the ZAP driver has never started a JVM, and ZAP's memory footprint is still unquantified
 
 | | |
 |---|---|
@@ -1235,18 +1235,18 @@ runs in zero lanes is the **engine**: (a) above, and item 2 below.
 | **`t.Skip` sites** | **Zero.** `nuclei_test.go`'s `TestThisFileSkipsNothing` walks every `.go` file in the package, so it covers `zap_test.go` and would fail if one appeared |
 | **Skipped here?** | N/A — nothing skips. Three separate things are missing: ZAP, a route to an `authz.Authorization`, and any measurement of the JVM |
 | **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no ZAP and no ZAP add-ons |
-| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. ~~(c) `ZapDriver.Fire`'s admit-and-issue path~~ — **(c) IS NOW VERIFIED, closed with U4(b).** (d) **ZAP's JVM memory footprint, which plan/50-dast.md:1253 asks for by name and which this packet deliberately did not guess at.** |
+| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. ~~(c) `ZapDriver.Fire`'s admit-and-issue path~~ — **(c) IS NOW VERIFIED, closed with U4(b).** (d) **ZAP's JVM memory footprint, which plan/design/dynamic-tier.md:1253 asks for by name and which this packet deliberately did not guess at.** |
 | **Security control?** | **Yes.** The proxy requirement is the only thing that puts Anvil's kernel in front of a request ZAP makes, and the four caps are the only thing between a scheduled scan and ZAP's unlimited defaults |
 | **Verdict** | **PARTIALLY CLOSED. (a) and (b) OPEN, unexecuted on this host; (c) CLOSED 2026-08-23 with U4(b); (d) OPEN, UNMEASURED and recorded as unmeasured.** |
 
 ### (d) first, because it is the one the plan asked for
 
-plan/50-dast.md:1253 records ZAP's JVM memory footprint as unquantified
-(research 15's own gap) and notes it decides whether tier-M hardware (spine S9,
+plan/design/dynamic-tier.md:1253 records ZAP's JVM memory footprint as unquantified
+(research 15's own gap) and notes it decides whether tier-M hardware (the spine's hardware-tier table,
 32 GB / 8 core) accommodates a scheduled full scan alongside SAST and the
 coding agent.
 
-**It is still unquantified, and no number appears anywhere in D.15.** That is a
+**It is still unquantified, and no number appears anywhere in the ZAP driver.** That is a
 decision, not an omission: a figure invented here would become the figure
 tier-M sizing is documented against, and it would be documented against
 nothing. `TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage` reads
@@ -1291,7 +1291,7 @@ re-deriving it:
 
 `SystemZapRunner()` returns `*ZapUnavailableError` on **every** host — it never
 returns a no-op — and that error unwraps to `ErrEngineUnavailable` and reports
-`ExitCodeArtefactAbsent` (2), which is D.14's constant and not a second one.
+`ExitCodeArtefactAbsent` (2), which is the nuclei driver's constant and not a second one.
 `ZapScanResult.AssertNotSilentlyEmpty` refuses to let an empty finding list be
 read as clean.
 
@@ -1307,7 +1307,7 @@ built.
 
 ### (b) the proxy is required, and nothing here proves ZAP honours it
 
-This is the substantive difference between D.14 and D.15 and the reason U5 is
+This is the substantive difference between the nuclei driver and the ZAP driver and the reason U5 is
 not just "U4 with a different binary". Nuclei is driven in-process and gate 3
 tier 1 makes it *structurally* unable to dial from `internal/dast/engines`.
 **ZAP is a JVM with its own HTTP stack**, so the containment argument is:
@@ -1326,7 +1326,7 @@ for every request, that it has no second egress path (add-on update checks, the
 ZAP API port, an OAST callback from an alpha add-on), and that a runner does
 not leave it able to dial directly. **Nothing in `internal/dast/engines`
 enforces the last one** — it is stated as an obligation on the `ZapRunner`
-implementer in that interface's doc comment. On Linux the enforcement is D.11's
+implementer in that interface's doc comment. On Linux the enforcement is network containment's
 netns with default-deny egress; on a host without one it is unenforced. **A
 lane that closes this must include the negative control: a fixture target
 reachable ONLY through the proxy, plus a second address reachable only
@@ -1340,7 +1340,7 @@ and none could be minted from outside package `authz`. Only the refusal half
 (`TestNewZapDriverRefusesEveryUnauthorizedRoute`) was testable.
 
 **MEASURED 2026-08-23, PowerShell.** Gate 11 is a scope narrowing (see U4(b)),
-the kernel admits, and D.15's admit-and-issue path is now exercised for real:
+the kernel admits, and the ZAP driver's admit-and-issue path is now exercised for real:
 
 - `TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate` — `NewZapDriver`
   against a real `authz.Authorization`, a `TargetSpec` that came from
@@ -1366,7 +1366,7 @@ kernel and should not pay for one.
 
 ### The scheduled-only rule is enforced NOWHERE in this package, by instruction
 
-plan/50-dast.md D.15's forbidden actions require the driver to be
+The ZAP driver's forbidden actions require the driver to be
 **trigger-agnostic**: ZAP is gated to scheduled full scans "enforced by the
 caller's trigger-policy check, not by this driver refusing to run". So there is
 no trigger field and no trigger check in `ZapConfig` or `ZapPlanFacts`, and
@@ -1376,7 +1376,7 @@ the absence into a recorded decision rather than an oversight somebody later
 
 **The consequence is that today nothing anywhere stops ZAP being driven from
 the always-on path**, because the caller that would carry the trigger-policy
-check does not exist yet. That is this entry's, not D.15's, to keep visible
+check does not exist yet. That is this entry's, not the ZAP driver's, to keep visible
 until it does.
 
 ### What the suite does prove, on any host
@@ -1441,7 +1441,7 @@ process read**, and this entry is the standing record of that.
 These stay. Each is a case that genuinely cannot exist where it skips, and each
 is covered elsewhere.
 
-## U6 — Tier 0 of the inventory (D.18) has never fetched a spec over a socket, and cannot read a YAML one
+## U6 — Tier 0 of the inventory (the runtime spec probe) has never fetched a spec over a socket, and cannot read a YAML one
 
 | | |
 |---|---|
@@ -1455,7 +1455,7 @@ is covered elsewhere.
 
 ### (a) No `SpecFetcher` exists anywhere in this repository
 
-`inventory.SpecFetcher` is the egress seam. D.9's gate 3 tier 1 fails the build
+`inventory.SpecFetcher` is the egress seam. The build-time guard's gate 3 tier 1 fails the build
 if any package under `internal/dast` outside `internal/dast/authz` imports
 something that can construct a connection, so this package cannot dial and the
 implementation has to be handed in from outside that boundary.
@@ -1506,7 +1506,7 @@ no change: only `DetectFormat`'s YAML branch and one decode call.
 
 ### (c) gRPC server reflection cannot reach this seam at all
 
-plan/50-dast.md:598 names gRPC reflection as a Tier 0 source. It is not one,
+plan/design/dynamic-tier.md:598 names gRPC reflection as a Tier 0 source. It is not one,
 and the reason is structural rather than a missing tool: **server reflection is
 a bidirectional HTTP/2 stream (`grpc.reflection.v1.ServerReflection/
 ServerReflectionInfo`), not a document a GET returns.** `SpecFetcher` issues one
@@ -1530,13 +1530,13 @@ So the OPERATION is refused — `RefusalParamUnusable` — and, because that rea
 is on `perOperationReasons`, it still counts toward
 `Result.DenominatorFloor()`. That direction is deliberate: dropping a refused
 operation would SHRINK the denominator of `endpoint_coverage`
-(plan/50-dast.md:1152) and make coverage look better than it is.
+(plan/design/dynamic-tier.md:1152) and make coverage look better than it is.
 `TestARefusedOperationStaysInTheCoverageDenominator` is the guard, and it was
 demonstrated red by replacing `DenominatorFloor` with `len(r.routes)`.
 
 **What would settle it.** A `$ref` resolver over `components/parameters` and
 `definitions`, bounded against reference cycles. It is a bounded piece of work
-and it belongs in this package; it was left out of D.18 to keep the packet's
+and it belongs in this package; it was left out of the runtime spec probe to keep the packet's
 surface to the two axes and the kernel path.
 
 ### A note on U4, recorded because it changes what U4 says
@@ -1545,7 +1545,7 @@ U4 records that "`authz.Gate11RobotsDeny` has no implementation registered, so
 the admission chain refuses every target there and **no `authz.Authorization`
 can be minted from outside package `authz` at all**."
 
-**MEASURED 2026-08-22, PowerShell, in the working tree D.18 was written
+**MEASURED 2026-08-22, PowerShell, in the working tree the runtime spec probe was written
 against:** that is no longer true. `Gate11RobotsDeny` has been removed from
 `kernel.go`'s `admissionChain` and moved into the Governor's per-request chain
 (`phase3_enforcement.go`'s `governorGateOrder`), where it has the request PATH
@@ -1553,16 +1553,16 @@ that `CheckGate11RobotsDeny` needs; `registerInto` now refuses to put it back.
 `authz.Adjudicate` admits the fixture target and mints a real
 `authz.Authorization`.
 
-Two consequences, neither of them D.18's to act on:
+Two consequences, neither of them the runtime spec probe's to act on:
 
-1. **D.18's fetch half is fully exercised.** `Probe` is tested end to end
+1. **The runtime spec probe's fetch half is fully exercised.** `Probe` is tested end to end
    against a recorded `SpecFetcher`, including a real kernel refusal (a
    `robots.txt` disallowing the spec path) with the fetcher asserting it saw
    zero calls.
 2. **`internal/dast/engines` is RED.** Its
    `TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` is the tripwire that
    was supposed to fire on exactly this day, and it has fired. Its message
-   lists the five tests D.14 now owes. That failure predates D.18 and is
+   lists the five tests the nuclei driver now owes. That failure predates the runtime spec probe and is
    untouched by it.
 
 U4's own text is left as written rather than edited here, because the change
@@ -1573,7 +1573,7 @@ correction.
 honoured by wiring, not by quietening: the five tests it named are written, it
 is deleted, and **U4(b) and U5(c) above are rewritten and marked CLOSED**. This
 note is left standing because it is the record of the hand-off working as
-intended — D.18 measured a change it did not own, refused to edit another
+intended — the runtime spec probe measured a change it did not own, refused to edit another
 packet's entry, and named who did.
 
 ---
@@ -1609,7 +1609,7 @@ rendering spider's fetches:
 * write **no gate-21 row** — the audit log claims Anvil issued fewer requests
   than it issued.
 
-D.27's chosen implementation is ZAP's **Client Spider**, which is a rendering
+The crawl's chosen implementation is ZAP's **Client Spider**, which is a rendering
 browser. The obligation and the implementation were incompatible, and the
 obligation existed only in prose.
 
@@ -1706,7 +1706,7 @@ reported to the orchestrator rather than made here.
 
 ---
 
-## U9 — every guard in D.26 and D.27 runs in zero production lanes
+## U9 — every guard in coverage reporting and the confirmation gate runs in zero production lanes
 
 | | |
 |---|---|
@@ -1716,7 +1716,7 @@ reported to the orchestrator rather than made here.
 | **Skips in CI?** | N/A |
 | **Property unverified** | That any of it ever runs. `Summarize`, `Summary.DeriveDastStatus`, `Summary.AssertDenominatorDecomposes`, `Summary.AssertMixDecomposes`, `NewGate`, `Gate.ConfirmAll`, `Ledger.FindingCountForStatus` and `Ledger.AssertNotSilentlyClean` are called by **tests only** |
 | **Security control?** | **Yes, and it is the last one before the record.** This is the packet that decides what Anvil CLAIMS TO HAVE FOUND and what fraction of the attack surface it claims to have looked at |
-| **Verdict** | **OPEN.** Per house standard these are not yet controls. D.31 is the settling condition, named below |
+| **Verdict** | **OPEN.** Per house standard these are not yet controls. The dynamic tier exit gate is the settling condition, named below |
 
 Measured on 2026-08-23, from the repository root:
 
@@ -1735,7 +1735,7 @@ the following was written, broken, watched go red, and restored, and every one
 of them holds over inputs a test constructed:
 
 - a re-probe the target answered with 429, 502, 503, 504, no status at all, or
-  a WAF block page at 200 is `unconfirmed`, never `rejected` (D.29 CRITICAL 2);
+  a WAF block page at 200 is `unconfirmed`, never `rejected` (the second confirmation-gate review, finding CRITICAL 2);
 - `Ledger.AssertNotSilentlyClean` refuses to let a zero confirmed count read as
   `completed_clean` while anything undecided or any indecisive rejection is in
   the ledger;
@@ -1752,11 +1752,11 @@ nobody confirmed, with the whole of this file's evidence sitting green and
 unconsulted beside it. That is the same shape as U1c one layer up: two halves
 of a story that do not compose yet.
 
-**What would settle it: D.31.** D.31 is the packet that wires the DAST half
+**What would settle it: the dynamic tier exit gate.** The dynamic tier exit gate is the step that wires the DAST half
 into a scan, and it is the first caller that would:
 
 1. construct a `Gate` with a real `Reprober` — one that routes through
-   `internal/dast/authz` — and hand it the candidates D.14/D.15 produced;
+   `internal/dast/authz` — and hand it the candidates the nuclei driver and the ZAP driver produced;
 2. call `Ledger.AssertNotSilentlyClean()` and **handle the error**, rather than
    reading `FindingCountForStatus() == 0` and moving on;
 3. call `Summarize` with real tier results and call
@@ -1772,8 +1772,8 @@ does not exist.** A reviewer who reads `go test ./internal/dast/record/` as
 evidence that Anvil will not report a defended target clean is reading a claim
 about a function nobody calls.
 
-**One thing D.31 will need and does not get for free.** `GateConfig.Attempts`
-now has a floor of `MinAttempts` = 2 as well as a ceiling, because D.31 under a
+**One thing the dynamic tier exit gate will need and does not get for free.** `GateConfig.Attempts`
+now has a floor of `MinAttempts` = 2 as well as a ceiling, because the dynamic tier exit gate under a
 time budget is precisely the caller that would have set it to 1 — which
 removes the flake detection while `reason="reproduced_on_every_attempt"` goes
 on claiming it ran. A caller that must spend less has to re-probe **fewer
@@ -1904,7 +1904,7 @@ the string the previous round's report quoted as closed.
 `pa\nssw0rd` under one percent layer is `pa%5Cnssw0rd`: `decodePercent` produced
 the secret exactly and `decodeBackslash` ate it in the same pass, because the
 intermediate that held it was never a member of anything. **Six of ten** shapes
-in `d24EscapeShapedSecrets`.
+in `authEscapeShapedSecrets`.
 
 Both are closed by the same change: a decoding pass returns a **set**, one step
 is **one decoder**, every intermediate is retained, and the next step maps over
@@ -2039,7 +2039,7 @@ consequence.
 | **Skips in CI?** | **Yes** — see N1 |
 | **Property unverified** | The end-to-end real-scanner claim |
 | **Security control?** | Yes, but this is the deliberate opt-in half |
-| **Verdict** | **LEGITIMATE as a gate.** A real `trivy fs` needs a vulnerability database, which is a network acquisition that belongs to A.11's accelerator, not to a unit test. The *coverage gap* it leaves is tracked as N1 |
+| **Verdict** | **LEGITIMATE as a gate.** A real `trivy fs` needs a vulnerability database, which is a network acquisition that belongs to the accelerator, not to a unit test. The *coverage gap* it leaves is tracked as N1 |
 
 ## L5 — `TestBothConsumersAgree`
 
@@ -2102,9 +2102,9 @@ missing artefact and the command that produces it.
 | **Trigger** | `git` not on `PATH` |
 | **Skipped here?** | No — measured. `git` is present |
 | **Skips in CI?** | No. `actions/checkout` requires `git` |
-| **Property unverified** | O.7's tag-ordering behaviour |
+| **Property unverified** | Semver bump classification's tag-ordering behaviour |
 | **Security control?** | No |
-| **Verdict** | **LEGITIMATE.** O.7 is defined only in terms of real `git`; there is nothing to fall back to, and the condition cannot hold in CI |
+| **Verdict** | **LEGITIMATE.** semver bump classification is defined only in terms of real `git`; there is nothing to fall back to, and the condition cannot hold in CI |
 
 ## L9 — `TestExampleEPSSIsUndeclared`
 
@@ -2134,7 +2134,7 @@ missing artefact and the command that produces it.
 
 | | |
 |---|---|
-| **File** | `internal/record/critique03_regression_test.go:336` (after the H7 fix) |
+| **File** | `internal/record/readpath_review_test.go:336` (after the H7 fix) |
 | **Trigger** | The projection dropped the result **and** the case declared zero locations **and** the drop was ledgered |
 | **Skipped here?** | **YES — measured**, this subtest only |
 | **Skips in CI?** | Yes, same subtest — the condition is pure logic |
@@ -2166,14 +2166,14 @@ Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
 G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**, U6, U7,
 U8, U9, U10.
 
-U9 is the newest and it is the widest. Every guard in D.26 (coverage) and D.27
+U9 is the newest and it is the widest. Every guard in coverage reporting and the confirmation gate
 (the finding confirmation gate) runs in **zero production lanes** — measured,
 not assumed: `grep -rn "dast/record" --include=*.go . | grep -v
 "internal/dast/record/"` returns nothing. Those two packets decide what Anvil
 claims to have found and what fraction of the surface it claims to have looked
 at, and per house standard a check that runs in no production path is not yet a
-control. D.31 is the wiring that would settle it, and U9 names the four calls
-D.31 has to make.
+control. The dynamic tier exit gate is the wiring that would settle it, and U9 names the four calls
+the dynamic tier exit gate has to make.
 
 U7 and U8 are the two Tier 3 entries added on 2026-08-23. U7 is the one to read
 if you are wiring a browser: a RENDERING spider is now REFUSED by
@@ -2188,8 +2188,8 @@ walk-off, and `resolveLinkPath` is the control that actually holds.
 U4(b) and U5(c) — the admit-and-issue paths of both DAST drivers — were closed
 on 2026-08-23 and are no longer on that list.
 
-U5 carries the one open question plan/50-dast.md asked a worker to answer and
-that this host cannot: **ZAP's JVM memory footprint (plan/50-dast.md:1253),
+U5 carries the one open question plan/design/dynamic-tier.md asked a worker to answer and
+that this host cannot: **ZAP's JVM memory footprint (plan/design/dynamic-tier.md:1253),
 which decides tier-M sizing.** No number was invented; the entry states what
 measuring it takes and a test fails if a figure appears in `zap.go`. U5 also
 records the rule that is enforced nowhere today — ZAP is **scheduled-scans
@@ -2198,7 +2198,7 @@ only**, and the caller that would carry that check does not exist yet.
 **U4's blocker is gone.** It used to read: `authz.Gate11RobotsDeny` has no
 implementation registered, so the admission chain refuses every target there
 and no `authz.Authorization` can be minted from outside package `authz` at all
-— which made D.14's driver, and every later packet that needs to issue a
+— which made the nuclei driver, and every later packet that needs to issue a
 request, testable only on its refusal paths.
 
 On 2026-08-23 gate 11 was ruled out of the admission chain and rewritten as
@@ -2212,7 +2212,7 @@ it named, and was deleted. See U4(b) and U5(c).
 What remains open in U4 and U5 is the **tooling**: no Nuclei engine and no ZAP
 on any host or CI lane here, and ZAP's JVM footprint still unmeasured.
 
-U1 (`internal/dast/containment`, D.11 network containment) is the
+U1 (`internal/dast/containment`, network containment) is the
 highest-stakes of them: the package is green on Windows and has never run
 against a Linux kernel. See its entry for the privileged Linux CI lane that
 would close it, and U1a/U1b for the two things that lane would still not
@@ -2221,5 +2221,5 @@ settle on its own.
 U1c is the one to read first if you are wiring DAST into a scan path.
 `Provision` seals `booted_clean` without any network namespace, nothing in the
 tree calls `Provision`, `SetupNetns` or `AssertContainment`, and the two halves
-of the containment story therefore do not compose yet. That is D.31's, not
-D.10's or D.11's — it is recorded here so it cannot be forgotten.
+of the containment story therefore do not compose yet. That is the dynamic tier exit gate's, not
+target provisioning's or network containment's — it is recorded here so it cannot be forgotten.

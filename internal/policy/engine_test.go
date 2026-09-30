@@ -1,6 +1,6 @@
 package policy
 
-// Tests for step O.6, the policy engine.
+// Tests for the policy engine.
 //
 // Two things are being proved here, and they are not the same thing:
 //
@@ -16,7 +16,7 @@ package policy
 //     detector-free rules; if any vocabulary were hard-coded, they would fail.
 //
 // The YAML fixture and the tiny test-only YAML decoder both come from
-// schema_test.go (step O.5). They are reused rather than copied: a second copy
+// schema_test.go (the policy schema). They are reused rather than copied: a second copy
 // of the owner-requirement fixture could drift from the one the schema is
 // tested against, and two fixtures claiming to be the same requirement is the
 // defect shape this repository keeps closing.
@@ -259,7 +259,7 @@ func TestOwnerRequirementScenarios(t *testing.T) {
 		{
 			// The bump-gate as a gate: the same tag ref with no computed
 			// bump fires no bump-gated rule. This is what keeps DAST off
-			// when O.7 has not run.
+			// when semver bump classification has not run.
 			name: "tag ref with no computed bump fires no bump-gated rule",
 			ctx: TriggerContext{
 				Event:      "push",
@@ -858,7 +858,7 @@ func TestMalformedGlobErrorsRegardlessOfTheContext(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 6b. The glob matcher is BOUNDED — CRITIQUE O.4 finding O4-M4
+// 6b. The glob matcher is BOUNDED — the controller-core review's finding M4
 //
 // `.anvil/policy.yml` is read from the repository under scan. On the public-repo
 // path that makes every pattern in it attacker-controlled input reaching a
@@ -899,7 +899,7 @@ func runWithin(t *testing.T, budget time.Duration, name string, fn func()) {
 		// The goroutine is left running; the test binary will exit and take it
 		// with it. Blocking on a matcher that may never return is precisely the
 		// failure being tested for.
-		t.Fatalf("%s did not return within %s: the glob matcher is unbounded again (O4-M4)", name, budget)
+		t.Fatalf("%s did not return within %s: the glob matcher is unbounded again (controller-core finding M4)", name, budget)
 	}
 }
 
@@ -1480,7 +1480,7 @@ func TestFromDocumentRejects(t *testing.T) {
 			want:    "/depth",
 		},
 		{
-			name:    "detector outside area 40's enum",
+			name:    "detector outside the record area's enum",
 			yaml:    "version: 1\ndefaults:\n  detectors: [sast, iast]\n",
 			wantErr: ErrInvalidDocument,
 			want:    "detectors/1",
@@ -1615,7 +1615,7 @@ func TestDecoderKeySetsMatchSchema(t *testing.T) {
 }
 
 // TestFrozenEnumsAreNotForked: the two enums this package owns are the
-// schema's, and the detector vocabulary is area 40's. Assert the schema's own
+// schema's, and the detector vocabulary is the record area's. Assert the schema's own
 // text still says so, and that this package never re-enumerates detectors.
 func TestFrozenEnumsAreNotForked(t *testing.T) {
 	raw, err := os.ReadFile("../../" + SchemaPath)
@@ -1657,9 +1657,9 @@ func TestFrozenEnumsAreNotForked(t *testing.T) {
 		t.Errorf("BumpKindValues() = %v, schema says %v", gotBump, want)
 	}
 
-	// The detector vocabulary must be reachable ONLY through area 40. A
+	// The detector vocabulary must be reachable ONLY through the record area. A
 	// literal detector token anywhere in engine.go's CODE would be a second
-	// definition of area 40's enum.
+	// definition of the record area's enum.
 	//
 	// This walks the AST rather than grepping, for two reasons: comments and
 	// doc prose legitimately name the tiers, and `"dast"` is also a schema

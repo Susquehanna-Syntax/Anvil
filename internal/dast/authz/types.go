@@ -3,7 +3,7 @@
 //
 // The decision flow — Decide, Adjudicate, Authorization, RequireAuthorization —
 // is documented at the top of kernel.go. This file holds the VOCABULARY: the
-// types every one of the 21 gates in plan/50-dast.md's Authorization Gate
+// types every one of the 21 gates in plan/design/dynamic-tier.md's Authorization Gate
 // Sequence is written against.
 //
 // # The single rule this file exists to enforce
@@ -25,7 +25,7 @@
 //
 // # What is NOT here
 //
-// No net.Dial, no http.Client, no socket construction of any kind — D.2's
+// No net.Dial, no http.Client, no socket construction of any kind — the kernel core's
 // forbidden actions, and gate 3's whole point. This file imports stdlib only,
 // and gate 2 (phase0_build.go) is the machine check that keeps it that way.
 package authz
@@ -90,14 +90,14 @@ var (
 // GateID — the 21 gates, by number
 // ---------------------------------------------------------------------------
 
-// GateID names one gate in plan/50-dast.md's Authorization Gate Sequence.
+// GateID names one gate in plan/design/dynamic-tier.md's Authorization Gate Sequence.
 //
 // The zero value, GateUnspecified, is not a gate. Every construct in this
 // package that carries a GateID refuses when it is unset, so "I forgot to say
 // which gate ruled" can never read as "some gate ruled".
 type GateID uint8
 
-// The 21 gates. The numbering is plan/50-dast.md's Authorization Gate Sequence,
+// The 21 gates. The numbering is plan/design/dynamic-tier.md's Authorization Gate Sequence,
 // which that file declares authoritative over research/20's prose.
 const (
 	// GateUnspecified is the zero value and is not a gate.
@@ -106,18 +106,18 @@ const (
 	// --- Phase 0: build and packaging (this file's phase0_build.go) ---
 
 	// Gate1DastShipsDisabled: DAST ships disabled. Per
-	// plan/00-SPINE.md S9-AMENDED and plan/IMPLEMENTATION-PLAN.md 2.2 this
+	// the two-artifact split and the first plan's two-artifact ruling this
 	// is the TWO-ARTIFACT SPLIT, not a config key: `anvil` has no network
 	// probing capability compiled in, `anvil-dast` is separately installed
 	// and separately attested.
 	Gate1DastShipsDisabled GateID = 1
 	// Gate2KernelCompiledSeparately: the kernel is compiled separately with
-	// zero imports from the inference layer (plan/00-SPINE.md S7).
+	// zero imports from the inference layer (the spine's safety section).
 	Gate2KernelCompiledSeparately GateID = 2
 	// Gate3EgressChokePoint: no socket is constructed outside the kernel.
 	Gate3EgressChokePoint GateID = 3
 
-	// --- Phase 1: run initiation (D.4, phase1_run.go) ---
+	// --- Phase 1: run initiation (phase1_run.go) ---
 
 	// Gate4ScopeFile: scope file exists, parses strictly, is schema-valid,
 	// and yields zero permitted targets on anything malformed.
@@ -132,7 +132,7 @@ const (
 	// principal; fork PRs and untrusted pull_request_target are refused.
 	Gate7TriggerProvenance GateID = 7
 
-	// --- Phase 2: per-target admission (D.5, phase2_admission.go) ---
+	// --- Phase 2: per-target admission (phase2_admission.go) ---
 
 	// Gate8Canonicalize: canonicalize before matching.
 	Gate8Canonicalize GateID = 8
@@ -153,7 +153,7 @@ const (
 	// "gate 12" section of kernel.go.
 	Gate12SecurityTxtReportingChannel GateID = 12
 
-	// --- Phase 3: per-request enforcement (D.6, phase3_enforcement.go) ---
+	// --- Phase 3: per-request enforcement (phase3_enforcement.go) ---
 
 	// Gate13RevalidateEveryRequest: re-validate scope on every request
 	// including every redirect hop; cross-host redirects are never followed.
@@ -169,7 +169,7 @@ const (
 	// Gate17RetryAfter: 429/Retry-After honoured as absolute.
 	Gate17RetryAfter GateID = 17
 
-	// --- Phase 4: output and disclosure (D.7, phase4_disclosure.go) ---
+	// --- Phase 4: output and disclosure (phase4_disclosure.go) ---
 
 	// Gate18Embargo: no auto-publication of third-party findings.
 	Gate18Embargo GateID = 18
@@ -222,10 +222,10 @@ func (g GateID) Phase() int {
 }
 
 // ---------------------------------------------------------------------------
-// Outcome — plan/50-dast.md's (Allow|Deny)
+// Outcome — plan/design/dynamic-tier.md's (Allow|Deny)
 // ---------------------------------------------------------------------------
 
-// Outcome is the two-valued result plan/50-dast.md D.2 writes as `Allow|Deny`.
+// Outcome is the two-valued result the kernel core's design writes as `Allow|Deny`.
 //
 // It is a string type so that the empty string — the zero value — is a THIRD
 // state that is neither, and every accessor in this package treats that third
@@ -257,7 +257,7 @@ func (o Outcome) Valid() bool { return o == OutcomeAllow || o == OutcomeDeny }
 // Reason is why a gate ruled the way it did.
 //
 // It is a CONSTRAINED token of the form "gateNN.slug", not free text, for one
-// reason: plan/00-SPINE.md S7 makes the DAST response body "the highest-risk
+// reason: the spine's safety section makes the DAST response body "the highest-risk
 // field — up to 32 KB of attacker-controlled bytes fed to a repo-credentialed
 // agent". A free-text reason string is a place for those bytes to land in the
 // audit log and, from there, in a prompt. A validated token cannot carry a
@@ -266,7 +266,7 @@ func (o Outcome) Valid() bool { return o == OutcomeAllow || o == OutcomeDeny }
 // Operator-facing colour goes in GateFailure.Detail, which is Anvil-authored
 // and is never assembled from a response body.
 //
-// Later gate packets (D.4–D.7) declare their own Reason constants in their own
+// Later gate packets (the kernel's gate phases) declare their own Reason constants in their own
 // files. They do not need to edit this one; they need only obey the format,
 // which Validate enforces and which the kernel checks on every ruling.
 type Reason string
@@ -418,7 +418,7 @@ func (r Reason) Gate() (GateID, error) {
 
 // Mode is the run's operating mode.
 //
-// plan/50-dast.md gate 6: "Mode declaration explicit and irreversible for the
+// plan/design/dynamic-tier.md gate 6: "Mode declaration explicit and irreversible for the
 // run (lab | external)... Refuse if absent; no `auto` value exists...
 // Configurable? No — there is no configurable 'auto' path, ever."
 //
@@ -463,7 +463,7 @@ func ParseMode(s string) (Mode, error) {
 			"explicit declaration of either %q or %q", ErrRefused, ModeLab, ModeExternal)
 	}
 	if s == "auto" {
-		return ModeUnset, fmt.Errorf("%w: %q is not a mode. Gate 6 in plan/50-dast.md is "+
+		return ModeUnset, fmt.Errorf("%w: %q is not a mode. Gate 6 in plan/design/dynamic-tier.md is "+
 			"explicit that no `auto` value exists and that this is not configurable, "+
 			"because inferring lab-vs-external from the target is the inference the "+
 			"kernel exists to refuse to make", ErrRefused, s)
@@ -522,7 +522,7 @@ func (d ModeDeclaration) Declared() bool { return d.mode.Valid() }
 
 // Artifact names which of Anvil's two distribution artifacts is running.
 //
-// plan/00-SPINE.md S9-AMENDED and plan/IMPLEMENTATION-PLAN.md 2.2: `anvil`
+// The two-artifact split and the first plan's two-artifact ruling: `anvil`
 // (core, no network-probing capability compiled in) and `anvil-dast` (the
 // dynamic tier, separately installed, separately attested). The ruling is
 // explicit that a config flag inside one binary does not address the supply
@@ -549,7 +549,7 @@ const (
 // Valid reports whether a names one of the two artifacts.
 func (a Artifact) Valid() bool { return a == ArtifactCore || a == ArtifactDAST }
 
-// DastEnablement is D.2's "`dast.enabled` defaulting to `false` at the type
+// DastEnablement is the kernel core's "`dast.enabled` defaulting to `false` at the type
 // level (a struct field with no zero-value path to `true`)".
 //
 // There is no exported field, no setter, and no way to produce an enabled
@@ -674,7 +674,7 @@ func (id AttestationID) Validate() error {
 
 // ScopeEntry is one host pattern in a scope file.
 //
-// Its fields are exported because D.4 parses scope files into these, and a
+// Its fields are exported because run initiation parses scope files into these, and a
 // parser needs to write them. That is safe: an entry is inert on its own.
 // Nothing can be probed because an entry exists — an entry only ever reaches
 // the kernel inside a Scope, and Scope's fields are unexported, so the only
@@ -698,7 +698,7 @@ type ScopeEntry struct {
 // must be the entire first label, and what remains must still have at least
 // two labels. "*.com" leaves one label and is refused; "*" leaves none.
 //
-// This is the TYPE-LEVEL FLOOR. D.4 layers the scope file's schema validation
+// This is the TYPE-LEVEL FLOOR. Run initiation layers the scope file's schema validation
 // (unknown fields, deny-beats-allow precedence, strict parsing) on top of it.
 func (e ScopeEntry) Validate() error {
 	h := e.Host
@@ -820,7 +820,7 @@ type Scope struct {
 // `append([]ScopeEntry(nil), in...)` is NOT enough and the difference is a
 // privilege escalation. A ScopeEntry owns a []uint16; copying the struct copies
 // the slice HEADER, so the copy and the original point at the same array.
-// D.3's critic used exactly that to turn an explicitly DENIED host into a
+// The kernel-types review used exactly that to turn an explicitly DENIED host into a
 // permitted one after construction:
 //
 //	deny := []ScopeEntry{{Host: "admin.example.com", Ports: []uint16{443}}}
@@ -850,7 +850,7 @@ func cloneScopeEntries(in []ScopeEntry) []ScopeEntry {
 // # The hash is derived, never asserted
 //
 // An earlier signature took the ScopeHash as a parameter and never saw the
-// bytes. D.3's critic named what that costs: gate 5 binds an attestation to the
+// bytes. The kernel-types review named what that costs: gate 5 binds an attestation to the
 // scope hash "so that editing scope silently invalidates it", and a hash the
 // caller asserts about a scope is not a hash of that scope. Two Scopes with
 // different entries and different modes could carry one hash, and CoversScope —
@@ -955,7 +955,7 @@ func (s Scope) Permits(canonicalHost string, port uint16) bool {
 //
 // Deep, not shallow: a shallow copy hands the caller the live Ports arrays, and
 // a caller that writes to one rewrites the sealed scope. That is the same
-// aliasing D.3's critic exploited on the way IN, and it is the same escalation
+// aliasing the kernel-types review exploited on the way IN, and it is the same escalation
 // on the way out.
 func (s Scope) AllowEntries() []ScopeEntry {
 	if !s.Constructed() {
@@ -978,7 +978,7 @@ func (s Scope) DenyEntries() []ScopeEntry {
 //
 // # Why this exists at all
 //
-// plan/50-dast.md:1032's gate 11 row is not the language of an admission
+// plan/design/dynamic-tier.md:1032's gate 11 row is not the language of an admission
 // predicate: "Restrictive robots.txt/no-scan statement REMOVES PATHS FROM
 // SCOPE; permissive adds nothing." That describes a TRANSFORMATION OF THE
 // SCOPE, applied once at run initiation after the scope is sealed, and it is
@@ -1105,7 +1105,7 @@ func (s Scope) narrowedCopy() Scope {
 // cloneScopeEntries exists: a RobotsPolicy owns a []string, and copying the
 // struct copies the slice HEADER, so a "copy" and its source share patterns.
 // Rewriting "/admin" to "/zzz" through such a share puts the admin tree back
-// in scope, which is the D.3 aliasing escalation in a new field.
+// in scope, which is the kernel-types review aliasing escalation in a new field.
 //
 // HONEST ACCOUNTING OF WHAT THIS PARTICULAR COPY CLOSES TODAY. Three call
 // sites clone, and only ONE of them is reachable by an attack the test suite
@@ -1266,7 +1266,7 @@ const (
 	// covers the target.
 	//
 	// NOTE FOR GATE 12: a published VDP is not security.txt. RFC 9116 and
-	// plan/00-SPINE.md S7 are explicit that security.txt "resolves a
+	// the spine's safety section are explicit that security.txt "resolves a
 	// reporting channel and never grants permission". An operator citing a
 	// VDP here is making an affirmative claim under their own identity; the
 	// kernel never derives this value from a fetched file.
@@ -1286,7 +1286,7 @@ func (a AttestationAuthority) Valid() bool {
 // window: 30 days, from research/20 gate 5 ("an expiry no more than N days out
 // (recommend 30)").
 //
-// plan/50-dast.md gate 5 says the ceiling "may be lowered from the 30-day
+// plan/design/dynamic-tier.md gate 5 says the ceiling "may be lowered from the 30-day
 // recommended default; presence/validity checking is not optional". Lowering is
 // what AttestationCeiling exists for, and NewAttestation compares every
 // lifetime against THIS CONST as well as against the supplied ceiling, so a
@@ -1308,7 +1308,7 @@ func DefaultAttestationCeiling() AttestationCeiling {
 // Attestation is the affirmative, per-scope authorization record gate 5
 // requires before Anvil probes anything it does not itself own.
 //
-// Every field is unexported. D.4's attestation loader parses a file and calls
+// Every field is unexported. Run initiation's attestation loader parses a file and calls
 // NewAttestation; nothing else can produce one, and a zero Attestation is
 // refused by every accessor.
 type Attestation struct {
@@ -1322,7 +1322,7 @@ type Attestation struct {
 }
 
 // maxIdentityLen bounds the attesting identity string. It originates outside
-// Anvil (plan/00-SPINE.md S6's `anvil/trust: untrusted`) and reaches the audit
+// Anvil (the spine's `anvil/trust: untrusted`) and reaches the audit
 // log, so it is bounded here rather than wherever it is eventually rendered.
 const maxIdentityLen = 256
 
@@ -1463,7 +1463,7 @@ func (a Attestation) CoversScope(s Scope) bool {
 //
 // # The literal field is bounded and charset-restricted
 //
-// NewTarget once checked only that the literal was non-empty, and D.3's critic
+// NewTarget once checked only that the literal was non-empty, and the kernel-types review
 // pushed a 40 KB security.txt body through it. Every gateFunc can read it back
 // with Target.Literal(), which made the field a channel around gate 12's
 // structural exclusion: the admission input closure has no interface and no
@@ -1528,7 +1528,7 @@ func indexNonLiteralHostByte(s string) int {
 //
 // The canonical-form checks here are a FLOOR, not gate 8. Full IDNA/punycode
 // normalization, percent-decoding, port normalization and IPv4-mapped-IPv6
-// unwrapping are D.5's Canonicalize. What this refuses is a value that is
+// unwrapping are per-target admission's Canonicalize. What this refuses is a value that is
 // obviously not canonical — uppercase, trailing dot, embedded delimiters,
 // surrounding whitespace — so that a gate 8 that silently returned its input
 // unchanged cannot produce a Target the kernel treats as canonicalized.
@@ -1653,7 +1653,7 @@ func (t Target) String() string {
 //
 // Two reasons, and the second one is the important one.
 //
-// First, plan/00-SPINE.md S7 makes the kernel "a pure function of (target,
+// First, the spine's safety section makes the kernel "a pure function of (target,
 // scope, attestation, clock)". A function that calls Now() on an interface is
 // not pure; a function handed an instant is.
 //
@@ -1741,7 +1741,7 @@ func (c Clock) Instant() time.Time { return c.at }
 // # What this does NOT close, stated rather than implied
 //
 // A run's clock is still the instant the operator's harness handed to
-// InitiateRun; this package has no ambient time source, by S7's purity rule.
+// InitiateRun; this package has no ambient time source, by the spine's purity rule.
 // What it buys is that ONE RUN HAS ONE CLOCK. Telling the January/August lie
 // now costs two separate run initiations, which means two scope loads, two
 // gate-7 trigger checks, and two attestations that are live at instants seven
@@ -1799,10 +1799,11 @@ func (r RunClock) Now() Clock {
 //
 // It exists here, in the kernel contract, rather than being re-implemented by
 // each gate that needs one, because "no config key may raise a cap above its
-// coded floor" appears in D.2's, D.4's and D.6's forbidden actions and a rule
-// implemented three times is a rule implemented two ways. Gate 14's five caps
-// (10 rps/host, 4 concurrent/host, 20,000 req/target/run, 30 min/target, 1 MiB
-// body, 3 retries) and gate 5's 30-day attestation ceiling are all this type.
+// coded floor" appears in the kernel core's, run initiation's and per-request
+// enforcement's forbidden actions and a rule implemented three times is a rule
+// implemented two ways. Gate 14's five caps (10 rps/host, 4 concurrent/host,
+// 20,000 req/target/run, 30 min/target, 1 MiB body, 3 retries) and gate 5's
+// 30-day attestation ceiling are all this type.
 //
 // THE ZERO VALUE PERMITS NOTHING. `var c Cap[int]` has set=false, and Allows
 // returns false for every value including zero. A gate that forgot to
@@ -1811,7 +1812,7 @@ func (r RunClock) Now() Clock {
 //
 // # There is no exported constructor, and that is the fix for a real forgery
 //
-// D.3's critic compiled and ran this:
+// The kernel-types review compiled and ran this:
 //
 //	tenYears := authz.NewCap(10 * 365 * 24 * time.Hour)
 //	a, err := authz.NewAttestation("forged-long-life", "attacker", authz.AuthorityOwner,
@@ -1911,10 +1912,10 @@ func (c Cap[T]) Coded() (T, error) {
 // ReportingChannelOnly is the marker every security.txt-derived type must
 // embed, and it is gate 12's enforcement surface.
 //
-// plan/50-dast.md gate 12: security.txt is fetched for reporting-channel
+// plan/design/dynamic-tier.md gate 12: security.txt is fetched for reporting-channel
 // resolution only, its "Result recorded in the audit log; structurally
 // excluded from the admission decision's input type... enforced at the type
-// level, not by convention". plan/00-SPINE.md S7 says the same thing and adds
+// level, not by convention". The spine's safety section says the same thing and adds
 // why: "Enforce at the type level so the inevitable contributor proposal fails
 // to compile."
 //
@@ -1924,7 +1925,8 @@ func (c Cap[T]) Coded() (T, error) {
 //
 //  1. Decide's four parameters are Target, Scope, Attestation and Clock, all
 //     declared in THIS file. Adding an extension point to any of them requires
-//     editing types.go, which is D.2's write scope and is explicitly not D.5's.
+//     editing types.go, which is the kernel core's write scope and is
+//     explicitly not per-target admission's.
 //
 //  2. gateFunc (kernel.go) has the same four parameters. Every gate
 //     implementation in phases 1–3 is a gateFunc, so no gate can receive a
@@ -1936,9 +1938,9 @@ func (c Cap[T]) Coded() (T, error) {
 //     TestAdmissionInputClosureIsClosed refuses any such type appearing
 //     anywhere in the closure.
 //
-// D.5 declares `type SecurityTxtResult struct { ReportingChannelOnly; ... }`.
+// Per-target admission declares `type SecurityTxtResult struct { ReportingChannelOnly; ... }`.
 // The embed is what makes mechanism 3 bite; mechanisms 1 and 2 hold whether or
-// not D.5 remembers it.
+// not per-target admission remembers it.
 //
 // What this does NOT close, stated plainly: a contributor with write access to
 // types.go can add a field. Nothing in Go prevents that. What the design buys
@@ -1964,7 +1966,7 @@ var _ excludedFromAdmission = ReportingChannelOnly{}
 // GateFailure and GateResult — the typed failure Phase 0 returns
 // ---------------------------------------------------------------------------
 
-// GateFailure is a gate's typed refusal. D.2's expected output schema requires
+// GateFailure is a gate's typed refusal. The kernel core's expected output schema requires
 // "a typed failure, not a bool".
 type GateFailure struct {
 	// Gate is the gate that refused.
@@ -1974,7 +1976,7 @@ type GateFailure struct {
 	// Detail is Anvil-authored operator-facing text. It is NEVER assembled
 	// from a response body, a scope file, or any other bytes that originated
 	// outside Anvil; those are `anvil/trust: untrusted` per
-	// plan/00-SPINE.md S6 and belong in a hashed-and-referenced field, not
+	// the spine's record section and belong in a hashed-and-referenced field, not
 	// in a message that will be read by an agent.
 	Detail string
 	// Evidence is the specific offending items, one per line when rendered.
@@ -2025,7 +2027,7 @@ func (f *GateFailure) Unwrap() error {
 // assign the result of a gate call, or that builds a GateResult in another
 // package, gets a refusal.
 //
-// The typed failure D.2's schema asks for is inside, reachable through
+// The typed failure the kernel core's schema asks for is inside, reachable through
 // Failure() and through errors.As.
 type GateResult struct {
 	gate    GateID

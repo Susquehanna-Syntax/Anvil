@@ -1,5 +1,5 @@
-// upsert.go is A.14's WRITE PATH: the decoded delta batch, and the row-scoped
-// statements that put it in the A.2 cache.
+// upsert.go is delta ingestion's WRITE PATH: the decoded delta batch, and the row-scoped
+// statements that put it in the ingestion cache.
 //
 // ===========================================================================
 // THE ONE RULE THIS FILE EXISTS TO KEEP
@@ -12,7 +12,7 @@
 // internal/ingest/cache's own package comment gives the reason: "FTS5 accepts
 // incremental INSERT/DELETE, so an hourly delta touching 200 records costs 200
 // row upserts and NOT a rebuild. That is why no code path in Anvil may DROP or
-// rebuild `advisory_fts`." A.14's packet repeats it as a forbidden action, and
+// rebuild `advisory_fts`." delta ingestion's design repeats it as a forbidden action, and
 // adds "regardless of batch size" — because the tempting version of this defect
 // is a size threshold above which somebody decides a rebuild is cheaper.
 //
@@ -30,13 +30,13 @@
 //
 // internal/ingest/bootstrap decodes the same three JSON shapes and its
 // decoders are unexported, so this file re-derives them. That is a REAL
-// cross-area hazard of exactly the kind plan/00-SPINE.md S6 names for the
+// cross-area hazard of exactly the kind the spine's record section names for the
 // fingerprint: two producers writing the same table from the same bytes may
-// drift, and the drift shows up as A.15's weekly self-heal "restoring" rows
+// drift, and the drift shows up as the weekly self-heal "restoring" rows
 // forever with nothing surfacing why.
 //
 // It is not left to inspection. delta_test.go's
-// TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows runs A.8's importer
+// TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows runs the bulk bootstrap's importer
 // and this package's over the SAME fixture documents and compares every
 // written column of `advisory`, `affected` and `cve_alias`. A divergence is a
 // red test in this package, which is the only place the two can be compared at
@@ -50,7 +50,7 @@
 //
 // Apply does not sanitize; Decode does, field by field, and Apply REFUSES a
 // batch whose strings do not survive sanitize.AssertAllSanitized. That split is
-// deliberate: A.15 builds Records from its own baseline read and must not be
+// deliberate: the weekly self-heal builds Records from its own baseline read and must not be
 // able to reach these statements with raw feed text just because it skipped a
 // call. internal/ingest/sanitize's writer guard sees the assertion in the same
 // function as the bind, which is what it can check; the assertion is what makes
@@ -85,8 +85,8 @@ import (
 // and FTS write shapes precisely so two writers cannot disagree about them, and
 // it exports nothing for `affected` or `cve_alias`. A second SHAPE here would
 // be the defect that exporting the first four was meant to prevent, so these
-// copy A.8's text exactly rather than improving on it. Reported to the
-// orchestrator as the same gap A.8 reported.
+// copy the bulk bootstrap's text exactly rather than improving on it. Reported to the
+// orchestrator as the same gap the bulk bootstrap reported.
 const (
 	deleteAffectedSQL = `DELETE FROM affected WHERE source = ? AND source_id = ?`
 
@@ -131,7 +131,7 @@ var allowedStatements = map[string]string{
 	strings.TrimSpace(cache.UpsertAdvisoryFTSSQL): "one FTS row by rowid. This is the row-scoped index write " +
 		"that makes a 200-record delta cost 200 writes.",
 	strings.TrimSpace(cache.DeleteAdvisoryFTSSQL): "one FTS row by rowid, for a tombstoned advisory. The " +
-		"`advisory` row itself is never deleted (A.2 exit criterion 22).",
+		"`advisory` row itself is never deleted (Lane A exit criterion 22).",
 	strings.TrimSpace(deleteAffectedSQL): "the version ranges of ONE advisory. `affected` has a surrogate key " +
 		"and no unique natural key, so ranges are replaced per advisory rather than merged.",
 	strings.TrimSpace(insertAffectedSQL): "one version range of one advisory.",
@@ -157,7 +157,7 @@ func checkStatement(q string) error {
 	return refuse(ErrStatementNotAllowed,
 		"this package may only execute statements on its allowlist and this one is not on it:\n\t%s\n"+
 			"If it is a legitimate row-scoped write, add it to allowedStatements with the reason. "+
-			"If it rebuilds, drops or re-creates advisory_fts, it is the thing A.14's packet forbids: "+
+			"If it rebuilds, drops or re-creates advisory_fts, it is the thing delta ingestion's design forbids: "+
 			"a delta batch costs one upsert per changed row, regardless of batch size.",
 		condense(q))
 }
@@ -199,14 +199,14 @@ func queryRowDB(ctx context.Context, db *sql.DB, q string, args ...any) (*sql.Ro
 // AffectedRange and Record are the row shapes internal/ingest/decode defines.
 //
 // THEY ARE GO TYPE ALIASES AND NOT CONVERSIONS, and they are EXPORTED because
-// A.15's reconciliation and A.16's drift handler build the same rows and reach
-// the same statements — a second write path for one table is how a schema
-// invariant survives in one writer and not the other.
+// the weekly self-heal's reconciliation and drift handling's drift handler
+// build the same rows and reach the same statements — a second write path for
+// one table is how a schema invariant survives in one writer and not the other.
 //
-// The types moved out of this package under orchestrator ruling G11. Until
-// A.21, internal/ingest/bootstrap's decoders were unexported, so this package
+// The types moved out of this package under the one-decoder ruling. Until
+// the Lane A exit gate, internal/ingest/bootstrap's decoders were unexported, so this package
 // re-derived CVE 5.x, OSV and KEV decoding, and the cache had two producers
-// writing one table from one wire format. If they had drifted, A.15's weekly
+// writing one table from one wire format. If they had drifted, the weekly
 // self-heal would have restored the same rows forever with nothing surfacing
 // it. There is now one decoder; see internal/ingest/decode.
 type (
@@ -218,7 +218,7 @@ type (
 // growth: `affected` and `cve_alias` are replaced per advisory, so a re-upsert
 // of an unchanged advisory still counts its rows.
 type BatchStats struct {
-	// Upserts is advisory rows written, and is the number A.14's validation
+	// Upserts is advisory rows written, and is the number delta ingestion's validation
 	// asserts equals the batch size: 200 changed records, 200 upserts.
 	Upserts int
 
@@ -255,7 +255,7 @@ func (s *BatchStats) Merge(o BatchStats) {
 // cvelistV5 hour at ~16.5 MiB of cumulative changes and the deltaLog names a
 // few dozen records per fetch — and Apply is ONE TRANSACTION, so a batch that
 // arrived here with hundreds of thousands of records is not a delta. It is a
-// bulk import taking the wrong door, and the right answer is A.8's resumable,
+// bulk import taking the wrong door, and the right answer is the bulk bootstrap's resumable,
 // cursor-tracked path rather than a transaction that either commits a day's
 // work or loses it.
 const MaxBatchRecords = 50_000
@@ -271,12 +271,12 @@ const MaxBatchRecords = 50_000
 // THE LICENCE DECISION IS A PARAMETER AND NOT A LOOKUP. A caller has to hold
 // an admitted license.Decision to reach this function at all, and the licence
 // columns are bound from the DECISION rather than from the feed row's own
-// claim — A.4 owns what a feed's licence is, and a writer that re-read the
+// claim — the licence gate owns what a feed's licence is, and a writer that re-read the
 // YAML would be laundering an unverified assertion into the cache. A refusal
 // is refused here rather than defaulted, because Decision's zero value carries
 // Tier 0, the most permissive tier this system has.
 //
-// asOf is stamped into every row and staleness is spine S6's staleness_seconds
+// asOf is stamped into every row and staleness is the spine's staleness_seconds
 // for the batch: the age of the DATA, not the age of the write.
 func Apply(
 	ctx context.Context,
@@ -289,7 +289,7 @@ func Apply(
 ) (BatchStats, error) {
 	var stats BatchStats
 	if db == nil {
-		return stats, refuse(ErrNoCache, "Apply needs the A.2 ingestion cache")
+		return stats, refuse(ErrNoCache, "Apply needs the ingestion cache")
 	}
 	if d.Refused() {
 		return stats, refuse(license.ErrLicenseRefused,
@@ -299,7 +299,7 @@ func Apply(
 	if len(batch) > MaxBatchRecords {
 		return stats, refuse(ErrBatchTooLarge,
 			"feed %q: %d records in one delta batch exceeds %d; a batch that size is a bulk import and "+
-				"belongs on A.8's resumable path, not in one transaction",
+				"belongs on the bulk bootstrap's resumable path, not in one transaction",
 			feed.ID, len(batch), MaxBatchRecords)
 	}
 	if staleness < 0 {
@@ -332,7 +332,7 @@ func Apply(
 // the advisory's own `affected` and `cve_alias` rows replaced.
 //
 // It writes exactly ONE advisory row and touches advisory_fts EXACTLY ONCE.
-// That is the property A.14's validation measures, and it is a property of
+// That is the property delta ingestion's validation measures, and it is a property of
 // this function rather than of the loop above it.
 func writeRecord(
 	ctx context.Context,
@@ -356,7 +356,7 @@ func writeRecord(
 			feed.ID, rec.SourceID)
 	}
 
-	// A.3 IS A PRECONDITION AND THIS IS WHERE IT IS CHECKED. Every string
+	// The sanitizer IS A PRECONDITION AND THIS IS WHERE IT IS CHECKED. Every string
 	// below is bound to a column; every one of them originated outside Anvil.
 	// AssertAllSanitized fails on a value Sanitize would have changed, so a
 	// caller that skipped the sanitizer cannot reach the bind.
@@ -451,7 +451,7 @@ func writeRecord(
 
 	// Replace, never append. `affected` has a surrogate primary key and no
 	// unique constraint over its natural key, so an advisory upserted twice
-	// would otherwise carry every version range twice and A.17's comparator
+	// would otherwise carry every version range twice and the comparator
 	// would see one advisory as several.
 	if err := execTx(ctx, tx, deleteAffectedSQL, rec.Source, rec.SourceID); err != nil {
 		return stats, fmt.Errorf("delta: clearing affected for %s/%s: %w", rec.Source, rec.SourceID, err)
@@ -504,11 +504,11 @@ func boolInt(v bool) int {
 // CachedModified returns the `modified` timestamp the cache currently holds for
 // one advisory, and whether the row exists at all.
 //
-// This is A.14's cursor, and it is a QUERY rather than a stored column ON
-// PURPOSE. feed_state has exactly one cursor column, `watermark`, and A.8
-// already owns it: it stores a bootstrap Progress token there and A.14 reads
+// This is delta ingestion's cursor, and it is a QUERY rather than a stored column ON
+// PURPOSE. feed_state has exactly one cursor column, `watermark`, and the bulk bootstrap
+// already owns it: it stores a bootstrap Progress token there and delta ingestion reads
 // the handover through bootstrap.Handoff. A second delta cursor squeezed into
-// the same column would be two writers on one value, which is the failure A.8's
+// the same column would be two writers on one value, which is the failure the bulk bootstrap's
 // own watermark doc comment describes.
 //
 // Deriving the cursor from the rows themselves has a property a stored cursor
@@ -571,7 +571,7 @@ func parseTimestamp(s string) (time.Time, bool) {
 
 // MaxDocumentBytes bounds a single advisory document.
 //
-// It is the same order as A.8's own record cap and exists for the same reason:
+// It is the same order as the bulk bootstrap's own record cap and exists for the same reason:
 // a feed that answers a record request with a gigabyte is a memory-exhaustion
 // payload, and the bound has to be on what ARRIVED rather than on what a header
 // claimed.
@@ -579,19 +579,19 @@ const MaxDocumentBytes = 16 << 20
 
 // decoder is this package's binding to internal/ingest/decode.
 //
-// EVERY WIRE FORMAT IS DECODED THERE AND NOWHERE ELSE (ruling G11). What stays
+// EVERY WIRE FORMAT IS DECODED THERE AND NOWHERE ELSE (the one-decoder ruling). What stays
 // here is the DISPATCH below, and it stays because this package's answer to an
-// unreadable document is genuinely different from A.8's: see Decode.
+// unreadable document is genuinely different from the bulk bootstrap's: see Decode.
 type decoder struct {
 	feedID string
 	dec    *decode.Decoder
 }
 
 // decodeKEV reads the whole catalogue into memory, which is the one place this
-// path deliberately differs from A.8's traversal of the same array.
+// path deliberately differs from the bulk bootstrap's traversal of the same array.
 //
-// The reason is the caller. A.8 streams because it walks a 570 MB archive whose
-// members it has not seen; this path is handed a body A.7 already read into
+// The reason is the caller. The bulk bootstrap streams because it walks a 570 MB archive whose
+// members it has not seen; this path is handed a body the poller already read into
 // memory under Options.MaxBodyBytes, so a streaming parse here would buy
 // nothing and would need a second bounded reader to enforce a bound that has
 // already been enforced. MaxDocumentBytes is the backstop. The per-entry
@@ -609,13 +609,13 @@ func (dc *decoder) decodeKEV(raw []byte) ([]Record, error) {
 // Decode turns one fetched document into advisory records.
 //
 // THE FORMAT IS DECIDED BY LOOKING AT THE BYTES, never by which feed asked.
-// A.1's rule — no feed fact compiled into Go — applies to a format mapping just
+// The feed table's rule — no feed fact compiled into Go — applies to a format mapping just
 // as much as to a URL: a feed-id-to-parser table breaks the moment an operator
 // points a row at a mirror, and what a document IS is a property of the
 // document.
 //
 // A shape this decoder does not recognise is an ERROR and not a silent skip.
-// That differs from A.8, which skips unrecognised archive members because a
+// That differs from the bulk bootstrap, which skips unrecognised archive members because a
 // bulk archive is 300,000 files written by strangers and one bad member must
 // not cost the other 299,999. A delta document is different: it was fetched
 // because something said it changed, so "we do not understand it" means a
@@ -674,7 +674,7 @@ func (dc *decoder) decode(raw []byte, depth int) ([]Record, error) {
 	case trimmed[0] != '{':
 		return nil, refuse(ErrUnrecognisedShape,
 			"feed %q: the document is not JSON. CSV, XML and per-branch distro formats reach the cache "+
-				"through A.8's bulk path; SyncDelta routes such a feed there rather than guessing here.",
+				"through the bulk bootstrap's bulk path; SyncDelta routes such a feed there rather than guessing here.",
 			dc.feedID)
 
 	case bytes.Contains(head, []byte(`"fetchTime"`)) && bytes.Contains(head, []byte(`"numberOfChanges"`)):

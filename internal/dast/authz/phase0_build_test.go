@@ -16,8 +16,8 @@ import (
 // implementation generated would agree with the implementation's bugs, and the
 // point of these tests is to disagree with them.
 //
-// D.9 owns the test that measures the real graphs. This file owns the proof
-// that the gates judging those measurements can fail.
+// The kernel's build-time guard owns the test that measures the real graphs.
+// This file owns the proof that the gates judging those measurements can fail.
 
 // A plausible cmd/anvil closure: stdlib, plus the core packages the binary
 // really links, and nothing under internal/dast.
@@ -187,7 +187,7 @@ func TestGate1RefusesACoreBinaryThatReachesDAST(t *testing.T) {
 			r := CheckGate1DastShipsDisabled(mustGraph(t, CoreBinaryPackage, deps))
 			if r.Passed() {
 				t.Fatalf("gate 1 passed with %q in cmd/anvil's import graph. "+
-					"plan/00-SPINE.md S9-AMENDED splits Anvil into two artifacts "+
+					"The two-artifact split splits Anvil into two artifacts "+
 					"precisely so the core binary supplies no probing capability", dep)
 			}
 			if r.Failure().Reason != ReasonCoreArtifactReachesDAST {
@@ -270,7 +270,7 @@ func TestGate2PassesOnAStdlibOnlyKernel(t *testing.T) {
 	}
 }
 
-// TestGate2RefusesTheInferenceLayer is the failure plan/00-SPINE.md S7 names:
+// TestGate2RefusesTheInferenceLayer is the failure the spine's safety section names:
 // "No model ever holds a network handle."
 func TestGate2RefusesTheInferenceLayer(t *testing.T) {
 	cases := map[string]string{
@@ -285,7 +285,7 @@ func TestGate2RefusesTheInferenceLayer(t *testing.T) {
 			r := CheckGate2KernelCompiledSeparately(mustGraph(t, KernelPackage, deps))
 			if r.Passed() {
 				t.Fatalf("gate 2 passed with %q in the kernel's import graph. "+
-					"plan/00-SPINE.md S7: the kernel is compiled separately from the "+
+					"The spine's safety section: the kernel is compiled separately from the "+
 					"model runtime, and no model ever holds a network handle", dep)
 			}
 			if r.Failure().Reason != ReasonKernelImportsInference {
@@ -300,7 +300,7 @@ func TestGate2RefusesTheInferenceLayer(t *testing.T) {
 // TestGate2RefusesAnythingOffTheAllowlist is the reason the allowlist exists.
 //
 // None of these package names contains "/inference/", "/model/" or "/llm/", so
-// the denylist S7 phrases the rule as would let every one of them through.
+// the denylist the spine's safety section phrases the rule as would let every one of them through.
 // That is what "a denylist loses" means concretely.
 func TestGate2RefusesAnythingOffTheAllowlist(t *testing.T) {
 	cases := map[string]string{
@@ -427,7 +427,7 @@ func TestGate3RefusesASocketInsideDastOutsideTheKernel(t *testing.T) {
 			r := CheckGate3EgressChokePoint(scan)
 			if r.Passed() {
 				t.Fatalf("gate 3 passed with a socket constructed in %q. There is no "+
-					"allowlist for the DAST tree: plan/00-SPINE.md S7 requires that no "+
+					"allowlist for the DAST tree: the spine's safety section requires that no "+
 					"model ever holds a network handle, and a socket the kernel did not "+
 					"open is a handle it did not authorize", pkg)
 			}
@@ -457,7 +457,7 @@ func TestGate3TierOneIsReportedBeforeTierTwo(t *testing.T) {
 	}
 }
 
-// TestGate3RefusesANewFetcherAnywhereInTheRepo is tier 2. D.9's forbidden
+// TestGate3RefusesANewFetcherAnywhereInTheRepo is tier 2. The build-time guard's forbidden
 // actions require the lint to cover the whole repository, "since the point is
 // proving no other package can bypass the kernel either."
 func TestGate3RefusesANewFetcherAnywhereInTheRepo(t *testing.T) {
@@ -540,7 +540,7 @@ func TestEnableDASTRefusals(t *testing.T) {
 		why      string
 	}{
 		{"core artifact", ArtifactCore, ext, scope, att, clk,
-			"the core binary has no probing capability compiled in (S9-AMENDED)"},
+			"the core binary has no probing capability compiled in (the two-artifact split)"},
 		{"no artifact declared", ArtifactUnset, ext, scope, att, clk,
 			"gate 1 requires an explicit, non-defaulted enable"},
 		{"invented artifact", Artifact("anvil-pro"), ext, scope, att, clk,

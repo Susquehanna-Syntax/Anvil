@@ -1,11 +1,11 @@
-// Tests for D.24, the authenticated-crawl helper.
+// Tests for the authentication helper used by the authenticated crawl.
 //
 // This packet holds a credential, so the suite is organised around the two
 // properties that make it either safe or not, and every one of them is driven
 // through the REAL kernel — authz.InitiateRun, authz.Adjudicate,
 // authz.NewRequestIntent, authz.GateAudit.AuditedAdmit,
 // authz.Governor.ObserveResponse — with AuthDriver and ArtifactSink as the
-// only doubles, because D.9's gate 3 forbids this package from holding a
+// only doubles, because the build-time guard's gate 3 forbids this package from holding a
 // socket.
 //
 //	THE CREDENTIAL NEVER APPEARS. The leak test collects the ACTUAL EMITTED
@@ -59,7 +59,7 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	// d24Password is CHOSEN TO BREAK THE SWEEP, not to suit it.
+	// authPassword is CHOSEN TO BREAK THE SWEEP, not to suit it.
 	//
 	// A SPACE and an "&": redact() rewrites "&" to "?", so a sweep run AFTER
 	// redaction would not find this string — the defect
@@ -71,29 +71,29 @@ const (
 	// two encodings an artifact most often carries. A generator that cannot
 	// produce the breaking input is the defect, and the previous fixture
 	// password could not: it was picked to suit redact().
-	d24Password = `s3cr3t "Pa55w0rd" &<9xQz>`
-	// d24TOTP is a second, differently-spelled credential so that a sweep
+	authPassword = `s3cr3t "Pa55w0rd" &<9xQz>`
+	// authTOTP is a second, differently-spelled credential so that a sweep
 	// that only ever looks at the first secret is visible.
-	d24TOTP = "totp-7f3a91-code"
-	// d24Username is NOT a credential. internal/record/mask.go keeps the
+	authTOTP = "totp-7f3a91-code"
+	// authUsername is NOT a credential. internal/record/mask.go keeps the
 	// username deliberately: it names which account the scan authenticated
 	// as, and that is evidence.
-	d24Username = "scanuser"
+	authUsername = "scanuser"
 )
 
-// d24Credentials returns every credential value this file's fixtures use, as
+// authCredentials returns every credential value this file's fixtures use, as
 // PLAINTEXT. It is the needle the leak test searches for, and it exists only
 // in _test.go.
-func d24Credentials() []string { return []string{d24Password, d24TOTP} }
+func authCredentials() []string { return []string{authPassword, authTOTP} }
 
-// d24HTMLEscape is what a template engine writes into a page, and what the
+// authHTMLEscape is what a template engine writes into a page, and what the
 // browser hands back in a DOM dump. It is here rather than from the `html`
 // package because "html" is NOT on gate 3's inertImports, and reaching outside
 // this packet's write scope to add it is not this packet's edit to make.
 //
 // The order matters: "&" first, or the ampersands of the later replacements
 // get escaped a second time.
-func d24HTMLEscape(s string) string {
+func authHTMLEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")
@@ -101,11 +101,11 @@ func d24HTMLEscape(s string) string {
 	return strings.ReplaceAll(s, "'", "&apos;")
 }
 
-// d24JSONEscape is what encoding/json writes, WITHOUT the surrounding quotes.
+// authJSONEscape is what encoding/json writes, WITHOUT the surrounding quotes.
 // AuthArtifactStorageState is JSON by definition, so this is the ordinary
 // spelling for the artifact kind most likely to carry a credential — not an
 // exotic one.
-func d24JSONEscape(t *testing.T, s string) string {
+func authJSONEscape(t *testing.T, s string) string {
 	t.Helper()
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -121,15 +121,15 @@ func d24JSONEscape(t *testing.T, s string) string {
 // Harness
 // ---------------------------------------------------------------------------
 
-// d24AuditSink RETAINS every audit row, unlike countingSink which drops them.
+// authAuditSink RETAINS every audit row, unlike countingSink which drops them.
 // The leak test searches the rows' rendered bytes, so a credential that
 // reached gate 21's Detail would be visible here and nowhere else.
-type d24AuditSink struct {
+type authAuditSink struct {
 	n    int
 	rows []authz.GateRecord
 }
 
-func (s *d24AuditSink) WriteGateDecision(r authz.GateRecord) (authz.AuditSeq, error) {
+func (s *authAuditSink) WriteGateDecision(r authz.GateRecord) (authz.AuditSeq, error) {
 	s.n++
 	s.rows = append(s.rows, r)
 	return authz.AuditSeq(s.n), nil
@@ -138,7 +138,7 @@ func (s *d24AuditSink) WriteGateDecision(r authz.GateRecord) (authz.AuditSeq, er
 // bytes renders every field of every row. %+v over a struct of exported
 // fields reaches all of them, which is the point: this must not be a
 // hand-listed subset that a new field could slip past.
-func (s *d24AuditSink) bytes() string {
+func (s *authAuditSink) bytes() string {
 	var b strings.Builder
 	for _, r := range s.rows {
 		fmt.Fprintf(&b, "%+v\n", r)
@@ -146,7 +146,7 @@ func (s *d24AuditSink) bytes() string {
 	return b.String()
 }
 
-func (s *d24AuditSink) denials() []authz.GateRecord {
+func (s *authAuditSink) denials() []authz.GateRecord {
 	var out []authz.GateRecord
 	for _, r := range s.rows {
 		if r.Outcome != authz.OutcomeAllow {
@@ -156,10 +156,10 @@ func (s *d24AuditSink) denials() []authz.GateRecord {
 	return out
 }
 
-// d24Driver is the AuthDriver double. It records every AuthRequest it was
+// authDriver is the AuthDriver double. It records every AuthRequest it was
 // handed so a test can assert what actually left rather than what the
 // implementation says it sends.
-type d24Driver struct {
+type authDriver struct {
 	outcomes  []AuthOutcome
 	outErrs   []error
 	probes    []AuthProbe
@@ -171,7 +171,7 @@ type d24Driver struct {
 	probeCall int
 }
 
-func (d *d24Driver) Authenticate(_ context.Context, req AuthRequest) (AuthOutcome, error) {
+func (d *authDriver) Authenticate(_ context.Context, req AuthRequest) (AuthOutcome, error) {
 	d.authCalls++
 	d.seenAuth = append(d.seenAuth, req)
 	i := d.authCalls - 1
@@ -187,7 +187,7 @@ func (d *d24Driver) Authenticate(_ context.Context, req AuthRequest) (AuthOutcom
 	return d.outcomes[i], nil
 }
 
-func (d *d24Driver) ProbeSession(_ context.Context, req AuthRequest) (AuthProbe, error) {
+func (d *authDriver) ProbeSession(_ context.Context, req AuthRequest) (AuthProbe, error) {
 	d.probeCall++
 	d.seenProbe = append(d.seenProbe, req)
 	i := d.probeCall - 1
@@ -203,12 +203,12 @@ func (d *d24Driver) ProbeSession(_ context.Context, req AuthRequest) (AuthProbe,
 	return d.probes[i], nil
 }
 
-// d24Alive is the outcome/probe pair of a login that works.
-func d24Alive() AuthProbe {
+// authAlive is the outcome/probe pair of a login that works.
+func authAlive() AuthProbe {
 	return AuthProbe{Status: 200, Latency: 4 * time.Millisecond, SessionPresent: true}
 }
 
-func d24GoodOutcome() AuthOutcome {
+func authGoodOutcome() AuthOutcome {
 	return AuthOutcome{
 		NavStatus: 200, NavLatency: 5 * time.Millisecond,
 		SubmitStatus: 302, SubmitLatency: 7 * time.Millisecond,
@@ -218,7 +218,7 @@ func d24GoodOutcome() AuthOutcome {
 	}
 }
 
-// d24LeakyOutcome is the fixture that PUTS THE CREDENTIAL EVERYWHERE it can.
+// authLeakyOutcome is the fixture that PUTS THE CREDENTIAL EVERYWHERE it can.
 //
 // It exercises BOTH controls, and it is arranged so that neither can carry the
 // other:
@@ -232,45 +232,45 @@ func d24GoodOutcome() AuthOutcome {
 //	the byte-exact sweep MISSED: HTML-entity-encoded, exactly the shape the
 //	finding demonstrated (`value="s3cr3t Pa55w0rd&amp;9xQz"`), and
 //	JSON-escaped, which is what AuthArtifactStorageState is made of.
-func d24LeakyOutcome(t *testing.T) AuthOutcome {
+func authLeakyOutcome(t *testing.T) AuthOutcome {
 	t.Helper()
-	o := d24GoodOutcome()
-	o.Detail = "typed " + d24Password + " into the password field"
+	o := authGoodOutcome()
+	o.Detail = "typed " + authPassword + " into the password field"
 	// The landed path carries the PASSWORD, not the TOTP, on purpose: the
 	// password contains "&", which redact() rewrites, so a sweep that ran
 	// after redaction rather than before would miss it and ship most of its
 	// characters. The needle list below covers the redacted form precisely so
 	// that this case fails rather than passes.
-	o.LandedPath = "/account?next=" + d24Password
+	o.LandedPath = "/account?next=" + authPassword
 	o.Artifacts = []AuthArtifact{
-		{Kind: AuthArtifactHTTPExchange, Step: 2, Name: "post-login-" + d24Password,
-			Bytes: []byte("POST /login\r\n\r\npassword=" + url.QueryEscape(d24Password))},
+		{Kind: AuthArtifactHTTPExchange, Step: 2, Name: "post-login-" + authPassword,
+			Bytes: []byte("POST /login\r\n\r\npassword=" + url.QueryEscape(authPassword))},
 		{Kind: AuthArtifactStorageState, Step: 0, Name: "storage",
-			Bytes: []byte(`{"localStorage":{"totp":"` + d24TOTP + `"}}`)},
+			Bytes: []byte(`{"localStorage":{"totp":"` + authTOTP + `"}}`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 4, Name: "totp-exchange",
-			Bytes: []byte("GET /v?c=" + url.PathEscape(d24TOTP))},
+			Bytes: []byte("GET /v?c=" + url.PathEscape(authTOTP))},
 		// Step 3 is WAIT. It types nothing, so provenance permits these two
 		// and the sweep is the only thing between them and the sink.
 		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "reflected-form",
 			Bytes: []byte(`<input name="password" value="` +
-				d24HTMLEscape(d24Password) + `">`)},
+				authHTMLEscape(authPassword) + `">`)},
 		{Kind: AuthArtifactStorageState, Step: 3, Name: "session-json",
-			Bytes: []byte(`{"localStorage":{"pw":"` + d24JSONEscape(t, d24Password) + `"}}`)},
+			Bytes: []byte(`{"localStorage":{"pw":"` + authJSONEscape(t, authPassword) + `"}}`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "pre-login",
 			Bytes: []byte("GET /login HTTP/1.1\r\n\r\n")},
 	}
 	return o
 }
 
-// d24Sink is the ArtifactSink double. It retains the ACTUAL BYTES it was
+// authSink is the ArtifactSink double. It retains the ACTUAL BYTES it was
 // handed, which is what makes the leak assertion an assertion about what left
 // rather than about what the code intended to send.
-type d24Sink struct {
+type authSink struct {
 	stored []StoredArtifact
 	err    error
 }
 
-func (s *d24Sink) StoreAuthArtifact(_ context.Context, a StoredArtifact) error {
+func (s *authSink) StoreAuthArtifact(_ context.Context, a StoredArtifact) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -278,7 +278,7 @@ func (s *d24Sink) StoreAuthArtifact(_ context.Context, a StoredArtifact) error {
 	return nil
 }
 
-func (s *d24Sink) bytes() string {
+func (s *authSink) bytes() string {
 	var b strings.Builder
 	for _, a := range s.stored {
 		fmt.Fprintf(&b, "%s|%d|%s|%s\n", a.Kind(), a.Step(), a.Name(), string(a.Bytes()))
@@ -286,10 +286,10 @@ func (s *d24Sink) bytes() string {
 	return b.String()
 }
 
-// d24Kernel builds a real Governor and GateAudit with a RETAINING audit sink
+// authKernel builds a real Governor and GateAudit with a RETAINING audit sink
 // and an optional per-endpoint allowance for the login POST.
-func d24Kernel(t *testing.T, allow authz.EndpointAllowance) (
-	*authz.Governor, *authz.GateAudit, *d24AuditSink) {
+func authKernel(t *testing.T, allow authz.EndpointAllowance) (
+	*authz.Governor, *authz.GateAudit, *authAuditSink) {
 
 	t.Helper()
 	init := initiateRun(t)
@@ -309,7 +309,7 @@ func d24Kernel(t *testing.T, allow authz.EndpointAllowance) (
 	if err != nil {
 		t.Fatalf("init.RunClock: %v", err)
 	}
-	sink := &d24AuditSink{}
+	sink := &authAuditSink{}
 	audit, res := authz.NewGateAudit(sink, key, run)
 	if !res.Passed() {
 		t.Fatalf("authz.NewGateAudit: %v", res.Err())
@@ -330,7 +330,7 @@ func d24Kernel(t *testing.T, allow authz.EndpointAllowance) (
 	return gov, audit, sink
 }
 
-func d24LoginAllowance(t *testing.T, path string) authz.EndpointAllowance {
+func authLoginAllowance(t *testing.T, path string) authz.EndpointAllowance {
 	t.Helper()
 	a, err := authz.NewEndpointAllowance(authz.EndpointRule{
 		Method: authz.MethodPost, Path: path,
@@ -341,7 +341,7 @@ func d24LoginAllowance(t *testing.T, path string) authz.EndpointAllowance {
 	return a
 }
 
-func d24NoAllowance(t *testing.T) authz.EndpointAllowance {
+func authNoAllowance(t *testing.T) authz.EndpointAllowance {
 	t.Helper()
 	a, err := authz.NewEndpointAllowance()
 	if err != nil {
@@ -359,15 +359,15 @@ func mustSecret(t *testing.T, v string) Secret {
 	return s
 }
 
-// d24Steps is the fixture login flow: four steps, two of which carry a
-// credential, in the shapes plan/50-dast.md D.24 enumerates.
-func d24Steps(t *testing.T) AuthSteps {
+// authTestSteps is the fixture login flow: four steps, two of which carry a
+// credential, in the shapes the authentication helper's design enumerates.
+func authTestSteps(t *testing.T) AuthSteps {
 	t.Helper()
 	steps, err := NewAuthSteps(target.AuthMethodBrowser, ".anvil/auth-steps.yaml", []AuthStep{
 		{Kind: AuthStepClick, Selector: "#sign-in"},
-		{Kind: AuthStepAutoSteps, Selector: d24Username, Value: mustSecret(t, d24Password)},
+		{Kind: AuthStepAutoSteps, Selector: authUsername, Value: mustSecret(t, authPassword)},
 		{Kind: AuthStepWait, Wait: 2 * time.Second},
-		{Kind: AuthStepTOTPField, Selector: "#totp", Value: mustSecret(t, d24TOTP)},
+		{Kind: AuthStepTOTPField, Selector: "#totp", Value: mustSecret(t, authTOTP)},
 	})
 	if err != nil {
 		t.Fatalf("NewAuthSteps: %v", err)
@@ -375,7 +375,7 @@ func d24Steps(t *testing.T) AuthSteps {
 	return steps
 }
 
-type d24Opts struct {
+type authOpts struct {
 	driver     AuthDriver
 	sink       ArtifactSink
 	noAllow    bool
@@ -389,7 +389,7 @@ type d24Opts struct {
 	freezeTime bool
 }
 
-func d24Config(t *testing.T, o d24Opts) (AuthConfig, *d24AuditSink) {
+func authConfig(t *testing.T, o authOpts) (AuthConfig, *authAuditSink) {
 	t.Helper()
 	if o.loginPath == "" {
 		o.loginPath = "/login"
@@ -403,17 +403,17 @@ func d24Config(t *testing.T, o d24Opts) (AuthConfig, *d24AuditSink) {
 	if o.shots == ScreenshotPolicyUnset {
 		o.shots = ScreenshotPolicyExceptCredentialSteps
 	}
-	allow := d24LoginAllowance(t, o.loginPath)
+	allow := authLoginAllowance(t, o.loginPath)
 	if o.noAllow {
-		allow = d24NoAllowance(t)
+		allow = authNoAllowance(t)
 	}
-	gov, audit, sink := d24Kernel(t, allow)
+	gov, audit, sink := authKernel(t, allow)
 	auth, _ := mintAuthorization(t)
-	scope := c23NarrowedScope(t, o.robots)
+	scope := crawlNarrowedScope(t, o.robots)
 	if o.scope != nil {
 		scope = *o.scope
 	}
-	steps := d24Steps(t)
+	steps := authTestSteps(t)
 	if o.steps != nil {
 		steps = *o.steps
 	}
@@ -432,16 +432,16 @@ func d24Config(t *testing.T, o d24Opts) (AuthConfig, *d24AuditSink) {
 		Screenshots:   o.shots,
 	}
 	if !o.freezeTime {
-		cfg.Clock = c22Advancing(t, time.Second)
+		cfg.Clock = confirmAdvancing(t, time.Second)
 	}
 	return cfg, sink
 }
 
-// d24Working returns a driver that logs in and stays alive.
-func d24Working() *d24Driver {
-	return &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome()},
-		probes:   []AuthProbe{d24Alive()},
+// authWorking returns a driver that logs in and stays alive.
+func authWorking() *authDriver {
+	return &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome()},
+		probes:   []AuthProbe{authAlive()},
 	}
 }
 
@@ -449,7 +449,7 @@ func d24Working() *d24Driver {
 // 1. The credential never appears — in the ACTUAL EMITTED BYTES
 // ---------------------------------------------------------------------------
 
-// d24Emitted collects everything this package emitted about a run.
+// authEmitted collects everything this package emitted about a run.
 //
 // It reaches the rendered audit rows, the session ledger, the artifact ledger,
 // the bytes handed to the sink, the returned errors, and the fmt renderings of
@@ -457,7 +457,7 @@ func d24Working() *d24Driver {
 // than from selected fields: a field somebody adds next quarter is included
 // automatically, and a leak test that only looks at fields somebody remembered
 // to redact proves nothing.
-func d24Emitted(s *Session, audit *d24AuditSink, sink *d24Sink, errs ...error) string {
+func authEmitted(s *Session, audit *authAuditSink, sink *authSink, errs ...error) string {
 	var b strings.Builder
 	b.WriteString(audit.bytes())
 	if sink != nil {
@@ -494,12 +494,12 @@ func d24Emitted(s *Session, audit *d24AuditSink, sink *d24Sink, errs ...error) s
 	return b.String()
 }
 
-func d24AssertNoCredential(t *testing.T, where, emitted string) {
+func authAssertNoCredential(t *testing.T, where, emitted string) {
 	t.Helper()
 	if emitted == "" {
 		t.Fatalf("%s: nothing was emitted, so this assertion measured nothing", where)
 	}
-	for _, cred := range d24Credentials() {
+	for _, cred := range authCredentials() {
 		// The REDACTED form is a needle too, and it is the one that catches
 		// the ordering bug: redact() rewrites "&" to "?", so a credential
 		// that went through redact() before the sweep is not the raw string
@@ -513,8 +513,8 @@ func d24AssertNoCredential(t *testing.T, where, emitted string) {
 			// The two forms the byte-exact sweep shipped verbatim. They are
 			// needles here so that a regression to a three-spelling sweep
 			// fails this assertion rather than passing it.
-			{"HTML-entity-encoded", d24HTMLEscape(cred)},
-			{"JSON-escaped", d24JSONEscape(t, cred)},
+			{"HTML-entity-encoded", authHTMLEscape(cred)},
+			{"JSON-escaped", authJSONEscape(t, cred)},
 		} {
 			if form.needle == cred && form.label != "raw" {
 				// A form that is byte-identical to the raw credential proves
@@ -542,12 +542,12 @@ func d24AssertNoCredential(t *testing.T, where, emitted string) {
 }
 
 func TestNoCredentialReachesTheAuditTrailOrTheReport(t *testing.T) {
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24LeakyOutcome(t)},
-		probes:   []AuthProbe{d24Alive()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authLeakyOutcome(t)},
+		probes:   []AuthProbe{authAlive()},
 	}
-	sink := &d24Sink{}
-	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: sink})
+	sink := &authSink{}
+	cfg, audit := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -587,8 +587,8 @@ func TestNoCredentialReachesTheAuditTrailOrTheReport(t *testing.T) {
 			"two artifacts, so it cannot see the damage it exists to report")
 	}
 
-	d24AssertNoCredential(t, "a leaky driver's run",
-		d24Emitted(s, audit, sink, err, s.AssertNoCredentialInLedger()))
+	authAssertNoCredential(t, "a leaky driver's run",
+		authEmitted(s, audit, sink, err, s.AssertNoCredentialInLedger()))
 
 	if err := s.AssertNoCredentialInLedger(); err != nil {
 		t.Fatalf("AssertNoCredentialInLedger: %v", err)
@@ -600,8 +600,8 @@ func TestNoCredentialReachesTheAuditTrailOrTheReport(t *testing.T) {
 // redaction compares the wrong spelling and nineteen of the credential's
 // twenty characters ship.
 func TestRedactionDoesNotDefeatTheSweep(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	raw := "landed on /a?next=" + d24Password
+	secrets := authTestSteps(t).secrets()
+	raw := "landed on /a?next=" + authPassword
 
 	if _, hit := credentialIn([]byte(raw), secrets); !hit {
 		t.Fatal("credentialIn did not find the credential in the RAW string, so nothing " +
@@ -636,17 +636,17 @@ func TestRedactionDoesNotDefeatTheSweep(t *testing.T) {
 }
 
 func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	jsonPW := d24JSONEscape(t, d24Password)
-	htmlPW := d24HTMLEscape(d24Password)
+	secrets := authTestSteps(t).secrets()
+	jsonPW := authJSONEscape(t, authPassword)
+	htmlPW := authHTMLEscape(authPassword)
 	cases := []struct {
 		name string
 		in   string
 		want bool
 	}{
-		{"raw password", "x=" + d24Password, true},
-		{"query-escaped password", "x=" + url.QueryEscape(d24Password), true},
-		{"path-escaped password", "/x/" + url.PathEscape(d24Password), true},
+		{"raw password", "x=" + authPassword, true},
+		{"query-escaped password", "x=" + url.QueryEscape(authPassword), true},
+		{"path-escaped password", "/x/" + url.PathEscape(authPassword), true},
 		// The two the byte-exact sweep shipped verbatim. The HTML one is the
 		// finding's own fixture, spelled the way an artifact spells it.
 		{"HTML-entity-encoded password",
@@ -654,22 +654,22 @@ func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 		{"JSON-escaped password", `{"localStorage":{"pw":"` + jsonPW + `"}}`, true},
 		// Numeric character references, which is what an escaper that does not
 		// use the six names emits. A denylist of names would lose to these.
-		{"decimal character references", "v=" + d24DecimalEntities(d24Password), true},
-		{"hex character references", "v=" + d24HexEntities(d24Password), true},
+		{"decimal character references", "v=" + authDecimalEntities(authPassword), true},
+		{"hex character references", "v=" + authHexEntities(authPassword), true},
 		// \uXXXX is what encoding/json writes when asked to escape HTML.
-		{"unicode-escaped password", `{"pw":"` + d24UnicodeEscape(d24Password) + `"}`, true},
+		{"unicode-escaped password", `{"pw":"` + authUnicodeEscape(authPassword) + `"}`, true},
 		// LAYERED: the JSON form of the HTML form. One decoder alone finds
 		// nothing here; the candidate set is what closes it.
 		{"JSON-escaped HTML-entity-encoded password",
-			`{"html":"` + d24JSONEscape(t, htmlPW) + `"}`, true},
+			`{"html":"` + authJSONEscape(t, htmlPW) + `"}`, true},
 		// Percent-encoded twice, the classic double-encoding walk-past.
 		{"double percent-encoded password",
-			"x=" + url.QueryEscape(url.QueryEscape(d24Password)), true},
-		{"raw totp", "{\"t\":\"" + d24TOTP + "\"}", true},
-		{"query-escaped totp", "t=" + url.QueryEscape(d24TOTP), true},
-		{"the username, which is not a credential", "user=" + d24Username, false},
+			"x=" + url.QueryEscape(url.QueryEscape(authPassword)), true},
+		{"raw totp", "{\"t\":\"" + authTOTP + "\"}", true},
+		{"query-escaped totp", "t=" + url.QueryEscape(authTOTP), true},
+		{"the username, which is not a credential", "user=" + authUsername, false},
 		{"a prefix of the password", "x=s3cr3t Pa55", false},
-		{"the redacted password, which is not the password", "x=" + redact(d24Password), false},
+		{"the redacted password, which is not the password", "x=" + redact(authPassword), false},
 		{"nothing", "GET /login HTTP/1.1", false},
 		{"a malformed percent escape and no credential", "x=%zz%2", false},
 		{"empty", "", false},
@@ -683,10 +683,10 @@ func TestCredentialInIsNotFooledByEncoding(t *testing.T) {
 	}
 }
 
-// d24DecimalEntities and d24HexEntities encode EVERY byte as a numeric
+// authDecimalEntities and authHexEntities encode EVERY byte as a numeric
 // character reference. They exist to prove the entity decoder is generic
 // rather than a list of six names.
-func d24DecimalEntities(s string) string {
+func authDecimalEntities(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		fmt.Fprintf(&b, "&#%d;", r)
@@ -694,7 +694,7 @@ func d24DecimalEntities(s string) string {
 	return b.String()
 }
 
-func d24HexEntities(s string) string {
+func authHexEntities(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		fmt.Fprintf(&b, "&#x%X;", r)
@@ -702,9 +702,9 @@ func d24HexEntities(s string) string {
 	return b.String()
 }
 
-// d24UnicodeEscape is the \uXXXX spelling encoding/json writes with HTML
+// authUnicodeEscape is the \uXXXX spelling encoding/json writes with HTML
 // escaping on, which is the default for encoding/json.Encoder.
-func d24UnicodeEscape(s string) string {
+func authUnicodeEscape(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		fmt.Fprintf(&b, `\u%04x`, r)
@@ -725,10 +725,10 @@ func d24UnicodeEscape(s string) string {
 // instead of enumerating it, which is why the padding widths run past every
 // bound the decoder has ever had.
 
-// d24Reference spells one rune as one numeric character reference, in the
+// authReference spells one rune as one numeric character reference, in the
 // chosen base, with the chosen number of leading zeros, with or without the
 // terminating semicolon, and in the chosen case.
-func d24Reference(r rune, base, pad int, semi, upper bool) string {
+func authReference(r rune, base, pad int, semi, upper bool) string {
 	digits := strconv.FormatInt(int64(r), base)
 	if upper {
 		digits = strings.ToUpper(digits)
@@ -750,11 +750,11 @@ func d24Reference(r rune, base, pad int, semi, upper bool) string {
 	return b.String()
 }
 
-// d24AllReferences spells EVERY rune of s the same way.
-func d24AllReferences(s string, base, pad int, semi, upper bool) string {
+// authAllReferences spells EVERY rune of s the same way.
+func authAllReferences(s string, base, pad int, semi, upper bool) string {
 	var b strings.Builder
 	for _, r := range s {
-		b.WriteString(d24Reference(r, base, pad, semi, upper))
+		b.WriteString(authReference(r, base, pad, semi, upper))
 	}
 	return b.String()
 }
@@ -768,7 +768,7 @@ func d24AllReferences(s string, base, pad int, semi, upper bool) string {
 // 'x' — lost a pad width earlier. Both are just numbers, and an encoder picks
 // the next one.
 func TestNumericCharacterReferencesHaveNoDigitCeiling(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	for _, base := range []int{10, 16} {
 		for _, upper := range []bool{false, true} {
 			if base == 10 && upper {
@@ -780,7 +780,7 @@ func TestNumericCharacterReferencesHaveNoDigitCeiling(t *testing.T) {
 						base, pad, semi, upper)
 					t.Run(name, func(t *testing.T) {
 						in := `<input name="password" value="` +
-							d24AllReferences(d24Password, base, pad, semi, upper) + `">`
+							authAllReferences(authPassword, base, pad, semi, upper) + `">`
 						if _, hit := credentialIn([]byte(in), secrets); !hit {
 							t.Fatalf("the sweep did not see the credential spelled as "+
 								"numeric character references in base %d with %d leading "+
@@ -805,8 +805,8 @@ func TestNumericCharacterReferencesHaveNoDigitCeiling(t *testing.T) {
 // test completing is the measurement: a decoder that grew work with the digit
 // count, or that overflowed on the way, does not get here.
 func TestAHugeNumericReferenceIsBoundedByTheInputAndNotByADigitCap(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	huge := d24AllReferences(d24Password, 10, 20000, true, false)
+	secrets := authTestSteps(t).secrets()
+	huge := authAllReferences(authPassword, 10, 20000, true, false)
 	if len(huge) < 400_000 {
 		t.Fatalf("the fixture is %d bytes, which is too small to measure anything",
 			len(huge))
@@ -853,9 +853,9 @@ func TestAHugeNumericReferenceIsBoundedByTheInputAndNotByADigitCap(t *testing.T)
 // paint". The forcing is gone: `semi` is now drawn freely, and the ambiguous
 // spellings are the ones this test most wants to produce.
 func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	rng := rand.New(rand.NewPCG(0x24, 0x2718))
-	runes := []rune(d24Password)
+	runes := []rune(authPassword)
 	for iter := 0; iter < 400; iter++ {
 		kinds := make([]int, len(runes)) // 0 literal, 1 decimal, 2 hexadecimal
 		for i := range kinds {
@@ -871,7 +871,7 @@ func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
 			if kinds[i] == 2 {
 				base = 16
 			}
-			b.WriteString(d24Reference(r, base, rng.IntN(30), rng.IntN(2) == 0,
+			b.WriteString(authReference(r, base, rng.IntN(30), rng.IntN(2) == 0,
 				rng.IntN(2) == 0))
 		}
 		in := `{"pw":"` + b.String() + `"}`
@@ -901,8 +901,8 @@ func TestMixedGeneratedSpellingsAreDecoded(t *testing.T) {
 // an input with more than one plausible decoding is read EVERY way, and a
 // secret present in ANY of them is present.
 func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	corpus, ambiguous := d24SemicolonLessCorpus()
+	secrets := authTestSteps(t).secrets()
+	corpus, ambiguous := authSemicolonLessCorpus()
 	missed := []string(nil)
 	for _, in := range corpus {
 		if _, hit := credentialIn([]byte(in), secrets); !hit {
@@ -920,7 +920,7 @@ func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
 	}
 }
 
-// d24SemicolonLessCorpus generates the semicolon-less re-spellings of the
+// authSemicolonLessCorpus generates the semicolon-less re-spellings of the
 // credential — every position of it, both bases, nine pad widths — and reports
 // how many of them are genuinely AMBIGUOUS, meaning the digit run of the
 // reference runs straight on into a literal digit of the same base.
@@ -928,13 +928,13 @@ func TestASemicolonLessReferenceIsReadEveryWay(t *testing.T) {
 // It is one generator shared by two tests because the two tests must measure
 // THE SAME CORPUS at two different encoding depths. When each had its own copy
 // of the loop, the flat reading passed and the layered one was never written,
-// which is exactly the gap ruling 11 is about.
-func d24SemicolonLessCorpus() (corpus []string, ambiguous int) {
-	runes := []rune(d24Password)
+// which is exactly the gap the branch-at-the-step ruling is about.
+func authSemicolonLessCorpus() (corpus []string, ambiguous int) {
+	runes := []rune(authPassword)
 	for _, base := range []int{10, 16} {
 		for pad := 0; pad <= 8; pad++ {
 			for pos := range runes {
-				ref := d24Reference(runes[pos], base, pad, false, false)
+				ref := authReference(runes[pos], base, pad, false, false)
 				tail := string(runes[pos+1:])
 				// Whether this spelling is ambiguous at all is decided by the
 				// CREDENTIAL, not by the test: the run continues only if the
@@ -949,7 +949,7 @@ func d24SemicolonLessCorpus() (corpus []string, ambiguous int) {
 	return corpus, ambiguous
 }
 
-// TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed is ruling 11,
+// TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed is the branch-at-the-step ruling,
 // measured.
 //
 // THE UNION USED TO EXIST AT ENCODING DEPTH 0 AND NOWHERE ELSE.
@@ -969,15 +969,15 @@ func d24SemicolonLessCorpus() (corpus []string, ambiguous int) {
 // from zero so that the depth at which the union stops existing is visible
 // rather than averaged out.
 func TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	corpus, ambiguous := d24SemicolonLessCorpus()
+	secrets := authTestSteps(t).secrets()
+	corpus, ambiguous := authSemicolonLessCorpus()
 	if ambiguous == 0 {
 		t.Fatal("no spelling this test generated was ambiguous, so it measures nothing")
 	}
 	for _, layers := range []int{0, 1, 2, 3} {
 		missed := []string(nil)
 		for _, in := range corpus {
-			if _, hit := credentialIn([]byte(d24PercentLayers(in, layers)), secrets); !hit {
+			if _, hit := credentialIn([]byte(authPercentLayers(in, layers)), secrets); !hit {
 				missed = append(missed, in)
 			}
 		}
@@ -993,7 +993,7 @@ func TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed(t *testing.T)
 	}
 }
 
-// d24EscapeShapedSecrets are ten realistic credentials WHOSE OWN BYTES ARE AN
+// authEscapeShapedSecrets are ten realistic credentials WHOSE OWN BYTES ARE AN
 // ESCAPE SEQUENCE of one of the three decoders.
 //
 // This is not an exotic shape. A base64 secret carries '+' and '/'; a secret
@@ -1007,7 +1007,7 @@ func TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed(t *testing.T)
 // percent layer produces the secret's exact bytes as an INTERMEDIATE, and the
 // next decoder in the same pass then eats the secret's own escape before
 // anything sees it.
-var d24EscapeShapedSecrets = []string{
+var authEscapeShapedSecrets = []string{
 	`pa\nssw0rd`,          // a literal backslash-n, as a JSON config file spells it
 	`s3cr3t%20key`,        // a key lifted out of a URL, percent signs and all
 	`tok&amp;en`,          // a value lifted out of an HTML form dump
@@ -1033,11 +1033,11 @@ var d24EscapeShapedSecrets = []string{
 // The zero-layer row is here so a regression that loses the flat case is not
 // read as a regression in the layered one.
 func TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer(t *testing.T) {
-	for _, raw := range d24EscapeShapedSecrets {
+	for _, raw := range authEscapeShapedSecrets {
 		t.Run(raw, func(t *testing.T) {
 			secrets := []Secret{mustSecret(t, raw)}
 			for _, layers := range []int{0, 1, 2} {
-				in := `{"state":"` + d24PercentLayers(raw, layers) + `"}`
+				in := `{"state":"` + authPercentLayers(raw, layers) + `"}`
 				if _, hit := credentialIn([]byte(in), secrets); !hit {
 					t.Errorf("under %d layer(s) of percent-encoding the sweep did not "+
 						"see the credential %q in %q. The secret's own bytes are an "+
@@ -1050,7 +1050,7 @@ func TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer(t *testing.T) {
 			// And the widened set still says no. A credential one character
 			// short of the fixture is not the fixture, however many readings
 			// the sweep carries.
-			near := `{"state":"` + d24PercentLayers(raw[:len(raw)-1]+"Z", 1) + `"}`
+			near := `{"state":"` + authPercentLayers(raw[:len(raw)-1]+"Z", 1) + `"}`
 			if _, hit := credentialIn([]byte(near), secrets); hit {
 				t.Errorf("the sweep read %q as the credential %q. A candidate set that "+
 					"says yes to a string that is not the secret makes every "+
@@ -1378,8 +1378,8 @@ func TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained(t *testing.T) 
 // the one undecided rune its greedy reading already contributed, and a rune that
 // is not the credential's is not the credential's however the run is split.
 func TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading(t *testing.T) {
-	secrets := d24Steps(t).secrets()
-	runes := []rune(d24Password)
+	secrets := authTestSteps(t).secrets()
+	runes := []rune(authPassword)
 	for _, miss := range []string{
 		// Every character of the credential as a semicolon-less reference —
 		// except that each value is one greater than it should be. Every
@@ -1388,7 +1388,7 @@ func TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading(t *testing.T) {
 		`value="` + func() string {
 			var b strings.Builder
 			for _, r := range runes {
-				b.WriteString(d24Reference(r+1, 10, 3, false, false))
+				b.WriteString(authReference(r+1, 10, 3, false, false))
 			}
 			return b.String()
 		}() + `"`,
@@ -1408,10 +1408,10 @@ func TestOneReadingOfAnAmbiguousReferenceIsNotEveryReading(t *testing.T) {
 	}
 }
 
-// d24PercentLayers applies url.QueryEscape n times, which is the ordinary way a
+// authPercentLayers applies url.QueryEscape n times, which is the ordinary way a
 // value picks up encoding layers: a parameter carried through a redirect, into
 // a form post, back out in a Location header.
-func d24PercentLayers(s string, n int) string {
+func authPercentLayers(s string, n int) string {
 	for i := 0; i < n; i++ {
 		s = url.QueryEscape(s)
 	}
@@ -1440,9 +1440,9 @@ func d24PercentLayers(s string, n int) string {
 // spot checks reach far past the point where three rounds, thirty rounds or
 // three hundred rounds would each have stopped.
 func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	for n := 1; n <= 64; n++ {
-		in := d24PercentLayers(d24Password, n)
+		in := authPercentLayers(authPassword, n)
 		if _, hit := credentialIn([]byte(in), secrets); !hit {
 			t.Fatalf("the sweep did not see the credential under %d layer(s) of "+
 				"percent-encoding (%d bytes). A depth ceiling is a budget and the "+
@@ -1450,7 +1450,7 @@ func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
 		}
 	}
 	for _, n := range []int{128, 256, 512, 1024} {
-		in := d24PercentLayers(d24Password, n)
+		in := authPercentLayers(authPassword, n)
 		if len(in) > codedMaxArtifactBytes {
 			t.Fatalf("the %d-layer fixture is %d bytes, past the artifact cap, so it "+
 				"is not an input any artifact could carry", n, len(in))
@@ -1467,7 +1467,7 @@ func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
 	// measurement is that this RETURNS, and that the shallow nesting the budget
 	// does still cover is found.
 	filler := strings.Repeat("z", 1<<20)
-	if _, hit := credentialIn([]byte(filler+d24PercentLayers(d24Password, 3)), secrets); !hit {
+	if _, hit := credentialIn([]byte(filler+authPercentLayers(authPassword, 3)), secrets); !hit {
 		t.Fatal("a credential three layers deep at the end of a megabyte of filler " +
 			"was not found, so the byte budget is tighter than its doc claims")
 	}
@@ -1491,14 +1491,14 @@ func TestLayeredEncodingIsDecodedToAFixpointAndNotToARoundCount(t *testing.T) {
 // cost exactly that and was caught exactly this way: at the multiplier that
 // stood before, a 4 MiB artifact went from four layers to two.
 func TestANonShrinkingArtifactIsDecodedAsDeepAsTheWorkBoundPaysFor(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	for _, tc := range []struct{ filler, floor int }{
 		{256 << 10, 48},
 		{1 << 20, 32},
 		{2 << 20, 16},
 		{4<<20 - 400, 8},
 	} {
-		body := strings.Repeat("z", tc.filler) + d24PercentLayers(d24Password, tc.floor)
+		body := strings.Repeat("z", tc.filler) + authPercentLayers(authPassword, tc.floor)
 		if len(body) > codedMaxArtifactBytes {
 			t.Fatalf("the %d-byte-filler fixture is %d bytes, past the artifact cap, "+
 				"so it is not an input any artifact could carry", tc.filler, len(body))
@@ -1528,10 +1528,10 @@ func TestANonShrinkingArtifactIsDecodedAsDeepAsTheWorkBoundPaysFor(t *testing.T)
 // The names below are GENERATED, and the assertion is over every position of
 // the credential rather than over the one position a fixture would pick.
 func TestAnUnresolvableReferenceDoesNotHideACredential(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	rng := rand.New(rand.NewPCG(0x99, 0x1024))
 	const alnum = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	runes := []rune(d24Password)
+	runes := []rune(authPassword)
 	for iter := 0; iter < 500; iter++ {
 		var name strings.Builder
 		for n := 1 + rng.IntN(14); n > 0; n-- {
@@ -1575,14 +1575,14 @@ func TestAnUnresolvableReferenceDoesNotHideACredential(t *testing.T) {
 // begins nothing — the ordinary case in a query string — must stay a '&', or
 // the sweep's own fixture (`s3cr3t Pa55w0rd&9xQz`) stops matching itself.
 func TestABareAmpersandIsNotAReference(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	for _, in := range []string{
-		"x=" + d24Password,
-		"/a?next=/b&" + d24Password,
-		"a=1&b=2&" + d24Password,
-		"&#" + d24Password,
-		"&;" + d24Password,
-		"&" + d24Password,
+		"x=" + authPassword,
+		"/a?next=/b&" + authPassword,
+		"a=1&b=2&" + authPassword,
+		"&#" + authPassword,
+		"&;" + authPassword,
+		"&" + authPassword,
 	} {
 		if _, hit := credentialIn([]byte(in), secrets); !hit {
 			t.Fatalf("the credential in %q was lost by the reference decoder", in)
@@ -1599,18 +1599,18 @@ func TestABareAmpersandIsNotAReference(t *testing.T) {
 // outcome. Before the fix all three reached the ArtifactSink and both
 // assertions returned nil.
 func TestAPaddedReferenceOnAnInnocentStepIsRefused(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "decimal-pad-12",
-			Bytes: []byte(`value="` + d24AllReferences(d24Password, 10, 12, true, false) + `"`)},
+			Bytes: []byte(`value="` + authAllReferences(authPassword, 10, 12, true, false) + `"`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "hex-pad-9-no-semicolon",
-			Bytes: []byte(`value="` + d24AllReferences(d24Password, 16, 9, false, false) + `"`)},
+			Bytes: []byte(`value="` + authAllReferences(authPassword, 16, 9, false, false) + `"`)},
 		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "unknown-named-reference",
-			Bytes: []byte(`value="` + strings.ReplaceAll(d24Password, "&", "&AMP;") + `"`)},
+			Bytes: []byte(`value="` + strings.ReplaceAll(authPassword, "&", "&AMP;") + `"`)},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, audit := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -1632,17 +1632,17 @@ func TestAPaddedReferenceOnAnInnocentStepIsRefused(t *testing.T) {
 		t.Fatal("AssertNoCredentialWasFound passed on a run in which three artifacts " +
 			"carried the credential")
 	}
-	d24AssertNoCredential(t, "a run with padded character references",
-		d24Emitted(s, audit, sink, err, s.AssertNoCredentialInLedger()))
+	authAssertNoCredential(t, "a run with padded character references",
+		authEmitted(s, audit, sink, err, s.AssertNoCredentialInLedger()))
 }
 
-// d24Base64 is a standard-alphabet base64 encoder written out by hand.
+// authBase64 is a standard-alphabet base64 encoder written out by hand.
 //
 // It is written out because encoding/base64 is NOT on gate 3's inertImports and
 // this tree may not import it — which is the same reason credentialIn cannot
 // decode base64, and therefore the reason this is the spelling the test below
 // uses to demonstrate that the sweep has a residual at all.
-func d24Base64(s string) string {
+func authBase64(s string) string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	d := []byte(s)
 	var b strings.Builder
@@ -1679,7 +1679,7 @@ func d24Base64(s string) string {
 // with an encoder the sweep does not know. If the sweep could see them, this
 // test would not be measuring the thing it claims to measure.
 func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
-	secrets := d24Steps(t).secrets()
+	secrets := authTestSteps(t).secrets()
 	// THE RESIDUAL, SPELLED OUT. This used to be a named character reference
 	// outside the six — `&AMP;` — and that spelling is now DECODED, so it
 	// stopped demonstrating anything and this fixture was replaced rather than
@@ -1691,17 +1691,17 @@ func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
 	// here. Adding the import is a one-line widening of the egress allowlist in
 	// internal/dast/authz/egress_chokepoint_test.go, is reported to the
 	// orchestrator, and is recorded in internal/SKIPPED-CONTROLS.md (U10).
-	beyond := d24Base64(d24Password)
+	beyond := authBase64(authPassword)
 	if _, hit := credentialIn([]byte(beyond), secrets); hit {
 		t.Fatal("the sweep decoded base64, so this test no longer demonstrates the " +
 			"limit credentialIn documents; widen the fixture")
 	}
-	if !strings.Contains(d24Base64("any"), "YW55") {
-		t.Fatalf("d24Base64 does not encode base64, so the fixture is not the "+
-			"encoding this test claims: d24Base64(%q) = %q", "any", d24Base64("any"))
+	if !strings.Contains(authBase64("any"), "YW55") {
+		t.Fatalf("authBase64 does not encode base64, so the fixture is not the "+
+			"encoding this test claims: authBase64(%q) = %q", "any", authBase64("any"))
 	}
 
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		// Step 2 types the password. The bytes are spelled with the entity the
 		// sweep cannot decode, so ONLY provenance can refuse this.
@@ -1712,9 +1712,9 @@ func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
 		{Kind: AuthArtifactHTTPExchange, Step: 3, Name: "beyond-everything",
 			Bytes: []byte(`value="` + beyond + `"`)},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -1748,11 +1748,11 @@ func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
 // method on a value it cannot Interface(), so a Stringer alone would leak
 // through any struct that HOLDS a Secret.
 func TestFmtCannotPrintACredential(t *testing.T) {
-	sec := mustSecret(t, d24Password)
+	sec := mustSecret(t, authPassword)
 	holder := struct {
 		s Secret
 	}{s: sec}
-	steps := d24Steps(t)
+	steps := authTestSteps(t)
 
 	renders := []string{
 		fmt.Sprintf("%v", sec), fmt.Sprintf("%s", sec), fmt.Sprintf("%q", sec),
@@ -1776,9 +1776,9 @@ func TestFmtCannotPrintACredential(t *testing.T) {
 	// leaks under exactly the verbs the assertion above searches.
 	control := struct {
 		s string
-	}{s: d24Password}
+	}{s: authPassword}
 	leaked := fmt.Sprintf("%v %+v %#v", control, control, control)
-	if !strings.Contains(leaked, d24Password) {
+	if !strings.Contains(leaked, authPassword) {
 		t.Fatalf("the positive control did not leak, so the assertion above measures "+
 			"nothing: %q", leaked)
 	}
@@ -1787,11 +1787,11 @@ func TestFmtCannotPrintACredential(t *testing.T) {
 			"reaching Secret at all and the assertion below is vacuous")
 	}
 
-	d24AssertNoCredential(t, "fmt over Secret and everything that holds one",
+	authAssertNoCredential(t, "fmt over Secret and everything that holds one",
 		strings.Join(renders, "\n"))
 
 	// And the one exit still works, or the driver could never log in.
-	if got := sec.Reveal(); got != d24Password {
+	if got := sec.Reveal(); got != authPassword {
 		t.Fatalf("Secret.Reveal did not round-trip the credential (len %d)", len(got))
 	}
 	if !sec.Present() {
@@ -1804,7 +1804,7 @@ func TestFmtCannotPrintACredential(t *testing.T) {
 }
 
 func TestSecretRefusesToBeSerialized(t *testing.T) {
-	sec := mustSecret(t, d24Password)
+	sec := mustSecret(t, authPassword)
 	if _, err := sec.MarshalJSON(); !errors.Is(err, ErrSecretMarshalled) {
 		t.Fatalf("Secret.MarshalJSON returned %v, want ErrSecretMarshalled", err)
 	}
@@ -1825,8 +1825,8 @@ func TestSecretRefusesToBeSerialized(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTheLoginPostNeedsAnExplicitEndpointAllowance(t *testing.T) {
-	drv := d24Working()
-	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}, noAllow: true})
+	drv := authWorking()
+	cfg, audit := authConfig(t, authOpts{driver: drv, sink: &authSink{}, noAllow: true})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if !errors.Is(err, ErrAuthFailed) {
 		t.Fatalf("AuthenticateAndMonitor returned %v, want ErrAuthFailed", err)
@@ -1857,8 +1857,8 @@ func TestTheLoginPostNeedsAnExplicitEndpointAllowance(t *testing.T) {
 }
 
 func TestAnAdmittedLoginCarriesTwoDistinctAuditRows(t *testing.T) {
-	drv := d24Working()
-	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	drv := authWorking()
+	cfg, audit := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -1916,11 +1916,11 @@ func TestAnAdmittedLoginCarriesTwoDistinctAuditRows(t *testing.T) {
 }
 
 func TestScopeNarrowingStopsALoginOnADisallowedPath(t *testing.T) {
-	drv := d24Working()
+	drv := authWorking()
 	// robots.txt removes the login path. Gate 11's narrowing is applied to
 	// the Scope before this file sees it, and checkAuthPath consults it.
-	cfg, _ := d24Config(t, d24Opts{
-		driver: drv, sink: &d24Sink{},
+	cfg, _ := authConfig(t, authOpts{
+		driver: drv, sink: &authSink{},
 		robots: "User-agent: *\nDisallow: /login\n",
 	})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
@@ -1941,13 +1941,13 @@ func TestScopeNarrowingStopsALoginOnADisallowedPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAFailedLoginIsNeverReportedAsAnAuthenticatedCrawl(t *testing.T) {
-	bad := d24GoodOutcome()
+	bad := authGoodOutcome()
 	bad.SessionEstablished = false
 	bad.FailedAtStep = 2
 	bad.Detail = "the password field never appeared"
-	drv := &d24Driver{outcomes: []AuthOutcome{bad}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{bad}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: sink})
 
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if !errors.Is(err, ErrAuthFailed) {
@@ -2005,17 +2005,17 @@ func TestAFailedLoginIsNeverReportedAsAnAuthenticatedCrawl(t *testing.T) {
 
 func TestTheDriversClaimOfASessionIsNotBelieved(t *testing.T) {
 	// The driver says the login worked. The session cannot be observed.
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome()},
 		probes:   []AuthProbe{{Status: 200, Latency: time.Millisecond, SessionPresent: false}},
 	}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if !errors.Is(err, ErrAuthFailed) {
 		t.Fatalf("AuthenticateAndMonitor returned %v, want ErrAuthFailed", err)
 	}
 	if s.Authenticated() {
-		t.Fatal("the driver's word alone produced an authenticated session; ruling 7 says " +
+		t.Fatal("the driver's word alone produced an authenticated session; the inventory ruling says " +
 			"only an observation Anvil made through the kernel confirms")
 	}
 	if !hasEventKind(s, SessionEventLoginClaimed) {
@@ -2082,24 +2082,24 @@ func TestANilSessionIsNotAuthenticated(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome(), d24GoodOutcome()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome(), authGoodOutcome()},
 		probes: []AuthProbe{
-			d24Alive(), // the initial verification
-			d24Alive(), // phase 1 boundary: still alive
+			authAlive(), // the initial verification
+			authAlive(), // phase 1 boundary: still alive
 			// phase 2 boundary: the session is gone — the application still
 			// ANSWERS, and bounces to the login page. A status check alone
 			// would have called this alive.
 			{Status: 302, Latency: time.Millisecond, Location: "/login?next=%2Faccount",
 				SessionPresent: true},
-			d24Alive(), // the forced re-login's verification
-			d24Alive(), // phase 3 boundary: alive again
+			authAlive(), // the forced re-login's verification
+			authAlive(), // phase 3 boundary: alive again
 		},
 		// 302 is on the allowlist below so that the ONLY thing distinguishing
 		// the dead session is the bounce to the login path.
 	}
-	sink := &d24Sink{}
-	cfg, audit := d24Config(t, d24Opts{driver: drv, sink: sink, alive: []int{200, 302}})
+	sink := &authSink{}
+	cfg, audit := authConfig(t, authOpts{driver: drv, sink: sink, alive: []int{200, 302}})
 	now := mustClock(t)
 
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
@@ -2183,7 +2183,7 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 	}); err == nil {
 		t.Fatal("AssertAllAuthenticated passed on an instant in an unverified window")
 	}
-	// AND THE OTHER DIRECTION, which is the one D.26 actually hits: an instant
+	// AND THE OTHER DIRECTION, which is the one coverage reporting actually hits: an instant
 	// inside a fully authenticated window is NOT authenticated coverage when
 	// the request did not carry the session. Wall-clock overlap is not access.
 	if got := s.CoverageAt(CoverageInstant{At: between}); got != AuthStateSessionNotCarried {
@@ -2205,24 +2205,24 @@ func TestAMidScanLogoutIsDetectedAndForcesAReLogin(t *testing.T) {
 	}
 	if err := s.AssertAllAuthenticated([]CoverageInstant{{At: between}}); err == nil {
 		t.Fatal("AssertAllAuthenticated passed on a request that did not carry the " +
-			"session, which is the number D.26 would have reported as coverage behind " +
+			"session, which is the number coverage reporting would have reported as coverage behind " +
 			"the login")
 	}
 
-	d24AssertNoCredential(t, "a run with a mid-scan logout",
-		d24Emitted(s, audit, sink, err))
+	authAssertNoCredential(t, "a run with a mid-scan logout",
+		authEmitted(s, audit, sink, err))
 }
 
-// d24AuthenticatedWindow returns a session and an instant that sits inside an
+// authAuthenticatedWindow returns a session and an instant that sits inside an
 // AUTHENTICATED window of it — two passed liveness observations with the
 // instant between them.
-func d24AuthenticatedWindow(t *testing.T) (*Session, time.Time) {
+func authAuthenticatedWindow(t *testing.T) (*Session, time.Time) {
 	t.Helper()
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome()},
-		probes:   []AuthProbe{d24Alive(), d24Alive()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome()},
+		probes:   []AuthProbe{authAlive(), authAlive()},
 	}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	now := mustClock(t)
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
 	if err != nil {
@@ -2253,7 +2253,7 @@ func d24AuthenticatedWindow(t *testing.T) (*Session, time.Time) {
 // The POSITIVE case is asserted first, because every negative below is vacuous
 // if the sealed path cannot reach AuthStateAuthenticated at all.
 func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
-	s, between := d24AuthenticatedWindow(t)
+	s, between := authAuthenticatedWindow(t)
 
 	sealed := s.Carried(between, "session cookie attached by the fixture")
 	if got := s.CoverageAt(sealed); got != AuthStateAuthenticated {
@@ -2268,8 +2268,8 @@ func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
 	// CarriageEvidence is a NEW EXPORTED STRING CHANNEL out of this package, so
 	// it is swept like every other one: a caller that names the credential as
 	// the mechanism gets the refusal marker back, not the credential.
-	leaky := s.Carried(between, "cookie=session; password="+d24Password)
-	if got := leaky.CarriageEvidence(); strings.Contains(got, d24Password) {
+	leaky := s.Carried(between, "cookie=session; password="+authPassword)
+	if got := leaky.CarriageEvidence(); strings.Contains(got, authPassword) {
 		t.Fatalf("CarriageEvidence returned the credential: %q", got)
 	} else if got != refusedForCredential {
 		t.Fatalf("a mechanism naming the credential rendered as %q, want the whole "+
@@ -2288,11 +2288,11 @@ func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
 	// bytes it does not like and passing the rest straight out. Every position
 	// of the credential is spelled that way here, because the position that
 	// leaks is a property of the credential and not of a fixture's choice.
-	runes := []rune(d24Password)
+	runes := []rune(authPassword)
 	for _, base := range []int{10, 16} {
 		for pos := range runes {
 			how := "cookie jar carried " + string(runes[:pos]) +
-				d24Reference(runes[pos], base, 0, false, false) + string(runes[pos+1:])
+				authReference(runes[pos], base, 0, false, false) + string(runes[pos+1:])
 			got := s.Carried(between, how).CarriageEvidence()
 			if got != refusedForCredential {
 				t.Fatalf("a mechanism naming the credential with character %d spelled as "+
@@ -2303,7 +2303,7 @@ func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
 		}
 	}
 
-	other, _ := d24AuthenticatedWindow(t)
+	other, _ := authAuthenticatedWindow(t)
 	empty := s.Carried(between, "   ")
 	var nilSession *Session
 	for _, tc := range []struct {
@@ -2355,15 +2355,15 @@ func TestAnUnsealedCarriageClaimIsNotCoverage(t *testing.T) {
 }
 
 func TestAnUnrecoverableSessionLossIsNotSilent(t *testing.T) {
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome()},
 		probes: []AuthProbe{
-			d24Alive(),
+			authAlive(),
 			{Status: 401, Latency: time.Millisecond, SessionPresent: true},
 			{Status: 401, Latency: time.Millisecond, SessionPresent: true},
 		},
 	}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	now := mustClock(t)
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
 	if err != nil {
@@ -2389,11 +2389,11 @@ func TestAnUnrecoverableSessionLossIsNotSilent(t *testing.T) {
 func TestTheCredentialSubmissionBudgetIsBounded(t *testing.T) {
 	// The login always "works" and the session is never observable, so every
 	// boundary forces a fresh submission. Without the bound this loops.
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome()},
 		probes:   []AuthProbe{{Status: 401, Latency: time.Millisecond, SessionPresent: false}},
 	}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	now := mustClock(t)
 	s, _ := AuthenticateAndMonitor(context.Background(), cfg, now)
 	for i := 0; i < 10; i++ {
@@ -2442,14 +2442,14 @@ func TestCheckLivenessFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			drv := &d24Driver{
-				outcomes: []AuthOutcome{d24GoodOutcome()},
+			drv := &authDriver{
+				outcomes: []AuthOutcome{authGoodOutcome()},
 				// The FIRST probe verifies the login; the second is the case.
-				probes:    []AuthProbe{d24Alive(), tc.probe},
+				probes:    []AuthProbe{authAlive(), tc.probe},
 				probeErrs: []error{nil, tc.err},
 			}
-			cfg, _ := d24Config(t, d24Opts{
-				driver: drv, sink: &d24Sink{}, alive: []int{200, 302},
+			cfg, _ := authConfig(t, authOpts{
+				driver: drv, sink: &authSink{}, alive: []int{200, 302},
 			})
 			now := mustClock(t)
 			s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
@@ -2479,7 +2479,7 @@ func TestCheckLivenessRefusesAnUnusableSession(t *testing.T) {
 	}
 	// A session whose driver is nil cannot be observed, and an unobservable
 	// session is never read as a live one.
-	cfg, _ := d24Config(t, d24Opts{driver: nil, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: nil, sink: &authSink{}})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if !errors.Is(err, ErrNoAuthDriver) {
 		t.Fatalf("AuthenticateAndMonitor with no driver returned %v, want ErrNoAuthDriver",
@@ -2495,7 +2495,7 @@ func TestCheckLivenessRefusesAnUnusableSession(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactScreenshot, Step: 1, Name: "click", Bytes: []byte("PNG-1")},
 		// Step 2 is AUTO_STEPS: it types the password.
@@ -2511,9 +2511,9 @@ func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
 		{Kind: AuthArtifactStorageState, Step: 0, Name: "storage", Bytes: []byte("{}")},
 		{Kind: "video", Step: 1, Name: "screencast", Bytes: []byte("MP4")},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -2546,7 +2546,7 @@ func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
 	// shape of this loop asked only about screenshots, so an HTTP transcript
 	// of the password POST reaching the sink passed it.
 	for _, a := range sink.stored {
-		if d24Steps(t).stepBears(a.Step()) {
+		if authTestSteps(t).stepBears(a.Step()) {
 			t.Fatalf("a %s artifact of credential step %d reached the sink",
 				a.Kind(), a.Step())
 		}
@@ -2564,15 +2564,15 @@ func TestScreenshotsOfCredentialStepsAreNeverStored(t *testing.T) {
 }
 
 func TestScreenshotPolicySuppressAllStoresNoImage(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactScreenshot, Step: 1, Name: "click", Bytes: []byte("PNG-1")},
 		{Kind: AuthArtifactScreenshot, Step: 3, Name: "wait", Bytes: []byte("PNG-3")},
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "http", Bytes: []byte("GET /login")},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{
 		driver: drv, sink: sink, shots: ScreenshotPolicySuppressAll,
 	})
 	if _, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t)); err != nil {
@@ -2588,15 +2588,15 @@ func TestScreenshotPolicySuppressAllStoresNoImage(t *testing.T) {
 }
 
 func TestTheReportIsStoredEvenWhenTheLoginFails(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.SessionEstablished = false
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactScreenshot, Step: 1, Name: "click", Bytes: []byte("PNG-1")},
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "http", Bytes: []byte("GET /login")},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if !errors.Is(err, ErrAuthFailed) {
 		t.Fatalf("AuthenticateAndMonitor returned %v, want ErrAuthFailed", err)
@@ -2611,12 +2611,12 @@ func TestTheReportIsStoredEvenWhenTheLoginFails(t *testing.T) {
 }
 
 func TestAMissingSinkIsRecordedRatherThanSilent(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "http", Bytes: []byte("GET /login")},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: nil})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: nil})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -2630,8 +2630,8 @@ func TestAMissingSinkIsRecordedRatherThanSilent(t *testing.T) {
 			"went nowhere")
 	}
 	// A driver that produces NO artifact at all is a different finding again.
-	drv2 := d24Working()
-	cfg2, _ := d24Config(t, d24Opts{driver: drv2, sink: &d24Sink{}})
+	drv2 := authWorking()
+	cfg2, _ := authConfig(t, authOpts{driver: drv2, sink: &authSink{}})
 	s2, err := AuthenticateAndMonitor(context.Background(), cfg2, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -2644,14 +2644,14 @@ func TestAMissingSinkIsRecordedRatherThanSilent(t *testing.T) {
 }
 
 func TestAnOverLargeArtifactIsRefusedRatherThanTruncated(t *testing.T) {
-	out := d24GoodOutcome()
+	out := authGoodOutcome()
 	out.Artifacts = []AuthArtifact{
 		{Kind: AuthArtifactHTTPExchange, Step: 1, Name: "huge",
 			Bytes: make([]byte, codedMaxArtifactBytes+1)},
 	}
-	drv := &d24Driver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{d24Alive()}}
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: sink})
+	drv := &authDriver{outcomes: []AuthOutcome{out}, probes: []AuthProbe{authAlive()}}
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: sink})
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, mustClock(t))
 	if err != nil {
 		t.Fatalf("AuthenticateAndMonitor: %v", err)
@@ -2670,14 +2670,14 @@ func TestAnOverLargeArtifactIsRefusedRatherThanTruncated(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewAuthStepsRefusesEveryShapeThatIsNotAnExplicitFlow(t *testing.T) {
-	pw := mustSecret(t, d24Password)
+	pw := mustSecret(t, authPassword)
 	cases := []struct {
 		name   string
 		method string
 		ref    string
 		steps  []AuthStep
 	}{
-		{"a method that is not on D.1's allowlist of one", "form", "a.yaml",
+		{"a method that is not on the target manifest's allowlist of one", "form", "a.yaml",
 			[]AuthStep{{Kind: AuthStepAutoSteps, Selector: "u", Value: pw}}},
 		{"no source ref", target.AuthMethodBrowser, "  ",
 			[]AuthStep{{Kind: AuthStepAutoSteps, Selector: "u", Value: pw}}},
@@ -2713,7 +2713,7 @@ func TestNewAuthStepsRefusesEveryShapeThatIsNotAnExplicitFlow(t *testing.T) {
 			[]AuthStep{{Kind: AuthStepClick, Selector: strings.Repeat("a", maxIdentBytes+1)},
 				{Kind: AuthStepAutoSteps, Selector: "u", Value: pw}}},
 		{"more steps than the coded bound", target.AuthMethodBrowser, "a.yaml",
-			d24ManySteps(codedMaxAuthSteps+1, pw)},
+			authManySteps(codedMaxAuthSteps+1, pw)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2724,7 +2724,7 @@ func TestNewAuthStepsRefusesEveryShapeThatIsNotAnExplicitFlow(t *testing.T) {
 			if got.Constructed() {
 				t.Fatal("NewAuthSteps returned a CONSTRUCTED value alongside an error")
 			}
-			d24AssertNoCredential(t, "a NewAuthSteps refusal for "+tc.name, err.Error())
+			authAssertNoCredential(t, "a NewAuthSteps refusal for "+tc.name, err.Error())
 		})
 	}
 }
@@ -2733,22 +2733,22 @@ func TestNewAuthStepsRefusesEveryShapeThatIsNotAnExplicitFlow(t *testing.T) {
 // loader with a bug produces: the credential document's parser put the
 // password in the `kind` field, and the refusal message prints the kind.
 func TestNewAuthStepsRefusalDoesNotLeakACredentialFromTheKindField(t *testing.T) {
-	pw := mustSecret(t, d24Password)
+	pw := mustSecret(t, authPassword)
 	_, err := NewAuthSteps(target.AuthMethodBrowser, "a.yaml", []AuthStep{
-		{Kind: AuthStepKind(d24Password)},
+		{Kind: AuthStepKind(authPassword)},
 		{Kind: AuthStepAutoSteps, Selector: "u", Value: pw},
 	})
 	if err == nil {
 		t.Fatal("NewAuthSteps accepted a kind nobody enumerated")
 	}
-	d24AssertNoCredential(t, "a refusal naming the offending kind", err.Error())
+	authAssertNoCredential(t, "a refusal naming the offending kind", err.Error())
 	if !strings.Contains(err.Error(), refusedForCredential) {
 		t.Fatalf("the kind was not swept, only redacted, so the credential's redacted "+
 			"spelling may still be in there: %v", err)
 	}
 }
 
-func d24ManySteps(n int, pw Secret) []AuthStep {
+func authManySteps(n int, pw Secret) []AuthStep {
 	out := make([]AuthStep, 0, n)
 	out = append(out, AuthStep{Kind: AuthStepAutoSteps, Selector: "u", Value: pw})
 	for len(out) < n {
@@ -2758,7 +2758,7 @@ func d24ManySteps(n int, pw Secret) []AuthStep {
 }
 
 func TestAuthStepsAcceptsTheFixtureFlowAndReportsItWithoutSecrets(t *testing.T) {
-	steps := d24Steps(t)
+	steps := authTestSteps(t)
 	if !steps.Constructed() || steps.Len() != 4 {
 		t.Fatalf("the fixture flow is %d step(s) and Constructed=%v",
 			steps.Len(), steps.Constructed())
@@ -2793,24 +2793,24 @@ func TestAuthStepsAcceptsTheFixtureFlowAndReportsItWithoutSecrets(t *testing.T) 
 // 8. The manifest, and the two seams whose absence is loud
 // ---------------------------------------------------------------------------
 
-type d24Loader struct {
+type authLoader struct {
 	steps []AuthStep
 	err   error
 	seen  []string
 }
 
-func (l *d24Loader) LoadAuthSteps(_ context.Context, p string) ([]AuthStep, error) {
+func (l *authLoader) LoadAuthSteps(_ context.Context, p string) ([]AuthStep, error) {
 	l.seen = append(l.seen, p)
 	return l.steps, l.err
 }
 
-func TestAuthStepsFromManifestReadsD1RatherThanReparsing(t *testing.T) {
+func TestAuthStepsFromManifestReadsTheTargetManifestRatherThanReparsing(t *testing.T) {
 	m := &target.Manifest{
 		SchemaVersion: target.SchemaVersion,
 		Auth:          &target.Auth{Method: target.AuthMethodBrowser, StepsRef: "./.anvil/auth.yaml"},
 	}
-	loader := &d24Loader{steps: []AuthStep{
-		{Kind: AuthStepAutoSteps, Selector: d24Username, Value: mustSecret(t, d24Password)},
+	loader := &authLoader{steps: []AuthStep{
+		{Kind: AuthStepAutoSteps, Selector: authUsername, Value: mustSecret(t, authPassword)},
 	}}
 	steps, err := AuthStepsFromManifest(context.Background(), m, "C:/repo", loader)
 	if err != nil {
@@ -2834,7 +2834,7 @@ func TestAuthStepsFromManifestReadsD1RatherThanReparsing(t *testing.T) {
 
 func TestAManifestWithNoAuthSectionIsNotAnError(t *testing.T) {
 	m := &target.Manifest{SchemaVersion: target.SchemaVersion}
-	steps, err := AuthStepsFromManifest(context.Background(), m, "C:/repo", &d24Loader{})
+	steps, err := AuthStepsFromManifest(context.Background(), m, "C:/repo", &authLoader{})
 	if err != nil {
 		t.Fatalf("AuthStepsFromManifest on a manifest with no auth section: %v", err)
 	}
@@ -2851,12 +2851,12 @@ func TestALoaderErrorIsNotForwarded(t *testing.T) {
 		SchemaVersion: target.SchemaVersion,
 		Auth:          &target.Auth{Method: target.AuthMethodBrowser, StepsRef: "./.anvil/auth.yaml"},
 	}
-	loader := &d24Loader{err: fmt.Errorf("line 3: bad value %q", d24Password)}
+	loader := &authLoader{err: fmt.Errorf("line 3: bad value %q", authPassword)}
 	_, err := AuthStepsFromManifest(context.Background(), m, "C:/repo", loader)
 	if err == nil {
 		t.Fatal("AuthStepsFromManifest swallowed the loader's failure")
 	}
-	d24AssertNoCredential(t, "a loader failure", err.Error())
+	authAssertNoCredential(t, "a loader failure", err.Error())
 	if strings.Contains(err.Error(), "line 3") {
 		t.Fatalf("the loader's error text was forwarded verbatim: %v", err)
 	}
@@ -2887,7 +2887,7 @@ func TestTheSeamsAbsencesAreLoud(t *testing.T) {
 func TestAuthConfigRefusesRatherThanDegrades(t *testing.T) {
 	base := func(t *testing.T) AuthConfig {
 		t.Helper()
-		cfg, _ := d24Config(t, d24Opts{driver: d24Working(), sink: &d24Sink{}})
+		cfg, _ := authConfig(t, authOpts{driver: authWorking(), sink: &authSink{}})
 		return cfg
 	}
 	// shapeOnly marks the cases Constructed() is NOT expected to catch.
@@ -2958,15 +2958,15 @@ func TestAuthConfigRefusesRatherThanDegrades(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWindowsTileTheRunWithNoGapAndNoOverlap(t *testing.T) {
-	drv := &d24Driver{
-		outcomes: []AuthOutcome{d24GoodOutcome(), d24GoodOutcome()},
+	drv := &authDriver{
+		outcomes: []AuthOutcome{authGoodOutcome(), authGoodOutcome()},
 		probes: []AuthProbe{
-			d24Alive(), d24Alive(),
+			authAlive(), authAlive(),
 			{Status: 401, SessionPresent: false},
-			d24Alive(), d24Alive(),
+			authAlive(), authAlive(),
 		},
 	}
-	cfg, _ := d24Config(t, d24Opts{driver: drv, sink: &d24Sink{}})
+	cfg, _ := authConfig(t, authOpts{driver: drv, sink: &authSink{}})
 	now := mustClock(t)
 	s, err := AuthenticateAndMonitor(context.Background(), cfg, now)
 	if err != nil {
@@ -3071,8 +3071,8 @@ func lastEventOf(t *testing.T, s *Session, k SessionEventKind) SessionEvent {
 // the decision path, because that is the shape of the bug it exists for: a
 // refactor that sweeps one field and stores another.
 func TestTheIndependentLookReadsTheBytesTheSinkReceives(t *testing.T) {
-	sink := &d24Sink{}
-	cfg, _ := d24Config(t, d24Opts{driver: d24Working(), sink: sink})
+	sink := &authSink{}
+	cfg, _ := authConfig(t, authOpts{driver: authWorking(), sink: sink})
 	s := &Session{
 		cfg:       cfg,
 		state:     AuthStateUnauthenticated,
@@ -3114,7 +3114,7 @@ func TestTheIndependentLookReadsTheBytesTheSinkReceives(t *testing.T) {
 	// at the boundary the way a mis-wired store path would deliver them.
 	bad := StoredArtifact{
 		kind: AuthArtifactStorageState, step: 3, name: "leaked",
-		bytes: []byte(`{"pw":"` + d24Password + `"}`), sealed: true,
+		bytes: []byte(`{"pw":"` + authPassword + `"}`), sealed: true,
 	}
 	err := s.deliver(context.Background(), bad, secrets)
 	if !errors.Is(err, ErrCredentialInArtifact) {
@@ -3138,6 +3138,6 @@ func TestTheIndependentLookReadsTheBytesTheSinkReceives(t *testing.T) {
 	if !strings.Contains(lerr.Error(), string(AuthArtifactStorageState)) {
 		t.Fatalf("the failure does not name the artifact kind: %v", lerr)
 	}
-	d24AssertNoCredential(t, "the independent look's own error",
+	authAssertNoCredential(t, "the independent look's own error",
 		lerr.Error()+"\n"+err.Error())
 }

@@ -1,16 +1,16 @@
 """Anvil Milestone 0 evaluation harness.
 
 This package is a **pure-Python** tree. It exists under the third of the three
-carve-outs in ``plan/00-SPINE.md`` S12 ("Where Python survives — exactly three
-places, none of them control-plane runtime"): *the evaluation harness and
-KL-divergence quantisation checks*. No Go code belongs here, and nothing in this
-tree is part of the Anvil control plane.
+carve-outs in the spine's Go control-plane decision (``plan/design/spine.md``, "Where
+Python survives — exactly three places, none of them control-plane runtime"): *the
+evaluation harness and KL-divergence quantisation checks*. No Go code belongs here, and
+nothing in this tree is part of the Anvil control plane.
 
 The package provides the shared skeleton that every later Milestone 0 step
 builds on:
 
-* ``anvil_eval.data``     — corpus loaders (M0.3 PrimeVul, M0.4 ARVO, M0.5 CWE-Bench-Java)
-* ``anvil_eval.harness``  — experiment runners (M0.9…M0.16)
+* ``anvil_eval.data``     — corpus loaders (PrimeVul, ARVO, CWE-Bench-Java)
+* ``anvil_eval.harness``  — experiment runners (the evaluation experiments)
 
 Those submodules are written by later packets; this module only fixes the
 version, the on-disk layout, and the small helpers that keep every step
@@ -47,20 +47,20 @@ EVAL_ROOT: Path = Path(__file__).resolve().parents[2]
 #: Repository root (the parent of ``eval/``).
 REPO_ROOT: Path = EVAL_ROOT.parent
 
-# Canonical sub-trees. These paths are the contract between M0 steps; a step
+# Canonical sub-trees. These paths are the contract between evaluation steps; a step
 # that writes somewhere else breaks the register's ``artifact_path`` fields.
-DATA_DIR: Path = EVAL_ROOT / "data"          # M0.3, M0.4, M0.5 — gitignored payloads
-MODELS_DIR: Path = EVAL_ROOT / "models"      # M0.6 — pinned-download manifests, not weights
-TOOLS_DIR: Path = EVAL_ROOT / "tools"        # M0.7 — opengrep engine + pinned ruleset
+DATA_DIR: Path = EVAL_ROOT / "data"          # PrimeVul, ARVO, CWE-Bench-Java — gitignored payloads
+MODELS_DIR: Path = EVAL_ROOT / "models"      # candidate models: pinned manifests, not weights
+TOOLS_DIR: Path = EVAL_ROOT / "tools"        # opengrep engine + pinned ruleset
 RESULTS_DIR: Path = EVAL_ROOT / "results"    # eval/results/<ID>.json, committed
 NOTES_DIR: Path = EVAL_ROOT / "notes"        # licence findings and critic verdicts
 HARNESS_DIR: Path = EVAL_ROOT / "harness"    # experiment runner scripts
-SCHEMA_DIR: Path = EVAL_ROOT / "schema"      # M0.1 — register JSON Schema
+SCHEMA_DIR: Path = EVAL_ROOT / "schema"      # register JSON Schema
 
-#: The experiment register (authored by M0.1, updated by M0.17/M0.18).
+#: The experiment register (updated by the register roll-up and by the gate decision).
 REGISTER_PATH: Path = EVAL_ROOT / "register.yaml"
 
-#: JSON Schema the register validates against (authored by M0.1).
+#: JSON Schema the register validates against.
 REGISTER_SCHEMA_PATH: Path = SCHEMA_DIR / "register.schema.json"
 
 
@@ -68,11 +68,11 @@ def result_path(experiment_id: str) -> Path:
     """Return the canonical result artifact path for an experiment ID.
 
     The register's ``result.artifact_path`` field is specified as
-    ``eval/results/<id>.json`` in ``plan/10-milestone0-evaluation.md``; every
+    ``eval/results/<id>.json`` in ``plan/design/evaluation.md``; every
     experiment step must write there and nowhere else.
 
-    >>> result_path("EXP-01").name
-    'EXP-01.json'
+    >>> result_path("advisory-permutation").name
+    'advisory-permutation.json'
     """
     experiment_id = experiment_id.strip()
     if not experiment_id:

@@ -35,7 +35,7 @@ from .manifest import Manifest, assert_rule_source_permitted, load_manifest
 # Where acquired artefacts land. Kept out of git (see .gitignore in this dir).
 DEFAULT_VENDOR_DIR = Path(__file__).resolve().parent.parent / "vendor"
 ENGINE_SUBDIR = "engine"
-# NOT "opengrep-rules" and NOT nested under a dir called "opengrep": the S5
+# NOT "opengrep-rules" and NOT nested under a dir called "opengrep": the spine's exclusion list
 # substring guard in manifest.assert_rule_source_permitted would (correctly)
 # refuse a path containing "opengrep/opengrep-rules".
 RULES_SUBDIR = "aikido-opengrep-rules"

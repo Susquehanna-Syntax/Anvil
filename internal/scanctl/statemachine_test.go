@@ -27,7 +27,7 @@ func (c *testClock) set(d time.Duration) { c.at = baseTime.Add(d) }
 // claim window and a derived 4h DAST deadline, which binds.
 func dastPolicy() DeadlinePolicy { return DeadlinePolicy{DastEnabled: true} }
 
-// sastOnlyPolicy is the core `anvil` artifact (plan/00-SPINE.md S9-AMENDED):
+// sastOnlyPolicy is the core `anvil` artifact (the two-artifact split):
 // no `anvil-dast`, so no DAST half and no clock 3.
 func sastOnlyPolicy() DeadlinePolicy { return DeadlinePolicy{} }
 
@@ -121,7 +121,7 @@ func TestBeginStartsAtVersionOne(t *testing.T) {
 
 // A core `anvil` install has no `anvil-dast`, so record.Sealer.BeginAudit
 // terminally seals the DAST half at scan start. The audit starts in
-// record.StateDastSealed — which is one of the states O.2's struck four-state
+// record.StateDastSealed — which is one of the states the state wiring's struck four-state
 // machine could not express at all.
 func TestBeginWithoutDastTierStartsDastSealed(t *testing.T) {
 	ctl, _ := newTestController(t, sastOnlyPolicy(), WatermarkPolicy{})
@@ -177,7 +177,7 @@ func TestBeginRefusesDuplicateAudit(t *testing.T) {
 
 // TestLegalTransitions drives one audit per row through a sequence of events
 // and asserts the resulting anvil/state, the two per-half statuses and the
-// audit-level anvil/dastStatus. Every arrow into each of R.1's six states
+// audit-level anvil/dastStatus. Every arrow into each of the record contract's six states
 // appears at least once.
 func TestLegalTransitions(t *testing.T) {
 	type step struct {
@@ -353,7 +353,7 @@ func TestLegalTransitions(t *testing.T) {
 				t.Errorf("DastStatus = %q, want %q", rec.DastStatus, tt.wantDastSt)
 			}
 			if !rec.State.Valid() {
-				t.Errorf("State %q is not one of R.1's six frozen literals", rec.State)
+				t.Errorf("State %q is not one of the record contract's six frozen literals", rec.State)
 			}
 			if !rec.DastStatus.Valid() || rec.DastStatus == "" {
 				t.Errorf("DastStatus %q is not a legal literal; audit_record.dast_status is NOT NULL", rec.DastStatus)
@@ -362,7 +362,7 @@ func TestLegalTransitions(t *testing.T) {
 	}
 }
 
-// Every one of R.1's six anvil/state values must be reachable through this
+// Every one of the record contract's six anvil/state values must be reachable through this
 // controller. The struck four-state machine made `consumed` unreachable by
 // making `sealed` terminal; this is the regression test for that ruling.
 func TestEverySixthStateIsReachable(t *testing.T) {
@@ -459,7 +459,7 @@ func TestIllegalTransitionsReturnErrors(t *testing.T) {
 		{
 			name: "sealing with a status outside the frozen enum",
 			from: record.StateCollecting,
-			// `complete` is exactly the struck token ruling G5 removed. It
+			// `complete` is exactly the struck token the half-status ruling removed. It
 			// must be refused, not silently accepted as a seal.
 			ev:            SealHalfEvent(record.HalfSast, record.HalfStatus("complete")),
 			wantEnumField: "anvil/status",
@@ -645,7 +645,7 @@ func TestSastSealsAndIsConsumableWhileDastRuns(t *testing.T) {
 		t.Errorf("len(sast findings) = %d, want 4", len(got))
 	}
 
-	// And the DAST half's are not — R.6's read gate, asked through
+	// And the DAST half's are not — the sealer's read gate, asked through
 	// record.HalfReadGate and not re-derived here.
 	if _, err := ctl.Findings(rec, record.HalfDast); !errors.Is(err, record.ErrHalfNotSealed) {
 		t.Errorf("Findings(dast) error = %v, want record.ErrHalfNotSealed", err)
@@ -729,8 +729,9 @@ func TestSlowDastNeverLeavesTheRecordStuck(t *testing.T) {
 		if rec.State != record.StateExpired {
 			t.Fatalf("State = %q at the claim deadline, want %q — NOT stuck", rec.State, record.StateExpired)
 		}
-		// CRITIQUE-03 M1: an expired audit is not readable even though its
-		// SAST half is cleanly sealed. One gate, both arms.
+		// the queue and read-path review's finding M1: an expired audit is not
+		// readable even though its SAST half is cleanly sealed. One gate, both
+		// arms.
 		if rec.Sast.Status != record.HalfStatusSealed {
 			t.Fatalf("Sast.Status = %q; the seal itself survives expiry", rec.Sast.Status)
 		}
@@ -893,7 +894,7 @@ func TestConsumeDoesNotPublishAndIsReentrant(t *testing.T) {
 		t.Errorf("consumed_at moved on a second take: %v -> %v", firstTake, again.ConsumedAt)
 	}
 	if !ctl.Readable(again, record.HalfSast) {
-		t.Error("taking the record once must not shut the gate (S1: a RE-ENTRANT consumer)")
+		t.Error("taking the record once must not shut the gate (the spine's corrected-requirements table: a RE-ENTRANT consumer)")
 	}
 }
 
@@ -1175,7 +1176,7 @@ func TestSettledIsTotalOverTheStateEnum(t *testing.T) {
 		record.StateExpired:    true,
 	}
 	if len(want) != len(record.StateValues()) {
-		t.Fatalf("this table covers %d states but the frozen enum has %d; R.1 changed under us",
+		t.Fatalf("this table covers %d states but the frozen enum has %d; the record contract changed under us",
 			len(want), len(record.StateValues()))
 	}
 	for _, s := range record.StateValues() {
@@ -1314,7 +1315,7 @@ func TestNextWakeWidensDeadlinesWithTheTimeWatermark(t *testing.T) {
 // Vocabulary
 // ---------------------------------------------------------------------------
 
-// The event vocabulary must not collide with any of R.1's frozen enums. A
+// The event vocabulary must not collide with any of the record contract's frozen enums. A
 // collision is how "two areas meaning different things by the same field name"
 // starts, and this package owns no vocabulary at all.
 func TestEventKindsDoNotCollideWithFrozenEnums(t *testing.T) {

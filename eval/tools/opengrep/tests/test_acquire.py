@@ -1,6 +1,6 @@
 """Checksum machinery, exercised without touching the network.
 
-The engine binary is not downloaded in M0.7 (orchestrator scope limit), so what
+The engine binary is not downloaded in the opengrep acquisition (orchestrator scope limit), so what
 is tested here is the verification logic that the download depends on: git blob
 identity, sha256 over local bytes, and the refusal behaviour on mismatch.
 """
@@ -34,7 +34,7 @@ def test_git_blob_sha1_matches_git_hash_object(tmp_path):
 
 
 def test_git_blob_sha1_reproduces_the_pinned_license_blob(tmp_path):
-    """The MIT LICENSE body fetched in M0.7 hashes to the SHA recorded in the manifest.
+    """The MIT LICENSE body fetched at acquisition hashes to the SHA recorded in the manifest.
 
     Content is inlined so the test needs neither the network nor a checkout.
     """

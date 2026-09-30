@@ -16,7 +16,7 @@
     "host": "127.0.0.1",
     "port": 41337,
     "payload": "../../../../etc/passwd",
-    "response_body_sha256": "referenced, never inlined - plan/00-SPINE.md S7 names the DAST response body the highest-risk field",
+    "response_body_sha256": "referenced, never inlined - the spine's safety section names the DAST response body the highest-risk field",
     "observed_at": "2026-08-08T12:07:44Z"
   },
   "hashed_fields": [
@@ -99,7 +99,7 @@
   ],
   "notes": [
     "An empty param_name is legal and is hashed as an empty field, keeping the DAST field count at exactly eight. A whole-body, raw-request, or path-segment injection has no single named parameter, and rejecting those would make them unfingerprintable.",
-    "DIGEST CHANGED 2026-08-08 under the R.3 blocker-2 ruling, from 84fe311debbc87f852e1f4e17a3242d071169448c5852a00b1b32316fb30b036. The hashed route_template moved from '/files/{path}' to '/files/<VAR>' because CanonicalRouteTemplate now normalises an already-templated segment onto the one frozen placeholder token rather than trusting the producer's choice of syntax. Nothing was stored under the old digest - anvil-fp/v1 has not shipped. See internal/record/FINGERPRINT-SPEC.md section 6.",
-    "The input's '{path}' was the ONLY normalization the old corpus exercised on this field, and it exercised it by arriving pre-templated - which is exactly why CRITIQUE-01 could not detect that CanonicalRouteTemplate did no templating at all. dast-04 is the fixture that closes that hole, with a concrete numeric id and a concrete UUID."
+    "DIGEST CHANGED 2026-08-08 under the contract-and-fingerprint review's blocker-2 ruling, from 84fe311debbc87f852e1f4e17a3242d071169448c5852a00b1b32316fb30b036. The hashed route_template moved from '/files/{path}' to '/files/<VAR>' because CanonicalRouteTemplate now normalises an already-templated segment onto the one frozen placeholder token rather than trusting the producer's choice of syntax. Nothing was stored under the old digest - anvil-fp/v1 has not shipped. See internal/record/FINGERPRINT-SPEC.md section 6.",
+    "The input's '{path}' was the ONLY normalization the old corpus exercised on this field, and it exercised it by arriving pre-templated - which is exactly why the contract-and-fingerprint review could not detect that CanonicalRouteTemplate did no templating at all. dast-04 is the fixture that closes that hole, with a concrete numeric id and a concrete UUID."
   ]
 }

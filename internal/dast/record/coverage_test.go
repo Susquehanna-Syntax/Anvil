@@ -1,4 +1,4 @@
-// Tests for D.26, the coverage summary: the packet that produces the number an
+// Tests for coverage reporting: the step that produces the number an
 // operator trusts.
 //
 // The suite is organised around the ways the number can look better than the
@@ -23,7 +23,7 @@
 // The kernel harness is the one tier0_runtime_test.go established, rebuilt
 // here because this is a different package: initiateRun drives the real gates
 // and authz.Adjudicate is the only mint for an Authorization. The
-// EndpointProber is the only double, because D.9's gate 3 forbids a socket
+// EndpointProber is the only double, because the build-time guard's gate 3 forbids a socket
 // outside internal/dast/authz.
 package record
 
@@ -295,7 +295,7 @@ func merge(t *testing.T, cfg inventory.ConfirmConfig, tiers ...[]inventory.Route
 	return &res
 }
 
-// tier0 builds a real Tier 0 result by running the D.18 prober against a
+// tier0 builds a real Tier 0 result by running the runtime spec prober against a
 // fetcher that serves the given documents. Nothing here is a hand-built
 // struct: DenominatorFloor is only meaningful if the refusals behind it are
 // the ones the real parser produced.
@@ -423,7 +423,7 @@ func mustSummarize(t *testing.T, in Inputs) Summary {
 // The numerator
 // ---------------------------------------------------------------------------
 
-// TestEndpointCoverageIsNotARequestCount is plan/50-dast.md:1152 in bold, and
+// TestEndpointCoverageIsNotARequestCount is plan/design/dynamic-tier.md:1152 in bold, and
 // it is asserted by CONSTRUCTION rather than by reading a doc comment: the
 // fixture issues strictly more requests than there are endpoints in the union,
 // so any implementation that used the request count would produce a different
@@ -479,8 +479,8 @@ func TestEndpointCoverageIsNotARequestCount(t *testing.T) {
 
 // TestAConfirmationWithoutAKernelAdmittedObservationNeverReachesTheRecord
 // proves the numerator cannot be minted by claiming it. A route that arrives
-// already saying "confirmed" is discarded by D.22's merge, and this asserts
-// the fact survives all the way into the summary rather than only into D.22.
+// already saying "confirmed" is discarded by route confirmation's merge, and this asserts
+// the fact survives all the way into the summary rather than only into route confirmation.
 func TestAConfirmationWithoutAKernelAdmittedObservationNeverReachesTheRecord(t *testing.T) {
 	claimed, err := inventory.NewRoute(inventory.RouteFacts{
 		Method:       authz.MethodGet,
@@ -499,7 +499,7 @@ func TestAConfirmationWithoutAKernelAdmittedObservationNeverReachesTheRecord(t *
 
 	if s.ConfirmedCount() != 0 {
 		t.Fatalf("%d confirmed endpoints from a run that issued %d requests. "+
-			"plan/50-dast.md:632-635 calls Tier 1 routes confirmed and that is OVERRIDDEN: "+
+			"plan/design/dynamic-tier.md:632-635 calls Tier 1 routes confirmed and that is OVERRIDDEN: "+
 			"only an observation Anvil made through the kernel confirms an endpoint",
 			s.ConfirmedCount(), s.RequestsIssued())
 	}
@@ -583,7 +583,7 @@ func TestZeroCoverageAndUnknownCoverageAreDifferentFacts(t *testing.T) {
 	}
 }
 
-// TestAManifestAbsentRunIsNeverEqualComparableToACleanRun is D.26's stated
+// TestAManifestAbsentRunIsNeverEqualComparableToACleanRun is coverage reporting's stated
 // validation clause. It checks BOTH halves: the coverage summary and the
 // audit-level status the summary derives.
 func TestAManifestAbsentRunIsNeverEqualComparableToACleanRun(t *testing.T) {
@@ -818,7 +818,7 @@ func TestDuplicateEndpointsAcrossTiersDoNotInflateTheDenominator(t *testing.T) {
 }
 
 // TestAnUnsupportedLanguageQualifiesTheNumberRatherThanShrinkingTheDenominator
-// is D.21's handoff. A repository with PHP in it hides an unknown number of
+// is non-Go route extraction's handoff. A repository with PHP in it hides an unknown number of
 // endpoints; the fraction must say so.
 func TestAnUnsupportedLanguageQualifiesTheNumberRatherThanShrinkingTheDenominator(t *testing.T) {
 	other := tier2Other(t, inventory.HarvestRan,
@@ -830,7 +830,7 @@ func TestAnUnsupportedLanguageQualifiesTheNumberRatherThanShrinkingTheDenominato
 			"test cannot see the damage", len(other.UnsupportedLanguages()))
 	}
 	if got, want := other.DenominatorFloor(), len(other.Routes()); got != want {
-		t.Fatalf("D.21's floor is %d and it extracted %d route(s): the unsupported "+
+		t.Fatalf("Non-Go route extraction's floor is %d and it extracted %d route(s): the unsupported "+
 			"language moved the floor. It hides an UNKNOWN number of endpoints and must "+
 			"add nothing to any floor — calling that number one is an understatement "+
 			"wearing the costume of a measurement", got, want)
@@ -923,7 +923,7 @@ func TestBudgetExhaustionUnderstatesAndSaysSo(t *testing.T) {
 }
 
 // TestOperationsCollapsedOntoOneAddressIsReportedNotPricedIn is the GraphQL
-// deflation D.22 hands over as OperationCount(), and this test pins BOTH
+// deflation route confirmation hands over as OperationCount(), and this test pins BOTH
 // halves of the decision: the operation count never becomes the denominator,
 // and the collapse is never silent.
 func TestOperationsCollapsedOntoOneAddressIsReportedNotPricedIn(t *testing.T) {
@@ -986,11 +986,12 @@ func TestOperationsCollapsedOntoOneAddressIsReportedNotPricedIn(t *testing.T) {
 
 // TestATruncatedTierQualifiesTheNumber, positive control.
 //
-// D.18/D.19's own suites prove a tier SETS Truncated() at its coded bound.
-// They do not prove D.26 consumes it, and an unconsumed flag is the shrink
-// that makes coverage look better for free: the routes past the bound are
-// missing from the denominator entirely. So the bound is actually reached
-// here, from a repo spec declaring more paths than maxRoutesPerSpec.
+// The runtime spec probe and the repo spec reader's own suites prove a tier
+// SETS Truncated() at its coded bound. They do not prove coverage reporting
+// consumes it, and an unconsumed flag is the shrink that makes coverage look
+// better for free: the routes past the bound are missing from the denominator
+// entirely. So the bound is actually reached here, from a repo spec declaring
+// more paths than maxRoutesPerSpec.
 func TestATruncatedTierRaisesTheTruncationQualifier(t *testing.T) {
 	// maxRoutesPerSpec is 10000 and maxSpecFileBytes is 4 MiB; 10010 short
 	// paths is roughly 350 KB, so the route bound is what stops this and not
@@ -1041,8 +1042,8 @@ func TestATruncatedTierRaisesTheTruncationQualifier(t *testing.T) {
 func TestATruncatedTierQualifiesTheNumber(t *testing.T) {
 	// A repo spec whose declared operations exceed nothing is not truncated;
 	// this asserts the CLEAN case so the qualifier's absence is measured
-	// rather than assumed, and the positive control lives in D.18/D.19's own
-	// suites where the bound is reachable.
+	// rather than assumed, and the positive control lives in the runtime spec
+	// probe and the repo spec reader's own suites where the bound is reachable.
 	t1 := tier1(t, inventory.HarvestRan, specFile(t, "file:///s.json", openAPI("/a", "/b")))
 	if t1.Truncated() {
 		t.Fatal("the fixture truncated; it is meant to be the clean control")
@@ -1563,7 +1564,7 @@ func TestSummarizeRefusesAMissingModeOrProvenance(t *testing.T) {
 	}
 }
 
-// TestTheTwoTargetFieldsStayTwoFields. plan/50-dast.md:1150 says
+// TestTheTwoTargetFieldsStayTwoFields. plan/design/dynamic-tier.md:1150 says
 // target_provenance carries {ephemeral_manifest, live_url_authorized}; that is
 // stale. Those are anvil/target.provisioning values and the boot outcome is a
 // separate field. A summary that merged them would fail here.
@@ -1735,7 +1736,7 @@ func rowTable(s Summary) string {
 }
 
 // ===========================================================================
-// D.29 LOW 7 — the decomposition's arithmetic
+// The second confirmation-gate review, finding LOW 7 — the decomposition's arithmetic
 // ===========================================================================
 
 // TestDenominatorDecompositionRefusesANegativeUnrepresentedCount.

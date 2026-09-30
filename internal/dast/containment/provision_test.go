@@ -164,10 +164,10 @@ const (
 
 // fixtureManifestYAML is a minimal VALID `.anvil/target.yaml`. It goes through
 // target.Parse rather than being hand-built, because target.Manifest's
-// authorized service is unexported -- D.1 made "exactly one service" a type,
+// authorized service is unexported -- the target manifest made "exactly one service" a type,
 // and this file does not get to reach around that.
 func fixtureManifestYAML(timeoutSeconds int) string {
-	// D.1 refuses an interval that exceeds the timeout ("the health check
+	// the target manifest refuses an interval that exceeds the timeout ("the health check
 	// would never poll"), so the interval tracks the timeout here.
 	interval := 5
 	if timeoutSeconds < interval {
@@ -205,7 +205,7 @@ func newFixtureWithTimeout(t *testing.T, timeoutSeconds int) fixture {
 	}
 	m, err := target.Parse([]byte(fixtureManifestYAML(timeoutSeconds)))
 	if err != nil {
-		t.Fatalf("the fixture manifest must parse; D.1 refused it: %v", err)
+		t.Fatalf("the fixture manifest must parse; the target manifest refused it: %v", err)
 	}
 	return fixture{
 		repoRoot: root,
@@ -422,7 +422,7 @@ func TestZeroStageRefuses(t *testing.T) {
 
 // TestNoStageCanBeReadAsScannedClean pins the RELATION, not the values:
 // whatever the mapping says, no provisioning failure may derive a DastStatus
-// that reads as "dynamically scanned, no findings". plan/00-SPINE.md S6.
+// that reads as "dynamically scanned, no findings". The spine's record section.
 func TestNoStageCanBeReadAsScannedClean(t *testing.T) {
 	halves := []record.HalfStatus{
 		record.HalfStatusRunning, record.HalfStatusSealed, record.HalfStatusFailed,
@@ -840,7 +840,7 @@ func TestProvenanceBootedClean(t *testing.T) {
 		t.Errorf("provenance is not a legal record literal: %v", err)
 	}
 	// TWO SEPARATE FIELDS. target.provisioning is not target.provenance, and
-	// this value comes from D.1's manifest rather than being re-derived here.
+	// this value comes from the target manifest rather than being re-derived here.
 	if tgt.Provisioning() != fx.manifest.Provisioning() {
 		t.Errorf("provisioning = %q, want the manifest's %q", string(tgt.Provisioning()),
 			string(fx.manifest.Provisioning()))
@@ -850,7 +850,7 @@ func TestProvenanceBootedClean(t *testing.T) {
 	}
 	if string(tgt.Provenance()) == string(tgt.Provisioning()) {
 		t.Error("provenance and provisioning carry the same literal; they are two " +
-			"different measurements and IMPLEMENTATION-PLAN.md section 6 G4+G7 split them")
+			"different measurements and the first plan's target-provenance split separated them")
 	}
 
 	if !tgt.AuthorizedService().Authorizes(fixtureService) {
@@ -889,7 +889,7 @@ func TestProvenanceBootedClean(t *testing.T) {
 // No fallback: nothing starts when the sandbox is unavailable
 // ---------------------------------------------------------------------------
 
-// TestRunscUnavailableStartsNothing is the control behind plan/50-dast.md's
+// TestRunscUnavailableStartsNothing is the control behind plan/design/dynamic-tier.md's
 // "No fallback to a non-gVisor runtime". A refusal that happened AFTER the
 // containers started would have already run the target unsandboxed, so the
 // assertion is on the call log and not on the error.
@@ -1001,8 +1001,8 @@ func TestARunnerThatNeverReturnsIsCutOffAndNotHung(t *testing.T) {
 
 // TestTheUpBudgetIsBuildPlusHealthAndNotHealthAlone is HIGH 2's first half.
 //
-// health.timeout_seconds is the HEALTH budget: D.1 validates it against
-// health.interval_seconds ("the health check would never poll"), so D.1 already
+// health.timeout_seconds is the HEALTH budget: the target manifest validates it against
+// health.interval_seconds ("the health check would never poll"), so the target manifest already
 // treats it as a polling budget. Spending it on `docker build` first means that
 // on a cold cache the health wait gets whatever is left, which is nothing --
 // and a target that boots perfectly well is recorded boot_failed.
@@ -1379,7 +1379,7 @@ func TestSelectAuthorizedRefusesZeroAndMany(t *testing.T) {
 }
 
 // TestEmptyServiceLabelIsNeverAuthorized: a container whose Compose service
-// label did not come through must not match. D.1's AuthorizedService refuses
+// label did not come through must not match. The target manifest's AuthorizedService refuses
 // "" and this is the consequence at this layer.
 func TestEmptyServiceLabelIsNeverAuthorized(t *testing.T) {
 	const project = "anvil-0123456789abcdef"
@@ -1632,7 +1632,7 @@ func TestNewProvisionerRefusesAnIncompleteHarness(t *testing.T) {
 
 // TestManifestWithoutAServiceOrHealthRefuses: target.Load cannot produce one,
 // target.Parse and a hand-built &target.Manifest{} can, and a zero-value
-// manifest must not read as provisionable. plan/50-dast.md: "No health
+// manifest must not read as provisionable. plan/design/dynamic-tier.md: "No health
 // definition means no DAST -- provisioning aborts."
 func TestManifestWithoutAServiceOrHealthRefuses(t *testing.T) {
 	fx := newFixture(t)
@@ -1909,9 +1909,9 @@ func TestTheSealedSnapshotIsTakenByValue(t *testing.T) {
 
 // TestEverySkippedControlsPointerResolves: this package defers its unproven
 // half to internal/SKIPPED-CONTROLS.md by ENTRY ID, in doc comments a reader is
-// expected to follow. Three of those pointers named a step-numbered id -- one
-// per line of provisioning's doc, in the D.10 numbering -- that was never
-// filed under that name; the entry exists as U2. So the one document holding
+// expected to follow. Three of those pointers named an id numbered after the old
+// plan step -- one per line of provisioning's doc -- that was never filed under
+// that name; the entry exists as U2. So the one document holding
 // what this package cannot prove was unreachable from the code deferring to it.
 //
 // A pointer nobody follows is a pointer nobody notices is broken, so this
@@ -1934,8 +1934,7 @@ func TestEverySkippedControlsPointerResolves(t *testing.T) {
 
 	// The id shapes SKIPPED-CONTROLS.md actually uses, as an ALLOWLIST of
 	// prefixes rather than a denylist of everything else a nearby sentence
-	// might contain. "S6" and "S12" are plan/00-SPINE.md sections and are
-	// deliberately not in it.
+	// might contain. Other letter-and-number shapes are deliberately not in it.
 	idIn := regexp.MustCompile(`\b([DUNGHL][0-9]+(?:-[0-9]+)?[a-z]?)\b`)
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -1979,7 +1978,7 @@ func TestEverySkippedControlsPointerResolves(t *testing.T) {
 	t.Logf("resolved %d SKIPPED-CONTROLS.md entry pointers against %d headings", checked, len(headings))
 }
 
-// TestNothingInThisPackageReadsConfiguration: plan/50-dast.md forbids a
+// TestNothingInThisPackageReadsConfiguration: plan/design/dynamic-tier.md forbids a
 // fallback to a non-gVisor runtime, and a config key that turns an assertion
 // off is that fallback wearing a different hat. This is the check that can see
 // such a key arriving.

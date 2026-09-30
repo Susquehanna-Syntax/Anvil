@@ -1,6 +1,6 @@
 package record
 
-// sarif_github.go — R.14, the reduced-SARIF GitHub code-scanning projection.
+// sarif_github.go — the GitHub projection: reduced SARIF for GitHub code scanning.
 //
 // ===========================================================================
 // THIS FILE IS THE SINGLE DEFINITION OF THE GITHUB PROJECTION
@@ -11,7 +11,7 @@ package record
 // GitHub calls ProjectForGitHub; it does not re-derive a limit, re-spell a
 // cap, or re-implement the filter.
 //
-// This is not style. plan/IMPLEMENTATION-PLAN.md §6 closed TEN confirmed
+// This is not style. The shared-vocabulary review closed TEN confirmed
 // cross-area defects whose single shared shape was "two areas that could not
 // see each other each defined the same vocabulary from their own side, and no
 // step was ever assigned to reconcile them." A second copy of `25000` in
@@ -25,12 +25,13 @@ package record
 // THE READ GATE APPLIES HERE TOO, AND IT IS CALLED, NOT RE-DERIVED
 // ===========================================================================
 //
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G5: "`sealed` is load-bearing: R.6
+// The half-status ruling: "`sealed` is load-bearing: the sealer
 // makes it the hard read gate ('do not allow a consumer to read a half's
 // results before that half's `status` equals `sealed`')". GitHub code scanning
 // is the most externally visible consumer Anvil has, so it is the LAST place
-// that gate may be skipped — and CRITIQUE-03 B1 found this file skipping it
-// entirely, projecting every run in `l.Runs` unconditionally.
+// that gate may be skipped — and the queue and read-path review's finding B1
+// found this file skipping it entirely, projecting every run in `l.Runs`
+// unconditionally.
 //
 // A run whose half sealing.go's HalfReadGate refuses contributes no results,
 // and each of them is ledgered under GitHubDropHalfNotReadable with the half's
@@ -133,10 +134,10 @@ package record
 //
 // This is a live, unresolved ownership question and it is deliberately left
 // visible rather than absorbed. fingerprint.go says the key "is owned by the
-// GitHub projection (R.14)"; plan/40-record-and-storage.md's Record Field
+// GitHub projection (the GitHub projection)"; plan/design/record-and-store.md's Record Field
 // Contract names the producer as the fingerprint engine; and
-// internal/record/CRITIQUE-01.md's MAJOR 3 records that the disagreement is
-// unruled and that no code in the tree produces the value today. R.14's
+// internal/record/REVIEW-contract-and-fingerprint.md's MAJOR 3 records that the disagreement is
+// unruled and that no code in the tree produces the value today. The GitHub projection's
 // packet scopes this file to the projection and says nothing about producing
 // a fingerprint.
 //
@@ -194,13 +195,13 @@ import (
 // same spirit as AreaMappingOwners in contract.go: the plan documents are not
 // compiled and a later area cannot grep them from its own package.
 //
-// Area O's O.9 (the GitHub upload step) CONSUMES ProjectForGitHub. It does
+// The control plane's SARIF publishing (the GitHub upload step) CONSUMES ProjectForGitHub. It does
 // not re-implement the caps, the strip list or the shard rule. A second
 // implementation of a documented external limit is a second definition of
 // that limit.
-const GitHubProjectionOwner = "R.14 — internal/record/sarif_github.go is the single definition of the " +
+const GitHubProjectionOwner = "The GitHub projection — internal/record/sarif_github.go is the single definition of the " +
 	"GitHub code-scanning projection: its caps, its strip list, its drop rules and its shard policy. " +
-	"O.9 calls ProjectForGitHub; it does not fork this logic (plan/IMPLEMENTATION-PLAN.md §6)."
+	"SARIF publishing calls ProjectForGitHub; it does not fork this logic (the shared-vocabulary review)."
 
 // ---------------------------------------------------------------------------
 // GitHub's documented limits
@@ -269,13 +270,13 @@ const (
 // GitHubDropReason names, in one closed vocabulary, every reason this
 // projection refuses to upload a result.
 //
-// Lowercase snake_case, matching plan/IMPLEMENTATION-PLAN.md §6: "Lowercase
+// Lowercase snake_case, matching the shared-vocabulary review: "Lowercase
 // snake_case is the record's convention throughout."
 //
 // These are NOT record enums. They never appear in a record, a column or an
 // `anvil/*` bag; they are the projection's own diagnostic vocabulary, owned
-// by R.14 inside area 40. Nothing outside this package may declare a second
-// set of them.
+// by the GitHub projection inside the record area. Nothing outside this package
+// may declare a second set of them.
 type GitHubDropReason string
 
 const (
@@ -285,15 +286,16 @@ const (
 	// because none of them is a question worth asking about results a consumer
 	// is not permitted to read at all.
 	//
-	// plan/IMPLEMENTATION-PLAN.md §6 ruling G5: "`sealed` is load-bearing: R.6
+	// The half-status ruling: "`sealed` is load-bearing: the sealer
 	// makes it the hard read gate ('do not allow a consumer to read a half's
-	// results before that half's `status` equals `sealed`')". CRITIQUE-03 B1
-	// found this file asking nobody: it projected every run unconditionally,
-	// so a `running` half's provisional findings and a `failed` half's
-	// crash-truncated output were both publishable to GitHub code scanning —
-	// the most externally visible consumer Anvil has, read by humans and by
-	// branch-protection rules, and keyed on `runAutomationDetails.id` so that
-	// a premature upload is REPLACED by the real one after the seal.
+	// results before that half's `status` equals `sealed`')". The queue and
+	// read-path review's finding B1 found this file asking nobody: it projected
+	// every run unconditionally, so a `running` half's provisional findings and
+	// a `failed` half's crash-truncated output were both publishable to GitHub
+	// code scanning — the most externally visible consumer Anvil has, read by
+	// humans and by branch-protection rules, and keyed on
+	// `runAutomationDetails.id` so that a premature upload is REPLACED by the
+	// real one after the seal.
 	GitHubDropHalfNotReadable GitHubDropReason = "half_not_readable"
 
 	// GitHubDropNoLocations: the result carries no `locations[]` at all.
@@ -328,7 +330,7 @@ const (
 	//
 	// A projection in which EVERY result carries this reason is the visible
 	// form of the unresolved producer question described in this file's
-	// header. See CRITIQUE-01 MAJOR 3.
+	// header. See the contract-and-fingerprint review's MAJOR 3.
 	GitHubDropNoPrimaryLocationLineHash GitHubDropReason = "no_primary_location_line_hash"
 
 	// GitHubDropNoMessageText: `message.text` is empty or blank. GitHub
@@ -368,7 +370,7 @@ func (r GitHubDropReason) Explain() string {
 	switch r {
 	case GitHubDropHalfNotReadable:
 		return "this half has not passed Anvil's read gate (anvil/status is not \"" + string(HalfStatusSealed) +
-			"\", or the audit has expired); §6 G5 makes that gate hard, and provisional or withdrawn " +
+			"\", or the audit has expired); the half-status ruling makes that gate hard, and provisional or withdrawn " +
 			"findings must not reach a third-party alert feed"
 	case GitHubDropNoLocations:
 		return "GitHub requires locations[] on every result; this result has none"
@@ -404,7 +406,7 @@ const (
 	// GitHubStripWebRequest / GitHubStripWebResponse: SARIF §3.27.14/15, the
 	// DAST evidence slots. Outside GitHub's supported-property list, and the
 	// response body is the highest-risk field in the record
-	// (plan/00-SPINE.md S7) — there is no reason to ship it to a third party
+	// (the spine's safety section) — there is no reason to ship it to a third party
 	// that will not display it.
 	GitHubStripWebRequest  GitHubStripReason = "web_request"
 	GitHubStripWebResponse GitHubStripReason = "web_response"
@@ -425,7 +427,7 @@ const (
 	GitHubStripResultProvenance GitHubStripReason = "result_provenance"
 
 	// GitHubStripResultFixes: SARIF §3.27.30 proposed patches. Withheld
-	// deliberately: plan/00-SPINE.md S7 is "Never auto-merge. Propose only",
+	// deliberately: the spine's safety section is "Never auto-merge. Propose only",
 	// and a fix rendered in a third-party UI as an accept-here button is not
 	// the proposal path Anvil owns.
 	GitHubStripResultFixes GitHubStripReason = "result_fixes"
@@ -891,13 +893,13 @@ func ProjectForGitHub(l *SARIFLog) ([]GitHubSarifFile, error) {
 	}
 	// Masking is a PRECONDITION, exactly as it is on readpath.go's Reader.
 	// This projection strips every surface MaskRecord covers, so no leak could
-	// be demonstrated through it today (CRITIQUE-03 B1 records that as
+	// be demonstrated through it today (the queue and read-path review's finding B1 records that as
 	// unverified harm) — which is the point: the safety currently rests on the
 	// strip list staying exhaustive, and the day a carried field is added,
 	// this post-condition is what catches it instead of a third party.
 	if err := AssertMasked(l); err != nil {
 		return nil, fmt.Errorf("github projection: refusing to project audit %q: %w "+
-			"(R.8's masker runs before any sink, and a third-party alert feed is a sink)",
+			"(secrets masking's masker runs before any sink, and a third-party alert feed is a sink)",
 			l.Properties.AuditID, err)
 	}
 	p := &ghProjector{
@@ -969,7 +971,7 @@ type ghProjector struct {
 // THE READ GATE RUNS FIRST, AND IT RUNS PER RUN. A run whose half has not
 // passed sealing.go's HalfReadGate contributes NO results, and every one of
 // them is ledgered under GitHubDropHalfNotReadable — the loss must be
-// countable here for the same reason every other refusal is, and CRITIQUE-03
+// countable here for the same reason every other refusal is, and the queue and read-path review
 // B1's probe found the ledger recording ZERO drops in every unsealed case, so
 // the loss was not merely permitted but invisible.
 //
@@ -1101,14 +1103,14 @@ func (p *ghProjector) projectResult(r *Result) (GitHubResult, GitHubDropReason, 
 // capLocationPair enforces GitHubMaxLocationsPerResult across `locations` AND
 // `relatedLocations` together, filling from `locations` first.
 //
-// WHY THE PAIR AND NOT EACH ARRAY (CRITIQUE-03 M4). research/18 records the
-// limit as "1,000 locations per result (100 displayed)", sourced to [S2], and
-// nothing in the tree says whether GitHub counts `relatedLocations` toward
-// that figure — the critic could not source it and neither can this file. The
-// projection previously truncated `locations` at 1,000 and appended
-// `relatedLocations` without limit, so a fan-out finding shipped 4,000
-// locations under a cap the file's own header promises "no returned file
-// exceeds ... on any input".
+// WHY THE PAIR AND NOT EACH ARRAY (the queue and read-path review's finding
+// M4). research/18 records the limit as "1,000 locations per result (100
+// displayed)", sourced to [S2], and nothing in the tree says whether GitHub
+// counts `relatedLocations` toward that figure — the critic could not source it
+// and neither can this file. The projection previously truncated `locations` at
+// 1,000 and appended `relatedLocations` without limit, so a fan-out finding
+// shipped 4,000 locations under a cap the file's own header promises "no
+// returned file exceeds ... on any input".
 //
 // Of the two readings, only one is safe under both: capping the pair is
 // correct if `relatedLocations` DO count, and merely conservative if they do
@@ -1235,7 +1237,7 @@ func isRepoCodeLocation(loc Location) bool {
 // be guaranteed to stay inside the repository root.
 //
 // Note what it deliberately does NOT consult: `location.properties`
-// ["anvil/locationKind"]. That key has no frozen enum in R.1's contract, so
+// ["anvil/locationKind"]. That key has no frozen enum in the record contract, so
 // depending on its literals here would create a vocabulary this file
 // half-owns — the exact pattern §6 closed ten defects over. The URI shape is
 // self-contained and needs no shared vocabulary.
@@ -1320,7 +1322,7 @@ func (p *ghProjector) shardRun(src *Run, srcRunIdx int, results []GitHubResult) 
 //
 // # The bisection re-marshals and re-gzips discarded candidates, deliberately
 //
-// CRITIQUE-03 m4: a run needing k size splits does O(n log n) bytes of
+// The queue and read-path review's finding m4: a run needing k size splits does O(n log n) bytes of
 // gzip.BestCompression work near the 10 MB boundary. That is real, and it is
 // KEPT, because the two obvious remedies both weaken the guarantee this file
 // exists to make:
@@ -1523,7 +1525,7 @@ func projectRules(src []ReportingDescriptor, results []GitHubResult) ([]Reportin
 // its shards actually deliver, and is the only place rule-level loss reaches
 // the ledger.
 //
-// # Why this is not per shard (CRITIQUE-03 M2)
+// # Why this is not per shard (the queue and read-path review's finding M2)
 //
 // projectRules used to count GitHubStripUnreferencedRule for every rule not
 // referenced by the shard being built. A rule referenced only by shard 2 was
@@ -1536,7 +1538,7 @@ func projectRules(src []ReportingDescriptor, results []GitHubResult) ([]Reportin
 //
 // That contradicts ghStripTally's own stated principle — "a ledger that
 // over-reports loss is as untrustworthy as one that under-reports it" — and
-// the ledger is the whole mechanism by which R.14 answers research/18 Risk #6.
+// the ledger is the whole mechanism by which the GitHub projection answers research/18 Risk #6.
 // A number a reader learns to discount is worse than no number.
 //
 // GitHubStripRuleRelationships moves here for the same reason: one source

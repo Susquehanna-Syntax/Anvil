@@ -1,6 +1,6 @@
 // Package cache owns the Lane A ingestion cache: a SECOND SQLite file,
-// `anvil-cache.sqlite`, holding advisory feed content (step A.2 of
-// plan/20-lane-a-ingestion-sca.md).
+// `anvil-cache.sqlite`, holding advisory feed content (plan node cache; design in
+// plan/design/lane-a.md).
 //
 // # This is not the store of record
 //
@@ -9,10 +9,10 @@
 // into it. The two databases differ in kind, not just in content:
 //
 //   - internal/store holds sealed audit records. Losing it loses evidence, so
-//     R.5 gates every upgrade behind a `VACUUM INTO` snapshot and refuses to
+//     the migration runner gates every upgrade behind a `VACUUM INTO` snapshot and refuses to
 //     migrate a populated database without one.
 //   - THIS cache holds a rederivable projection of public advisory feeds. It
-//     is regenerable from A.8's bootstrap in bounded time, so there is no
+//     is regenerable from the bulk bootstrap in bounded time, so there is no
 //     snapshot gate here (see migrate.go). Deleting the file is a legal, if
 //     expensive, recovery step. Deleting the store of record is not.
 //
@@ -31,7 +31,7 @@
 // That is why no code path in Anvil may DROP or rebuild `advisory_fts`, and
 // why cache_test.go traces the SQL that reaches the driver to prove it.
 //
-// plan/00-SPINE.md S12 mandates modernc.org/sqlite, which translates the
+// The spine's Go control-plane decision mandates modernc.org/sqlite, which translates the
 // SQLite C source to Go and needs no cgo, and forbids mattn/go-sqlite3, which
 // needs a C toolchain and would break both the single static binary and the
 // cross-compilation matrix.
@@ -47,15 +47,15 @@
 //
 // # What this package deliberately does NOT do
 //
-//   - It does not sanitize. A.3 owns Sanitize(); every writer must run
+//   - It does not sanitize. The sanitizer owns Sanitize(); every writer must run
 //     external text through it before binding a parameter to any statement
 //     below. A SQL string cannot sanitize its own arguments, so the
 //     statement constants here are documentation of the write shape, not a
 //     safe write path on their own.
-//   - It does not resolve a licence. A.4's Gate() decides tiers and output
+//   - It does not resolve a licence. The licence gate's Gate() decides tiers and output
 //     directories by reading checked-in LICENSE file bodies. This schema only
 //     RECORDS the outcome, and refuses a row that records nothing at all.
-//   - It does not fetch. A.7 polls and A.8 bootstraps.
+//   - It does not fetch. The poller polls and the bulk bootstrap bootstraps.
 package cache
 
 import (
@@ -72,7 +72,7 @@ import (
 // Trust vocabulary — consumed from internal/record, never redeclared here
 // ---------------------------------------------------------------------------
 
-// plan/IMPLEMENTATION-PLAN.md §6: "area 40 owns every shared enum, because it
+// The shared-vocabulary review: "The record area owns every shared enum, because it
 // owns the record contract, and no other area may declare one." `anvil/trust`
 // is one of those enums. The two constants below are aliases for the record's
 // own values so that a Lane A caller writing a trust value writes a Go
@@ -81,7 +81,7 @@ import (
 // agree with record.TrustValues().
 const (
 	// AdvisoryTrustDefault is the `anvil_trust` value stamped on every
-	// `advisory` row that does not name one. plan/00-SPINE.md S6 requires
+	// `advisory` row that does not name one. The spine's record section requires
 	// the field "on every string originating outside Anvil", and an
 	// advisory row is nothing but strings originating outside Anvil.
 	//
@@ -89,12 +89,12 @@ const (
 	// record.Trust.LegalForExternalString reports as legal — `verified` is
 	// reachable for a signature-checked snapshot, `anvil_generated` is not
 	// reachable at all. That is the mislabelling internal/record documents
-	// area B committing: the question the field answers is "who wrote these
+	// Lane B committing: the question the field answers is "who wrote these
 	// bytes", never "who assigned this field".
 	AdvisoryTrustDefault = record.TrustUntrusted
 
 	// FindingTrustDefault is the `anvil_trust` value stamped on a `finding`
-	// row. A finding is Anvil's own conclusion — the output of A.17's
+	// row. A finding is Anvil's own conclusion — the output of the comparator's
 	// version comparator — so `anvil_generated` is correct here for exactly
 	// the reason it is wrong on `advisory`.
 	FindingTrustDefault = record.TrustAnvilGenerated
@@ -102,16 +102,17 @@ const (
 
 // Collector values for `finding.collector`. These are Lane-A-local vocabulary
 // with no counterpart in the record contract's six frozen enums, so declaring
-// them here does not violate §6's single-owner rule; they exist so that A.9
-// and A.10 write a constant rather than a literal.
+// them here does not violate the shared-vocabulary review's single-owner rule;
+// they exist so that the host collector and the repo collector write a constant
+// rather than a literal.
 const (
-	// CollectorHost is A.9's read-only host package collector.
-	// plan/00-SPINE.md S6 and exit criterion 21 make every row it produces
+	// CollectorHost is the read-only host package collector.
+	// The spine's record section and exit criterion 21 make every row it produces
 	// `remediable_by_agent = 0`, and the DDL enforces that with a CHECK so
 	// that no flag, config key or future code path can override it.
 	CollectorHost = "host"
 
-	// CollectorRepoSCA is A.10's repository SBOM/SCA collector, whose
+	// CollectorRepoSCA is the repository SBOM/SCA collector, whose
 	// findings an agent may legitimately be asked to remediate.
 	CollectorRepoSCA = "repo-sca"
 )
@@ -135,7 +136,7 @@ const (
 
 // schemaSQL is the complete DDL for cache schema version 1.
 //
-// It is a Go string rather than an embedded .sql file because A.2's scope
+// It is a Go string rather than an embedded .sql file because the ingestion cache's scope
 // names three .go files and no SQL file; migrate.go checksums this text, so
 // the constant is as frozen in practice as a committed file would be.
 //
@@ -145,7 +146,7 @@ const (
 // migrate.go's DSN).
 //
 // TWO DELIBERATE DEVIATIONS FROM THE DDL SKETCH IN
-// plan/20-lane-a-ingestion-sca.md "Cache Schema", both reported rather than
+// plan/design/lane-a.md "Cache Schema", both reported rather than
 // silently applied:
 //
 //  1. `advisory_fts` carries `contentless_delete=1`. The plan's sketch says
@@ -158,7 +159,7 @@ const (
 //     ERROR while leaving the old row's terms in the index forever — after
 //     replacing 'hello' with 'goodbye' at rowid 1, both still MATCH. A delta
 //     pipeline built on that contract accumulates phantom hits with nothing
-//     to surface them, which is the same silent-drift failure mode S6's
+//     to surface them, which is the same silent-drift failure mode the spine's
 //     one-fingerprint rule exists to prevent. `contentless_delete=1`
 //     (SQLite 3.43+) makes the plan's stated contract actually hold.
 //     cache_test.go carries the regression test.
@@ -174,7 +175,7 @@ const (
 // enforceable only by convention. Each is called out at its definition.
 const schemaSQL = `
 -- Anvil Lane A ingestion cache — complete DDL for cache schema version 1
--- (step A.2 of plan/20-lane-a-ingestion-sca.md).
+-- (the ingestion cache).
 --
 -- This is NOT internal/store/schema.sql. That file is the store of record and
 -- is frozen; no table here exists there, and no table there is referenced
@@ -183,7 +184,7 @@ const schemaSQL = `
 -- ============ FEED POLLING STATE ============
 --
 -- One row per feed, keyed by internal/ingest/config's FeedConfig.ID. This is
--- what makes conditional GET work: A.7's poller reads etag/last_modified to
+-- what makes conditional GET work: the poller reads etag/last_modified to
 -- build If-None-Match/If-Modified-Since, and writes back whatever the response
 -- carried. research/06 Risk #8 is the reason the poller must still
 -- authenticate a request that produces a 304 — an unauthenticated 304 costs
@@ -233,21 +234,21 @@ CREATE TABLE advisory (
   epss_as_of           TEXT,
   kev                  INTEGER NOT NULL DEFAULT 0
     CONSTRAINT advisory_kev_bool CHECK (kev IN (0, 1)),
-  -- spine S8. license_spdx is the SPDX id where a LICENSE file BODY states
+  -- the spine's licence section. license_spdx is the SPDX id where a LICENSE file BODY states
   -- one; license_manual_note is the manual-override field carrying the quoted
   -- operative sentence when SPDX is null, NOASSERTION, or simply wrong.
   license_spdx         TEXT,
   license_manual_note  TEXT,
   license_tier         INTEGER NOT NULL
     CONSTRAINT advisory_license_tier CHECK (license_tier IN (0, 1, 2, 3)),
-  -- spine S6. See AdvisoryTrustDefault: 'anvil_generated' is deliberately
+  -- the spine's record section. See AdvisoryTrustDefault: 'anvil_generated' is deliberately
   -- absent, because every byte in this table originated outside Anvil.
   anvil_trust          TEXT NOT NULL DEFAULT 'untrusted'
     CONSTRAINT advisory_anvil_trust CHECK (anvil_trust IN ('untrusted', 'verified')),
   as_of                TEXT NOT NULL,
   staleness_seconds    INTEGER NOT NULL DEFAULT 0
     CONSTRAINT advisory_staleness_nonneg CHECK (staleness_seconds >= 0),
-  -- spine S6 / exit criterion 23: an unknown CVE dataVersion is PERSISTED
+  -- the spine's record section / exit criterion 23: an unknown CVE dataVersion is PERSISTED
   -- with parse_degraded = 1, never dropped.
   parse_degraded       INTEGER NOT NULL DEFAULT 0
     CONSTRAINT advisory_parse_degraded_bool CHECK (parse_degraded IN (0, 1)),
@@ -264,7 +265,7 @@ CREATE TABLE advisory (
   ),
   -- Exit criterion 22, enforced rather than documented: withdrawn/REJECTED
   -- advisories are TOMBSTONED, never deleted. A non-published state without a
-  -- tombstone timestamp loses the "when" that A.16 needs to invalidate the
+  -- tombstone timestamp loses the "when" that drift handling needs to invalidate the
   -- findings that depended on it.
   CONSTRAINT advisory_tombstone_paired CHECK (
     (state = 'published' AND tombstoned_at IS NULL)
@@ -286,8 +287,8 @@ CREATE TABLE cve_alias (
 
 -- ============ AFFECTED VERSION RANGES ============
 --
--- The rows A.17's version comparator reads. Lane A is deterministic and
--- zero-inference (plan/00-SPINE.md S1): CVE/OSV/GHSA describe vulnerable
+-- The rows the version comparator reads. Lane A is deterministic and
+-- zero-inference (the spine's corrected-requirements table): CVE/OSV/GHSA describe vulnerable
 -- PACKAGE VERSIONS, and a comparator answers that exactly and for free.
 CREATE TABLE affected (
   id              INTEGER PRIMARY KEY,
@@ -337,11 +338,11 @@ CREATE VIRTUAL TABLE advisory_fts USING fts5(
 
 -- ============ LICENCE DIRECTORY MANIFEST ============
 --
--- Backs the segregated on-disk mirror layout spine S8 requires, not just a DB
+-- Backs the segregated on-disk mirror layout the spine's licence section requires, not just a DB
 -- row: "Share-alike sources live in segregated directories with their own
--- LICENSE files." A.4's Gate() is the only writer, and license_file names a
+-- LICENSE files." The licence gate's Gate() is the only writer, and license_file names a
 -- LICENSE file PHYSICALLY CHECKED INTO that directory — never a URL and never
--- an API response, because S8's whole point is that seven artifacts return
+-- an API response, because the spine's whole point is that seven artifacts return
 -- NOASSERTION over a real licence and one hides a restrictive one.
 CREATE TABLE license_dir_manifest (
   directory    TEXT PRIMARY KEY,              -- e.g. 'mirror/tier2/ubuntu'
@@ -357,7 +358,8 @@ CREATE TABLE license_dir_manifest (
 -- is anvil-fp/v1 and is owned by internal/record (FINGERPRINT-SPEC.md); id
 -- here is a LANE-LOCAL identifier and must never be presented as, derived
 -- into, or compared against a canonical fingerprint. Two producers emitting
--- different digests under one name is the named cross-area failure S6 forbids.
+-- different digests under one name is the named cross-area failure the
+-- spine's record section forbids.
 CREATE TABLE finding (
   id                   TEXT PRIMARY KEY,      -- Lane A local id, NOT a canonical fingerprint
   collector            TEXT NOT NULL
@@ -378,7 +380,7 @@ CREATE TABLE finding (
   -- Exit criterion 21, enforced rather than documented: remediable_by_agent
   -- is false for 100% of host-collector rows "with no code path, flag, or
   -- config key capable of overriding it". A CHECK is the only place that
-  -- claim can be made true rather than asserted — spine S7's "enforce in
+  -- claim can be made true rather than asserted — the spine's "enforce in
   -- code, not documentation" applied to the host agent's read-only rule.
   CONSTRAINT finding_host_not_remediable CHECK (
     collector <> 'host' OR remediable_by_agent = 0
@@ -461,7 +463,7 @@ var literalRE = regexp.MustCompile(`'((?:[^']|'')*)'`)
 // `advisory_anvil_trust` and `finding_anvil_trust` against
 // internal/record's TrustValues(), so that adding a trust value in the record
 // contract without widening this schema turns a silent produce/consume break
-// into a red test. plan/IMPLEMENTATION-PLAN.md §6 exists because eight agents
+// into a red test. The shared-vocabulary review exists because eight agents
 // each defined the shared vocabulary from their own side and nothing
 // reconciled them.
 func CheckLiterals(name string) ([]string, error) {
@@ -482,12 +484,13 @@ func CheckLiterals(name string) ([]string, error) {
 // ---------------------------------------------------------------------------
 //
 // These are statement TEXTS, not a write path. They cannot sanitize their own
-// arguments: A.3's Sanitize() must have run on every externally-sourced string
-// before it is bound, and A.4's Gate() must have chosen the tier and directory
+// arguments: the sanitizer's Sanitize() must have run on every externally-sourced string
+// before it is bound, and the licence gate's Gate() must have chosen the tier and directory
 // before a licence column is bound. They live here because the alternative —
-// each of A.7, A.8, A.14, A.15 and A.16 composing its own upsert — is how a
-// second, subtly different write shape enters a schema and breaks the FTS
-// linkage or the tombstone invariant with no error message.
+// each of the poller, the bulk bootstrap, delta ingestion, the weekly self-heal
+// and drift handling composing its own upsert — is how a second, subtly
+// different write shape enters a schema and breaks the FTS linkage or the
+// tombstone invariant with no error message.
 
 // UpsertAdvisorySQL inserts or updates one advisory row and RETURNS ITS ROWID,
 // which is the key the caller must then use against advisory_fts.
@@ -538,14 +541,14 @@ INSERT OR REPLACE INTO advisory_fts (rowid, description, references_text)
 VALUES (?, ?, ?)`
 
 // DeleteAdvisoryFTSSQL removes one advisory's text from the index by rowid.
-// A.16 uses it when an advisory is tombstoned; the `advisory` row itself is
+// Drift handling uses it when an advisory is tombstoned; the `advisory` row itself is
 // never deleted (exit criterion 22).
 const DeleteAdvisoryFTSSQL = `DELETE FROM advisory_fts WHERE rowid = ?`
 
 // SelectFeedStateSQL reads one feed's polling state. Parameter is the
 // feed_id, which is internal/ingest/config's FeedConfig.ID.
 //
-// A.7 calls this before every poll to build its conditional-GET headers, and
+// The poller calls this before every poll to build its conditional-GET headers, and
 // must treat "no row" as "never polled" rather than as an error.
 const SelectFeedStateSQL = `
 SELECT etag, last_modified, watermark, last_ok_at, consecutive_failures, license_tier

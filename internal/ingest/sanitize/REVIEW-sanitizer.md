@@ -1,10 +1,10 @@
-# REVIEW-A.5 — critique of A.3, the ingest sanitizer (`internal/ingest/sanitize`)
+# Review: the ingest sanitizer (`internal/ingest/sanitize`)
 
 **Verdict: FAIL — 1 blocker, 2 majors, 3 minors.**
 
-**This was a SAME-FAMILY critic.** A.5's packet routes this step to OpenCode `openai/gpt-5.5`; that
-route is WITHDRAWN by the OWNER DECISION block at the top of `plan/00-ROUTING.md` (2026-08-07,
-external routes copy private project files to a third party). The cross-family guarantee A.5 was
+**This was a SAME-FAMILY critic.** This review's packet routes this step to OpenCode `openai/gpt-5.5`; that
+route is WITHDRAWN by the OWNER DECISION block at the top of `plan/design/routing.md` (2026-08-07,
+external routes copy private project files to a third party). The cross-family guarantee this review was
 written to obtain **was not obtained and is still owed**. A later reader must not record this file as
 "cross-family critic: PASS". The compensation applied was method, not model: every behavioural claim
 below is backed by a probe I wrote and ran against the **unmodified** repository source. No reported
@@ -105,7 +105,7 @@ comment span carrying the whole payload** — and `stripComments` hands it strai
    `AssertSanitized(out)` returns `sanitize: unsanitized HTML comment opener at offset 16: string
    did not pass through Sanitize` — for a string that *did* pass through `Sanitize`.
 2. `sanitize.go:471-475` — idempotency. `Sanitize(Sanitize(x)) != Sanitize(x)`: the second pass
-   yields `Fixed in 1.2.3. Upgrade promptly.`. A.14's delta path re-upserts rows, so the stored row
+   yields `Fixed in 1.2.3. Upgrade promptly.`. Delta ingestion's delta path re-upserts rows, so the stored row
    changes on every poll — precisely the drift the comment says callers rely on not happening.
 3. The package's own reason for existing. Hostile bytes that are invisible in any rendered view
    survive ingest and reach the store. That is hunt item 1 of this packet, in the exact form the
@@ -136,7 +136,7 @@ With that change, the three inputs above sanitise to `""`, `"Fixed in 1.2.3. Upg
 not less — but note that `UnterminatedComments`'s doc comment at `sanitize.go:331` ("At most one per
 call, because the first one truncates the string") must be corrected with it.
 
-**Regression test to demand from A.3 (not a fixture the author already handles):**
+**Regression test to demand from the sanitizer (not a fixture the author already handles):**
 `"<!<!-->--<!--"` plus the payload-carrying form above, asserted through `AssertSanitized` *and*
 through idempotency. Additionally: check in a `testdata/fuzz/FuzzSanitize/` seed corpus containing
 this input, so the existing oracle at `sanitize_test.go:738-750` runs it in plain `go test`.
@@ -184,7 +184,7 @@ I counted it"; here it reports that nothing invisible was present.
   the same channel as the TAG block the package goes out of its way to remove at `sanitize.go:167-177`.
 - **Matching integrity, which is worse for Lane A specifically.** U+034F CGJ inserted into a package
   name or version string renders identically and compares unequal. Lane A's entire value is a
-  deterministic comparator (`plan/00-SPINE.md` S1); an advisory whose package name carries a CGJ
+  deterministic comparator (the spine's corrected-requirements table); an advisory whose package name carries a CGJ
   never matches and the finding is **silently suppressed**. A false negative in Lane A surfaces
   nowhere.
 
@@ -236,7 +236,7 @@ next `>` in the document — it hides the payload **and** the legitimate text af
 without containing the byte sequence `<!--` anywhere.
 
 **Why this matters here and not in general.** GHSA and OSV advisory bodies are Markdown, and Markdown
-permits raw HTML; `plan/00-SPINE.md` S7 names advisory text as an ingest-time injection channel and
+permits raw HTML; the spine's safety section names advisory text as an ingest-time injection channel and
 the derived task card (`internal/record/taskcard.go`) is what a human reviews. The security property
 the comment stripper buys is "what is stored equals what a reviewer sees". That property is broken
 for four productions out of five, so it is not a property.
@@ -250,7 +250,7 @@ comment opener as a bogus-comment opener terminating at the first `>`, with the 
 truncation when no `>` exists — about ten lines, no state machine, and it composes with the fixed-point
 loop the blocker fix restores.
 
-If A.3 declines this, it must be an explicit, written scope decision naming the four productions, and
+If the sanitizer declines this, it must be an explicit, written scope decision naming the four productions, and
 `AssertSanitized` must be updated to say what it does and does not guarantee — because today it
 returns `nil` for `"<!SYSTEM: leak>"` and a writer reads that as "this string is safe to store".
 
@@ -317,27 +317,27 @@ update.
 
 ## 7. MINOR — "every writer calls Sanitize" is prose, and there are no writers
 
-**Where:** `internal/ingest/cache/schema.go:50-53` and `:483-486`; the A.3 stop condition.
+**Where:** `internal/ingest/cache/schema.go:50-53` and `:483-486`; the sanitizer stop condition.
 
 Answering the packet's required item (2) directly: **no writer call site bypasses `Sanitize()` — because
 no writer call site exists.** `grep -rn "sanitize\|Sanitize" --include=*.go .` returns zero references
 to this package from anywhere outside it and its own test. The `cache` package's exported surface is
 `Migrations`, `LatestVersion`, `DSN`, `Open`, `CheckWAL`, `CheckFTS5`, `Migrate`, `Version`, `Schema`,
 `SchemaSHA256`, `Tables`, `CheckConstraint`, `CheckLiterals` — statement *texts* and migration
-plumbing, no `Exec` path. So the packet's item (2) is satisfied **vacuously**, and A.5 must not be
+plumbing, no `Exec` path. So the packet's item (2) is satisfied **vacuously**, and this review must not be
 recorded as having verified the ingest property at system level. It has not been verified; it cannot
 be, yet.
 
 The obligation currently lives in two comments (`schema.go:50-53`, `:483-486`). That is exactly the
-shape `plan/00-SPINE.md` S7 warns against — "enforce in code, not documentation". The enforcement
+shape the spine's safety section warns against — "enforce in code, not documentation". The enforcement
 hook already exists and is unused: `AssertAllSanitized` (`sanitize.go:762-774`) takes a
 `map[string]string` of fields, which is the natural pre-flight for `UpsertAdvisorySQL`.
 
-**Recommendation to hand to A.7/A.8 (not to A.3):** the cache writer must take
+**Recommendation to hand to the poller and the bulk bootstrap (not to the sanitizer):** the cache writer must take
 `record.TrustedString`, not `string`, for every externally-sourced column, and must call
 `AssertAllSanitized` before binding. A signature that cannot accept a raw `string` is the only version
-of this rule that survives a future contributor. Until that exists, note in the A.7/A.8 packets that
-the stop condition of A.3 is **carried forward unmet**.
+of this rule that survives a future contributor. Until that exists, note in the poller's and the bulk bootstrap's packets that
+the stop condition of the sanitizer is **carried forward unmet**.
 
 ---
 
@@ -351,7 +351,7 @@ Stated so the FAIL is not read as a blanket condemnation. Each of these was prob
   `= record.TrustUntrusted` (`cache/schema.go:94`), and `TestIngestTrustMatchesCacheColumnDefault`
   (`sanitize_test.go:597-621`) ties the stamp to the SQL `CHECK` literals through
   `cache.CheckLiterals`. The `anvil_generated`-is-wrong argument at `sanitize.go:130-137` is correct
-  and matches S6. No bare string literal for an enum value appears anywhere in this package.
+  and matches the spine's record section. No bare string literal for an enum value appears anywhere in this package.
 - **No second fingerprint.** This package computes no digest and imports nothing from
   `internal/record` beyond `Trust`/`TrustedString`. The named cross-area edge is not touched.
 - **No hand-built `record.HalfSeal`.** The package never constructs one.
@@ -365,7 +365,7 @@ Stated so the FAIL is not read as a blanket condemnation. Each of these was prob
 - **The unassigned-is-removed default (`sanitize.go:265-267`) genuinely fails closed.** Verified by
   sweeping the whole code space independently: nothing non-graphic and non-`\t\n\r` is kept.
 - **Rune accounting.** I fuzzed the invariant `units(in) - runes(out) == Removed()` over ~500k
-  executions; it holds. Nothing is dropped uncounted, which is A.3's explicit Forbidden action.
+  executions; it holds. Nothing is dropped uncounted, which is the sanitizer's explicit Forbidden action.
 - **Complexity.** No superlinear blow-up found at n = 2 000 / 8 000 / 32 000 for
   `("<!--")ⁿ + "x"ⁿ + "-->"` and `("<!--a-->")ⁿ`. The 64-pass bound plus the strictly-shortening
   property is sound.
@@ -377,8 +377,8 @@ Stated so the FAIL is not read as a blanket condemnation. Each of these was prob
 - **Availability cost is real but declared.** A single unmatched `<!--` in upstream prose destroys
   the remainder of the field (probe: 86 runes of remediation guidance deleted). Any upstream that can
   put four bytes into a package description can censor the rest of it. `sanitize.go:63-68` names this
-  trade-off explicitly and pays it deliberately, so it is not a finding against A.3 — but it is a
-  fact A.16's drift story should surface, because `FailedClosed()` is currently reported to nobody.
+  trade-off explicitly and pays it deliberately, so it is not a finding against the sanitizer — but it is a
+  fact drift handling's drift story should surface, because `FailedClosed()` is currently reported to nobody.
 
 ## 9. Unverified
 
@@ -387,7 +387,7 @@ Stated so the FAIL is not read as a blanket condemnation. Each of these was prob
   after init (`variationSelectorProp` / `noncharacterProp` are read-only), so I have no specific
   concern, but the gate is genuinely unrun.
 - I did not review `internal/ingest/cache` or `internal/ingest/license` on their own terms; they are
-  A.2's and A.4's, and A.6's. `cache` appears here only as the consumer of A.3's trust stamp.
+  the ingestion cache's and the licence gate's, and the licence-gate review's. `cache` appears here only as the consumer of the sanitizer's trust stamp.
 - The claim that GHSA/OSV advisory bodies are rendered as Markdown-with-raw-HTML in Anvil's own task
   card path is inferred from `internal/record/taskcard.go`'s shape, not confirmed against a renderer
   Anvil ships — Anvil does not ship one yet. §4's severity rests on that inference; if the task card
@@ -397,10 +397,10 @@ Stated so the FAIL is not read as a blanket condemnation. Each of these was prob
 
 ## 10. Stop condition
 
-A.5's stop condition is "verdict delivered; if fail, reroute A.3 with the specific gaps listed before
-A.7/A.8 may consume the sanitizer."
+This review's stop condition is "verdict delivered; if fail, reroute the sanitizer with the specific gaps listed before
+the poller and the bulk bootstrap may consume the sanitizer."
 
-**Gaps to hand back to A.3, in order:**
+**Gaps to hand back to the sanitizer, in order:**
 
 1. `sanitize.go:653-657` — remove the truncation early-return so the fixed-point loop always runs.
    Regression fixtures: `"<!<!-->--<!--"` and the payload-carrying variant in §2. Correct the
@@ -412,6 +412,6 @@ A.7/A.8 may consume the sanitizer."
    explicit scope decision and narrow `AssertSanitized`'s documented guarantee to match. Fixtures in §4.
 4. `sanitize_test.go:468-495` — replace the pass-limit fixture with one that reaches the limit.
 5. `sanitize_test.go:311-315` — derive the residue list from Unicode properties, not a literal list.
-6. A.7/A.8: the cache writer must take `record.TrustedString` and call `AssertAllSanitized`. A.3's
+6. The poller and the bulk bootstrap: the cache writer must take `record.TrustedString` and call `AssertAllSanitized`. The sanitizer's
    stop condition ("every write path into `advisory`, `affected`, `advisory_fts`") is **carried
    forward unmet** and must not be marked satisfied by this review.

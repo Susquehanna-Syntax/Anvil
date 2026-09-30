@@ -33,7 +33,7 @@
 // quoted; where it is not (R8), the rule says plainly that the ordering is
 // unmodelled and therefore refused, and rests on nothing else.
 //
-// WHAT HAS CHANGED SINCE A.18 CALLED THIS THE WEAKEST OF THE THREE. Its
+// WHAT HAS CHANGED SINCE the comparator review CALLED THIS THE WEAKEST OF THE THREE. Its
 // complaint was that not one apk vector had been diffed against apk's own
 // fixture. All 738 ordering rows and all 31 validity rows of
 // `test/unit/version.data` are now in corpus_transcribed_test.go: 674 pass, 64
@@ -164,7 +164,7 @@
 // BETWEEN THEM that is not implemented — and it carries
 // RefusalUnmodelledOrdering, not RefusalMalformedVersion.
 //
-// WHY IT EXISTS, WHICH IS THE PART A LATER READER NEEDS. A.18 found this file
+// WHY IT EXISTS, WHICH IS THE PART A LATER READER NEEDS. The comparator review found this file
 // asserting `1.0 == 1`, `1.0 == 1.0-r0` and `1.0_rc == 1.0_rc0` as written
 // rules, on no citation, in the one scheme where it had promised not to guess.
 // The three were withdrawn and became refusals.

@@ -30,7 +30,7 @@ import (
 //   - two lang-pkgs targets, one with findings and one clean-but-enumerated;
 //   - one vulnerability WITH a fixed version and one WITHOUT, so
 //     RemediableByAgent is exercised in both directions;
-//   - an os-pkgs target, which belongs to A.9's host collector and must be
+//   - an os-pkgs target, which belongs to the host collector and must be
 //     counted and skipped rather than laundered into a repo-sca finding;
 //   - the same package name in two different manifests, which the SCA
 //     fingerprint tier must keep as two identities.
@@ -141,7 +141,7 @@ const goldenReport = `{
           "InstalledVersion": "3.1.4-r5",
           "FixedVersion": "3.1.4-r6",
           "Severity": "CRITICAL",
-          "Title": "an OS package, which is A.9's collector and not this one",
+          "Title": "an OS package, which is the host collector and not this one",
           "Description": "must never be emitted as repo-sca",
           "DataSource": {"ID": "alpine", "Name": "Alpine Secdb", "URL": "https://secdb.alpinelinux.org/"}
         }
@@ -183,7 +183,7 @@ const cleanReport = `{
 
 // stubRunner is a Runner that answers from memory. It is how the parse path is
 // exercised on a host with no Trivy binary, and it also proves the Runner seam
-// spine S12 requires is real rather than decorative.
+// the spine's Go control-plane decision requires is real rather than decorative.
 type stubRunner struct {
 	report  string
 	version string
@@ -242,7 +242,7 @@ func TestParseGoldenReportSurfacesExpectedPackageAndVersion(t *testing.T) {
 
 	if got, want := len(res.Findings), 3; got != want {
 		t.Fatalf("findings = %d, want %d (two in services/api/go.mod, one in tools/vendor/go.mod; "+
-			"the os-pkgs entry is A.9's and the npm target is clean)", got, want)
+			"the os-pkgs entry is the host collector's and the npm target is clean)", got, want)
 	}
 
 	f := findingFor(t, res, "CVE-2023-45288", "services/api/go.mod")
@@ -295,7 +295,7 @@ func TestNoFixedVersionIsNotRemediableByAgent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// One fingerprint. plan/00-SPINE.md S6.
+// One fingerprint. The spine's record section.
 // ---------------------------------------------------------------------------
 
 func TestFingerprintIsRecordScaAndNothingElse(t *testing.T) {
@@ -318,7 +318,7 @@ func TestFingerprintIsRecordScaAndNothingElse(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("Fingerprint = %s, record.Sca = %s: this collector must not compute a digest of its own "+
-			"(00-SPINE.md S6 — two producers emitting different digests breaks regression matching forever)", got, want)
+			"(the spine's record section — two producers emitting different digests breaks regression matching forever)", got, want)
 	}
 	if err := record.ValidateDigest(got); err != nil {
 		t.Errorf("digest is not a well-formed anvil-fp/v1 digest: %v", err)
@@ -464,7 +464,7 @@ func TestMissingBinaryIsATypedLoudFailure(t *testing.T) {
 		t.Fatalf("error is not a *BinaryMissingError: %T", err)
 	}
 	if missing.ExitCode() != ExitCodeArtefactAbsent {
-		t.Errorf("ExitCode() = %d, want %d (M0.7 reserves 2 for an absent artefact)",
+		t.Errorf("ExitCode() = %d, want %d (the opengrep acquisition reserves 2 for an absent artefact)",
 			missing.ExitCode(), ExitCodeArtefactAbsent)
 	}
 	msg := err.Error()
@@ -581,7 +581,7 @@ func TestOSPackagesAreCountedAndNeverEmittedAsRepoSCA(t *testing.T) {
 	for _, f := range res.Findings {
 		if strings.HasPrefix(f.Purl, "pkg:apk/") || strings.HasPrefix(f.Purl, "pkg:deb/") ||
 			strings.HasPrefix(f.Purl, "pkg:rpm/") {
-			t.Errorf("an OS package (%s) was emitted as %s; that row belongs to A.9's host collector, "+
+			t.Errorf("an OS package (%s) was emitted as %s; that row belongs to the host collector, "+
 				"whose findings are never remediable_by_agent", f.Purl, cache.CollectorRepoSCA)
 		}
 	}
@@ -620,12 +620,12 @@ func TestEntriesThatCannotBeIdentifiedBecomeAnomaliesNotSilentDrops(t *testing.T
 }
 
 // ---------------------------------------------------------------------------
-// Sanitisation at ingest (00-SPINE.md S7).
+// Sanitisation at ingest (the spine's safety section).
 // ---------------------------------------------------------------------------
 
 func TestExternalProseIsSanitizedAtIngest(t *testing.T) {
 	// A zero-width joiner, a bidi override and an HTML comment carrying agent
-	// instructions — the shape A.3's corpus exists for.
+	// instructions — the shape the sanitizer's corpus exists for.
 	const report = `{
       "SchemaVersion": 2, "ArtifactName": "/src", "ArtifactType": "filesystem",
       "Results": [{
@@ -842,8 +842,8 @@ func TestDBUpdateWithoutARoutedRepositoryIsRefused(t *testing.T) {
 	c.SkipDBUpdate = false
 	err := c.Validate()
 	if !errors.Is(err, ErrDBUpdateUnrouted) {
-		t.Fatalf("Validate() = %v, want ErrDBUpdateUnrouted (A.10 forbids fetching the DB from a "+
-			"redistributable-unclear mirror without going through A.11)", err)
+		t.Fatalf("Validate() = %v, want ErrDBUpdateUnrouted (the repo collector forbids fetching the DB from a "+
+			"redistributable-unclear mirror without going through the accelerator)", err)
 	}
 	if _, err := BuildArgs(c, "/src"); !errors.Is(err, ErrDBUpdateUnrouted) {
 		t.Errorf("BuildArgs did not refuse an unrouted DB update: %v", err)
@@ -944,7 +944,7 @@ func TestRunErrorCarriesTrivysOwnStderr(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNoTrivyLibraryImport(t *testing.T) {
-	// plan/20 exit criterion 15: "Repo SCA collector degrades to a documented
+	// plan/design/lane-a.md exit criterion 15: "Repo SCA collector degrades to a documented
 	// CLI path — no direct dependency on Trivy pkg/ internals without a CLI
 	// fallback annotated in code." Asserted by reading this package's own
 	// source rather than by a runtime check, because a runtime check only
@@ -976,7 +976,7 @@ func TestNoTrivyLibraryImport(t *testing.T) {
 			q + vendor + "trivy-db/",
 		} {
 			if strings.Contains(text, bad) {
-				t.Errorf("%s imports %s: spine S12 records that Trivy publishes no pkg/ API "+
+				t.Errorf("%s imports %s: the spine's Go control-plane decision records that Trivy publishes no pkg/ API "+
 					"stability contract, so a native path may exist only behind the Runner "+
 					"interface with the CLI fallback compiled in", name, bad)
 			}
@@ -991,12 +991,12 @@ func TestNoTrivyLibraryImport(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The real binary. M0.7's shape: SKIP with the command that fixes it.
+// The real binary. The opengrep acquisition's shape: SKIP with the command that fixes it.
 // ---------------------------------------------------------------------------
 
 // TrivyE2EEnv gates the one test that runs a real Trivy process. It is opt-in
 // because a real `trivy fs` needs a vulnerability database, and acquiring one
-// is a network operation that belongs to A.11's consume-only accelerator, not
+// is a network operation that belongs to the consume-only accelerator, not
 // to a unit test.
 const TrivyE2EEnv = "ANVIL_TRIVY_E2E"
 
@@ -1019,7 +1019,7 @@ func TestRealTrivyScansAFixtureRepo(t *testing.T) {
 	if os.Getenv(TrivyE2EEnv) == "" {
 		t.Skipf("%s is unset, so no real scan was requested. This test runs a real %s process, "+
 			"which needs a vulnerability database; set %s=1 where the pinned Trivy release and its "+
-			"DB cache exist (A.11's accelerator populates it). NOTE: no CI job sets it today, so "+
+			"DB cache exist (the accelerator populates it). NOTE: no CI job sets it today, so "+
 			"the end-to-end silent-empty control is currently proven on no machine.",
 			TrivyE2EEnv, BinaryName, TrivyE2EEnv)
 	}

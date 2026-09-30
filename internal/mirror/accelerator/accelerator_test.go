@@ -720,8 +720,8 @@ func TestATokenRealmOnAnotherHostWorksONLYWhenAllowlisted(t *testing.T) {
 }
 
 // TestTokenRealmScopeRulesMatchTheRestOfAnvil pins the realm through the same
-// scope rule S7 applies everywhere else: https, a host, no inline credentials,
-// and the exact host:port that was configured.
+// scope rule the spine's safety section applies everywhere else: https, a host,
+// no inline credentials, and the exact host:port that was configured.
 func TestTokenRealmScopeRulesMatchTheRestOfAnvil(t *testing.T) {
 	reg := newMockRegistry(t, "aquasecurity/trivy-db", []byte("payload"))
 	rc, err := newRegistryClient(trivyOnlyConfig(reg, testCacheDir(t)))
@@ -820,7 +820,7 @@ func TestShippedEndpointsAreHTTPS(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LICENCE-TIER WRITE GUARD — the reason A.13 exists
+// THE LICENCE-TIER WRITE GUARD — the reason the accelerator review exists
 // ---------------------------------------------------------------------------
 
 // TestWritePathNeverResolvesIntoTheLicenceTieredMirror is the packet's primary
@@ -1381,7 +1381,7 @@ func TestGrypeUnverifiableChecksumIsRefusedUnlessOptedIn(t *testing.T) {
 }
 
 // TestGrypeListingCannotRedirectTheDownloadToAnotherHost — the listing is
-// third-party content, and spine S7 forbids following it across hosts.
+// third-party content, and the spine's safety section forbids following it across hosts.
 func TestGrypeListingCannotRedirectTheDownloadToAnotherHost(t *testing.T) {
 	elsewhere := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("the archive was fetched from a host the listing named")

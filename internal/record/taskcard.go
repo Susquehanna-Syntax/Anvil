@@ -1,5 +1,5 @@
 // Tier 1 of the read path: the task card the coding agent actually reads
-// (step R.13, with readpath.go).
+// (the read path, with readpath.go).
 //
 // # A task card is DERIVED. The record is authoritative.
 //
@@ -34,9 +34,9 @@
 //  1. THE HOST GATE — RemediableByAgent, below.
 //  2. THE VERIFIED GATE — cardCorrelation clamps `verified` against
 //     CorrelationSignal.SufficientForVerified via correlation.go's own
-//     verificationOf, never a second copy of the rule. CRITIQUE-03 m2: the
-//     host gate was enforced three times and this one, the same class of S7
-//     gate, was taken on trust.
+//     verificationOf, never a second copy of the rule. The queue and read-path
+//     review's finding m2: the host gate was enforced three times and this one,
+//     the same class of the spine's safety section gate, was taken on trust.
 //  3. THE BORROWED LOCUS — cardActionable withholds the action from a cluster
 //     member whose file and line came from its peer. See cardActionable for
 //     the whole argument; the short form is that one defect must not become
@@ -51,7 +51,7 @@
 //
 // # The host gate
 //
-// plan/00-SPINE.md S7 makes the host agent read-only — "no package manager in
+// The spine's safety section makes the host agent read-only — "no package manager in
 // a mutating mode, not behind a flag" — so `remediable_by_agent` is false for
 // every host finding. contract.go's Validate() enforces it on the record and
 // internal/store enforces it with a CHECK constraint.
@@ -113,7 +113,7 @@ type TaskCard struct {
 	Confidence    float64       `json:"confidence"`
 
 	// ConsumptionClass is DERIVED here; see deriveConsumptionClass. The
-	// authoritative value is `handoff.consumption_class` (R.4).
+	// authoritative value is `handoff.consumption_class` (the store schema).
 	ConsumptionClass ConsumptionClass `json:"consumptionClass"`
 
 	// RemediableByAgent is the record's value CLAMPED: never true for a host
@@ -152,7 +152,7 @@ type TaskCard struct {
 	Override *BudgetOverride `json:"budgetOverride,omitempty"`
 
 	// WriteBackTo is the RFC 6901 pointer, from the sarifLog root, of the
-	// result's `fixes` array. plan/00-SPINE.md S7: "Never auto-merge. Propose
+	// result's `fixes` array. The spine's safety section: "Never auto-merge. Propose
 	// only." The proposal lands in the record, not in the card.
 	WriteBackTo string `json:"writeBackTo"`
 
@@ -238,7 +238,7 @@ type CardContext struct {
 // CardDynamic is research/24's `dast.reproduction`: the replayable request and
 // what it produced, which doubles as the accept oracle for the fix.
 //
-// plan/00-SPINE.md S7: only a reproduction that now FAILS earns "verified
+// The spine's safety section: only a reproduction that now FAILS earns "verified
 // fixed", so Env is carried — a replay under a different sanitizer or ASLR
 // setting is not the same experiment.
 type CardDynamic struct {
@@ -248,7 +248,7 @@ type CardDynamic struct {
 	URL    string `json:"url,omitempty"`
 
 	// RequestBody is capped at MaxInlineRequestBodyBytes and ResponseExcerpt
-	// at MaxInlineResponseBodyBytes — R.8's caps, restated here because the
+	// at MaxInlineResponseBodyBytes — secrets masking's caps, restated here because the
 	// card is a second place the bytes could be inlined. The remainder is a
 	// Tier-2 blob named in TaskCard.Spills.
 	RequestBody     string `json:"requestBody,omitempty"`
@@ -266,7 +266,7 @@ type CardDynamic struct {
 	InjectionPoint  string         `json:"injectionPoint,omitempty"`
 	ObservedSignal  EvidenceSignal `json:"observedSignal,omitempty"`
 	// Observed is the regex-extracted evidence span, never a raw body
-	// (plan/00-SPINE.md S7).
+	// (the spine's safety section).
 	Observed string `json:"observed,omitempty"`
 
 	Steps            []string          `json:"steps,omitempty"`
@@ -308,15 +308,15 @@ type CardCorrelation struct {
 	// would make "not linked" and "linked to something you cannot fetch yet"
 	// the same observation.
 	//
-	// CRITIQUE-03 m3: a card is documented as self-contained, and one that
-	// asserts `verified: true` against evidence the read gate has not opened
-	// is asserting something the consumer cannot check. Caveat says so in
-	// prose as well.
+	// The queue and read-path review's finding m3: a card is documented as
+	// self-contained, and one that asserts `verified: true` against evidence
+	// the read gate has not opened is asserting something the consumer cannot
+	// check. Caveat says so in prose as well.
 	PeersUnreadable []string `json:"peersUnreadable,omitempty"`
 
 	Confidence float64 `json:"confidence"`
 	// Verified is true only when a stack-trace match or a re-run flip is
-	// present. Confidence alone never qualifies (plan/00-SPINE.md S7).
+	// present. Confidence alone never qualifies (the spine's safety section).
 	//
 	// It is CLAMPED, not copied: contract.go's Validate() rejects a record
 	// whose correlation claims verification with no sufficient signal, but the
@@ -405,7 +405,7 @@ func readableFindingIDs(order []orderedResult) map[string]bool {
 //
 // Three independent conditions, each of which alone withholds the finding:
 //
-//  1. Not a host finding. plan/00-SPINE.md S7 — the host agent is read-only.
+//  1. Not a host finding. The spine's safety section — the host agent is read-only.
 //  2. remediable_by_agent is true in the record.
 //  3. The verdict is true_positive. The consumption pipeline drops
 //     false_positive and demotes insufficient_context to report-only
@@ -440,7 +440,7 @@ func staticPeerFor(r *Result, cluster []orderedResult) *Result {
 // Actionable field and the manifest's CardRef.Actionable — so the read order
 // and the cards can never disagree about what the agent may act on.
 //
-// # Why a borrowed locus withholds the action (CRITIQUE-03 m1)
+// # Why a borrowed locus withholds the action (the queue and read-path review's finding m1)
 //
 // A DAST-only member of a cluster has no file and no line of its own. It
 // borrows its SAST peer's path, line range, enclosing symbol and snippet so
@@ -449,7 +449,7 @@ func staticPeerFor(r *Result, cluster []orderedResult) *Result {
 // finding. But both members were then independently actionable and pointed at
 // the same line, so one defect produced TWO patch tasks writing proposals into
 // two different `result.fixes` arrays, and two `handoff` rows charged twice
-// against the budget R.11's reservation is dividing. `group_id` is the
+// against the budget the queue re-cut's reservation is dividing. `group_id` is the
 // mechanism that would collapse them and it is RESERVED for the consumption
 // pipeline, so nothing collapses them here.
 //
@@ -491,7 +491,7 @@ func actionBlockers(r *Result) []string {
 	var out []string
 	if IsHostFinding(r) {
 		out = append(out, fmt.Sprintf(
-			"host finding: the host agent is read-only (00-SPINE.md S7), so %s is false for it and no patch may be proposed",
+			"host finding: the host agent is read-only (the spine's safety section), so %s is false for it and no patch may be proposed",
 			PropResultRemediableByAgent))
 	}
 	if !r.Properties.RemediableByAgent && !IsHostFinding(r) {
@@ -508,11 +508,11 @@ func actionBlockers(r *Result) []string {
 	return out
 }
 
-// deriveConsumptionClass maps a finding onto the gate R.4 stores on the
+// deriveConsumptionClass maps a finding onto the gate the store schema stores on the
 // handoff row.
 //
 // A finding carrying a reproduction is RequiresDynamicConfirmation: it has a
-// dynamic accept oracle, and plan/00-SPINE.md S7 says only that reproduction
+// dynamic accept oracle, and the spine's safety section says only that reproduction
 // failing afterwards earns "verified fixed" — a compile-and-test pass does
 // not. Everything else is StaticOnly, which is the class research/24's triage
 // gate operates on.
@@ -868,7 +868,7 @@ func taintPath(r *Result) []string {
 //
 //  1. The INLINE CAPS. The advisory excerpt at research/24's <=800 tokens; the
 //     request body at MaxInlineRequestBodyBytes and the response excerpt at
-//     MaxInlineResponseBodyBytes, which are R.8's ZAP-derived caps. These
+//     MaxInlineResponseBodyBytes, which are secrets masking's ZAP-derived caps. These
 //     apply whatever the card's total size is, because they are about what may
 //     be inlined at all, not about what fits.
 //
@@ -1042,7 +1042,7 @@ func hasSpill(spills []TierSpill, field string) bool {
 // capCardText enforces one inline cap: text longer than limit keeps a prefix
 // plus an in-band pointer, and the FULL text becomes a Tier-2 blob.
 //
-// The in-band notice is R.8's truncationNotice, byte for byte, so a reader
+// The in-band notice is secrets masking's truncationNotice, byte for byte, so a reader
 // meets one truncation spelling across the record and the read path rather
 // than two.
 func (rd *Reader) capCardText(c *TaskCard, field string, dst *string, limit int) error {
@@ -1128,7 +1128,7 @@ func (c *TaskCard) CheckAgainstRecord(r *Result) error {
 			PropResultRemediableByAgent)
 	}
 	if c.RemediableByAgent && IsHostFinding(r) {
-		note("%s is true on the card for a HOST finding; the host agent is read-only (00-SPINE.md S7)",
+		note("%s is true on the card for a HOST finding; the host agent is read-only (the spine's safety section)",
 			PropResultRemediableByAgent)
 	}
 	if c.Actionable && !isActionable(r) {
@@ -1138,7 +1138,7 @@ func (c *TaskCard) CheckAgainstRecord(r *Result) error {
 	if c.Correlation != nil && c.Correlation.Merged {
 		note("correlation.merged is true; link, never merge")
 	}
-	// `verified` is an S7 gate of the same class as the host gate, so it gets
+	// `verified` is a safety gate of the same class as the host gate, so it gets
 	// the same treatment: the card may not assert a verification the SIGNALS
 	// do not earn, whatever bit the record carries. Checked against the
 	// signals rather than against the record's own `verified` flag, because a
@@ -1150,7 +1150,7 @@ func (c *TaskCard) CheckAgainstRecord(r *Result) error {
 				PropResultCorrelation)
 		} else if earned, _ := verificationOf(co.Signals); !earned {
 			note("correlation.verified is true on the card but no %q or %q signal is present in the record; "+
-				"confidence alone never qualifies (00-SPINE.md S7)",
+				"confidence alone never qualifies (the spine's safety section)",
 				CorrelationSignalResponseStackTrace, CorrelationSignalRerunFlip)
 		}
 	}

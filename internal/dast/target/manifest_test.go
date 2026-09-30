@@ -15,7 +15,7 @@ import (
 // Hand-written corpus
 // ---------------------------------------------------------------------------
 //
-// Every fixture below was typed by hand from plan/50-dast.md's "Target Manifest
+// Every fixture below was typed by hand from plan/design/dynamic-tier.md's "Target Manifest
 // Schema" section. None of it is produced by the code under test: a corpus the
 // implementation generated would agree with the implementation by construction
 // and prove nothing. The one place a fixture is compared against Marshal output
@@ -23,7 +23,7 @@ import (
 // out below, so a change in Marshal's output has to be justified by editing a
 // visible expected value.
 
-// planExampleManifest is plan/50-dast.md's example, transcribed verbatim,
+// planExampleManifest is plan/design/dynamic-tier.md's example, transcribed verbatim,
 // comments and all. The single backtick pair is spliced in because Go raw
 // string literals cannot contain one.
 const planExampleManifest = `schema_version: 1
@@ -1279,9 +1279,9 @@ func TestRecordOutcomeUsesTheFrozenEnums(t *testing.T) {
 	}
 }
 
-// The literals plan/50-dast.md:1149-1150 still names. internal/record's
-// contract test rejects every one of them and attributes them to "area D";
-// this package is area D, so it asserts the same thing at its own boundary.
+// The literals plan/design/dynamic-tier.md:1149-1150 still names. internal/record's
+// contract test rejects every one of them and attributes them to "The dynamic tier";
+// this package is the dynamic tier, so it asserts the same thing at its own boundary.
 func TestRecordOutcomeNeverEmitsTheStaleLiterals(t *testing.T) {
 	staleStatuses := []string{"clean", "findings", "failed_to_boot", "partial"}
 	staleProvenances := []string{"ephemeral_manifest", "live_url_authorized"}

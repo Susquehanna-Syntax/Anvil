@@ -18,7 +18,7 @@ import (
 // ---------------------------------------------------------------------------
 // The reset world
 //
-// D.10's fakeDocker returns a FIXED container listing, which is enough to
+// Target provisioning's fakeDocker returns a FIXED container listing, which is enough to
 // decide one provisioning attempt and not enough to decide a reset: a reset
 // asks the same seam the same question three times and needs three different
 // answers -- what is there now, what is there after `down -v`, and what is
@@ -230,7 +230,7 @@ type resetHarness struct {
 	target *Target
 }
 
-// newResetHarness provisions a target for real, through D.10's Provision, and
+// newResetHarness provisions a target for real, through target provisioning's Provision, and
 // returns it alongside a Resetter. The call log is cleared afterwards so that
 // every assertion about calls in this file is about the RESET.
 func newResetHarness(t *testing.T) *resetHarness {
@@ -399,7 +399,7 @@ func TestZeroResetStageRefuses(t *testing.T) {
 }
 
 // TestNoResetStageCanBeReadAsScannedClean pins the RELATION, not the values.
-// plan/00-SPINE.md S6: a target that failed to boot must be distinguishable
+// The spine's record section: a target that failed to boot must be distinguishable
 // from "scanned clean". A failed reset is a target that is no longer in a
 // known state, and no combination of reset stage and half status may derive a
 // dastStatus a consumer may read as a clean dynamic scan.
@@ -483,11 +483,11 @@ reset:
   strategy: destroy_recreate
 `))
 	if err != nil {
-		t.Fatalf("the seeded fixture manifest must parse; D.1 refused it: %v", err)
+		t.Fatalf("the seeded fixture manifest must parse; the target manifest refused it: %v", err)
 	}
 
 	// A manifest that is valid in every respect EXCEPT its reset strategy.
-	// D.1 cannot produce one -- it refuses anything but destroy_recreate at
+	// The target manifest cannot produce one -- it refuses anything but destroy_recreate at
 	// parse time -- so it is built by parsing a good one and zeroing the
 	// field, which is exactly the shape a hand-built &target.Manifest{} or a
 	// later-added second strategy would have.
@@ -597,7 +597,7 @@ func TestNewResetterAcceptsTheDeclaredStrategyOnly(t *testing.T) {
 // The stop condition: no state survives a reset
 // ---------------------------------------------------------------------------
 
-// TestNoStateSurvivesAReset is plan/50-dast.md D.13's required evidence. A
+// TestNoStateSurvivesAReset is target reset's design required evidence. A
 // probe writes to the container's writable layer and to the database volume;
 // after a reset, neither is reachable.
 func TestNoStateSurvivesAReset(t *testing.T) {
@@ -744,7 +744,7 @@ func TestResetAsksForVolumeRemoval(t *testing.T) {
 
 // TestResetVerifiesTheDestroyBeforeReProvisioning pins the ORDER, which is the
 // relation the whole packet turns on: destroy, then PROVE the destroy, then
-// bring it back through D.10's Provision unchanged. A reset that re-provisions
+// bring it back through target provisioning's Provision unchanged. A reset that re-provisions
 // first and looks afterwards can no longer tell what survived.
 func TestResetVerifiesTheDestroyBeforeReProvisioning(t *testing.T) {
 	h := newResetHarness(t)
@@ -1345,7 +1345,7 @@ func TestResetErrorCarriesAllThreeFacts(t *testing.T) {
 // Standing orders
 // ---------------------------------------------------------------------------
 
-// TestNoSnapshotPathExists: plan/50-dast.md D.13 forbids a snapshot/restore
+// TestNoSnapshotPathExists: target reset's design forbids a snapshot/restore
 // state-reset path in this file. research 19 reserves it for a future
 // Firecracker tier and calls resuming from the same state more than once
 // insecure. The tripwire is on IDENTIFIERS -- a snapshot path would need a
@@ -1442,7 +1442,7 @@ func TestResetWritesNoRecordLiteral(t *testing.T) {
 				"a literal here drifts from the frozen enum silently", s)
 		}
 	}
-	// reset.strategy is D.1's constant, not a literal spelled twice.
+	// reset.strategy is the target manifest's constant, not a literal spelled twice.
 	if strings.Contains(string(src), `"destroy_recreate"`) {
 		t.Error(`reset.go spells "destroy_recreate". Use ` +
 			`target.ResetStrategyDestroyRecreate: two spellings of the only supported ` +

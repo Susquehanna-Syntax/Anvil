@@ -1,14 +1,14 @@
-// Package delta is Lane A step A.14: steady-state delta ingestion.
+// Package delta is Lane A's steady-state delta ingestion.
 //
 // ===========================================================================
 // WHAT THIS PACKAGE IS FOR
 // ===========================================================================
 //
-// A.8 fills the cache once, from a 570 MB bulk archive. A.7 asks "did anything
-// change" for the price of a conditional GET. This package is what happens
-// BETWEEN those two: when a poll says something changed, it works out the
-// cheapest set of bytes that describes the change, decodes them, and upserts
-// exactly the rows that moved.
+// The bulk bootstrap fills the cache once, from a 570 MB bulk archive. The
+// poller asks "did anything change" for the price of a conditional GET. This
+// package is what happens BETWEEN those two: when a poll says something
+// changed, it works out the cheapest set of bytes that describes the change,
+// decodes them, and upserts exactly the rows that moved.
 //
 // research/06 Recommendation §3, "Steady state per feed, by value density", is
 // the whole specification, and its central finding is a cost model:
@@ -22,7 +22,7 @@
 // So the cheap path is not the delta archive at all. It is `deltaLog.json` —
 // "a rolling 30 days worth of CVE record modification history" — polled every
 // 15 minutes, which NAMES what changed without carrying it, followed by a fetch
-// of only the named records. A.14's packet makes re-downloading the cumulative
+// of only the named records. Delta ingestion's packet makes re-downloading the cumulative
 // zip on every poll a forbidden action, and PreferDeltaLog below is where that
 // preference is made structural rather than advisory.
 //
@@ -33,8 +33,8 @@
 // There is no cadence written in Go here and there must never be one.
 // research/06 Recommendation §4: "Every cadence above lives in config, never in
 // code", and internal/ingest/config carries three of them per row for exactly
-// this step and A.15 — `interval_seconds`, `reconcile_interval_seconds`,
-// `baseline_interval_seconds`. A.1's feeds_test.go asserts mechanically that no
+// this step and the weekly self-heal — `interval_seconds`, `reconcile_interval_seconds`,
+// `baseline_interval_seconds`. The feed table's feeds_test.go asserts mechanically that no
 // cadence literal appears in its own source; delta_test.go carries the same
 // assertion against this file, because the same defect on the CONSUMING side is
 // just as fatal and is easier to commit.
@@ -47,7 +47,7 @@
 // THE CURSOR IS A QUERY, NOT A COLUMN
 // ===========================================================================
 //
-// feed_state has exactly one cursor column and A.8 already owns it: it writes a
+// feed_state has exactly one cursor column and the bulk bootstrap already owns it: it writes a
 // bootstrap Progress token into `watermark` and hands over through
 // bootstrap.Handoff. A second delta cursor squeezed into the same column would
 // be two writers on one value.
@@ -88,17 +88,17 @@
 // reported by Due(), and refused with a named sentinel unless a delegate is
 // wired. Each refusal has a reason that is about correctness, not effort:
 //
-//   - RouteReconcile wants the ~17 MB end-of-day delta asset. A.8's importer
+//   - RouteReconcile wants the ~17 MB end-of-day delta asset. The bulk bootstrap's importer
 //     resolves the LARGEST archive asset of a release, which is the 570 MB
 //     midnight baseline. Wiring reconcile to it would cost 570 MB/day and
-//     would be the very re-download A.14's packet forbids, so this package
+//     would be the very re-download delta ingestion's design forbids, so this package
 //     refuses rather than defaults. Choosing WHICH asset of a release is the
-//     reconciliation artifact is a per-feed fact and belongs in A.1's table.
-//   - RouteBaseline is A.15's weekly self-heal. Due() computes its clock
+//     reconciliation artifact is a per-feed fact and belongs in the feed table.
+//   - RouteBaseline is the weekly self-heal. Due() computes its clock
 //     because the clock is in the feed row and one planner should own all
 //     three; running it here would be two implementations of one pass.
-//   - RouteGitFetch needs A.8's clone directory and would have to rewrite
-//     A.8's watermark token afterwards — two writers on one column, which is
+//   - RouteGitFetch needs the bulk bootstrap's clone directory and would have to rewrite
+//     the bulk bootstrap's watermark token afterwards — two writers on one column, which is
 //     the thing the cursor design above avoids.
 //
 // A refusal is loud, typed and counted. It is not a silent no-op, and it is
@@ -140,10 +140,10 @@ var (
 	// as opposed to something that went wrong.
 	ErrSyncRefused = fmt.Errorf("%w: refused", ErrDelta)
 
-	// ErrNoCache is a Syncer built without the A.2 ingestion cache.
+	// ErrNoCache is a Syncer built without the ingestion cache.
 	ErrNoCache = fmt.Errorf("%w: no ingestion cache", ErrSyncRefused)
 
-	// ErrNoPoller is a Syncer built without A.7. There is no fallback path:
+	// ErrNoPoller is a Syncer built without the poller. There is no fallback path:
 	// a delta sync that fetched without the poller would be a second,
 	// unreviewed implementation of the conditional-GET, scope and credential
 	// rules that package exists to hold.
@@ -159,7 +159,7 @@ var (
 	ErrNoDeltaLog = fmt.Errorf("%w: feed has no delta log", ErrSyncRefused)
 
 	// ErrNoReconciler is RouteReconcile with nothing wired to run it. See the
-	// package comment: defaulting it to A.8's bulk importer would cost 570 MB
+	// package comment: defaulting it to the bulk bootstrap's bulk importer would cost 570 MB
 	// a day.
 	ErrNoReconciler = fmt.Errorf("%w: no reconciler", ErrSyncRefused)
 
@@ -174,7 +174,7 @@ var (
 	// what stands between a delta batch and a full FTS rebuild.
 	ErrStatementNotAllowed = fmt.Errorf("%w: statement not on the allowlist", ErrSyncRefused)
 
-	// ErrUnsanitized is a record reaching the write path with a string A.3
+	// ErrUnsanitized is a record reaching the write path with a string the sanitizer
 	// would have changed.
 	ErrUnsanitized = fmt.Errorf("%w: unsanitized field", ErrSyncRefused)
 
@@ -208,7 +208,7 @@ func refuse(sentinel error, format string, args ...any) error {
 //
 // It is Lane-A-local vocabulary with no counterpart among the record contract's
 // six frozen enums, so declaring it here does not violate the single-owner rule
-// in plan/IMPLEMENTATION-PLAN.md §6. It exists so a caller switches on a
+// in the shared-vocabulary review. It exists so a caller switches on a
 // constant rather than re-deriving the decision from a sync mechanism and a
 // body it would have to sniff again.
 type Route string
@@ -245,11 +245,11 @@ const (
 	// planned here and refused unless delegated.
 	RouteReconcile Route = "reconcile"
 
-	// RouteBaseline is A.15's full-baseline self-heal on
+	// RouteBaseline is the full-baseline self-heal on
 	// baseline_interval_seconds.
 	RouteBaseline Route = "baseline"
 
-	// RouteGitFetch is GHSA's incremental `git fetch` against A.8's blobless
+	// RouteGitFetch is GHSA's incremental `git fetch` against the bulk bootstrap's blobless
 	// clone.
 	RouteGitFetch Route = "git_fetch"
 )
@@ -555,12 +555,12 @@ func clip(s string, n int) string {
 // Injected dependencies
 // ---------------------------------------------------------------------------
 
-// FeedPoller is A.7. *poller.Poller satisfies it.
+// FeedPoller is the seam for the poller. *poller.Poller satisfies it.
 //
 // It is an interface so that delta_test.go can count polls and so that the
 // daemon supplies one configured Poller rather than this package constructing
 // an HTTP client of its own — which would be a second implementation of the
-// authentication, redirect-scope and body-cap rules A.7 exists to hold.
+// authentication, redirect-scope and body-cap rules the poller exists to hold.
 type FeedPoller interface {
 	Poll(ctx context.Context, feed config.FeedConfig) (poller.PollResult, error)
 }
@@ -571,7 +571,7 @@ type FeedPoller interface {
 // The rationale is poller.Watermarker's, verbatim in spirit: where a feed's
 // delta log lives, and where one named record lives, are facts about a FEED.
 // A package that knew them would be a hard-coded feed table wearing a different
-// hat, and A.1's whole design is that Lane A knows nothing about a feed that is
+// hat, and the feed table's whole design is that Lane A knows nothing about a feed that is
 // not in the table.
 //
 // A nil Source is legal and common. It makes RouteDeltaLog unreachable and
@@ -591,13 +591,13 @@ type Source interface {
 	//
 	// id has ALREADY passed checkRecordName; an implementation may rely on
 	// that and must not relax it. An implementation must also apply the same
-	// scope discipline A.7 applies — same host as the feed row, no cross-host
+	// scope discipline the poller applies — same host as the feed row, no cross-host
 	// redirect, credentials from the row's credential_env and nowhere else.
 	Record(ctx context.Context, feed config.FeedConfig, id string) ([]byte, error)
 }
 
 // Reconciler runs RouteReconcile. See the package comment for why this package
-// refuses rather than defaulting the route to A.8's bulk importer.
+// refuses rather than defaulting the route to the bulk bootstrap's bulk importer.
 type Reconciler interface {
 	Reconcile(ctx context.Context, feed config.FeedConfig) (BatchStats, error)
 }
@@ -608,17 +608,17 @@ type Reconciler interface {
 
 // Options configures a Syncer. DB and Poller are required.
 type Options struct {
-	// DB is the A.2 ingestion cache, already migrated. It is NOT
+	// DB is the ingestion cache, already migrated. It is NOT
 	// internal/store: that is the audit store of record and nothing here may
 	// touch it.
 	DB *sql.DB
 
-	// Poller is A.7. Nothing in this package makes an HTTP request except
+	// Poller is the poller. Nothing in this package makes an HTTP request except
 	// through it and through Source.
 	Poller FeedPoller
 
-	// THERE IS NO Mirror FIELD, AND ITS ABSENCE IS THE POINT. A.4's licence
-	// gate is resolved by A.7 BEFORE the request goes out, and the decision
+	// THERE IS NO Mirror FIELD, AND ITS ABSENCE IS THE POINT. The licence
+	// gate is resolved by the poller BEFORE the request goes out, and the decision
 	// arrives on PollResult bound to the bytes it admitted. A Mirror here
 	// would let this package resolve the gate a second time, which means two
 	// answers to one question and a way to write rows under a decision the
@@ -671,12 +671,12 @@ type SyncStats struct {
 	// error and the returned error is nil.
 	Skipped bool
 
-	// Polled is whether A.7 was called, and PollStatus its typed outcome.
+	// Polled is whether the poller was called, and PollStatus its typed outcome.
 	Polled     bool
 	PollStatus poller.Status
 
-	// Decision is A.4's licence decision, and Refused says the gate declined.
-	// A.7 resolves the gate BEFORE the request, so a refusal here means no
+	// Decision is the licence gate's licence decision, and Refused says the gate declined.
+	// The poller resolves the gate BEFORE the request, so a refusal here means no
 	// bytes were fetched at all.
 	Decision       license.Decision
 	Refused        bool
@@ -712,20 +712,20 @@ type SyncStats struct {
 	// Batch is what reached the cache.
 	Batch BatchStats
 
-	// Sanitize is the merged A.3 report over everything decoded. A non-zero
+	// Sanitize is the merged sanitizer report over everything decoded. A non-zero
 	// count is not an error; it is the ordinary state of text written by
 	// strangers.
 	Sanitize sanitize.SanitizeStats
 
 	// AsOf is the timestamp stamped on every row this sync wrote, and
-	// StalenessSeconds spine S6's age of the DATA at write time — measured
+	// StalenessSeconds the spine's age of the DATA at write time — measured
 	// from the response's Last-Modified where the feed sent one, never from
 	// the age of the write.
 	AsOf             time.Time
 	StalenessSeconds int
 
 	// NextSyncAfter is the shortest delay before this feed may be synced
-	// again. It is A.7's answer where A.7 ran, because a server that asked
+	// again. It is the poller's answer where the poller ran, because a server that asked
 	// for longer than the feed table's cadence has to be honoured.
 	NextSyncAfter time.Duration
 
@@ -736,14 +736,14 @@ type SyncStats struct {
 }
 
 // New builds a Syncer. DB and Poller are the two hard requirements: without the
-// cache nothing can be written, and without A.7 nothing may be fetched.
+// cache nothing can be written, and without the poller nothing may be fetched.
 func New(opts Options) (*Syncer, error) {
 	if opts.DB == nil {
-		return nil, refuse(ErrNoCache, "a delta sync writes rows and needs the A.2 ingestion cache")
+		return nil, refuse(ErrNoCache, "a delta sync writes rows and needs the ingestion cache")
 	}
 	if opts.Poller == nil {
 		return nil, refuse(ErrNoPoller,
-			"a delta sync fetches only through A.7; a client built here would be a second implementation "+
+			"a delta sync fetches only through the poller; a client built here would be a second implementation "+
 				"of its authentication, redirect-scope and body-cap rules")
 	}
 	s := &Syncer{
@@ -765,7 +765,7 @@ func New(opts Options) (*Syncer, error) {
 
 // SyncDelta performs one steady-state delta sync of one feed.
 //
-// It is A.14's `SyncDelta(ctx, feed FeedConfig) (SyncStats, error)`; the
+// It is delta ingestion's `SyncDelta(ctx, feed FeedConfig) (SyncStats, error)`; the
 // dependencies that signature has no room for — the cache, the poller, the
 // clock, the record source — live on the receiver so that no call site can
 // supply a different one per call and no default can be reached by accident.
@@ -774,7 +774,7 @@ func New(opts Options) (*Syncer, error) {
 //
 //  1. feed_state is read                          (no network)
 //  2. Due decides what is scheduled                (pure)
-//  3. A.7 polls — which resolves A.4's licence gate BEFORE the request,
+//  3. The poller polls — which resolves the licence gate BEFORE the request,
 //     sends the conditional headers, and refuses an off-host redirect
 //  4. a 304 ends the sync having written nothing
 //  5. the delta log is preferred; only records it names, and only records
@@ -782,7 +782,7 @@ func New(opts Options) (*Syncer, error) {
 //  6. every document is decoded, sanitized field by field
 //  7. one row-scoped upsert per changed record
 //
-// Step 5 is the one A.14's packet is about. Step 3 is the one A.7's ordering
+// Step 5 is the one delta ingestion's design is about. Step 3 is the one the poller's ordering
 // rule is about and it is not optional: the licence gate runs before the
 // request, so a feed with no acquired licence body costs no bytes at all.
 //
@@ -814,8 +814,8 @@ func (s *Syncer) SyncDelta(ctx context.Context, feed config.FeedConfig) (SyncSta
 	switch plan.Route {
 	case RouteGitFetch:
 		stats.Delegated = true
-		stats.Note = "the row's sync_mechanism is git_blobless_fetch, which fetches into A.8's clone and " +
-			"would then have to rewrite A.8's watermark token; that is two writers on one column, so this " +
+		stats.Note = "the row's sync_mechanism is git_blobless_fetch, which fetches into the bulk bootstrap's clone and " +
+			"would then have to rewrite the bulk bootstrap's watermark token; that is two writers on one column, so this " +
 			"package plans the route and does not run it"
 		return stats, refuse(ErrDelegated, "feed %q: %s", feed.ID, stats.Note)
 	case RoutePoll:
@@ -826,7 +826,7 @@ func (s *Syncer) SyncDelta(ctx context.Context, feed config.FeedConfig) (SyncSta
 		return stats, nil
 	}
 
-	// --- 3. A.7. The licence gate runs inside it, before the request. ---
+	// --- 3. The poller. The licence gate runs inside it, before the request. ---
 	res, err := s.poll.Poll(ctx, feed)
 	stats.Polled = true
 	stats.PollStatus = res.Status
@@ -891,7 +891,7 @@ func (s *Syncer) SyncDelta(ctx context.Context, feed config.FeedConfig) (SyncSta
 // the polled body is decoded ONLY when there is no delta log to be had — no
 // Source wired, or the Source saying this feed has none. There is no size
 // threshold, no "if the body is small enough", and no flag: a threshold is
-// exactly how the cumulative-zip re-download A.14's packet forbids gets
+// exactly how the cumulative-zip re-download delta ingestion's design forbids gets
 // reintroduced as an optimisation.
 func (s *Syncer) collect(
 	ctx context.Context,
@@ -1008,7 +1008,7 @@ func (s *Syncer) fromDeltaLog(
 //
 // A body in a shape this package does not decode is NOT an error that fails the
 // sync. It is a ROUTING FACT, returned as a note with zero records, because the
-// answer for a CSAF directory listing or an EPSS CSV is A.8's bulk path and not
+// answer for a CSAF directory listing or an EPSS CSV is the bulk bootstrap's bulk path and not
 // a second decoder here. Failing the sync would make a correctly-configured
 // feed look broken; dropping it silently would lose the change.
 func (s *Syncer) fromBody(feed config.FeedConfig, res poller.PollResult, stats *SyncStats) ([]Record, string, error) {
@@ -1028,7 +1028,7 @@ func (s *Syncer) fromBody(feed config.FeedConfig, res poller.PollResult, stats *
 	if len(docs) > MaxBatchRecords {
 		return nil, "", refuse(ErrBatchTooLarge,
 			"feed %q: the polled body unpacks to %d documents, which is a bulk artifact and belongs on "+
-				"A.8's resumable path rather than in a delta batch", feed.ID, len(docs))
+				"the bulk bootstrap's resumable path rather than in a delta batch", feed.ID, len(docs))
 	}
 
 	var out []Record
@@ -1051,7 +1051,7 @@ func unroutableNote(feedID string, err error) string {
 		"feed %q polled successfully but its body is not a shape the delta decoder reads, so no row was "+
 			"written and nothing was dropped silently: %v. Feeds whose steady state is a full-file "+
 			"refresh (CSAF directory listings, per-branch distro secdb, the EPSS CSV) reach the cache "+
-			"through A.8's bulk path.", feedID, err)
+			"through the bulk bootstrap's bulk path.", feedID, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,14 +1062,14 @@ func unroutableNote(feedID string, err error) string {
 // reconcile_interval_seconds.
 //
 // IT REFUSES UNLESS A Reconciler IS WIRED, and the refusal is the design. The
-// artifact this pass wants is cvelistV5's ~17 MB end-of-day delta; A.8's
+// artifact this pass wants is cvelistV5's ~17 MB end-of-day delta; the bulk bootstrap's
 // importer resolves the LARGEST archive asset of a release, which is the 570 MB
-// midnight baseline. Wiring this route to A.8 by default would cost 570 MB a
-// day and would be precisely the re-download A.14's packet forbids — and it
+// midnight baseline. Wiring this route to the bulk bootstrap by default would cost 570 MB a
+// day and would be precisely the re-download delta ingestion's design forbids — and it
 // would do it silently, which is worse than doing it loudly.
 //
 // Choosing WHICH asset of a release is the reconciliation artifact is a
-// per-feed fact, so it belongs in A.1's table beside the cadence that
+// per-feed fact, so it belongs in the feed table beside the cadence that
 // schedules it. Until it is there, this package plans the pass and declines to
 // guess.
 func (s *Syncer) SyncReconcile(ctx context.Context, feed config.FeedConfig) (SyncStats, error) {
@@ -1101,7 +1101,7 @@ func (s *Syncer) SyncReconcile(ctx context.Context, feed config.FeedConfig) (Syn
 	if s.reconciler == nil {
 		stats.Delegated = true
 		stats.Note = "the reconciliation pass is due and no Reconciler is wired. This package will not " +
-			"default it to A.8's bulk importer: that importer resolves the largest asset of a release " +
+			"default it to the bulk bootstrap's bulk importer: that importer resolves the largest asset of a release " +
 			"(the 570 MB midnight baseline) rather than the ~17 MB end-of-day delta, so the default " +
 			"would be a 570 MB/day re-download of data already held"
 		return stats, refuse(ErrNoReconciler, "feed %q: %s", feed.ID, stats.Note)
@@ -1141,7 +1141,7 @@ func (s *Syncer) lastSuccess(ctx context.Context, feedID string) (time.Time, err
 	if !lastOK.Valid {
 		return time.Time{}, nil
 	}
-	// A.7 and A.8 write this column in slightly different renderings of the
+	// the poller and the bulk bootstrap write this column in slightly different renderings of the
 	// same instant, so both are accepted rather than one being declared
 	// canonical from here. A value in neither shape is treated as "never
 	// succeeded": a clock we cannot read must not be able to postpone a sync
@@ -1157,7 +1157,7 @@ func (s *Syncer) lastSuccess(ctx context.Context, feedID string) (time.Time, err
 
 // stalenessSeconds is the age of the DATA at write time, floored at zero.
 //
-// spine S6 requires as_of and staleness_seconds on every record, and
+// The spine's record section requires as_of and staleness_seconds on every record, and
 // research/06 Risk #5 is why: "never fail the scan — serve stale data with an
 // as_of timestamp and a staleness_seconds field. A scan run on 3-day-old KEV
 // data must say so." A publisher clock ahead of ours must not produce a
@@ -1253,7 +1253,7 @@ func unwrapZip(feedID string, body []byte) ([][]byte, error) {
 			continue
 		}
 		// A MEMBER THAT IS NOT JSON IS SKIPPED, NOT FATAL. This is the one
-		// place this package skips anything, and it follows A.8's reasoning
+		// place this package skips anything, and it follows the bulk bootstrap's reasoning
 		// exactly: an ecosystem archive is thousands of files written by
 		// strangers, and a README or a checksums file must not cost the
 		// advisories beside it. It is bounded to "the bytes are not a JSON

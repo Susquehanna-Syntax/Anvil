@@ -1,10 +1,10 @@
 package scanctl
 
-// Regression tests for REVIEW-O.4, one test per finding, each named for the
+// Regression tests for the controller-core review, one test per finding, each named for the
 // finding it closes.
 //
 // They are in their own file for the reason internal/record keeps
-// critique03_regression_test.go separate: a defect that was found once is a
+// readpath_review_test.go separate: a defect that was found once is a
 // defect that can return, and a test whose name does not say which defect it
 // guards gets deleted during the next refactor by someone who cannot tell what
 // it was protecting.
@@ -35,7 +35,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// O4-B1 — the read gate must be asked about the LIVE audit
+// Controller-core finding B1 — the read gate must be asked about the LIVE audit
 // ---------------------------------------------------------------------------
 
 // Probe P3, reconstructed: Begin, one SAST finding, seal SAST, KEEP the returned
@@ -80,13 +80,13 @@ func TestFindingsAreGatedAgainstTheLiveAuditNotAHeldSnapshot(t *testing.T) {
 	got, err := ctl.Findings(stale, record.HalfSast)
 	if !errors.Is(err, record.ErrHalfNotSealed) {
 		t.Fatalf("Findings through a stale record on an EXPIRED audit = (%d findings, %v); "+
-			"want a read-gate refusal (O4-B1)", len(got), err)
+			"want a read-gate refusal (controller-core finding B1)", len(got), err)
 	}
 	if got != nil {
 		t.Errorf("a refused read returned %d findings; it must return nothing", len(got))
 	}
 	if ctl.Readable(stale, record.HalfSast) {
-		t.Error("Readable said true through a stale record on an expired audit (O4-B1)")
+		t.Error("Readable said true through a stale record on an expired audit (controller-core finding B1)")
 	}
 
 	// And it agrees with the Sealer, asked directly. The critic's probe is
@@ -97,7 +97,7 @@ func TestFindingsAreGatedAgainstTheLiveAuditNotAHeldSnapshot(t *testing.T) {
 	}
 }
 
-// The other half of O4-B1's fix: there is no snapshot-scoped read surface left
+// The other half of controller-core finding B1's fix: there is no snapshot-scoped read surface left
 // to reach for. A future author who adds `func (r AuditRecord) Findings(...)`
 // back re-opens the defect at the moment they add it, and this fails then.
 //
@@ -108,7 +108,7 @@ func TestAuditRecordExposesNoUngatedReadSurface(t *testing.T) {
 	banned := map[string]string{
 		"Findings": "results must come from Controller.Findings, which gates against the live audit",
 		"Readable": "readability must come from Controller.Readable, for the same reason",
-		"HalfSeal": "a seal assembled from a snapshot's own fields is CRITIQUE O.4 blocker 1; " +
+		"HalfSeal": "a seal assembled from a snapshot's own fields is the controller-core review's blocker 1; " +
 			"record.Sealer mints the only seals the gate will believe",
 	}
 	for _, typ := range []reflect.Type{
@@ -137,7 +137,7 @@ func TestAuditRecordExposesNoUngatedReadSurface(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-B2 — clock 3 must not be movable by assignment
+// Controller-core finding B2 — clock 3 must not be movable by assignment
 // ---------------------------------------------------------------------------
 
 // Probe P10's first half: hold a record, move the DAST deadline out to t+7h59m,
@@ -177,7 +177,7 @@ func TestClockThreeCannotBeMovedByAssignment(t *testing.T) {
 	clk.set(4 * time.Hour)
 	rec = mustTransition(t, ctl, rec, TickEvent())
 	if rec.Dast.Status != record.HalfStatusTimedOut {
-		t.Fatalf("Dast.Status = %q at the real clock 3, want %q; clock 3 was moved by assignment (O4-B2)",
+		t.Fatalf("Dast.Status = %q at the real clock 3, want %q; clock 3 was moved by assignment (controller-core finding B2)",
 			rec.Dast.Status, record.HalfStatusTimedOut)
 	}
 	if rec.DastStatus != record.DastStatusTimedOut {
@@ -192,7 +192,7 @@ func TestClockThreeCannotBeMovedByAssignment(t *testing.T) {
 	}
 }
 
-// The structural half of O4-B2. The critic's argument was that Deadlines'
+// The structural half of controller-core finding B2. The critic's argument was that Deadlines'
 // contract — "THE ONLY WAY TO CHANGE A DEADLINE IS TO START A NEW SCAN" — was
 // enforced against METHODS and not against FIELDS, and that the field was
 // exported. This asserts the enforcement rather than the prose.
@@ -200,7 +200,7 @@ func TestDeadlinesExposeNoAssignableClock(t *testing.T) {
 	typ := reflect.TypeOf(Deadlines{})
 	for i := 0; i < typ.NumField(); i++ {
 		if f := typ.Field(i); f.IsExported() {
-			t.Errorf("Deadlines.%s is exported: a deadline a caller can assign to is CRITIQUE O.4 blocker 2, "+
+			t.Errorf("Deadlines.%s is exported: a deadline a caller can assign to is the controller-core review's blocker 2, "+
 				"and 'there is no method on it that mutates anything' is an argument about methods", f.Name)
 		}
 		// No pointer fields either: two copies of a Deadlines sharing a
@@ -218,21 +218,21 @@ func TestDeadlinesExposeNoAssignableClock(t *testing.T) {
 	for i := 0; i < typ.NumMethod(); i++ {
 		if name := typ.Method(i).Name; name == "DastDeadlineElapsed" {
 			t.Error("Deadlines.DastDeadlineElapsed is back: clock 3's due-check belongs to " +
-				"record.Sealer.SealDastIfDeadlineDue, which owns the substrate (O4-B2)")
+				"record.Sealer.SealDastIfDeadlineDue, which owns the substrate (controller-core finding B2)")
 		}
 	}
 }
 
 // ---------------------------------------------------------------------------
-// O4-M1 — a redelivered seal event must not bump audit_version
+// Controller-core finding M1 — a redelivered seal event must not bump audit_version
 // ---------------------------------------------------------------------------
 
 // Probe P1: seal the same half with the same status three times. The critic
 // measured version 2 -> 3 -> 4 with record.Sealer.SealHalf returning nil each
 // time, having treated the second and third as idempotent no-ops.
 //
-// The cost is paid in two other packages: every bump obliges S6's queue re-cut
-// (R.11), and internal/handoff re-checks audit_record.audit_version on every
+// The cost is paid in two other packages: every bump obliges the spine's queue re-cut
+// (the queue re-cut), and internal/handoff re-checks audit_record.audit_version on every
 // mutation and answers handoff.ErrRecordVersionChanged, so a duplicate delivery
 // invalidated every in-flight lease on the audit.
 func TestARedeliveredSealEventDoesNotBumpTheVersion(t *testing.T) {
@@ -258,7 +258,7 @@ func TestARedeliveredSealEventDoesNotBumpTheVersion(t *testing.T) {
 		}
 		if VersionBumped(prev, again) {
 			t.Fatalf("redelivery %d bumped audit_version %d -> %d; the Sealer treated it as a no-op "+
-				"and a bump re-cuts the queue (O4-M1)", i, prev.Version, again.Version)
+				"and a bump re-cuts the queue (controller-core finding M1)", i, prev.Version, again.Version)
 		}
 		if again.Sast.SealedAt == nil || !again.Sast.SealedAt.Equal(*sealedAt) {
 			t.Errorf("redelivery %d moved anvil/sealedAt: %v -> %v", i, sealedAt, again.Sast.SealedAt)
@@ -276,7 +276,7 @@ func TestARedeliveredSealEventDoesNotBumpTheVersion(t *testing.T) {
 	before := rec2
 	rec2 = mustTransition(t, dast, rec2, SealHalfEvent(record.HalfDast, record.HalfStatusSealed))
 	if !VersionBumped(before, rec2) {
-		t.Error("a seal that really sealed did not publish; the O4-M1 fix has suppressed real bumps too")
+		t.Error("a seal that really sealed did not publish; the fix for controller-core finding M1 has suppressed real bumps too")
 	}
 }
 
@@ -298,7 +298,7 @@ func TestAnIdleTickDoesNotBumpTheVersion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-M2 — the write guards must consult the Sealer, not the caller's snapshot
+// Controller-core finding M2 — the write guards must consult the Sealer, not the caller's snapshot
 // ---------------------------------------------------------------------------
 
 // Probe P2: hold a record from before expiry and push findings and correlation
@@ -330,7 +330,7 @@ func TestWriteGuardsConsultTheSealerNotTheCallersSnapshot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := ctl.Transition(stale, tc.ev)
 			if !errors.Is(err, record.ErrAuditTerminal) {
-				t.Fatalf("%s onto an EXPIRED audit via a stale record = %v, want record.ErrAuditTerminal (O4-M2)",
+				t.Fatalf("%s onto an EXPIRED audit via a stale record = %v, want record.ErrAuditTerminal (controller-core finding M2)",
 					tc.name, err)
 			}
 			if out.AuditID != stale.AuditID || out.Version != stale.Version {
@@ -339,8 +339,9 @@ func TestWriteGuardsConsultTheSealerNotTheCallersSnapshot(t *testing.T) {
 		})
 	}
 
-	// Nothing landed. Combined with O4-B1, findings buffered after expiry would
-	// also have been readable through the same stale record.
+	// Nothing landed. Combined with controller-core finding B1, findings
+	// buffered after expiry would also have been readable through the same stale
+	// record.
 	current, ok := ctl.Record(stale.AuditID)
 	if !ok {
 		t.Fatal("Record: the audit vanished")
@@ -354,7 +355,7 @@ func TestWriteGuardsConsultTheSealerNotTheCallersSnapshot(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-M3 — concurrent fan-in must not lose findings
+// Controller-core finding M3 — concurrent fan-in must not lose findings
 // ---------------------------------------------------------------------------
 
 // Probe P11: eight workers x three DAST findings, all transitioning the SAME
@@ -412,7 +413,7 @@ func TestConcurrentFanInLosesNoFindings(t *testing.T) {
 		t.Fatal("Record: the audit vanished")
 	}
 	if n := got.Dast.FindingCount(); n != wantTotal {
-		t.Fatalf("%d of %d DAST findings survived concurrent fan-in; %d were lost (O4-M3)",
+		t.Fatalf("%d of %d DAST findings survived concurrent fan-in; %d were lost (controller-core finding M3)",
 			n, wantTotal, wantTotal-n)
 	}
 	if got.PendingDastFindings != wantTotal {
@@ -450,15 +451,15 @@ func TestConcurrentFanInCountsEveryPublication(t *testing.T) {
 	got, _ := ctl.Record(shared.AuditID)
 	if want := start + workers*perWorker; got.Version != want {
 		t.Errorf("Version = %d after %d publishing transitions, want %d; bumps were lost to the "+
-			"last-writer-wins counter (O4-M3)", got.Version, workers*perWorker, want)
+			"last-writer-wins counter (controller-core finding M3)", got.Version, workers*perWorker, want)
 	}
 }
 
-// O4-m4: SetClock wrote c.now with no lock while Transition, applyTick, publish
-// and NextWake read it. record.Sealer.SetClock takes its mutex for the same
-// assignment. This is the probe; the race detector on CI is what makes it
-// meaningful, and locally it at least proves the two paths do not deadlock
-// against each other under the documented lock order.
+// Controller-core finding m4: SetClock wrote c.now with no lock while
+// Transition, applyTick, publish and NextWake read it. record.Sealer.SetClock
+// takes its mutex for the same assignment. This is the probe; the race detector
+// on CI is what makes it meaningful, and locally it at least proves the two
+// paths do not deadlock against each other under the documented lock order.
 func TestSetClockIsSafeAgainstConcurrentTransitions(t *testing.T) {
 	ctl, clk := newTestController(t, dastPolicy(), WatermarkPolicy{DastFindings: 1000, Interval: time.Hour})
 	rec := mustBegin(t, ctl, "reclocking")
@@ -499,13 +500,13 @@ func TestSetClockIsSafeAgainstConcurrentTransitions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-M5 — clock 2's two sweeps must be drivable together
+// Controller-core finding M5 — clock 2's two sweeps must be drivable together
 // ---------------------------------------------------------------------------
 
 // The critic's grep found ExpireClaimTimeouts named in four comments in this
 // package and called from nowhere in the tree, so in-memory expiry and durable
 // expiry were never driven together: the controller marks an audit `expired`
-// while its handoff rows stay 'ready' and keep being leased (§6 ruling G10).
+// while its handoff rows stay 'ready' and keep being leased (the one-ledger ruling).
 //
 // This drives the wiring end to end against the real schema: a ready finding on
 // an audit whose claim window has closed must reach 'expired' through the
@@ -542,11 +543,11 @@ func TestConsumerDrivesTheStoreSideClaimTimeoutSweep(t *testing.T) {
 		t.Fatalf("Reap past the deadline: %v", err)
 	}
 	if len(report.Expired) != 1 || report.Expired[0].HandoffID != row.HandoffID {
-		t.Fatalf("Reap.Expired = %+v, want exactly the one row (O4-M5)", report.Expired)
+		t.Fatalf("Reap.Expired = %+v, want exactly the one row (controller-core finding M5)", report.Expired)
 	}
 	if got := f.rowState(row.HandoffID); got != record.HandoffStateExpired {
 		t.Fatalf("row state = %q after the claim window closed, want %q; the store-side sweep "+
-			"is still unwired and the row would be re-leased forever (O4-M5)", got, record.HandoffStateExpired)
+			"is still unwired and the row would be re-leased forever (controller-core finding M5)", got, record.HandoffStateExpired)
 	}
 
 	// The narrow entry point is reachable too, for a caller that owns the
@@ -644,7 +645,7 @@ func TestConsumerRunSweepsUntilCancelled(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-m1 — a refused transition must change nothing
+// Controller-core finding m1 — a refused transition must change nothing
 // ---------------------------------------------------------------------------
 
 // The finding: applyTick sealed the DAST half and bumped the version, and only
@@ -740,12 +741,12 @@ func describeDrift(before, after AuditRecord) string {
 }
 
 // ---------------------------------------------------------------------------
-// O4-m3 — the correlation contract, stated and tested
+// Controller-core finding m3 — the correlation contract, stated and tested
 // ---------------------------------------------------------------------------
 
 // The finding: applyCorrelation REPLACES rather than appends, research/21 §5's
 // "populated as both sides land" reads incremental, and nothing said which
-// contract R.12's correlator must honour. The contract is now written down on
+// contract the correlator must honour. The contract is now written down on
 // CorrelateEvent and on applyCorrelation; this is the two-batch case the critic
 // asked for, asserted rather than left to the reader.
 func TestACorrelationBatchReplacesTheWholeSet(t *testing.T) {
@@ -784,7 +785,7 @@ func TestACorrelationBatchReplacesTheWholeSet(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// O4-m5 — a malformed DAST deadline is malformed whether or not DAST is on
+// Controller-core finding m5 — a malformed DAST deadline is malformed whether or not DAST is on
 // ---------------------------------------------------------------------------
 
 // The finding: Resolve returned early when DastEnabled was false and never
@@ -797,7 +798,7 @@ func TestResolveRejectsANegativeDastDeadlineEvenWithDastOff(t *testing.T) {
 			p := DeadlinePolicy{DastEnabled: enabled, DastDeadlineSeconds: &v}
 			if _, err := p.Resolve(); !errors.Is(err, ErrInvalidDeadlinePolicy) {
 				t.Errorf("Resolve(dastDeadlineSeconds=%d, dastEnabled=%v) = %v, want ErrInvalidDeadlinePolicy "+
-					"(O4-m5: a config error must not wait for the tier to be installed)", v, enabled, err)
+					"(controller-core finding m5: a config error must not wait for the tier to be installed)", v, enabled, err)
 			}
 			// And it is refused everywhere Resolve is reached from, not only in
 			// the one entry point a test happened to call.

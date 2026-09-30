@@ -6,7 +6,7 @@
 WHY THIS FILE EXISTS
 ===========================================================================
 
-plan/00-SPINE.md S6: "One fingerprint algorithm, defined once, in the record.
+The spine's record section: "One fingerprint algorithm, defined once, in the record.
 Two branches specified different /v1 algorithms under the same name; two
 producers emitting different hashes means regression matching silently fails
 forever."  *Silently* is the operative word.  research/07-database-design.md
@@ -23,7 +23,7 @@ FINGERPRINT-SPEC.md` and from nothing else.  It emits the `.golden` files that
 implementation against.  When the two agree, the algorithm has been reproduced
 from its written specification by an implementer who could not see the code —
 which is exactly the property a second producer will need, and the property
-S6 asks for.
+the spine's record section asks for.
 
 ===========================================================================
 THE INDEPENDENCE CONTRACT — DO NOT WEAKEN IT
@@ -92,7 +92,7 @@ diverging silently.  See `testdata/fingerprint_corpus/derived/` and the
       repo_relpath, normalized_match) and every tier of the ordering rule
       (line, then column, then original batch index) to be exercised
       independently.  It also pins the two documented NON-members of the key:
-      `enclosing_symbol_path` (FINGERPRINT-SPEC.md section 9 / CRITIQUE-01
+      `enclosing_symbol_path` (FINGERPRINT-SPEC.md section 9 / the contract-and-fingerprint review
       finding 4 — still OPEN, pinned here as current behaviour, not endorsed)
       and line/column.
 
@@ -794,7 +794,7 @@ def ordinal_group_key(inp: dict) -> str:
     normalized_match — joined with U+001F for COMPARISON only, never hashed.
 
     Note what is NOT in this key and is documented as such: enclosing_symbol_path
-    (section 9 / CRITIQUE-01 finding 4, still open) and line/column.
+    (section 9 / the contract-and-fingerprint review's finding 4, still open) and line/column.
     """
     return SEP.join(
         [
@@ -998,7 +998,7 @@ def fixture_files() -> list[tuple[Path, bool]]:
     main = sorted(CORPUS_DIR.glob("*.json"))
     derived = sorted(DERIVED_DIR.glob("*.json")) if DERIVED_DIR.is_dir() else []
     if not main:
-        raise Mismatch(f"no fixtures in {CORPUS_DIR}; the fixed corpus is mandatory (00-SPINE.md S6)")
+        raise Mismatch(f"no fixtures in {CORPUS_DIR}; the fixed corpus is mandatory (the spine's record section)")
     return [(p, False) for p in main] + [(p, True) for p in derived]
 
 

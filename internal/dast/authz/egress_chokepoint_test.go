@@ -1,4 +1,4 @@
-// D.9, gate 3: the egress choke point, measured.
+// The kernel's build-time guard, gate 3: the egress choke point, measured.
 //
 // ===========================================================================
 // WHY THIS IS AN ALLOWLIST OF INERT IMPORTS AND NOT A LIST OF BANNED CALLS
@@ -25,7 +25,7 @@
 // stated reason, in a diff whose subject is exactly that widening.
 //
 // The judgment itself lives in CheckGate3EgressChokePoint (phase0_build.go,
-// D.2). This file only MEASURES. The split is deliberate: the gate cannot lie
+// the kernel core). This file only MEASURES. The split is deliberate: the gate cannot lie
 // about its own inputs, and this file cannot decide what its findings mean.
 //
 // ===========================================================================
@@ -66,8 +66,8 @@
 //     supplies `do` imports net and IS flagged.
 //  3. os/exec. It is on the inert list (a subprocess is not a Go-level socket
 //     construction) so `exec.Command("curl", url)` passes this gate. That
-//     containment is D.11's network namespace with default-deny egress, not
-//     this scanner, and D.11 is the reason it is acceptable to leave here.
+//     containment is network containment's network namespace with default-deny egress, not
+//     this scanner, and network containment is the reason it is acceptable to leave here.
 //  4. SHADOWING. A local variable named `net` in a file that imports "net"
 //     would make the selector analysis attribute the wrong package. This
 //     applies only to packages with an inert-symbol allowlist (today: syscall
@@ -77,7 +77,7 @@
 //     (go.mod has one direct requirement and no vendor tree), and scanning
 //     third-party source would flag the whole dependency graph and make this
 //     guard unusable within a week. `go mod vendor` therefore reopens this;
-//     the S5 dependency gate in CI is what watches what enters the graph.
+//     the spine's exclusion list dependency gate in CI is what watches what enters the graph.
 //  6. THE KERNEL'S OWN TEST FILES. internal/dast/authz is the choke point, so
 //     it is exempt from both tiers, tests included. That exemption is the
 //     definition of a choke point rather than a gap in it, but it does mean
@@ -95,7 +95,7 @@
 // clean repository.
 //
 // Tier 1 (inside internal/dast, outside the kernel) currently finds ZERO
-// sites, because no DAST code dials yet -- D.6's request layer is the first
+// sites, because no DAST code dials yet -- per-request enforcement's request layer is the first
 // that will. That half of the measurement is therefore satisfied by emptiness
 // today, and it is the fixture tests, not the repository scan, that prove the
 // scanner can see a violation at all.
@@ -148,7 +148,7 @@ var inertImports = map[string]string{
 	"encoding/hex":        "byte encoding",
 	"encoding/json":       "byte encoding",
 	// Go's XML decoder does NOT resolve external entities and does not fetch
-	// DTDs -- it has no XXE, which is why D.19 can point it at a spec file
+	// DTDs -- it has no XXE, which is why the repo spec reader can point it at a spec file
 	// harvested from an untrusted repository at all. The one route to a socket
 	// is Decoder.CharsetReader, which is CALLER-SUPPLIED: a caller that set it
 	// to something fetching would have that fetch in its OWN code, where this
@@ -173,15 +173,15 @@ var inertImports = map[string]string{
 	"net/netip":     "an address VALUE type; no dialer, listener or resolver",
 	"net/url":       "URL parsing; no dialer",
 	"os":            "files, environment and process state; cannot create a socket",
-	"os/exec":       "subprocesses -- see limit 3 in this file's header, and D.11",
+	"os/exec":       "subprocesses -- see limit 3 in this file's header, and network containment",
 	"path":          "slash-path string manipulation",
 	"path/filepath": "filesystem path string manipulation",
 	"reflect":       "reflection over values it is handed",
 	"regexp":        "pattern matching",
 	// regexp/syntax is the PARSER behind regexp: Parse, the Regexp tree and the
 	// Op constants. It compiles nothing, executes nothing and opens nothing.
-	// D.27 uses it to decide signature over-broadness on the pattern's own
-	// structure rather than by running it against a corpus (ruling 9), which is
+	// The confirmation gate uses it to decide signature over-broadness on the pattern's own
+	// structure rather than by running it against a corpus (the structural ruling), which is
 	// why it entered the dynamic tier at all.
 	"regexp/syntax":        "regular-expression parsing; builds a tree, runs nothing",
 	"runtime":              "runtime introspection",
@@ -197,7 +197,7 @@ var inertImports = map[string]string{
 	"time":                 "clocks and durations",
 	"unicode":              "rune classification",
 	"unicode/utf8":         "rune encoding",
-	"modernc.org/sqlite":   "the pure-Go, file-backed SQLite driver S12 mandates; no network protocol",
+	"modernc.org/sqlite":   "the pure-Go, file-backed SQLite driver the spine's Go control-plane decision mandates; no network protocol",
 	"golang.org/x/sys/cpu": "CPU feature detection",
 }
 

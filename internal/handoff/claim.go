@@ -16,7 +16,7 @@ import (
 // Handle is proof that one worker holds one lease on one finding, at one
 // version of one audit record.
 //
-// plan/00-SPINE.md S7: a lease grants "may act on this finding" and nothing
+// The spine's safety section: a lease grants "may act on this finding" and nothing
 // more. There is deliberately no field here that widens scope, authorises a
 // merge, or records a verdict — a Handle cannot be mistaken for permission to
 // do any of those because it carries no such value.
@@ -34,14 +34,15 @@ type Handle struct {
 	// Fingerprint is the anvil-fp/v1 digest, full 64 hex, never truncated.
 	Fingerprint string
 
-	// WorkerID is the lease holder, `handoff.claimed_by` (O.3's lease_owner).
+	// WorkerID is the lease holder, `handoff.claimed_by` (the handoff adapter's lease_owner).
 	WorkerID string
 
 	// RecordVersion is audit_record.audit_version as it stood when the lease
 	// was granted. Together with Fingerprint it is the (fingerprint, record
 	// version) key the plan requires reclaim/re-processing to be idempotent
-	// under: a version bump re-cuts the queue (S6), so a Handle whose version
-	// has moved describes work that no longer exists and is refused.
+	// under: a version bump re-cuts the queue (the spine's record section), so
+	// a Handle whose version has moved describes work that no longer exists and
+	// is refused.
 	RecordVersion int64
 
 	ConsumptionClass record.ConsumptionClass
@@ -50,12 +51,12 @@ type Handle struct {
 	// so a consumer of a requires_dynamic_confirmation finding can see that
 	// the half ended 'not_run', 'target_boot_failed' or 'skipped_no_manifest'
 	// — i.e. that no dynamic evidence exists — rather than assume a clean
-	// dynamic scan. S6 exists to keep those cases distinguishable; dropping
+	// dynamic scan. The spine's record section exists to keep those cases distinguishable; dropping
 	// the field here would re-merge them at the only point that acts on them.
 	//
 	// It is NOT advisory. ReleaseLease reads it: a requires_dynamic_confirmation
 	// finding whose DAST half produced no reproduction cannot be recorded
-	// 'validated' (checkDynamicEvidence, and plan/00-SPINE.md S7).
+	// 'validated' (checkDynamicEvidence, and the spine's safety section).
 	DastStatus record.DastStatus
 
 	// Attempt is this lease's ordinal: 1 for the first, 2 after one crash and
@@ -88,32 +89,34 @@ type Handle struct {
 // consumptionGate is THE consumption gate, written once so there is one
 // definition of "this finding's half is readable".
 //
-// research/21 §5, as quoted by O.3: static_only findings are claimable once
+// research/21 §5, as quoted by the handoff adapter: static_only findings are claimable once
 // the SAST half is sealed; requires_dynamic_confirmation findings must wait on
-// the DAST half. Expressed against R.6's sealing signals:
+// the DAST half. Expressed against the sealer's sealing signals:
 //
 //   - static_only needs audit_record.sast_status = 'sealed' AND the audit to
 //     have actually sealed that half (state 'sast_sealed', 'both_sealed' or
-//     'consumed'). R.6 makes 'sealed' the hard read gate; a consumer must not
+//     'consumed'). The sealer makes 'sealed' the hard read gate; a consumer must not
 //     read a half before it says so.
 //   - requires_dynamic_confirmation needs the audit to have reached
 //     'both_sealed' (or moved on to 'consumed'), which are the only states in
 //     which the DAST half is final, plus dast_status <> 'running' as a
 //     belt-and-braces check.
 //
-// 'consumed' IS IN BOTH SETS, AND THAT IS THE POINT. plan/00-SPINE.md S1
-// requires a RE-ENTRANT consumer, and R.6 already implements it in the other
+// 'consumed' IS IN BOTH SETS, AND THAT IS THE POINT. The spine's corrected-requirements table
+// requires a RE-ENTRANT consumer, and the sealer already implements it in the other
 // direction — sealing.go's ReadHalf says so outright: "A consumed audit is
-// still readable: S1 requires a RE-ENTRANT consumer, so taking the record once
-// must not shut the gate." Before this fix the queue disagreed with the
-// sealer. Because one audit_record fans out to MANY handoff rows, the first
-// consumption pass marking the audit 'consumed' stranded every sibling finding
-// still in 'ready': permanently unclaimable, then swept to 'expired' by
-// ExpireClaimTimeouts at the deadline. The row survived; the finding was never
-// handed to an agent in that scan. That is silent work loss on the exact axis
-// S1 names, and CRITIQUE-02 F2 reproduced it.
+// still readable: the spine's corrected-requirements table requires a
+// RE-ENTRANT consumer, so taking the record once must not shut the gate."
+// Before this fix the queue disagreed with the sealer. Because one audit_record
+// fans out to MANY handoff rows, the first consumption pass marking the audit
+// 'consumed' stranded every sibling finding still in 'ready': permanently
+// unclaimable, then swept to 'expired' by ExpireClaimTimeouts at the deadline.
+// The row survived; the finding was never handed to an agent in that scan. That
+// is silent work loss on the exact axis the spine's corrected-requirements
+// table names, and the sealing, claims and masking review's finding F2
+// reproduced it.
 //
-// 'expired' is deliberately NOT in either set: R.6's read gate refuses an
+// 'expired' is deliberately NOT in either set: the sealer's read gate refuses an
 // expired audit because the reaper has dropped its payload, and a claim on a
 // finding whose evidence is gone is worse than no claim.
 //
@@ -163,11 +166,12 @@ func gateArgs() []any {
 // (oldest) and Claim by audit_record_id DESC (newest), so two workers took two
 // live leases on one defect at one record version and both recorded
 // 'validated'. checkRecordVersion cannot see it — it compares a Handle against
-// ITS OWN row's audit_version, which never moved. CRITIQUE-02 F1 reproduced
-// exactly that, and it is the outcome research/08 §4 point 2 forbids: "a
-// second agent write[s] a competing fix for the same defect."
+// ITS OWN row's audit_version, which never moved. The sealing, claims and
+// masking review's finding F1 reproduced exactly that, and it is the outcome
+// research/08 §4 point 2 forbids: "a second agent write[s] a competing fix for
+// the same defect."
 //
-// R.4's schema.sql is a frozen interface, so the durable constraint that would
+// The store's schema.sql is a frozen interface, so the durable constraint that would
 // express this — a partial unique index over (fingerprint, audit_version)
 // where state = 'leased' — cannot be added here; it is reported to the
 // orchestrator instead. What IS available is a guard inside the same statement
@@ -196,7 +200,7 @@ const noSiblingLease = `NOT EXISTS (
 //
 // `h.attempts < h.max_attempts` is here, not only in the reaper, so a row that
 // somehow re-entered 'ready' with its attempts burned cannot be re-leased
-// forever — the exact failure §6 G10 traced.
+// forever — the exact failure the one-ledger ruling traced.
 const eligibleFrom = `
 	FROM handoff h
 	JOIN audit_record a ON a.audit_record_id = h.audit_record_id
@@ -214,7 +218,7 @@ func eligibleArgs() []any {
 	return args
 }
 
-// Claim takes the lease on one named finding. It is the R.7 packet's entry
+// Claim takes the lease on one named finding. It is the claim protocol's entry
 // point and a narrowing of AcquireLease: same query, same CAS, same state
 // machine.
 //
@@ -264,7 +268,7 @@ func (q *Queue) ClaimContext(ctx context.Context, fingerprint, workerID string) 
 }
 
 // AcquireLease takes the lease on the oldest claimable finding, whichever it
-// is. This is O.3's entry point; Claim is the same operation with a
+// is. This is the handoff adapter's entry point; Claim is the same operation with a
 // fingerprint filter.
 //
 // It returns ErrNoWork when nothing is claimable, which is the idle case and
@@ -585,7 +589,7 @@ func (q *Queue) ReleaseLeaseContext(ctx context.Context, h Handle, to record.Han
 //   - not_run, skipped_no_manifest       — the half never scanned anything.
 //   - running                            — the half has not concluded.
 //   - target_boot_failed, target_unreachable — there was no live target, which
-//     is the case plan/00-SPINE.md S6 exists to keep distinguishable from
+//     is the case the spine's record section exists to keep distinguishable from
 //     "scanned clean".
 //   - timed_out, completed_failed        — the half did not finish; a crashed
 //     or truncated scan has produced no verdict about this finding.
@@ -603,17 +607,18 @@ func HasDynamicEvidence(s record.DastStatus) bool {
 	}
 }
 
-// checkDynamicEvidence enforces plan/00-SPINE.md S7 at the one place a verdict
+// checkDynamicEvidence enforces the spine's safety section at the one place a verdict
 // is actually written into the database.
 //
-// S7: "Only a DAST reproduction that now fails earns 'verified fixed'." This
-// package's own doc has always said so, and then let any lease holder release
-// ANY finding as 'validated' regardless of its ConsumptionClass and
-// DastStatus — including a requires_dynamic_confirmation finding whose DAST
-// half was 'not_run', where no reproduction can exist to have been re-run.
-// CRITIQUE-02 F9 reproduced that. "The judgement is made elsewhere" is not an
-// answer when handoff.state = 'validated' is written HERE, by the claimant,
-// unchecked; S7 is "enforce in code, not documentation".
+// The spine's safety section: "Only a DAST reproduction that now fails earns
+// 'verified fixed'." This package's own doc has always said so, and then let
+// any lease holder release ANY finding as 'validated' regardless of its
+// ConsumptionClass and DastStatus — including a requires_dynamic_confirmation
+// finding whose DAST half was 'not_run', where no reproduction can exist to
+// have been re-run. The sealing, claims and masking review's finding F9
+// reproduced that. "The judgement is made elsewhere" is not an answer when
+// handoff.state = 'validated' is written HERE, by the claimant, unchecked; the
+// spine's safety section is "enforce in code, not documentation".
 //
 // The rule is scoped to the class that asks for it. A static_only finding is
 // by definition one no dynamic evidence was ever required for, and refusing
@@ -678,7 +683,7 @@ func (q *Queue) explainLeaseLost(ctx context.Context, h Handle) error {
 // ---------------------------------------------------------------------------
 // The regenerable tmpfs packet.
 //
-// It is a CACHE. The store is the source of truth (plan/00-SPINE.md S1: one
+// It is a CACHE. The store is the source of truth (the spine's corrected-requirements table: one
 // SQLite store, one handoff table, a regenerable tmpfs packet — there is no
 // second durable buffer file). If a packet is missing, regenerate it; its
 // absence is never an error and never loses a finding.
@@ -703,17 +708,18 @@ func (q *Queue) PacketPath(fingerprint string) (string, error) {
 	return filepath.Join(q.opts.PacketDir, fingerprint+".sarif"), nil
 }
 
-// packetGate is R.6's read gate, re-asserted at the packet.
+// packetGate is the sealer's read gate, re-asserted at the packet.
 //
-// THE PACKET IS A CACHE OF THE PAYLOAD, NOT A SEPARATE ARTEFACT. R.6's gate —
+// THE PACKET IS A CACHE OF THE PAYLOAD, NOT A SEPARATE ARTEFACT. The sealer's gate —
 // "do not allow a consumer to read a half's results before that half's status
 // equals sealed" — means nothing if the same bytes are reachable through a
-// file beside it. CRITIQUE-02 F5: WritePacket materialised a packet for an
-// audit that had sealed nothing, and ReadPacket returned a half's actual
-// results with no seal check, no audit-state check and no lease check, one
-// line after the claim gate had correctly refused the same fingerprint.
-// ReadPacket was the ONLY exported function in this package that returns a
-// half's results, and it was the one that checked nothing.
+// file beside it. The sealing, claims and masking review's finding F5:
+// WritePacket materialised a packet for an audit that had sealed nothing, and
+// ReadPacket returned a half's actual results with no seal check, no
+// audit-state check and no lease check, one line after the claim gate had
+// correctly refused the same fingerprint. ReadPacket was the ONLY exported
+// function in this package that returns a half's results, and it was the one
+// that checked nothing.
 //
 // It re-asserts three things, all in one statement against the database rather
 // than against the Handle's own copy of them, because a Handle is a snapshot
@@ -726,8 +732,9 @@ func (q *Queue) PacketPath(fingerprint string) (string, error) {
 //  2. The audit's consumption gate is STILL open for this row's class, using
 //     the same consumptionGate expression the claim uses. One definition, two
 //     call sites.
-//  3. The record version has not moved (checkRecordVersion), because S6 re-cuts
-//     the queue on a bump and the packet then describes work that is gone.
+//  3. The record version has not moved (checkRecordVersion), because the
+//     spine's record section re-cuts the queue on a bump and the packet then
+//     describes work that is gone.
 func (q *Queue) packetGate(ctx context.Context, h Handle) error {
 	if err := ValidateFingerprint(h.Fingerprint); err != nil {
 		return err
@@ -768,7 +775,7 @@ func (q *Queue) packetGate(ctx context.Context, h Handle) error {
 			return q.explainLeaseLost(ctx, h)
 		}
 		return fmt.Errorf("handoff: row %d holds a lease but its %s gate is shut; "+
-			"R.6 refuses a read before the half seals: %w",
+			"the sealer refuses a read before the half seals: %w",
 			h.HandoffID, current.ConsumptionClass, ErrNotEligible)
 	}
 	if err != nil {
@@ -783,7 +790,7 @@ func (q *Queue) packetGate(ctx context.Context, h Handle) error {
 // close it, rename it over the final name, then fsync the parent directory.
 //
 // It takes a Handle, not a bare fingerprint, because the packet carries a
-// half's results and R.6's read gate governs those bytes wherever they live.
+// half's results and the sealer's read gate governs those bytes wherever they live.
 // See packetGate.
 //
 // The parent fsync is not optional decoration. fsync(2): "Calling fsync() does
@@ -850,7 +857,7 @@ func (q *Queue) WritePacketContext(ctx context.Context, h Handle, data []byte) (
 // the finding, and to nobody else.
 //
 // It is the only exported function in this package that hands back a half's
-// actual results, so it is gated exactly as R.6 gates a half read: the lease
+// actual results, so it is gated exactly as the sealer gates a half read: the lease
 // must still be this Handle's, the record version must not have moved, and the
 // audit's consumption gate must be open. See packetGate for why a cache of the
 // payload cannot be less protected than the payload.

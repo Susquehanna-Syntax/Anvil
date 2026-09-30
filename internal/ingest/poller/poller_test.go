@@ -1,4 +1,4 @@
-// Tests for A.7, the authenticated conditional-GET poller.
+// Tests for the authenticated conditional-GET poller.
 //
 // ===========================================================================
 // NO TEST HERE TOUCHES THE NETWORK OR A REAL CREDENTIAL
@@ -79,12 +79,12 @@ const fixtureEnv = "ANVIL_TEST_FEED_TOKEN"
 var clockStart = time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 
 // ---------------------------------------------------------------------------
-// Licence fixtures — the A.4 gate admits nothing without them
+// Licence fixtures — the licence gate admits nothing without them
 // ---------------------------------------------------------------------------
 //
 // internal/ingest/license refuses every feed until the publisher's verbatim
 // licence text has been acquired into mirror/ and its sha256 pinned. A fresh
-// clone therefore admits nothing, and A.7 is inert until an operator acquires
+// clone therefore admits nothing, and the poller is inert until an operator acquires
 // the bodies. These fixtures are a synthetic mirror in the same shape, so the
 // poller's admitted path is reachable in a test without a network fetch and
 // without pretending a real pin exists.
@@ -233,7 +233,7 @@ func (c countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // exactly as production would see them while dialling a local fixture.
 //
 // It exists because two of this package's rules are keyed on the HOSTNAME —
-// research/06 Risk #8's unauthenticated-304 penalty, and spine S7's cross-host
+// research/06 Risk #8's unauthenticated-304 penalty, and the spine's cross-host
 // redirect refusal — and a fixture where every server is 127.0.0.1 on a
 // different port cannot exercise either of them. Only the dial address is
 // substituted; a host with no mapping is a hard failure, so a test that drifted
@@ -349,7 +349,7 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 // ---------------------------------------------------------------------------
 
 // fixtureFeed builds a FeedConfig by hand. Every value a real row would carry
-// comes from the caller, because the point of A.1 is that none of them is a
+// comes from the caller, because the point of the feed table is that none of them is a
 // constant in Go — including in a test, where a copied cadence would be the
 // first place the two sources of truth diverge.
 type fixtureFeed struct {
@@ -406,8 +406,8 @@ func newPoller(t *testing.T, db *sql.DB, mirror fs.FS, tr http.RoundTripper) *Po
 // (a) The 304 path
 // ---------------------------------------------------------------------------
 
-// TestNotModifiedReadsZeroBodyBytesAndMovesOnlyLastOKAt is A.7's first named
-// validation and the A.2 cache's exit criterion 3.
+// TestNotModifiedReadsZeroBodyBytesAndMovesOnlyLastOKAt is the poller's first named
+// validation and Lane A exit criterion 3.
 //
 // The zero-body claim is checked by COUNTING READ CALLS on the response body,
 // not by reading PollResult.BodyBytes: the field is filled in by the code under
@@ -524,11 +524,11 @@ func TestNotModifiedClearsAFailureStreak(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// (b) Redirects — spine S7
+// (b) Redirects — the spine's safety section
 // ---------------------------------------------------------------------------
 
-// TestCrossHostRedirectIsRefusedAndTheOtherHostIsNeverContacted is A.7's second
-// named validation and spine S7's "never follow cross-host redirects".
+// TestCrossHostRedirectIsRefusedAndTheOtherHostIsNeverContacted is the poller's second
+// named validation and the spine's "never follow cross-host redirects".
 //
 // The assertion that matters is not only the error: it is that the SECOND
 // SERVER RECORDED NOTHING. A poller that followed the redirect and then
@@ -588,7 +588,7 @@ func TestCrossHostRedirectIsRefusedAndTheOtherHostIsNeverContacted(t *testing.T)
 }
 
 // TestSameHostDifferentPortRedirectIsRefused is the rest of the scope rule:
-// spine S7 says re-validate SCOPE, and a hop to another port on the same
+// The spine's safety section says re-validate SCOPE, and a hop to another port on the same
 // hostname is a different service.
 func TestSameHostDifferentPortRedirectIsRefused(t *testing.T) {
 	const feedID = "fixture-reported-feed"
@@ -702,7 +702,7 @@ func TestRedirectChainIsCappedEvenOnTheConfiguredHost(t *testing.T) {
 // (c) research/06 Risk #8 — authorize every request, including the 304s
 // ---------------------------------------------------------------------------
 
-// TestRateLimitedHostAuthorizesEveryRequestIncludingThe304 is A.7's third named
+// TestRateLimitedHostAuthorizesEveryRequestIncludingThe304 is the poller's third named
 // validation.
 //
 // GitHub's exemption is conditional: "Making a conditional request does not
@@ -925,7 +925,7 @@ func TestNoCredentialValueAppearsInAnyErrorOrResult(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.4 — the licence gate runs first
+// The licence gate runs first
 // ---------------------------------------------------------------------------
 
 // TestLicenceRefusalHappensBeforeAnyRequest is the forbidden action about
@@ -934,7 +934,7 @@ func TestNoCredentialValueAppearsInAnyErrorOrResult(t *testing.T) {
 //
 // The fixture is the state of a FRESH CLONE — no acquired licence bodies, no
 // pins — which is what internal/ingest/license documents as admitting nothing.
-// So this is also the test that says out loud that A.7 is inert until an
+// So this is also the test that says out loud that the poller is inert until an
 // operator has run the acquire step.
 func TestLicenceRefusalHappensBeforeAnyRequest(t *testing.T) {
 	const feedID = "fixture-unlicensed-feed"
@@ -1031,7 +1031,7 @@ func TestPayloadWithoutAnAdmittedDecisionYieldsNothing(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.3 — every stored string goes through the sanitizer
+// Every stored string goes through the sanitizer
 // ---------------------------------------------------------------------------
 
 // TestValidatorThatDoesNotSurviveTheSanitizerIsNotStored.
@@ -1224,7 +1224,7 @@ func TestServerPollIntervalIsHonouredButNeverShortensTheConfiguredCadence(t *tes
 // ---------------------------------------------------------------------------
 
 // fakeWatermarker is the config.SyncWatermarkAPI hook a test supplies. The real
-// one is A.14's, and its shape is per-feed, which is exactly why this package
+// one is delta ingestion's, and its shape is per-feed, which is exactly why this package
 // takes it as an interface rather than implementing one.
 type fakeWatermarker struct {
 	param     string
@@ -1254,7 +1254,7 @@ func (w *fakeWatermarker) Advance(_ config.FeedConfig, _ string, _ Response) (st
 	return w.next, nil
 }
 
-// TestEveryPolledSyncMechanismRunsAgainstTheFixture is A.7's stop condition.
+// TestEveryPolledSyncMechanismRunsAgainstTheFixture is the poller's stop condition.
 //
 // Every mechanism in the feed table with SyncMechanism.Polled() true is driven
 // against the same fixture, in both URL shapes the table uses — a raw JSON
@@ -1569,7 +1569,7 @@ func TestNewRefusesAPollerWithNoCache(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.1's rule, applied to the consuming side
+// The feed table's rule, applied to the consuming side
 // ---------------------------------------------------------------------------
 
 // TestPollerGoNamesNoFeedURLFeedIDHostOrCadence is internal/ingest/config's own

@@ -4,12 +4,12 @@
 // # Why this main package exists
 //
 // deploy/systemd/anvil-host-collector.service has always declared
-// `ExecStart=/usr/lib/anvil/anvil-host-collector`. A.12's review found that no
+// `ExecStart=/usr/lib/anvil/anvil-host-collector`. The read-only-boundary review found that no
 // such main package existed anywhere in the repository, which made the unit
 // non-installable: `systemctl start anvil-host-collector` could only ever fail
 // with status=203/EXEC. A unit that cannot start is worse than no unit at all,
 // because a reader takes its presence as evidence of a deployment. It also
-// meant A.9's stop condition — "collector runs to completion and exits under a
+// meant the host collector's stop condition — "collector runs to completion and exits under a
 // non-root UID on at least one fixture per family" — could not be demonstrated
 // as an artifact question: there was nothing to run.
 //
@@ -22,13 +22,13 @@
 //
 // # What it is allowed to be
 //
-// Everything plan/00-SPINE.md S7 says about the collector is said again here,
+// Everything the spine's safety section says about the collector is said again here,
 // because moving the deployment boundary into cmd/ would otherwise move the
 // mutation with it:
 //
 //   - IT TAKES NO ARGUMENTS. Not "no arguments today": passing any argument is
 //     an error, `flag` is not imported, and internal/collector/host's own test
-//     suite fails if this package imports it. S7's "not behind a flag" is a
+//     suite fails if this package imports it. The spine's "not behind a flag" is a
 //     statement about what may exist, and a command-line flag on the binary is
 //     the same flag as a field on Options.
 //   - IT SPAWNS NOTHING. It does not import os/exec or syscall. The single
@@ -38,7 +38,7 @@
 //     (research/12 hard boundary #2), and a collector that drops a file on a
 //     customer's server has mutated that server.
 //   - IT IS NOT A DAEMON. It collects once and returns. The cadence belongs to
-//     a .timer or to plan/00-SPINE.md S4's trigger policy, never to a loop in
+//     a .timer or to the trigger policy (plan node policy), never to a loop in
 //     here (Lane A exit criterion 14).
 //
 // internal/collector/host/collect_test.go's
@@ -98,7 +98,7 @@ const usage = `anvil-host-collector: Anvil's read-only host package collector.
 
 It takes NO arguments. It enumerates the packages this host has, writes the
 inventory to stdout as JSON, and exits. There is no mode, no target and no
-option, deliberately: plan/00-SPINE.md S7 makes the host agent read-only and
+option, deliberately: the spine's safety section makes the host agent read-only and
 says so about what may EXIST, not about what is on by default.`
 
 func main() {

@@ -1,7 +1,7 @@
 // Package containment provisions and holds the ephemeral target a DAST scan
 // runs against.
 //
-// This file is packet D.10: given the DECLARED manifest that
+// This file is target provisioning: given the DECLARED manifest that
 // internal/dast/target already parsed, bring up the operator's Compose project
 // under gVisor `runsc`, wait on the declared healthcheck with a hard timeout,
 // prove the thing that came up is actually contained, resolve the image
@@ -12,7 +12,7 @@
 // # The distinction this file exists to keep
 //
 // record.TargetProvenance has five literals and they are five DIFFERENT
-// FACTS. plan/00-SPINE.md S6 requires that "a target that failed to boot must
+// FACTS. The spine's record section requires that "a target that failed to boot must
 // be distinguishable from 'scanned clean'", and the same argument applies
 // between the failures themselves:
 //
@@ -28,7 +28,7 @@
 //   - booted_clean             all of the above passed.
 //
 // Collapsing any two of those loses the fact the operator needs, and reporting
-// any of the four failures as booted_clean is the silent-clean reading S6
+// any of the four failures as booted_clean is the silent-clean reading the spine's record section
 // forbids. So every exit path from Provision goes through exactly one Stage,
 // Stage.Provenance() is a TOTAL function over the stages, and
 // TestEveryStageNamesOneProvenance plus TestNoStageCanBeReadAsScannedClean pin
@@ -79,7 +79,7 @@
 //   - NetworkMode must name a network of THIS Compose project, which excludes
 //     host, none, bridge, an external network, and container: sharing.
 //
-// # Forbidden, per plan/50-dast.md:349-378
+// # Forbidden, per plan/design/dynamic-tier.md:349-378
 //
 // There is no fallback to a non-gVisor runtime. If `runsc` is not configured,
 // or is configured on a platform other than the declared one, provisioning
@@ -111,7 +111,7 @@ import (
 const (
 	// RuntimeName is the ONLY container runtime a target may run under.
 	// research/19-target-environment-and-sandboxing.md, concrete v1 stack
-	// step 2: gVisor `runsc`. plan/50-dast.md forbids a fallback to any
+	// step 2: gVisor `runsc`. plan/design/dynamic-tier.md forbids a fallback to any
 	// other runtime, so this is a single constant and not a list.
 	RuntimeName = "runsc"
 
@@ -164,9 +164,9 @@ const (
 	//     is left, which on a cold cache is nothing, so a target that boots
 	//     perfectly well is recorded boot_failed and the operator is sent to
 	//     debug a healthcheck that never ran.
-	//   - the manifest field is called health.timeout_seconds. D.1 validates
+	//   - the manifest field is called health.timeout_seconds. The target manifest validates
 	//     it against health.interval_seconds -- "the health check would never
-	//     poll" -- so D.1 already treats it as a POLLING budget. Using it as
+	//     poll" -- so the target manifest already treats it as a POLLING budget. Using it as
 	//     a build budget here is this package disagreeing with the type that
 	//     owns the field.
 	//
@@ -177,7 +177,7 @@ const (
 	// it yet, along with the fixture that would settle it.
 	//
 	// It is a compiled-in constant and not a manifest field on purpose:
-	// nothing in this package is configurable (see Provisioner), and D.1's
+	// nothing in this package is configurable (see Provisioner), and the target manifest's
 	// schema is not this packet's to extend. It is a POLICY BOUND, chosen and
 	// not measured -- no cold-cache build was timed on this host, because
 	// this host has no Docker -- and it is deliberately generous, because the
@@ -226,19 +226,19 @@ var ErrRefused = errors.New("containment: provisioning refused")
 // The typed refusals. Each is joined with ErrRefused inside a *ProvisionError,
 // which also carries the Stage and the record.TargetProvenance.
 //
-// ErrHealthTimeout and ErrRunscUnavailable are the two plan/50-dast.md:349-378
+// ErrHealthTimeout and ErrRunscUnavailable are the two plan/design/dynamic-tier.md:349-378
 // names verbatim; the rest exist because the plan's two names cannot express
 // five distinct provenance outcomes, and collapsing them is the thing this
 // packet must not do.
 var (
 	// ErrNoTargetDeclared: Provision was called with no manifest. Provenance
 	// no_target_declared. NOT a boot failure and NOT an internal error --
-	// this is the D.1 skip path arriving here so that the record fields are
+	// this is the target manifest skip path arriving here so that the record fields are
 	// produced in one place.
 	ErrNoTargetDeclared = errors.New("no target manifest was declared")
 
 	// ErrManifestIncomplete: a manifest arrived that names no authorized
-	// service or no health definition. plan/50-dast.md: "No health
+	// service or no health definition. plan/design/dynamic-tier.md: "No health
 	// definition means no DAST -- provisioning aborts."
 	ErrManifestIncomplete = errors.New("target manifest declares no authorized service or no health check")
 
@@ -443,7 +443,7 @@ func (s Stage) Valid() bool {
 // difference (StagePreflightEngine versus StageBuild), it is on the
 // *ProvisionError and in its message, and it is what an operator reads. The
 // alternative -- inventing a sixth provenance literal -- is a change to a
-// frozen enum in area 40 and is not this packet's to make. Reported to the
+// frozen enum in the record area and is not this packet's to make. Reported to the
 // orchestrator.
 //
 // StageReachability is the ONLY stage that maps to unreachable_at_scan_time,
@@ -881,7 +881,7 @@ func cloneContainers(in []Container) []Container {
 // written into a record as booted_clean.
 //
 // EXACTLY ONE SERVICE, STRUCTURALLY: the authorized service is held as a
-// target.AuthorizedService, which is D.1's one-service-by-type. There is no
+// target.AuthorizedService, which is the target manifest's one-service-by-type. There is no
 // slice of services anywhere in this struct or its API. Every other container
 // in the project was provisioned for realistic dependencies, had its
 // containment asserted, and is not a probe target; Containers() returns them
@@ -911,7 +911,7 @@ func (t *Target) Constructed() bool {
 	return t != nil && t.sealed && t.provenance == record.TargetProvenanceBootedClean
 }
 
-// AuthorizedService returns the single service Anvil may probe. It is D.1's
+// AuthorizedService returns the single service Anvil may probe. It is the target manifest's
 // type, so a caller cannot widen it to a set.
 func (t *Target) AuthorizedService() target.AuthorizedService {
 	if t == nil {
@@ -1004,7 +1004,7 @@ func (t *Target) Provenance() record.TargetProvenance {
 }
 
 // Provisioning returns which provisioning path produced this target. It is
-// D.1's value, taken from the manifest, not re-derived here.
+// the target manifest's value, taken from the manifest, not re-derived here.
 func (t *Target) Provisioning() record.TargetProvisioning {
 	if !t.Constructed() {
 		return ""
@@ -1030,7 +1030,7 @@ func (t *Target) Teardown(ctx context.Context) error {
 //
 // There is deliberately no Options struct and no functional option: nothing
 // about the containment assertions, the runtime, or the platform is
-// configurable. plan/50-dast.md forbids a fallback to a non-gVisor runtime,
+// configurable. plan/design/dynamic-tier.md forbids a fallback to a non-gVisor runtime,
 // and a config key that turns an assertion off is that fallback wearing a
 // different hat.
 type Provisioner struct {
@@ -1094,7 +1094,7 @@ func (p *Provisioner) Provision(ctx context.Context, m *target.Manifest) (*Targe
 			"provisioner was never constructed by NewProvisioner")
 	}
 
-	// 1. No target declared. This is D.1's skip path arriving here so that
+	// 1. No target declared. This is the target manifest's skip path arriving here so that
 	// the record fields are produced in exactly one place.
 	if m == nil {
 		return nil, refuse(StageNoTargetDeclared, ErrNoTargetDeclared,
@@ -1401,7 +1401,7 @@ func teardown(ctx context.Context, d Docker, project string) error {
 func checkRuntime(info EngineInfo) error {
 	if len(info.Runtimes) == 0 {
 		return fmt.Errorf("the engine reports no configured runtimes; %q is required "+
-			"and plan/50-dast.md forbids a fallback to any other runtime", RuntimeName)
+			"and plan/design/dynamic-tier.md forbids a fallback to any other runtime", RuntimeName)
 	}
 	rt, ok := info.Runtimes[RuntimeName]
 	if !ok {
@@ -1540,7 +1540,7 @@ func assertProjectContained(project string, containers []Container) error {
 func containmentViolations(project string, c Container) []string {
 	var out []string
 
-	// gVisor. plan/50-dast.md: no fallback to a non-gVisor runtime, for ANY
+	// gVisor. plan/design/dynamic-tier.md: no fallback to a non-gVisor runtime, for ANY
 	// service in the project. This is the check that can see the damage if
 	// the Docker implementation applies the runtime to only one service.
 	if c.Runtime != RuntimeName {

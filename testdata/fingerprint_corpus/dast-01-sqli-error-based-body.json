@@ -19,7 +19,7 @@
     "payload": "' OR 1=1--",
     "response_time_ms": 1204,
     "observed_at": "2026-08-08T12:04:11Z",
-    "comment": "plan/40-record-and-storage.md: 'NEVER hashed: host, port, scheme, the concrete payload string, any timestamp.' A redeployed container, a rotated ephemeral port, or a staging-to-prod move must not fork identity, and a fuzzer varying its payload must not mint N findings for one bug."
+    "comment": "plan/design/record-and-store.md: 'NEVER hashed: host, port, scheme, the concrete payload string, any timestamp.' A redeployed container, a rotated ephemeral port, or a staging-to-prod move must not fork identity, and a fuzzer varying its payload must not mint N findings for one bug."
   },
   "hashed_fields": [
     "t-0003",
@@ -113,7 +113,7 @@
     },
     {
       "name": "route_template_carrying_the_concrete_numeric_id_this_scan_requested",
-      "description": "The route this fixture's not_hashed.concrete_url actually carried. CanonicalRouteTemplate replaces the all-digit segment '4192' with <VAR>, so the producer does not have to template the route itself. Before the R.3 blocker-2 ruling this input produced a THIRD digest for the same defect.",
+      "description": "The route this fixture's not_hashed.concrete_url actually carried. CanonicalRouteTemplate replaces the all-digit segment '4192' with <VAR>, so the producer does not have to template the route itself. Before the contract-and-fingerprint review's blocker-2 ruling this input produced a THIRD digest for the same defect.",
       "input": {
         "target_id": "t-0003",
         "rule_id_versioned": "nuclei:sqli-error-based@2026.07.1",
@@ -140,9 +140,9 @@
   ],
   "notes": [
     "Field order is target_id, \"dast\", rule_id_versioned, http_method, route_template, injection_point, param_name, evidence_class_detail.",
-    "DIGEST CHANGED 2026-08-08 under the R.3 blocker-2 ruling, from ca801b8d64fdabf43aad112e3b62c53211cf369a66683c12352081357eb9d125. The hashed route_template moved from '/api/v1/users/{id}/orders' to '/api/v1/users/<VAR>/orders' because CanonicalRouteTemplate now DERIVES the template, as the specification always said it should ('route_template := numeric/UUID/hash path segments replaced with a placeholder token'). Nothing was stored under the old digest - anvil-fp/v1 has not shipped - so this is a correction, not a v2 event. See internal/record/FINGERPRINT-SPEC.md section 6.",
+    "DIGEST CHANGED 2026-08-08 under the contract-and-fingerprint review's blocker-2 ruling, from ca801b8d64fdabf43aad112e3b62c53211cf369a66683c12352081357eb9d125. The hashed route_template moved from '/api/v1/users/{id}/orders' to '/api/v1/users/<VAR>/orders' because CanonicalRouteTemplate now DERIVES the template, as the specification always said it should ('route_template := numeric/UUID/hash path segments replaced with a placeholder token'). Nothing was stored under the old digest - anvil-fp/v1 has not shipped - so this is a correction, not a v2 event. See internal/record/FINGERPRINT-SPEC.md section 6.",
     "injection_point (WHERE the payload went in) and evidence_class_detail (HOW the defect was observed) are independent hashed fields. research/07 had only the former and research/18 only the latter; the resolution hashes both, because an SQL injection proved by a database error string and one proved by a timing side channel on the same parameter are different findings with different remediation evidence.",
     "param_name is a parameter NAME, never a parameter VALUE.",
-    "Both literals are lowercase snake_case-free tokens frozen in R.1's contract.go (InjectionPoint, EvidenceSignal); an unfrozen or SCREAMING_CASE literal is rejected rather than hashed."
+    "Both literals are lowercase snake_case-free tokens frozen in the record contract.go (InjectionPoint, EvidenceSignal); an unfrozen or SCREAMING_CASE literal is rejected rather than hashed."
   ]
 }

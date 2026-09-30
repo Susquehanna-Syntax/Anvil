@@ -1,6 +1,6 @@
 """The packet's smoke run: pinned engine + pinned ruleset over a sample repo.
 
-SKIPPED, not failed, when the artefacts are absent — M0.7 was scoped by the
+SKIPPED, not failed, when the artefacts are absent — the opengrep acquisition was scoped by the
 orchestrator to produce the acquisition machinery without downloading the
 opengrep binary, so on a fresh checkout these skip. Run
 

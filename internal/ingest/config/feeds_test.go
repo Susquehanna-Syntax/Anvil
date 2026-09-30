@@ -19,7 +19,7 @@ import (
 // ---------------------------------------------------------------------------
 //
 // Fixtures are synthetic and use the reserved .invalid TLD (RFC 2606): a test
-// that reached a real feed would not be a test, and A.1's packet forbids this
+// that reached a real feed would not be a test, and the feed table's design forbids this
 // step from fetching anything at all. The cadences below are fixture values,
 // not Anvil's cadences — the real ones live in feeds.example.yaml, and
 // TestNoFeedDataInSource is what keeps them out of feeds.go.
@@ -77,7 +77,7 @@ func loadExample(t *testing.T) FeedSet {
 	return set
 }
 
-// TestExampleFileLoads is A.1's stop condition in its positive direction: the
+// TestExampleFileLoads is the feed table's stop condition in its positive direction: the
 // loader accepts a config covering every feed in the plan's Feed Table.
 func TestExampleFileLoads(t *testing.T) {
 	set := loadExample(t)
@@ -102,7 +102,7 @@ func TestExampleFileLoads(t *testing.T) {
 }
 
 // TestExampleCoversFeedTable checks the example against every row of the Feed
-// Table in plan/20-lane-a-ingestion-sca.md, with the tier that table assigns.
+// Table in plan/design/lane-a.md, with the tier that table assigns.
 // This is the packet's required evidence, expressed as an assertion rather
 // than as prose in a report.
 //
@@ -145,7 +145,7 @@ func TestExampleCoversFeedTable(t *testing.T) {
 
 	// Greenbone/OpenVAS content is ODbL-1.0 share-alike and belongs to the
 	// dynamic/host tier, not to Lane A's advisory feed table
-	// (plan/IMPLEMENTATION-PLAN.md 2.3, spine S8). Its appearance here would
+	// (the first plan's Greenbone ruling, the spine's licence section). Its appearance here would
 	// mean the quarantine was reasoned about in the wrong lane.
 	for _, f := range set.Feeds {
 		if strings.Contains(strings.ToLower(f.ID), "greenbone") ||
@@ -155,9 +155,9 @@ func TestExampleCoversFeedTable(t *testing.T) {
 	}
 }
 
-// TestExampleShareAlikeIsTier2 checks the licence fact spine S8 quarantines
+// TestExampleShareAlikeIsTier2 checks the licence fact the spine's licence section quarantines
 // on: a CC-BY-SA-4.0 source is Tier 2 and lives in a segregated directory.
-// A.4 owns the gate; this asserts the DATA it will gate on is right.
+// The licence gate owns the gate; this asserts the DATA it will gate on is right.
 func TestExampleShareAlikeIsTier2(t *testing.T) {
 	set := loadExample(t)
 	for _, f := range set.Feeds {
@@ -203,7 +203,7 @@ func TestExampleEPSSIsUndeclared(t *testing.T) {
 
 // TestExampleAuthenticatesGitHubFeeds encodes research/06 Risk #8: an
 // unauthenticated conditional GET against a GitHub-hosted feed still costs the
-// 60/hour budget, so those rows must ask for a credential. A.7 enforces the
+// 60/hour budget, so those rows must ask for a credential. The poller enforces the
 // send side; this asserts the config asks for it in the first place.
 func TestExampleAuthenticatesGitHubFeeds(t *testing.T) {
 	set := loadExample(t)
@@ -360,7 +360,7 @@ func TestDerivedFeedResolves(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Refusals — A.1's stop condition in its negative direction
+// Refusals — the feed table's stop condition in its negative direction
 // ---------------------------------------------------------------------------
 
 func TestParseRejects(t *testing.T) {
@@ -819,7 +819,7 @@ func TestLoadOversizeFile(t *testing.T) {
 // The constraint, asserted against the source
 // ---------------------------------------------------------------------------
 
-// TestNoFeedDataInSource is the mechanical form of A.1's Forbidden actions:
+// TestNoFeedDataInSource is the mechanical form of the feed table's Forbidden actions:
 // "No feed URL, cadence, or credential literal anywhere outside
 // feeds.yaml/feeds.example.yaml." It parses feeds.go and walks its literals.
 //
@@ -903,7 +903,7 @@ func TestNoFeedDataInSource(t *testing.T) {
 	})
 }
 
-// TestPackageMakesNoNetworkCalls asserts A.1's other Forbidden action —
+// TestPackageMakesNoNetworkCalls asserts the feed table's other Forbidden action —
 // "Do not fetch any network resource from this step — config loading only" —
 // at the import graph, where it cannot be violated by accident. net/url is
 // allowed: it parses, it does not dial.
@@ -923,13 +923,13 @@ func TestPackageMakesNoNetworkCalls(t *testing.T) {
 	}
 	for _, imp := range file.Imports {
 		if banned[imp.Path.Value] {
-			t.Errorf("feeds.go imports %s; A.1 loads config and fetches nothing", imp.Path.Value)
+			t.Errorf("feeds.go imports %s; the feed table loads config and fetches nothing", imp.Path.Value)
 		}
 	}
 }
 
 // TestEnumsAreClosed asserts each vocabulary's Values()/Valid() pair agrees
-// with itself. The six FROZEN record enums are area 40's and are not
+// with itself. The six FROZEN record enums are the record area's and are not
 // redeclared here; these four are Lane-A-local ingestion vocabulary with no
 // counterpart in internal/record.
 func TestEnumsAreClosed(t *testing.T) {
@@ -975,20 +975,21 @@ func TestEnumsAreClosed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.6 M4 — the vocabulary this package owns and A.4 consumes
+// The licence-gate review M4 — the vocabulary this package owns and the licence gate consumes
 // ---------------------------------------------------------------------------
 //
-// A.6 found TWO produce/consume breaks between A.1 and A.4 on the same values:
-// the feed-id character rules and the recognition of the NONE token. Each was
-// answered independently in both packages, and each pair of answers disagreed.
-// The tests below pin this package's half; internal/ingest/license's
-// gate_test.go pins the other half against the SAME exported functions, so
-// there is one definition and two call sites rather than two definitions.
+// The licence-gate review found TWO produce/consume breaks between the feed
+// table and the licence gate on the same values: the feed-id character rules
+// and the recognition of the NONE token. Each was answered independently in
+// both packages, and each pair of answers disagreed. The tests below pin this
+// package's half; internal/ingest/license's gate_test.go pins the other half
+// against the SAME exported functions, so there is one definition and two call
+// sites rather than two definitions.
 
 // TestValidFeedIDIsThePathSegmentRuleToo covers the tightening a shared rule
 // forced. MirrorDir defaults to the feed id and therefore becomes a directory
 // under mirror/, so `.` and `..` had to stop being legal feed ids: the loader
-// used to accept both, and only A.4's separate (and otherwise incompatible)
+// used to accept both, and only the licence gate's separate (and otherwise incompatible)
 // rule caught them.
 func TestValidFeedIDIsThePathSegmentRuleToo(t *testing.T) {
 	valid := []string{"alpha", "cisa-kev", "osv.dev", "a1", "cvelistv5"}
@@ -1021,7 +1022,7 @@ func TestValidFeedIDIsThePathSegmentRuleToo(t *testing.T) {
 }
 
 // TestDottedFeedIDLoads is the direct regression: this loader has always
-// accepted dots in a feed id, and A.4 used to refuse them, so a feed the
+// accepted dots in a feed id, and the licence gate used to refuse them, so a feed the
 // operator could configure could not have its licence gated.
 func TestDottedFeedIDLoads(t *testing.T) {
 	set := mustParse(t, mutate(t, baseDoc, "id: alpha", "id: osv.dev"))
@@ -1034,7 +1035,7 @@ func TestDottedFeedIDLoads(t *testing.T) {
 }
 
 // TestLicenceTokensAreCaseFolded is the second break. This loader compared the
-// NONE token with `==` while A.4's gate compared with strings.EqualFold, so
+// NONE token with `==` while the licence gate compared with strings.EqualFold, so
 // `license_spdx: none` loaded clean at tier 0 here and was refused as an
 // undeclared licence there. Both now call SPDXIsNone.
 func TestLicenceTokensAreCaseFolded(t *testing.T) {
@@ -1063,12 +1064,12 @@ func TestLicenceTokensAreCaseFolded(t *testing.T) {
 		}
 	}
 	if !SPDXResolvable("CC-BY-4.0") || SPDXNeedsManualNote("CC-BY-4.0") {
-		t.Error("a real identifier must resolve and must not demand the S8 note")
+		t.Error("a real identifier must resolve and must not demand the manual licence note")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// A.6 B2 — mirror_dir, without which tier 2 has no production caller
+// The licence-gate review B2 — mirror_dir, without which tier 2 has no production caller
 // ---------------------------------------------------------------------------
 
 // TestMirrorDirDefaultsToTheFeedID pins the resolution. Parse resolves the

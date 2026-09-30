@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anvil.invalid/schemas/anvil-record-v1.schema.json",
   "title": "Anvil unified audit record v1 (SARIF 2.1.0 + anvil/* extension)",
-  "description": "Constrains the anvil/* property-bag extension that Anvil layers on top of stock SARIF 2.1.0, and pins the SARIF-native slots Anvil depends on. Ground truth: plan/40-record-and-storage.md 'Record Field Contract'; enum literals frozen by plan/IMPLEMENTATION-PLAN.md section 6; required fields by plan/00-SPINE.md S6. Producer/consumer for every field: internal/record/CONTRACT.md. Go source of truth: internal/record/contract.go.",
+  "description": "Constrains the anvil/* property-bag extension that Anvil layers on top of stock SARIF 2.1.0, and pins the SARIF-native slots Anvil depends on. Ground truth: plan/design/record-and-store.md 'Record Field Contract'; enum literals frozen by the first plan's shared-vocabulary review; required fields by the spine's record section. Producer/consumer for every field: internal/record/CONTRACT.md. Go source of truth: internal/record/contract.go.",
 
   "x-anvil-baseSchema": "https://json.schemastore.org/sarif-2.1.0.json",
   "x-anvil-validationProcedure": "TWO GATES, both required. Gate 1: validate the record against https://json.schemastore.org/sarif-2.1.0.json (stock SARIF conformance; needed for GitHub and DefectDojo to accept it). Gate 2: validate against THIS schema (the anvil/* extension and the S6-required fields). This schema does not $ref the SARIF base schema because that reference is not resolvable in Anvil's offline CI; keeping the two gates separate makes the offline gate work and makes a SARIF-conformance failure distinguishable from an anvil/* failure.",
@@ -21,7 +21,7 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 2,
-      "description": "One audit identity, two independently-sealed halves (00-SPINE.md S1). At most one run per half.",
+      "description": "One audit identity, two independently-sealed halves (the spine's corrected-requirements table). At most one run per half.",
       "items": { "$ref": "#/$defs/run" }
     }
   },
@@ -33,17 +33,17 @@
     "unitInterval": { "type": "number", "minimum": 0, "maximum": 1 },
 
     "state": {
-      "description": "FROZEN ENUM 1/6 (anvil/state). dast_sealed and both_sealed exist because 00-SPINE.md S1 requires two INDEPENDENTLY-sealed halves: a machine that can only seal SAST-then-DAST cannot express a DAST-first seal, and collapsing them makes `sealed` terminal, which makes `consumed` unreachable.",
+      "description": "FROZEN ENUM 1/6 (anvil/state). dast_sealed and both_sealed exist because the spine's corrected-requirements table requires two INDEPENDENTLY-sealed halves: a machine that can only seal SAST-then-DAST cannot express a DAST-first seal, and collapsing them makes `sealed` terminal, which makes `consumed` unreachable.",
       "type": "string",
       "enum": ["collecting", "sast_sealed", "dast_sealed", "both_sealed", "consumed", "expired"]
     },
     "halfStatus": {
-      "description": "FROZEN ENUM 2/6 (per-half anvil/status). `sealed` is the hard consumer read gate (R.6); an area keying on any other token means the gate never opens.",
+      "description": "FROZEN ENUM 2/6 (per-half anvil/status). `sealed` is the hard consumer read gate (the sealer); an area keying on any other token means the gate never opens.",
       "type": "string",
       "enum": ["running", "sealed", "failed", "timed_out", "skipped"]
     },
     "dastStatus": {
-      "description": "FROZEN ENUM 3/6 (anvil/dastStatus). Never null. `skipped_no_manifest` is deliberately distinct from `not_run`: no target manifest was declared, versus the DAST tier not being installed at all. S6 requires a target that failed to be distinguishable from one scanned clean; only `completed_clean` may be read as 'dynamically scanned, nothing found'.",
+      "description": "FROZEN ENUM 3/6 (anvil/dastStatus). Never null. `skipped_no_manifest` is deliberately distinct from `not_run`: no target manifest was declared, versus the DAST tier not being installed at all. The spine's record section requires a target that failed to be distinguishable from one scanned clean; only `completed_clean` may be read as 'dynamically scanned, nothing found'.",
       "type": "string",
       "enum": [
         "not_run",
@@ -64,17 +64,17 @@
       "enum": ["booted_clean", "boot_failed", "build_failed", "no_target_declared", "unreachable_at_scan_time"]
     },
     "targetProvisioning": {
-      "description": "FROZEN ENUM 5/6 (anvil/target.provisioning). NEW required field. WHICH PROVISIONING PATH produced the target. A different measurement from target.provenance; merging them loses information S6 requires, and the two carry different authorization consequences (S7).",
+      "description": "FROZEN ENUM 5/6 (anvil/target.provisioning). NEW required field. WHICH PROVISIONING PATH produced the target. A different measurement from target.provenance; merging them loses information the spine's record section requires, and the two carry different authorization consequences (the spine's safety section).",
       "type": "string",
       "enum": ["ephemeral_manifest", "live_url_authorized"]
     },
     "verdict": {
-      "description": "FROZEN ENUM 6/6 (anvil/verdict). `insufficient_context` is a real verdict, not a low confidence score (00-SPINE.md S6 is explicit). A low score means 'probably not real'; insufficient_context means 'may well be real and the detector could not see enough to tell'. Those demand opposite handling and a float cannot express the difference.",
+      "description": "FROZEN ENUM 6/6 (anvil/verdict). `insufficient_context` is a real verdict, not a low confidence score (the spine's record section is explicit). A low score means 'probably not real'; insufficient_context means 'may well be real and the detector could not see enough to tell'. Those demand opposite handling and a float cannot express the difference.",
       "type": "string",
       "enum": ["true_positive", "false_positive", "insufficient_context"]
     },
     "trust": {
-      "description": "anvil/trust (00-SPINE.md S6, required on EVERY string originating outside Anvil). A repo source snippet is `untrusted` even though Anvil put it in the struct: the question is who wrote the bytes, never who assigned the field.",
+      "description": "anvil/trust (the spine's record section, required on EVERY string originating outside Anvil). A repo source snippet is `untrusted` even though Anvil put it in the struct: the question is who wrote the bytes, never who assigned the field.",
       "type": "string",
       "enum": ["untrusted", "anvil_generated", "verified"]
     },
@@ -103,12 +103,12 @@
       "enum": ["runtime_spec", "repo_spec", "static_extraction", "crawl"]
     },
     "specHarvestOutcome": {
-      "description": "What the SAST spec-harvest pass did. NOT one of the six frozen enums; area 40 owns the vocabulary, the SAST half produces it and D.19 consumes it, with the same two literals on both sides so the handoff needs no mapping. There is no member for the empty string: an empty file list under `harvest_ran` is a fact about the REPOSITORY, under `harvest_skipped` it is a fact about ANVIL, and the difference is the denominator of anvil/dastCoverage.endpointCoverage.",
+      "description": "What the SAST spec-harvest pass did. NOT one of the six frozen enums; the record area owns the vocabulary, the SAST half produces it and the repo spec reader consumes it, with the same two literals on both sides so the handoff needs no mapping. There is no member for the empty string: an empty file list under `harvest_ran` is a fact about the REPOSITORY, under `harvest_skipped` it is a fact about ANVIL, and the difference is the denominator of anvil/dastCoverage.endpointCoverage.",
       "type": "string",
       "enum": ["harvest_ran", "harvest_skipped"]
     },
     "handoffState": {
-      "description": "Frozen alongside the six (IMPLEMENTATION-PLAN.md section 6, rulings G9+G10). Not carried on the wire record; declared here so the store DDL (R.4) and area X agree on one vocabulary and area X's deleted anvil_ledger cannot reappear.",
+      "description": "Frozen alongside the six (the shared-vocabulary review's handoff-table and one-ledger rulings). Not carried on the wire record; declared here so the store DDL (the store schema) and remediation agree on one vocabulary and remediation's deleted anvil_ledger cannot reappear.",
       "type": "string",
       "enum": [
         "ready", "leased", "validated", "failed_validation", "failed_format",
@@ -150,7 +150,7 @@
         "anvil/auditId": { "type": "string", "minLength": 1 },
         "anvil/state": { "$ref": "#/$defs/state" },
         "anvil/version": {
-          "description": "Monotonic; a bump re-cuts the work queue (S6, R.11).",
+          "description": "Monotonic; a bump re-cuts the work queue (the spine's record section, the queue re-cut).",
           "type": "integer",
           "minimum": 1
         },
@@ -193,7 +193,7 @@
     },
 
     "deadline": {
-      "description": "Replaces branch 18's anvil/buffer per the 00-SPINE.md S1 correction: the 8 hours is a CLAIM TIMEOUT, not a deletion policy and not a confidentiality control. deadlineAt = scan start + claimTimeoutSeconds, computed once and never recomputed from any write timestamp.",
+      "description": "Replaces branch 18's anvil/buffer per the spine's corrected-requirements table correction: the 8 hours is a CLAIM TIMEOUT, not a deletion policy and not a confidentiality control. deadlineAt = scan start + claimTimeoutSeconds, computed once and never recomputed from any write timestamp.",
       "type": "object",
       "required": ["deadlineAt", "claimTimeoutSeconds", "dastDeadlineSeconds"],
       "properties": {
@@ -290,7 +290,7 @@
           }
         },
         {
-          "$comment": "R.6's read gate: sealedAt is required exactly when status is sealed, and must be null otherwise. A missing key and an unsealed half must not be the same observation.",
+          "$comment": "The sealer's read gate: sealedAt is required exactly when status is sealed, and must be null otherwise. A missing key and an unsealed half must not be the same observation.",
           "if": {
             "properties": { "properties": { "properties": { "anvil/status": { "const": "sealed" } }, "required": ["anvil/status"] } },
             "required": ["properties"]
@@ -340,7 +340,7 @@
       },
       "allOf": [
         {
-          "$comment": "anvil/specHarvest is the SAST half's statement. plan/50-dast.md:628-630 assigns spec harvesting to the SAST tier and forbids the DAST tier from re-deriving it, so a copy on the DAST run is a second durable statement of one fact — the shape S1 and ruling G10 both refuse.",
+          "$comment": "anvil/specHarvest is the SAST half's statement. plan/design/dynamic-tier.md:628-630 assigns spec harvesting to the SAST tier and forbids the DAST tier from re-deriving it, so a copy on the DAST run is a second durable statement of one fact — the shape the spine's corrected-requirements table and the one-ledger ruling both refuse.",
           "if": {
             "type": "object",
             "required": ["anvil/half"],
@@ -430,7 +430,7 @@
           "properties": { "text": { "type": "string" } }
         },
         "declaredFormat": {
-          "description": "What the HARVESTER claimed the file is. Recorded and never believed — D.19 classifies from the bytes, because the harvester classifies on a path and the path is in the repository. Deliberately NOT an enum this schema freezes: the parser vocabulary is area D's growing allowlist, and freezing a snapshot of it here would make every new parser a produce/consume break.",
+          "description": "What the HARVESTER claimed the file is. Recorded and never believed — the repo spec reader classifies from the bytes, because the harvester classifies on a path and the path is in the repository. Deliberately NOT an enum this schema freezes: the parser vocabulary is the dynamic tier's growing allowlist, and freezing a snapshot of it here would make every new parser a produce/consume break.",
           "type": "string"
         },
         "trust": {
@@ -441,7 +441,7 @@
     },
 
     "dastCoverage": {
-      "description": "Consolidates S6's dast_coverage, endpoint_coverage and inventory_provenance. A numerator, a denominator and a provenance mix — never a bare ratio (research/14 critique m6). endpoint_coverage is confirmed-probed endpoints over the union of the Tier 0-2 inventory, NEVER a request count.",
+      "description": "Consolidates the spine's dast_coverage, endpoint_coverage and inventory_provenance. A numerator, a denominator and a provenance mix — never a bare ratio (research/14 critique m6). endpoint_coverage is confirmed-probed endpoints over the union of the Tier 0-2 inventory, NEVER a request count.",
       "type": "object",
       "required": [
         "probedCount",
@@ -500,7 +500,7 @@
         "webResponse": { "type": "object" },
         "provenance": { "type": "object" },
         "fixes": {
-          "description": "Written only after a coding-agent proposal. 00-SPINE.md S7: never auto-merge, propose only.",
+          "description": "Written only after a coding-agent proposal. The spine's safety section: never auto-merge, propose only.",
           "type": "array"
         },
         "partialFingerprints": {
@@ -516,7 +516,7 @@
               "type": "string"
             },
             "regionSha256": {
-              "description": "research/24's fingerprint.region_sha256. Reserved, optional; R.2 decides whether to populate it. Logged deviation 2 in CONTRACT.md.",
+              "description": "research/24's fingerprint.region_sha256. Reserved, optional; the fingerprint decides whether to populate it. Logged deviation 2 in CONTRACT.md.",
               "type": "string"
             }
           }
@@ -525,7 +525,7 @@
       },
       "allOf": [
         {
-          "$comment": "A host finding is never remediable by an agent. 00-SPINE.md S7: the host agent is read-only, not behind a flag. The store enforces the same rule with a CHECK constraint.",
+          "$comment": "A host finding is never remediable by an agent. The spine's safety section: the host agent is read-only, not behind a flag. The store enforces the same rule with a CHECK constraint.",
           "if": {
             "properties": {
               "properties": {
@@ -542,7 +542,7 @@
           }
         },
         {
-          "$comment": "A DAST response body is up to 32 KB of attacker-controlled bytes headed for a repo-credentialed agent (S7). Any result carrying one defaults to untrusted.",
+          "$comment": "A DAST response body is up to 32 KB of attacker-controlled bytes headed for a repo-credentialed agent (the spine's safety section). Any result carrying one defaults to untrusted.",
           "if": { "required": ["webResponse"] },
           "then": {
             "properties": {
@@ -610,7 +610,7 @@
     },
 
     "trustAssertion": {
-      "description": "S6 requires trust on EVERY string originating outside Anvil, and one result carries several strings of different provenance at once. `default` covers anything not named; `fields` maps an RFC 6901 JSON Pointer relative to the result object to that string's trust. Logged deviation 3 in CONTRACT.md.",
+      "description": "The spine's record section requires trust on EVERY string originating outside Anvil, and one result carries several strings of different provenance at once. `default` covers anything not named; `fields` maps an RFC 6901 JSON Pointer relative to the result object to that string's trust. Logged deviation 3 in CONTRACT.md.",
       "type": "object",
       "required": ["default"],
       "properties": {
@@ -628,7 +628,7 @@
         "sourceFeed": { "type": "string" },
         "snapshotDigest": { "type": "string" },
         "licenseSpdx": {
-          "description": "Carried per finding: the feed licence attaches to the text, not to Anvil (S8).",
+          "description": "Carried per finding: the feed licence attaches to the text, not to Anvil (the spine's licence section).",
           "type": "string"
         },
         "asOf": { "$ref": "#/$defs/timestamp" },
@@ -639,7 +639,7 @@
           "$ref": "#/$defs/trustedString"
         },
         "licenseManualNote": {
-          "description": "S8's manual override: the QUOTED OPERATIVE SENTENCE from the publisher's own licence text, required by Lane A's licence gate whenever licenseSpdx is NONE, NOASSERTION or a LicenseRef- id — the population where the SPDX identifier establishes nothing. It sits beside the excerpt because it licenses the excerpt: the feed licence attaches to the TEXT, not to Anvil. A TrustedString and not a bare string, because a quotation from a publisher's LICENSE file originated outside Anvil; `anvil_generated` is excluded, and so is a blank note, which would satisfy \"a note exists\" while establishing nothing (the ingestion cache enforces length(trim(...)) > 0 in SQL). This slot does NOT make the record the enforcement point for S8 — that subject is the CI gate — it only makes the note survive into the record.",
+          "description": "The manual licence override: the QUOTED OPERATIVE SENTENCE from the publisher's own licence text, required by Lane A's licence gate whenever licenseSpdx is NONE, NOASSERTION or a LicenseRef- id — the population where the SPDX identifier establishes nothing. It sits beside the excerpt because it licenses the excerpt: the feed licence attaches to the TEXT, not to Anvil. A TrustedString and not a bare string, because a quotation from a publisher's LICENSE file originated outside Anvil; `anvil_generated` is excluded, and so is a blank note, which would satisfy \"a note exists\" while establishing nothing (the ingestion cache enforces length(trim(...)) > 0 in SQL). This slot does NOT make the record the enforcement point for the spine's licence section — that subject is the CI gate — it only makes the note survive into the record.",
           "allOf": [
             { "$ref": "#/$defs/trustedString" },
             { "properties": { "text": { "type": "string", "pattern": "\\S" } } }
@@ -649,7 +649,7 @@
     },
 
     "risk": {
-      "description": "research/24's non-negotiable ranking inputs. LOGGED DEVIATION 1: no row for anvil/risk exists in plan/40-record-and-storage.md's Record Field Contract table.",
+      "description": "research/24's non-negotiable ranking inputs. LOGGED DEVIATION 1: no row for anvil/risk exists in plan/design/record-and-store.md's Record Field Contract table.",
       "type": "object",
       "required": ["kevMember", "kevRansomwareUse"],
       "properties": {
@@ -714,7 +714,7 @@
       },
       "allOf": [
         {
-          "$comment": "00-SPINE.md S7: only a response stack trace naming the SAST file, or a post-patch re-run that flips, earns verified:true. Confidence alone never qualifies.",
+          "$comment": "The spine's safety section: only a response stack trace naming the SAST file, or a post-patch re-run that flips, earns verified:true. Confidence alone never qualifies.",
           "if": { "properties": { "verified": { "const": true } }, "required": ["verified"] },
           "then": {
             "properties": {
@@ -759,7 +759,7 @@
           "properties": {
             "kind": { "$ref": "#/$defs/evidenceSignal" },
             "match": {
-              "description": "A regex-extracted evidence SPAN, never the raw body (S7: hash-and-reference by default). Attacker-controlled, so it carries its own trust inline.",
+              "description": "A regex-extracted evidence SPAN, never the raw body (the spine's safety section: hash-and-reference by default). Attacker-controlled, so it carries its own trust inline.",
               "$ref": "#/$defs/trustedString"
             },
             "bodySha256": { "type": "string" },
@@ -776,7 +776,7 @@
         "sideEffects": { "type": "string" },
         "targetStateRef": { "type": "string" },
         "env": {
-          "description": "S6 requires sanitizer + ASLR state on any reproducer. A crash that reproduces only under ASan is a different claim from one that reproduces on a stock build, and a verification re-run under different settings is not the same experiment.",
+          "description": "The spine's record section requires sanitizer + ASLR state on any reproducer. A crash that reproduces only under ASan is a different claim from one that reproduces on a stock build, and a verification re-run under different settings is not the same experiment.",
           "type": "object",
           "required": ["sanitizers", "aslrEnabled"],
           "properties": {

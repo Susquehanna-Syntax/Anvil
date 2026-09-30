@@ -1,6 +1,6 @@
 package record
 
-// Independent re-verification probes for CRITIQUE-03's claimed fixes.
+// Independent re-verification probes for the queue and read-path review's claimed fixes.
 // Written by the re-verifying critic; each probe is shaped to reproduce the
 // ORIGINAL defect and must now fail to reproduce it.
 
@@ -455,7 +455,7 @@ func TestXVM4RetainedBlobsCarryNothingFromAnUnreadableHalf(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 M3 part 1 — the Tier-0 all-or-nothing degradation
+// The queue and read-path review's finding M3 part 1 — the Tier-0 all-or-nothing degradation
 // ---------------------------------------------------------------------------
 
 // TestXVTier0DegradationIsStillAllOrNothing MEASURES the crossover the critique
