@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anvil.invalid/eval/schema/result.schema.json",
+  "title": "Anvil evaluation result artifact (eval/results/<id>.json)",
+  "description": "One file per register row Phase 5 runs. It carries the number the register row quotes, everything needed to reproduce it, and the negative control that ran beside it. An artifact whose negative control did not pass does not validate, so it cannot be recorded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "measured_at", "value", "unit", "command", "git", "pins", "result", "negative_control"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": ["advisory-permutation", "code-metrics-baseline", "prefill-sweep", "patch-quality", "candidates-per-scan", "encoder-round-trip"]
+    },
+    "measured_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}" },
+    "value": { "type": "number" },
+    "unit": { "type": "string", "minLength": 1 },
+    "command": { "type": "string", "minLength": 1 },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "pins": { "type": "object", "minProperties": 1 },
+    "result": { "type": "object", "minProperties": 1 },
+    "negative_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "expected", "observed", "passed"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "expected": { "type": "string", "minLength": 1 },
+        "observed": {},
+        "passed": { "const": true }
+      }
+    }
+  }
+}

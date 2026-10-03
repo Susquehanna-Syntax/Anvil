@@ -1,0 +1,64 @@
+{
+  "source": "https://huggingface.co/google/gemma-4-E2B-it",
+  "repo": "google/gemma-4-E2B-it",
+  "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+  "acquired_at": "2026-10-03T19:07:26+00:00",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 1570,
+      "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+    },
+    {
+      "path": "README.md",
+      "size": 27955,
+      "sha256": "3e0608a6be80e3eb040a5aa6c76707809503deb85be6360184a118fb6156526c"
+    },
+    {
+      "path": "chat_template.jinja",
+      "size": 18569,
+      "sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"
+    },
+    {
+      "path": "config.json",
+      "size": 4954,
+      "sha256": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330"
+    },
+    {
+      "path": "generation_config.json",
+      "size": 208,
+      "sha256": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de"
+    },
+    {
+      "path": "model.safetensors",
+      "size": 10246621918,
+      "sha256": "2db5482b20d746879bb3ef79b5203e9075a2e2b98f54ec7c2f281c1477ddc550"
+    },
+    {
+      "path": "processor_config.json",
+      "size": 1689,
+      "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 32169626,
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 3082,
+      "sha256": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633"
+    }
+  ],
+  "licence": {
+    "spdx": "Apache-2.0",
+    "evidence": {
+      "kind": "card",
+      "path": "README.md",
+      "git_oid": "61e18105d7cb61ce375aa16ed66442b85116bb8a",
+      "quote": "<b>License</b>: <a href=\"https://ai.google.dev/gemma/docs/gemma_4_license\" target=\"_blank\">Apache 2.0</a>",
+      "read_on": "2026-10-03",
+      "note": "No LICENSE file in the repository. The card's own text names Apache 2.0 and links ai.google.dev/gemma/docs/gemma_4_license, which on 2026-10-03 held the Apache 2.0 text. The card does not incorporate the older Gemma terms or prohibited-use policy; that page's navigation links to them, and nothing in the card refers to them."
+    }
+  }
+}
