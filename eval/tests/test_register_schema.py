@@ -151,6 +151,37 @@ def test_schema_rejects_malformed_decisions(
     assert _errors(schema, mutated), f"schema accepted {field}={value!r}"
 
 
+@pytest.mark.parametrize("value", [None, ""])
+def test_schema_rejects_a_deferred_row_without_an_owning_phase(
+    schema: dict, register: dict, value
+) -> None:
+    """Plan node deferred: every deferred row names the phase that must run it."""
+    mutated = copy.deepcopy(register)
+    row = next(r for r in _rows(mutated) if r["status"] == "deferred")
+    row["owning_future_phase"] = value
+    assert _errors(schema, mutated), f"schema accepted a deferred row owned by {value!r}"
+
+
+def test_every_deferred_row_names_a_later_phase(register: dict) -> None:
+    for row in _rows(register):
+        if row["status"] == "deferred":
+            owner = row["owning_future_phase"] or ""
+            assert any(f"Phase {n}" in owner for n in (6, 7, 8, 9)), (row["id"], owner)
+
+
+def test_the_kill_rows_are_preregistered(register: dict) -> None:
+    """The bands and interval rules are written down before any result exists."""
+    rows = {r["id"]: r for r in _rows(register)}
+    for rid in ("advisory-permutation", "code-metrics-baseline"):
+        for field in ("method", "threshold_pass", "threshold_fail"):
+            assert "Pre-registered 2026-10-03, before any run" in rows[rid][field], (rid, field)
+    ap = rows["advisory-permutation"]
+    assert "80%" in ap["threshold_pass"] and "50%" in ap["threshold_fail"]
+    assert "AMBIGUOUS" in ap["threshold_fail"] and "second" in ap["threshold_fail"]
+    baseline_fail = rows["code-metrics-baseline"]["threshold_fail"]
+    assert "engineering judgement, not a citation" in baseline_fail
+
+
 def test_schema_rejects_a_deleted_row(schema: dict, register: dict) -> None:
     mutated = copy.deepcopy(register)
     del _rows(mutated)[0]
