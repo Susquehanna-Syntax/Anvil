@@ -145,8 +145,9 @@ def within_length(ps: list[Pair], limit: int = MAX_FUNC_CHARS) -> tuple[list[Pai
     return kept, len(ps) - len(kept)
 
 
-def write_manifest(directory: Path = PRIMEVUL_DIR) -> dict:
+def write_manifest(directory: Path | None = None) -> dict:
     """Record the size and SHA-256 of every PrimeVul file present; run once, after the fetch."""
+    directory = directory or PRIMEVUL_DIR
     files = {}
     for name in FILES:
         p = directory / name
@@ -165,8 +166,9 @@ def write_manifest(directory: Path = PRIMEVUL_DIR) -> dict:
     return manifest
 
 
-def verified(name: str, directory: Path = PRIMEVUL_DIR) -> Path:
+def verified(name: str, directory: Path | None = None) -> Path:
     """The path of ``name``, after checking it against the manifest written at acquisition."""
+    directory = directory or PRIMEVUL_DIR
     mpath = directory / "MANIFEST.json"
     if not mpath.is_file():
         raise CorpusError(f"{mpath} is missing; run `python -m anvil_eval.data.primevul manifest`")
