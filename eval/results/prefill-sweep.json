@@ -1,0 +1,237 @@
+{
+  "id": "prefill-sweep",
+  "measured_at": "2026-10-03",
+  "value": 276.8,
+  "unit": "tokens/s prefill at a 2000-token prompt, Qwen3.5-2B Q4_K_M, CPU with 4 threads (Tier S proxy); every arm in the artifact",
+  "command": "python -m anvil_eval.experiments.prefill report",
+  "git": {
+    "commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+    "dirty": true
+  },
+  "pins": {
+    "llama_cpp": {
+      "build": "b11146",
+      "commit": "7fe450e19305b828c199d602c23a8337aaa1f03b"
+    },
+    "quant": "Q4_K_M",
+    "repetitions": 5,
+    "prompts": [
+      512,
+      1000,
+      2000,
+      4000
+    ],
+    "machine": "Ryzen 5 9600X (12 threads), 30 GB RAM, RTX 4070 12 GB, RTX 4060 8 GB"
+  },
+  "result": {
+    "table": {
+      "gemma-4-e2b-it": {
+        "cpu1": {
+          "label": "CPU, 1 thread (control)",
+          "prefill_tokens_per_s": {
+            "512": 67.361874
+          },
+          "generation_tokens_per_s": null,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 1,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "cpu12": {
+          "label": "CPU, 12 threads",
+          "prefill_tokens_per_s": {
+            "512": 322.773283,
+            "1000": 299.836714,
+            "2000": 287.90969,
+            "4000": 266.18683
+          },
+          "generation_tokens_per_s": 25.174424,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 12,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "rtx4060": {
+          "label": "RTX 4060 8 GB",
+          "prefill_tokens_per_s": {
+            "512": 6014.923871,
+            "1000": 6030.797455,
+            "2000": 6044.754722,
+            "4000": 5931.393581
+          },
+          "generation_tokens_per_s": 125.715304,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 6,
+            "n_gpu_layers": 999,
+            "devices": "CUDA1",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "rtx4070": {
+          "label": "RTX 4070 12 GB",
+          "prefill_tokens_per_s": {
+            "512": 9836.041932,
+            "1000": 9961.856945,
+            "2000": 10224.072446,
+            "4000": 10091.710883
+          },
+          "generation_tokens_per_s": 186.321649,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 6,
+            "n_gpu_layers": 999,
+            "devices": "CUDA0",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "tier-s": {
+          "label": "CPU, 4 threads (Tier S proxy)",
+          "prefill_tokens_per_s": {
+            "512": 249.203725,
+            "1000": 241.503635,
+            "2000": 234.217566,
+            "4000": 222.902218
+          },
+          "generation_tokens_per_s": 35.663434,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 4,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        }
+      },
+      "qwen3.5-2b": {
+        "cpu1": {
+          "label": "CPU, 1 thread (control)",
+          "prefill_tokens_per_s": {
+            "512": 80.874678
+          },
+          "generation_tokens_per_s": null,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 1,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "cpu12": {
+          "label": "CPU, 12 threads",
+          "prefill_tokens_per_s": {
+            "512": 337.391857,
+            "1000": 335.060656,
+            "2000": 351.072029,
+            "4000": 320.783259
+          },
+          "generation_tokens_per_s": 27.840059,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 12,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "rtx4060": {
+          "label": "RTX 4060 8 GB",
+          "prefill_tokens_per_s": {
+            "512": 7179.388487,
+            "1000": 7143.119932,
+            "2000": 7192.280259,
+            "4000": 7140.59214
+          },
+          "generation_tokens_per_s": 155.321403,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 6,
+            "n_gpu_layers": 999,
+            "devices": "CUDA1",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "rtx4070": {
+          "label": "RTX 4070 12 GB",
+          "prefill_tokens_per_s": {
+            "512": 11495.154024,
+            "1000": 11650.318015,
+            "2000": 11975.513529,
+            "4000": 11913.941335
+          },
+          "generation_tokens_per_s": 239.145307,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 6,
+            "n_gpu_layers": 999,
+            "devices": "CUDA0",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        },
+        "tier-s": {
+          "label": "CPU, 4 threads (Tier S proxy)",
+          "prefill_tokens_per_s": {
+            "512": 286.702408,
+            "1000": 273.287757,
+            "2000": 276.819126,
+            "4000": 269.887111
+          },
+          "generation_tokens_per_s": 40.529779,
+          "settings": {
+            "n_batch": 2048,
+            "n_ubatch": 512,
+            "n_threads": 4,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "flash_attn": -1
+          },
+          "repetitions": 5
+        }
+      }
+    },
+    "headline": {
+      "candidate": "qwen3.5-2b",
+      "arm": "tier-s",
+      "prompt": 2000,
+      "tokens_per_s": 276.819126,
+      "bar": 600.0,
+      "meets_bar": false
+    },
+    "note": "The Tier S arm is four threads of this machine's CPU, not a Tier S host: it is recorded as a proxy, and the bar is the register's proposal."
+  },
+  "negative_control": {
+    "description": "CPU prefill at 512 tokens with 1 thread against 4",
+    "expected": "1-thread throughput under 0.75 of 4-thread",
+    "observed": {
+      "one_thread": 80.874678,
+      "four_threads": 286.702408,
+      "ratio": 0.2820857995723566
+    },
+    "passed": true
+  }
+}

@@ -68,7 +68,7 @@ experiments:
       research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row;
       enumerated as experiment #1 in research/14-critique-and-gaps.md B7 table
     owner_node: ablation
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the detection model actually reads the advisory, i.e. whether advisory-conditioning is
       real. PASS: proceed with the three-tier design (research/02) using this candidate model.
@@ -136,10 +136,10 @@ experiments:
       research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row
       (bar: > 80% flip rate)
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
+      value: 0.5
+      unit: "flip rate, CWE-text framing, Qwen3.5-2B (interval, both framings and both candidates in the artifact)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/advisory-permutation.json"
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: null
@@ -156,7 +156,7 @@ experiments:
       research/02-small-detection-models.md finding B / S3 (arXiv:2509.19117);
       enumerated as experiment #2 in research/14-critique-and-gaps.md B7 table
     owner_node: baseline
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the small-model detection tier should exist at all. PASS (logistic regression is
       significantly worse than the model on both metrics — non-overlapping CIs, LR lower): the model
@@ -220,10 +220,10 @@ experiments:
       P-C > 25% with reference GPT-4 CoT 12.94%; Test 2 bar F1 > 5.22% (flag-everything) with
       reference best fine-tune 5.82%
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
+      value: 1
+      unit: "metrics (of two) on which the model's 95% interval lies wholly above the regression's: 2 is PASS, 0 is FAIL, 1 is AMBIGUOUS (pre-registered)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/code-metrics-baseline.json"
     decision: UNRESOLVED
     depends_on:
       - advisory-permutation
@@ -239,7 +239,7 @@ experiments:
       research/02-small-detection-models.md S8 and research/05-inference-serving-and-hardware.md;
       enumerated as experiment #3 in research/14-critique-and-gaps.md B7 table
     owner_node: costs
-    status: not_started
+    status: complete
     decision_gated: >-
       Every downstream compute claim in the plan. PASS: the spine's ~17 min / ~2 min budget and the spine's tier
       assignments stand as written. FAIL: re-derive the candidates-per-scan ceiling from the candidates-per-scan instrument's
@@ -291,10 +291,10 @@ experiments:
       (256 tok / 1.5 s), not a number printed in the source; the "Xeon Platinum 8480+" SKU is named by
       plan/design/evaluation.md, not by research/02, which says only "the new Xeon".
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
+      value: 276.8
+      unit: "tokens/s prefill at a 2000-token prompt, Qwen3.5-2B Q4_K_M, CPU with 4 threads (Tier S proxy); every arm in the artifact"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/prefill-sweep.json"
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: null
@@ -376,7 +376,7 @@ experiments:
       the spine's affordability rule ("Instrument it on day one"); research/14-critique-and-gaps.md B1
       and its "Suggested fix"
     owner_node: candidatecount
-    status: not_started
+    status: complete
     decision_gated: >-
       The single number the spine's affordability rule says decides whether Anvil is affordable at all — "it,
       not model size, determines feasibility". PASS: affordability confirmed at the current
@@ -436,10 +436,10 @@ experiments:
       research/14-critique-and-gaps.md B1, restating the spine's figures: < 500 per full
       scan and < 50 per push
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
+      value: 10714
+      unit: "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/candidates-per-scan.json"
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: null
@@ -454,7 +454,7 @@ experiments:
       the spine's Go control-plane decision — the recorded counter-argument to the Go control-plane pick: "Measure
       encoder RTT under realistic pair volume during Milestone 0 before this is irreversible"
     owner_node: costs
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the spine's Go-for-the-control-plane pick survives contact with a measured number. PASS: the
       pick is confirmed; no action needed. FAIL: record as a "Conflict With Spine" item for the
@@ -490,10 +490,10 @@ experiments:
       not a sourced bar.
     reference_baseline: PROPOSED — no published baseline
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
+      value: 0.0119
+      unit: "encoder round trip as a fraction of model-tier time per candidate (Tier S proxy)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/encoder-round-trip.json"
     decision: UNRESOLVED
     depends_on:
       - prefill-sweep

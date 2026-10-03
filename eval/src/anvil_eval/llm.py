@@ -77,6 +77,8 @@ class LlamaServer:
         if self.device != "cpu" and not set(self.device.split(",")) <= {"CUDA0", "CUDA1"}:
             raise ServerError(f"device must be cpu or CUDA0 and/or CUDA1, not {self.device!r}")
         self.port = self.port or _free_port()
+        if self.log:
+            self.log.parent.mkdir(parents=True, exist_ok=True)
         out = self.log.open("ab") if self.log else subprocess.DEVNULL
         self._proc = subprocess.Popen(self.args(), env=self.env(), stdout=out, stderr=out)
         client = Client(f"http://127.0.0.1:{self.port}")

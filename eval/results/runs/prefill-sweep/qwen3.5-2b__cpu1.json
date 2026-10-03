@@ -1,0 +1,23 @@
+[
+ {
+  "n_prompt": 512,
+  "n_gen": 0,
+  "avg_ts": 80.874678,
+  "stddev_ts": 0.160927,
+  "samples_ts": [
+   80.9824,
+   80.7397,
+   80.977,
+   80.6633,
+   81.011
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 1,
+  "n_gpu_layers": 0,
+  "devices": "none",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ }
+]

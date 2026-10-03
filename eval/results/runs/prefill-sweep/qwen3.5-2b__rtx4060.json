@@ -1,0 +1,107 @@
+[
+ {
+  "n_prompt": 512,
+  "n_gen": 0,
+  "avg_ts": 7179.388487,
+  "stddev_ts": 173.412139,
+  "samples_ts": [
+   6871.71,
+   7219.22,
+   7265.34,
+   7277.59,
+   7263.08
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 1000,
+  "n_gen": 0,
+  "avg_ts": 7143.119932,
+  "stddev_ts": 179.493797,
+  "samples_ts": [
+   6863.9,
+   7262.07,
+   7064.45,
+   7294.39,
+   7230.8
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 2000,
+  "n_gen": 0,
+  "avg_ts": 7192.280259,
+  "stddev_ts": 43.113039,
+  "samples_ts": [
+   7221.65,
+   7193.15,
+   7123.89,
+   7235.51,
+   7187.21
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 4000,
+  "n_gen": 0,
+  "avg_ts": 7140.59214,
+  "stddev_ts": 23.634811,
+  "samples_ts": [
+   7122.94,
+   7156.56,
+   7115.81,
+   7172.58,
+   7135.08
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 0,
+  "n_gen": 128,
+  "avg_ts": 155.321403,
+  "stddev_ts": 0.088316,
+  "samples_ts": [
+   155.164,
+   155.37,
+   155.354,
+   155.361,
+   155.358
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "qwen35 2B Q4_K - Medium",
+  "build_number": 11146
+ }
+]

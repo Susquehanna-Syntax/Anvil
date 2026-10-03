@@ -1,0 +1,34 @@
+{
+ "control": {
+  "other_path_status": 404,
+  "malformed_status": 400,
+  "duplicate_in_batch_difference": 0.0,
+  "alone_vs_mixed_batch_difference": 0.07872634559273972
+ },
+ "timings": [
+  {
+   "batch": 32,
+   "pairs": 5000,
+   "seconds": 429.715382634,
+   "ms_per_pair": 85.9430765268
+  },
+  {
+   "batch": 64,
+   "pairs": 5000,
+   "seconds": 453.0738794689969,
+   "ms_per_pair": 90.61477589379938
+  }
+ ],
+ "provenance": {
+  "corpus": {
+   "file": "primevul_test_paired.jsonl",
+   "sha256": "384758c25142b640f1768bb0d334c43f315c580022ae94973c66e77128fb3821",
+   "pairs": 435,
+   "dropped_by_length_rule": 42,
+   "max_function_chars": 12000
+  },
+  "distinct_pairs": 786
+ },
+ "threads": 4,
+ "max_tokens": 512
+}

@@ -1,0 +1,136 @@
+{
+  "id": "code-metrics-baseline",
+  "measured_at": "2026-10-03",
+  "value": 1,
+  "unit": "metrics (of two) on which the model's 95% interval lies wholly above the regression's: 2 is PASS, 0 is FAIL, 1 is AMBIGUOUS (pre-registered)",
+  "command": "python -m anvil_eval.experiments.baseline report",
+  "git": {
+    "commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+    "dirty": true
+  },
+  "pins": {
+    "corpus": {
+      "file": "primevul_test_paired.jsonl",
+      "sha256": "384758c25142b640f1768bb0d334c43f315c580022ae94973c66e77128fb3821",
+      "pairs": 435,
+      "dropped_by_length_rule": 42,
+      "max_function_chars": 12000
+    },
+    "train": {
+      "file": "primevul_train.jsonl",
+      "rows": 175797,
+      "vulnerable": 4862
+    },
+    "valid_pairs": 480,
+    "features": [
+      "nonblank_lines",
+      "tokens",
+      "cyclomatic",
+      "max_nesting",
+      "parameters",
+      "calls",
+      "distinct_callees",
+      "returns",
+      "loops",
+      "conditionals",
+      "pointer_derefs",
+      "array_subscripts",
+      "halstead_volume",
+      "comment_lines"
+    ],
+    "regression": {
+      "penalty": "l2",
+      "C": 1.0,
+      "standardised": true,
+      "class_weight": null,
+      "iterations": 8
+    },
+    "model_arm": {
+      "candidate": "qwen3.5-2b",
+      "framing": "cwe",
+      "from": "eval/results/advisory-permutation.json and its runs"
+    },
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 20261003,
+      "paired": "the same resample indices for both arms"
+    }
+  },
+  "result": {
+    "pairs": 393,
+    "pairs_left_out_for_unreadable_answers": 0,
+    "regression": {
+      "pairwise_correct": {
+        "estimate": 0.005089058524173028,
+        "low": 0.0,
+        "high": 0.01272264631043257,
+        "n": 393,
+        "resamples": 10000,
+        "undefined_resamples": 0
+      },
+      "precision_at_recall_0_70": {
+        "estimate": 0.4919786096256685,
+        "low": 0.4868189806678383,
+        "high": 0.4991055456171735,
+        "n": 393,
+        "resamples": 10000,
+        "undefined_resamples": 0
+      }
+    },
+    "regression_pc_threshold": 0.07343165800385333,
+    "regression_valid_pc": 0.0125,
+    "model": {
+      "pairwise_correct": {
+        "estimate": 0.030534351145038167,
+        "low": 0.015267175572519083,
+        "high": 0.04834605597964377,
+        "n": 393,
+        "resamples": 10000,
+        "undefined_resamples": 0
+      },
+      "precision_at_recall_0_70": {
+        "estimate": 0.4981949458483754,
+        "low": 0.4876325088339223,
+        "high": 0.5110294117647058,
+        "n": 393,
+        "resamples": 10000,
+        "undefined_resamples": 0
+      }
+    },
+    "comparisons": {
+      "pairwise_correct": "model_clearly_better",
+      "precision_at_recall_0_70": "overlap"
+    },
+    "pre_registered_outcome": "AMBIGUOUS",
+    "note": "The equivalence rule is an engineering judgement, not a citation."
+  },
+  "negative_control": {
+    "description": "a pair-blind scorer (both versions of a pair get the regression's score for the vulnerable one), and the model compared with itself",
+    "expected": "P-C exactly 0, precision at recall 0.70 exactly 0.5, self-comparison overlap on both metrics",
+    "observed": {
+      "pair_blind": {
+        "pairwise_correct": {
+          "estimate": 0.0,
+          "low": 0.0,
+          "high": 0.0,
+          "n": 393,
+          "resamples": 10000,
+          "undefined_resamples": 0
+        },
+        "precision_at_recall_0_70": {
+          "estimate": 0.5,
+          "low": 0.5,
+          "high": 0.5,
+          "n": 393,
+          "resamples": 10000,
+          "undefined_resamples": 0
+        }
+      },
+      "self_comparison": {
+        "pairwise_correct": "overlap",
+        "precision_at_recall_0_70": "overlap"
+      }
+    },
+    "passed": true
+  }
+}

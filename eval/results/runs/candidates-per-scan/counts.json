@@ -1,0 +1,645 @@
+{
+ "repos": [
+  {
+   "repo": "flask",
+   "commit": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+   "full_scan": 1090,
+   "full_scan_by_tool": {
+    "opengrep": 8,
+    "bandit": 1082
+   },
+   "full_scan_by_cwe_top10": {
+    "CWE-703": 1061,
+    "CWE-259": 14,
+    "CWE-754": 5,
+    "CWE-79": 3,
+    "CWE-95": 2,
+    "CWE-78": 2,
+    "CWE-94": 2,
+    "CWE-327": 1
+   },
+   "pushes": [
+    {
+     "commit": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "d318b683471101618febed18996405ad26462110",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "2a8a38b051fc248865730bf3511bf2e2ea325e81",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "d8eaaba824655046958d1a97f11780de460c3271",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "3596b1ab61cea85edb8970e83ff61daa073facf8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "05e9c6bd630ecf4ec0ec884b1fc7901663737bc7",
+     "files_changed": 4,
+     "candidates": 1
+    },
+    {
+     "commit": "514fc6b3e8402e4c646d5284e97a4f0ab50a7c4b",
+     "files_changed": 5,
+     "candidates": 0
+    },
+    {
+     "commit": "8b4fd5d18611e63080b826ecfefe8659dba7d2e4",
+     "files_changed": 2,
+     "candidates": 4
+    },
+    {
+     "commit": "6a2f545bfd8ed31e19066a299296917e034aca58",
+     "files_changed": 16,
+     "candidates": 0
+    },
+    {
+     "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "954f5684e4841aad84a8eec7ace7b81a0d3f6831",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "9fcd34c9f3065640bd1cd86234216ca068633fb9",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "7374c85ddefc3f4b177a698ab9f0cbb6a5c0b392",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "dcbede0cb00df32e7f1895e19e37d5f40a75d1f6",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "06ea505ce2b2042af26e96d35ebf159af7c0869d",
+     "files_changed": 2,
+     "candidates": 7
+    },
+    {
+     "commit": "2ac89889f4cc330eabd50f295dcef02828522c69",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "258d68b6ff5e2244386540f48b48bab90d6ab827",
+     "files_changed": 0,
+     "candidates": 0
+    },
+    {
+     "commit": "e4e4bf6543ac1f132afddb1ffd0bf02bea4c93f7",
+     "files_changed": 6,
+     "candidates": 0
+    },
+    {
+     "commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+     "files_changed": 0,
+     "candidates": 0
+    },
+    {
+     "commit": "4cae5d8e411b1e69949d8fae669afeacbd3e5908",
+     "files_changed": 7,
+     "candidates": 0
+    }
+   ],
+   "per_push_median": 0,
+   "per_push_max": 7
+  },
+  {
+   "repo": "curl",
+   "commit": "21983c2fca1e4ecf3393e94455b343d082b6f1c9",
+   "full_scan": 10714,
+   "full_scan_by_tool": {
+    "opengrep": 10169,
+    "bandit": 545
+   },
+   "full_scan_by_cwe_top10": {
+    "CWE-546": 5249,
+    "CWE-676": 1584,
+    "CWE-480": 995,
+    "CWE-195": 543,
+    "CWE-703": 492,
+    "CWE-126": 483,
+    "CWE-120": 256,
+    "CWE-754": 162,
+    "CWE-478": 160,
+    "CWE-469": 128
+   },
+   "pushes": [
+    {
+     "commit": "21983c2fca1e4ecf3393e94455b343d082b6f1c9",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "2f642a75bbcbe4a58273998e4767c1e1b5b34e26",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "52d6355bb81bf8435a72f44b12c76bd5c76eba7e",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "a75c217404a0b97b54b220660892d0fec8e7536e",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "7da7436d24720ae95bb6162eb8eb8adba78bcfcd",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "6c7237191cd31774ec8c15f441f00934066c9947",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "6b506de183dafdb1e57072297d9730cfc8b81513",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "9fd900ca54378cba4102dfb9fcb2d0a6428a50dc",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "c431936d5b7452061412b10d7dce5f38fe489db3",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "7f147c6f1d24cd9d52ca77586540ca4d58903cb6",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "d4602243601f4e0239900762cca61f4c8f97be49",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "66ea3f941ca5c614919e70fc3702847ab8f2dc8d",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "7c732f5e81109c0f8e76b3a01b833ed27c7d7104",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "26214024f595e785fc154b159d5f649dad04d6df",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "978cce12adb7251b48a9dfa03a817df83f15cfaf",
+     "files_changed": 1,
+     "candidates": 1
+    },
+    {
+     "commit": "318bd978ea2d36ace36b42da2174b79c3abd89a3",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "a23a6003533f86e1948d302fd8dc12088600cd35",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "39ad9b0771708c5aff20663a7ef3704bc55510d7",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "4d36408a6bff8b24327f70a9a79adcab8061726c",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "4e11d82a975ad1f44bdc3749d77cd03124eb5490",
+     "files_changed": 3,
+     "candidates": 0
+    }
+   ],
+   "per_push_median": 0,
+   "per_push_max": 1
+  },
+  {
+   "repo": "spring-petclinic",
+   "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+   "full_scan": 0,
+   "full_scan_by_tool": {},
+   "full_scan_by_cwe_top10": {},
+   "pushes": [
+    {
+     "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "0d064b04958da7715a9138459bafbde3bd10949d",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "b33136f5e6151b4da44c5cba452955b79449dcb8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "f3c74834e31079f69855e9c9eddb34fceb40a8d9",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "3c7ab98ae7ebb433fad746ea891fd97f5103671b",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "818c4136ea971c21674525f9053de0d9c7ad8cfe",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "676db04515ee5f289641cea6cb379dc02b40f67f",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "bb37aad8c332264723817d855e8b3b96b7c392bc",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "0f6e8614047bd74cf6223b4d8a858d2ed2824f8a",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "f182358d02e4a68e52bdbabf55ca7800288511e7",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "e0db9b184e028d41bcb626f3cbf03a942f67e104",
+     "files_changed": 7,
+     "candidates": 0
+    },
+    {
+     "commit": "51045d1648dad955df586150c1a1a6e22ef400c2",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "b3ee2c53e76e9267f03551a7cd36b0983c859c56",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "b11afec3af05e8ff5156566aa014f2036b276647",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "1312314e4ef7493f11596313d40c7ecb8429aed3",
+     "files_changed": 0,
+     "candidates": 0
+    },
+    {
+     "commit": "9a5d50cf5343558e12b528f7299af8698fb753fc",
+     "files_changed": 14,
+     "candidates": 0
+    },
+    {
+     "commit": "a2c2ef994340d3970eb6db51247456a51bb161f8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "753d35c2f84432d88c0f3b61c9302a16069b78dd",
+     "files_changed": 12,
+     "candidates": 0
+    },
+    {
+     "commit": "3c06fbfc1e42eb40802e0d0ca989bc9226755804",
+     "files_changed": 1,
+     "candidates": 0
+    }
+   ],
+   "per_push_median": 0,
+   "per_push_max": 0
+  },
+  {
+   "repo": "express",
+   "commit": "7ef98448f8b38099ab1ded55e458538ad47a51e7",
+   "full_scan": 8,
+   "full_scan_by_tool": {
+    "opengrep": 8
+   },
+   "full_scan_by_cwe_top10": {
+    "CWE-22": 4,
+    "CWE-95": 3,
+    "CWE-208": 1
+   },
+   "pushes": [
+    {
+     "commit": "7ef98448f8b38099ab1ded55e458538ad47a51e7",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "3b7e39fe74371ddabc77fed736dd22aa71c14f5c",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "98bd4cd96b250d25e1672c36f49cfc743bc801e7",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "9a34acf03cb818ff3f8bc40e44176e277a25cbb9",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "3ce6d0eb86e9d93529ff3191c6bb5db8ce6e72c8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "53d4a0d606c0388f764f192b306ce0e90200e7e8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "bed501c695a61886399ee622875f3be933c716d8",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "4e65ec983d332edc0dfc0e8b5efb7fa4fbb432d8",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "4fe723dad4c93de3a2c37f923563a06798d98db6",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "c35284ee7afddb267da747b8c1d66de71982c026",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "023767fe9872e029271df1418f73401bff20ff40",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "2574a53bbc52cbb3c2a68c080a931d8624fdb5c7",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "91d333b4cfea158c9798d32e6665d36bd8e37c3d",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "28f732e98f5414391a4de55081f8c1cf239de9fc",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "8ba0c07fdcb3d7931934942afd4ce6a73806af31",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "a3714473feb3d2908add734d340e7755fd85e0a3",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "ae6dd37680e3a00618d6c8a3e522f0ee4eeba1a4",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "ba006766fb964571723138708eacaba0f55759cd",
+     "files_changed": 1,
+     "candidates": 0
+    },
+    {
+     "commit": "5175d2f357e9c6fac998812b3fc22a1a90ead988",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "66878d3e70437ba7b887ec519a3e33edc5bca0c7",
+     "files_changed": 1,
+     "candidates": 0
+    }
+   ],
+   "per_push_median": 0,
+   "per_push_max": 0
+  },
+  {
+   "repo": "anvil",
+   "commit": "1d8657e889cdf292b1ee792ceb36913f6d8539d2",
+   "full_scan": 159,
+   "full_scan_by_tool": {
+    "opengrep": 31,
+    "bandit": 86,
+    "gosec": 42
+   },
+   "full_scan_by_cwe_top10": {
+    "CWE-703": 74,
+    "CWE-22": 24,
+    "CWE-78": 16,
+    "CWE-89": 10,
+    "CWE-190": 10,
+    "CWE-732": 7,
+    "CWE-276": 7,
+    "CWE-798": 5,
+    "CWE-259": 2,
+    "CWE-327": 1
+   },
+   "pushes": [
+    {
+     "commit": "1d8657e889cdf292b1ee792ceb36913f6d8539d2",
+     "files_changed": 65,
+     "candidates": 12
+    },
+    {
+     "commit": "009b468a68f4160e4c35961166657c6d7290d781",
+     "files_changed": 22,
+     "candidates": 3
+    },
+    {
+     "commit": "17e86d9db76442f02c4d2f4e13aeb2f8c486da3d",
+     "files_changed": 141,
+     "candidates": 1
+    },
+    {
+     "commit": "fe18b231abc9e0cfe6df2f11536d2d976fda24b7",
+     "files_changed": 227,
+     "candidates": 61
+    },
+    {
+     "commit": "67b6daa86ebc605d6ad010f808d95c3a84d6bcb5",
+     "files_changed": 29,
+     "candidates": 1
+    },
+    {
+     "commit": "eb28b4b5c02ea838725bf993755ab00e1d40a9da",
+     "files_changed": 8,
+     "candidates": 1
+    },
+    {
+     "commit": "4e7da7641005d251be48553f3127b9543d51211e",
+     "files_changed": 8,
+     "candidates": 0
+    },
+    {
+     "commit": "2db083e8a95451b8a33d6e9d5b157539af142d39",
+     "files_changed": 35,
+     "candidates": 43
+    },
+    {
+     "commit": "3d608562b309919510de1bbe2688f054f15cf347",
+     "files_changed": 31,
+     "candidates": 6
+    },
+    {
+     "commit": "aac11c4e213bfb6b69227773134f1705e27cd562",
+     "files_changed": 21,
+     "candidates": 10
+    },
+    {
+     "commit": "fe9ec3e90b308f0546f8548debf2c65406495811",
+     "files_changed": 28,
+     "candidates": 3
+    },
+    {
+     "commit": "02e3404a9cfe65ec8afe51d91036b5367be2bc4e",
+     "files_changed": 17,
+     "candidates": 6
+    },
+    {
+     "commit": "a1230513fe1b34ec5fa4a6564f928a87feffb261",
+     "files_changed": 21,
+     "candidates": 17
+    },
+    {
+     "commit": "5591198929e5f06decee95f9b14ac1ca64d8cf9d",
+     "files_changed": 4,
+     "candidates": 0
+    },
+    {
+     "commit": "167853edc02216c18933c665e3159781c50e8184",
+     "files_changed": 30,
+     "candidates": 88
+    },
+    {
+     "commit": "cd6471139ee16db2721e55d65f5d55847cc32c95",
+     "files_changed": 2,
+     "candidates": 0
+    },
+    {
+     "commit": "1aa8dee56bdcd3787d13fe5af31a73dcd8c3b55c",
+     "files_changed": 3,
+     "candidates": 0
+    },
+    {
+     "commit": "c4e972d53968f8b46d2d157d41bbe31bb49506b0",
+     "files_changed": 5,
+     "candidates": 0
+    },
+    {
+     "commit": "54d001c4cd59f70a06a04a6afa8160e99746e97d",
+     "files_changed": 9,
+     "candidates": 0
+    }
+   ],
+   "per_push_median": 3,
+   "per_push_max": 88
+  }
+ ],
+ "control": {
+  "planted_files": [
+   "BadExec.java",
+   "bad_eval.js",
+   "bad_eval.py",
+   "bad_exec.go",
+   "bad_strcpy.c"
+  ],
+  "planted_flagged": [
+   "BadExec.java",
+   "bad_eval.js",
+   "bad_eval.py",
+   "bad_exec.go",
+   "bad_strcpy.c"
+  ],
+  "by_tool": [
+   [
+    "bandit",
+    "bad_eval.py"
+   ],
+   [
+    "gosec",
+    "bad_exec.go"
+   ],
+   [
+    "opengrep",
+    "BadExec.java"
+   ],
+   [
+    "opengrep",
+    "bad_eval.js"
+   ],
+   [
+    "opengrep",
+    "bad_eval.py"
+   ],
+   [
+    "opengrep",
+    "bad_strcpy.c"
+   ]
+  ],
+  "clean_candidates": [],
+  "passed": true
+ }
+}

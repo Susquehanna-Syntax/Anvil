@@ -1,0 +1,23 @@
+[
+ {
+  "n_prompt": 512,
+  "n_gen": 0,
+  "avg_ts": 67.361874,
+  "stddev_ts": 0.358183,
+  "samples_ts": [
+   66.9541,
+   67.0152,
+   67.6764,
+   67.7065,
+   67.4571
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 1,
+  "n_gpu_layers": 0,
+  "devices": "none",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ }
+]

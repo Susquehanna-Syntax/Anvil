@@ -2,8 +2,8 @@
 
 Rule corpora and sample repositories are fetched with git at a pinned commit, so the content is
 verified by the commit hash itself. Binaries are fetched from their release pages and checked
-against the SHA-256 the release publishes. Payloads land under ``eval/tools/recall/bin`` and
-``eval/data/recall``, which git ignores.
+against the SHA-256 the release publishes. Binaries land under ``eval/tools/recall/bin`` (ignored
+by git); corpora and repositories under ``~/.cache/anvil-eval/recall``, outside the repository.
 
 GitLab's sast-rules is not uniformly MIT: its LICENSE puts ``doc/`` under CC BY-SA 4.0 and keeps
 third-party components under their own licences. Only the seven rule directories in
@@ -14,6 +14,7 @@ enforce when it vendors them.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -21,9 +22,12 @@ import venv
 from dataclasses import dataclass
 from pathlib import Path
 
-from anvil_eval import DATA_DIR, EVAL_ROOT, TOOLS_DIR, acquire
+from anvil_eval import EVAL_ROOT, TOOLS_DIR, acquire
 
-RECALL_DATA = DATA_DIR / "recall"
+#: Outside the repository on purpose: the corpora carry third-party Go sources (GitLab's rule
+#: tests), and gate 3 (internal/dast/authz/egress_chokepoint_test.go) rightly refuses any
+#: socket-capable import anywhere in the tree, tracked or not.
+RECALL_DATA = Path(os.environ.get("ANVIL_RECALL_DATA", Path.home() / ".cache/anvil-eval/recall"))
 RECALL_BIN = TOOLS_DIR / "recall" / "bin"
 RECALL_VENV = EVAL_ROOT / ".venv-recall"
 
