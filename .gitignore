@@ -7,6 +7,9 @@ research/
 plan/
 tools/
 
+# The owner's logo and branding designs -- kept local, never distributed.
+assets/branding/
+
 # Python
 __pycache__/
 *.py[cod]
