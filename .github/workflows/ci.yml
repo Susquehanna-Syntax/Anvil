@@ -54,6 +54,18 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
 
+      # The Lane A exit gate prints a chain ledger naming which of its twelve
+      # links it PROVED and which it could not, and it is the deliverable of
+      # that packet -- "an UNPROVEN link is not a passing link". Go only shows
+      # test log output on failure, so on a green run the ledger was invisible
+      # and a reader saw "ok" with no idea seven of twelve links were proven.
+      #
+      # This step exists so the ledger is READ on the machine where it says the
+      # most: ubuntu-latest has dpkg, so host.Collect runs for real here and the
+      # host-inventory link is PROVEN, where on the Windows dev host it is not.
+      - name: Lane A chain ledger (printed, not just passed)
+        run: go test -count=1 -v -run TestLaneAChain ./test/conformance/lanea/
+
   # plan/00-SPINE.md S9-AMENDED splits Anvil into two distribution artifacts:
   # anvil (core, no network-probing capability compiled in) and anvil-dast.
   # plan/IMPLEMENTATION-PLAN.md 2.2 rules that a config flag inside a single

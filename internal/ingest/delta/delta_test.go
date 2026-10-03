@@ -1164,21 +1164,46 @@ func TestTheDeltaLogsOwnLinksAreNeverFetched(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows is the guard on the
-// duplication this package was forced into.
+// duplication between the two importers.
 //
-// internal/ingest/bootstrap's decoders are unexported, so A.14 re-derives them,
-// and two producers writing one table from one document is precisely the drift
-// spine S6 names for the fingerprint. If they diverge, A.15's weekly self-heal
-// "restores" the same rows forever and nothing surfaces why.
+// WHAT IT GUARDED, AND WHAT IT GUARDS NOW. It was written when
+// internal/ingest/bootstrap's decoders were unexported and this package had
+// re-derived them: two DECODERS for one wire format, which A.21 ended by
+// extracting internal/ingest/decode (orchestrator ruling G11). Decoding is now
+// one implementation and a decoder divergence is no longer expressible, so
+// this test could have become tautological — a test that cannot fail is worse
+// than no test.
+//
+// IT DID NOT. The two WRITE PATHS are still two: bootstrap's writer binds
+// cache.UpsertAdvisorySQL from its own staleness, tombstone and licence-column
+// derivation, and delta's writeRecord binds the same statement from its own.
+// Those are the halves that can still drift, and a divergence in either still
+// makes A.15's weekly self-heal restore the same rows forever with nothing
+// surfacing why. Verified RED at extraction time: perturbing one bound column
+// in bootstrap's writer fails this test on every row.
 //
 // The fixture documents are written in THIS file and handed to both importers.
-// Neither decoder's output is the other's expectation, and neither is compared
+// Neither writer's output is the other's expectation, and neither is compared
 // against a table derived from itself.
 func TestDeltaAndBootstrapDecodeTheSameBytesIntoTheSameRows(t *testing.T) {
 	const feedID = "conformance"
 
+	// A REJECTED record is in the corpus deliberately. Without one, every
+	// comparison below runs over published rows only, and the two writers'
+	// handling of a TOMBSTONED advisory — which is where they actually
+	// diverged — is never exercised. A cross-producer fixture that contains no
+	// instance of the state the producers treat differently is a fixture that
+	// cannot fail.
+	rejected := bytes.Replace(cve5Record("CVE-2026-0003", "2026-08-09T00:00:00Z"),
+		[]byte(`"state":"PUBLISHED"`), []byte(`"state":"REJECTED"`), 1)
+	if bytes.Contains(rejected, []byte(`"state":"PUBLISHED"`)) {
+		t.Fatal("the rejected fixture still says PUBLISHED; the tombstone half of this test would " +
+			"prove nothing")
+	}
+
 	members := []zipMember{
 		{"cves/CVE-2026-0001.json", cve5Record("CVE-2026-0001", "2026-08-09T00:00:00Z")},
+		{"cves/CVE-2026-0003.json", rejected},
 		{"osv/GHSA-test-000001.json", osvRecord(1)},
 		{"osv/USN-000002-1.json", ubuntuOSVRecord(2)},
 		{"kev/known_exploited_vulnerabilities.json", kevCatalogue("CVE-2026-9001", "CVE-2026-9002")},
@@ -1269,6 +1294,28 @@ FROM affected ORDER BY source, source_id, ecosystem, package, ifnull(introduced,
 	la, ra := dumpRows(t, a, affectedQ), dumpRows(t, b, affectedQ)
 	if !reflect.DeepEqual(la, ra) {
 		t.Errorf("the two importers disagree about `affected`:\nA.8:  %v\nA.14: %v", la, ra)
+	}
+
+	// advisory_fts IS COMPARED, and it was not until A.21.
+	//
+	// The omission cost a real divergence: A.8's writer indexed every record
+	// including tombstoned ones while A.14's de-indexed them, so a REJECTED
+	// advisory stayed searchable on one path and not the other — and A.15's
+	// weekly baseline re-runs A.8's path, which would have re-indexed it every
+	// week forever. Three columns compared and one not is how a cross-producer
+	// guard passes over the producer's actual difference.
+	// The query asks whether an index ROW EXISTS, not what it contains.
+	// advisory_fts is an EXTERNAL-CONTENT (contentless) FTS5 table: selecting
+	// its columns returns NULL by design, so a comparison of column values
+	// compares NULL to NULL and passes over any divergence at all.
+	const ftsQ = `
+SELECT a.source, a.source_id, a.state,
+       CASE WHEN f.rowid IS NULL THEN 'not-indexed' ELSE 'indexed' END
+FROM advisory a LEFT JOIN advisory_fts f ON f.rowid = a.rowid
+ORDER BY a.source, a.source_id`
+	lf, rf := dumpRows(t, a, ftsQ), dumpRows(t, b, ftsQ)
+	if !reflect.DeepEqual(lf, rf) {
+		t.Errorf("the two importers disagree about `advisory_fts`:\nA.8:  %v\nA.14: %v", lf, rf)
 	}
 
 	const aliasQ = `SELECT cve_id, source, source_id FROM cve_alias ORDER BY cve_id, source, source_id`
