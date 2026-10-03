@@ -1,0 +1,11 @@
+// Planted for the candidates-per-scan control: a shell built from input. Never executed.
+package main
+
+import (
+	"os"
+	"os/exec"
+)
+
+func main() {
+	_ = exec.Command("sh", "-c", os.Args[1]).Run()
+}

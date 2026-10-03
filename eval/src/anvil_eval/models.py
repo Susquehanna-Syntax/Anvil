@@ -244,8 +244,13 @@ def convert_candidate(c: Candidate, quants: tuple[str, ...] = ("Q4_K_M", "Q8_0")
         subprocess.run([str(_bin("llama-quantize")), str(out), str(c.gguf(q)), q],
                        check=True, env=env)
         files[q] = c.gguf(q)
+    versions = subprocess.run(
+        [str(py), "-c", "import torch, transformers; print(torch.__version__, "
+         "transformers.__version__)"], check=True, capture_output=True, text=True,
+    ).stdout.split()
     record = {
         "llama_cpp": {"build": LLAMA_CPP_BUILD, "commit": LLAMA_CPP_COMMIT},
+        "converter_env": {"torch": versions[0], "transformers": versions[1]},
         "from": {"repo": c.repo, "revision": c.revision},
         "files": {q: {"path": p.name, "sha256": acquire.sha256_file(p)} for q, p in files.items()},
     }

@@ -41,12 +41,13 @@ def _free_port() -> int:
 @dataclass
 class LlamaServer:
     model: Path
-    device: str  # "CUDA0", "CUDA1" or "cpu"
+    device: str  # "CUDA0", "CUDA1", "CUDA0,CUDA1" or "cpu"
     ctx: int = 8192
     seed: int = 20261003
     threads: int | None = None
     port: int = 0
     log: Path | None = None
+    extra: list[str] | None = None  # e.g. ["--n-cpu-moe", "24"] for a coder split across RAM
 
     def args(self) -> list[str]:
         a = [
@@ -62,7 +63,7 @@ class LlamaServer:
             a += ["-ngl", "999", "--device", self.device]
         if self.threads:
             a += ["-t", str(self.threads)]
-        return a
+        return a + list(self.extra or [])
 
     def env(self) -> dict[str, str]:
         e = dict(os.environ, LD_LIBRARY_PATH=str(_bin_dir()))
@@ -73,8 +74,8 @@ class LlamaServer:
     def __enter__(self) -> Client:
         if not self.model.is_file():
             raise ServerError(f"{self.model} is missing")
-        if self.device not in ("CUDA0", "CUDA1", "cpu"):
-            raise ServerError(f"device must be CUDA0, CUDA1 or cpu, not {self.device!r}")
+        if self.device != "cpu" and not set(self.device.split(",")) <= {"CUDA0", "CUDA1"}:
+            raise ServerError(f"device must be cpu or CUDA0 and/or CUDA1, not {self.device!r}")
         self.port = self.port or _free_port()
         out = self.log.open("ab") if self.log else subprocess.DEVNULL
         self._proc = subprocess.Popen(self.args(), env=self.env(), stdout=out, stderr=out)

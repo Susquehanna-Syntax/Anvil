@@ -21,6 +21,10 @@ data/**
 !data/**/MANIFEST.*
 !data/**/*.md
 !data/**/.gitkeep
+# Fetched rule corpora and sample repositories: never tracked, Markdown included.
+data/recall/**
+# Feature caches computed from a corpus.
+data/**/.features-*
 
 # --- Model artifacts (anvil_eval.models) -----------------------------------
 # Weights, tokenizers and model cards are the publishers' files and are never
@@ -72,6 +76,7 @@ datasets_cache/
 htmlcov/
 scratch/
 .venv-convert/
+.venv-recall/
 *.log
 
 # NOTE: eval/results/ is deliberately NOT ignored — the Milestone 0 exit
