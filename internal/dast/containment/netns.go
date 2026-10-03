@@ -1,7 +1,3 @@
-// Package containment holds the DAST half's network containment: a dedicated
-// Linux network namespace whose egress is default-deny under nftables, and an
-// assertion probe that re-proves the containment ON EVERY RUN.
-//
 // # The design spike the plan asked for
 //
 // plan/design/dynamic-tier.md's Open Questions (the network containment entry) leaves the assertion
@@ -67,11 +63,13 @@
 // that reads the inode through the same `ip netns exec` it later fails to apply
 // would agree with itself and report contained.
 //
-// # This host cannot prove any of it
+// # The development machine cannot prove any of it
 //
-// The development host for this packet is WINDOWS. Linux network namespaces
-// and nftables do not exist here, so nothing in this file that touches the
-// kernel can be executed, and no test in this package claims otherwise. The
+// This packet was written on Windows, where Linux network namespaces and
+// nftables do not exist. The Debian machine development moved to has network
+// namespaces but no nft binary, and the suite runs as uid 1000 (measured
+// 2026-10-03). Nothing in this file that touches the kernel has been executed,
+// and no test in this package claims otherwise. The
 // package is therefore split so that the honest part is testable everywhere:
 //
 //   - The ruleset is BUILT by a pure function (BuildRuleset) and pinned by
@@ -84,7 +82,7 @@
 //
 // SystemCommander REFUSES on any non-Linux GOOS -- it does not return a
 // no-op that would let AssertContainment return nil. There is no t.Skip in
-// this package. See internal/SKIPPED-CONTROLS.md entry U1 for what remains
+// this package. See docs/controls.md entry U1 for what remains
 // unexecuted and exactly what would settle it.
 //
 // # Why this package holds no socket
@@ -96,6 +94,7 @@
 // declaration for the full reasoning; the short version is that the gate was
 // right, the first draft of this file was wrong, and the seam moved rather
 // than the gate.
+
 package containment
 
 import (
@@ -190,7 +189,7 @@ const ChainName = "egress"
 // WHAT THIS STILL DOES NOT PROVE: the canary runs under `ip netns exec`, so it
 // holds a socket IN the namespace and its own dials traverse `output`, not
 // `forward`. It therefore exercises the chain the TARGET DOES NOT USE. Recorded
-// in internal/SKIPPED-CONTROLS.md as U1a, with what would settle it.
+// in docs/controls.md as U1a, with what would settle it.
 //
 // WHY THERE IS NO `input` CHAIN, stated rather than left as an omission. The
 // property asserted here is what the target can REACH. `input` is inbound: the
@@ -985,7 +984,7 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 // package's own tests. So booted_clean today means "the container is contained
 // by gVisor" and does NOT mean "its egress is default-deny". Wiring that is the
 // integration packet's, not this one's, and it is recorded in
-// internal/SKIPPED-CONTROLS.md as U1c so it cannot be forgotten -- including
+// docs/controls.md as U1c so it cannot be forgotten -- including
 // the containment review's criterion that AssertContainment must run BEFORE any probe engine
 // starts.
 //
@@ -1092,7 +1091,7 @@ const CanarySubcommand = "__anvil-dast-netns-canary"
 // DefaultCanaryDialTimeout bounds one connect attempt. It is the contract a
 // ConnectProbe implementation honours.
 //
-// It is short on purpose, and the asymmetry in the package doc is why that is
+// It is short on purpose, and the asymmetry in the comment at the top of this file is why that is
 // safe rather than sloppy: a REACHABLE metadata endpoint is link-local and
 // answers in well under a millisecond, so a timeout in this range can only
 // convert a slow "blocked" into a "blocked" -- it can never convert a
@@ -1113,7 +1112,7 @@ const CanarySubcommand = "__anvil-dast-netns-canary"
 // The canary remains the UNTRUSTED half and this package cannot authenticate
 // it: a substituted binary can write any number it likes. What the check buys
 // is that the ordinary way this control rots -- an honest probe with too short
-// a dialer -- now fails loudly. The rest is internal/SKIPPED-CONTROLS.md U1b.
+// a dialer -- now fails loudly. The rest is docs/controls.md U1b.
 const DefaultCanaryDialTimeout = 2 * time.Second
 
 // canaryTimingTolerance is how much short of DefaultCanaryDialTimeout a

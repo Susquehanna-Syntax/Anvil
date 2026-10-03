@@ -2151,7 +2151,7 @@ func TestNoCrawlRequestCanCarryASession(t *testing.T) {
 //
 // Obligation 1 was therefore a contract THE CHOSEN IMPLEMENTATION CANNOT KEEP.
 // This is the refusal that replaces it. The gap is recorded in
-// internal/SKIPPED-CONTROLS.md with what would close it.
+// docs/controls.md with what would close it.
 func TestARenderingSpiderIsRefusedRatherThanDriven(t *testing.T) {
 	cases := []struct {
 		name string
@@ -2252,7 +2252,7 @@ func TestTheDisciplineAllowlistIsAnAllowlist(t *testing.T) {
 	// The refusal must NAME the sub-request problem rather than saying "bad
 	// value": an operator who wired a browser needs to know why.
 	err := checkFetchDiscipline(FetchDisciplineRendering)
-	for _, want := range []string{"SUB-REQUESTS", "gate-14", "gate-21", "SKIPPED-CONTROLS"} {
+	for _, want := range []string{"SUB-REQUESTS", "gate-14", "gate-21", "docs/controls.md"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the rendering refusal does not mention %q: %v", want, err)
 		}

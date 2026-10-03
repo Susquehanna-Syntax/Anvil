@@ -58,7 +58,7 @@
 // onto those columns. Every literal it produces comes from contract.go, which
 // is the same source ddl_test.go checks the SQL against.
 //
-// (Free-floating file comment: contract.go carries the package doc.)
+// (Free-floating file comment: doc.go carries the package doc.)
 
 package record
 

@@ -81,7 +81,7 @@ package record
 //
 // Sources: the spine's record section; the fingerprint conformance harness' design;
 // internal/record/FINGERPRINT-SPEC.md (the algorithm, and Appendix Z);
-// internal/record/REVIEW-contract-and-fingerprint.md finding 1 (why the specification had to be
+// docs/reviews/contract-and-fingerprint.md finding 1 (why the specification had to be
 // written down completely before this test could exist at all).
 
 import (

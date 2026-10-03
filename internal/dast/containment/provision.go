@@ -1,6 +1,3 @@
-// Package containment provisions and holds the ephemeral target a DAST scan
-// runs against.
-//
 // This file is target provisioning: given the DECLARED manifest that
 // internal/dast/target already parsed, bring up the operator's Compose project
 // under gVisor `runsc`, wait on the declared healthcheck with a hard timeout,
@@ -38,7 +35,7 @@
 //
 // Docker is not installed on every host that builds Anvil -- it is not
 // installed on the host this packet was written on, which is recorded in
-// internal/SKIPPED-CONTROLS.md as entry U2, along with the three things that
+// docs/controls.md as entry U2, along with the three things that
 // would settle it in order of decreasing cost. The Docker interface below is
 // the ONE boundary between
 // this logic and the container runtime, so the decision logic -- the
@@ -87,6 +84,7 @@
 // asserts the runner was never called. There is no flag, option or environment
 // variable in this package that relaxes any assertion in it; widening one is a
 // visible edit to this file.
+
 package containment
 
 import (
@@ -173,7 +171,7 @@ const (
 	// NOTHING ENFORCES THE SPLIT AT THE PHASE BOUNDARY, because the boundary
 	// is inside `docker compose up` and no implementation of the Docker seam
 	// exists. The two budgets are a contract stated in that interface's doc,
-	// and internal/SKIPPED-CONTROLS.md U2a records that nobody has honoured
+	// and docs/controls.md U2a records that nobody has honoured
 	// it yet, along with the fixture that would settle it.
 	//
 	// It is a compiled-in constant and not a manifest field on purpose:
@@ -578,7 +576,7 @@ func (e *ProvisionError) Provisioning() (record.TargetProvisioning, error) {
 //
 // Nothing in this package shells out, opens a socket, or imports a client. A
 // real implementation of this interface is a separate concern and is NOT
-// provided here -- see internal/SKIPPED-CONTROLS.md entry U2 for what remains
+// provided here -- see docs/controls.md entry U2 for what remains
 // unproven without one and exactly what would settle it.
 //
 // THE CONTRACT AN IMPLEMENTATION OWES, stated here because the compiler cannot
@@ -1062,7 +1060,7 @@ func NewProvisioner(d Docker, repoRoot string) (*Provisioner, error) {
 // SetupNetns and AssertContainment are separate exported functions and nothing
 // in the tree calls either. A caller that fires probes on the strength of
 // booted_clean alone is asserting a network containment nobody established.
-// Recorded in internal/SKIPPED-CONTROLS.md as U1c; wiring it belongs to the
+// Recorded in docs/controls.md as U1c; wiring it belongs to the
 // integration packet.
 //
 // The order below is the contract, and it is ordered so that nothing starts

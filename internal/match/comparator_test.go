@@ -3642,6 +3642,8 @@ func TestNoSourceFileReachesForAClockOrARandomSource(t *testing.T) {
 	expected := map[string]bool{
 		"comparator.go": true, "dpkg_compare.go": true, "rpm_compare.go": true,
 		"apk_compare.go": true, "purl.go": true, "comparator_test.go": true,
+		// The package summary, and nothing else (test/hygiene's package-doc guard).
+		"doc.go": true,
 		// The transcribed corpus. It is a separate file because it is
 		// GENERATED from the three published suites rather than written,
 		// and mixing a generated table into a hand-written test file is
@@ -3683,8 +3685,8 @@ func TestNoSourceFileReachesForAClockOrARandomSource(t *testing.T) {
 			return true
 		})
 	}
-	if seen != 5 {
-		t.Errorf("scanned %d non-test files, expected 5", seen)
+	if seen != 6 {
+		t.Errorf("scanned %d non-test files, expected 6", seen)
 	}
 }
 

@@ -63,7 +63,7 @@ jobs:
       # detector reports it against the FIX on a correct tree. What was not
       # legitimate is that this workflow ran only the -race lane, so
       # TestScopeBytesAreReadOnceUnderAConcurrentWriter -- the behavioural
-      # control whose measured numbers are in internal/SKIPPED-CONTROLS.md
+      # control whose measured numbers are in docs/controls.md
       # under G4-1 (0 of 200 constructed Scopes mismatched on the shipped tree,
       # 89 of 200 with the copy deleted, 102 of 200 with the copy replaced by
       # `rawAlias := raw[:]`) -- was compiled in ZERO CI lanes. Recorded as N3;
@@ -109,7 +109,7 @@ jobs:
       #
       # This step exists so the ledger is READ on the machine where it says the
       # most: ubuntu-latest has dpkg, so host.Collect runs for real here and the
-      # host-inventory link is PROVEN, where on the Windows dev host it is not.
+      # host-inventory link is PROVEN, where on a host with no package manager it is not.
       - name: Lane A chain ledger (printed, not just passed)
         run: go test -count=1 -v -run TestLaneAChain ./test/conformance/lanea/
 
@@ -318,7 +318,7 @@ jobs:
   # there" are indistinguishable to a caller, and for a security scanner that is
   # the worst possible failure -- an empty result reads as a clean repository.
   #
-  # internal/SKIPPED-CONTROLS.md item N1 recorded this as OPEN: the test was
+  # docs/controls.md item N1 recorded this as OPEN: the test was
   # correctly made fatal-when-opted-in rather than skip-when-opted-in, which
   # made it honest, but no machine anywhere set the opt-in, so the control was
   # proven on NOTHING. This job is what closes it. If it is ever removed, that

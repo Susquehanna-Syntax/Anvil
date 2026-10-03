@@ -1,6 +1,3 @@
-// Package license is Lane A's licence gate and the segregated mirror layout it
-// enforces. This is the licence gate (plan node licencegate).
-//
 // # NO FEED IS ADMITTED BY A FRESH CLONE. THAT IS THE DESIGN.
 //
 // Clone this repository, run the gate, and every feed is refused. Nothing is
@@ -149,6 +146,7 @@
 //     are never compared against a canonical fingerprint.
 //   - It does not carry CIS Benchmark content, or text derived from reading one
 //     (the spine's hard exclusion).
+
 package license
 
 import (
@@ -181,7 +179,7 @@ const (
 	// obligation on each other. Each feed's record is a delimited block inside
 	// it — see BodyBeginMarker.
 	//
-	// It is a record, not evidence. See the package doc.
+	// It is a record, not evidence. See the comment at the top of this file.
 	NotesFileName = "LICENSE-NOTES.md"
 
 	// LicenseFileName is the record each TIER 2 source directory carries on

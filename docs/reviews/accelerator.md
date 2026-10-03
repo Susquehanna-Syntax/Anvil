@@ -4,7 +4,7 @@
 
 **This was a SAME-FAMILY critic.** The packet routes this review to an OpenCode
 `openai/gpt-5.5-fast` route; that route is withdrawn (plan/design/routing.md OWNER
-DECISION, 2026-08-07). This review was performed by a Claude subagent — the same
+DECISION, 2026-08-07). This review was performed by an automated review agent from the same
 model family that produced the accelerator. Correlated blind spots are therefore *not*
 excluded, and this verdict must never be recorded as "cross-family critic: PASS".
 Compensation applied: every claim was checked against the file, the suite was

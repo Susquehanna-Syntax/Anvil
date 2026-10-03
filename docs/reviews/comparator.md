@@ -423,7 +423,7 @@ the package's own guards:
   returns nothing (`TestNoSourceFileReachesForAClockOrARandomSource`, re-run and independently
   reproduced).
 - `grep -rn "t.Skip" internal/match/` — **none**. No new entry is owed to
-  `internal/SKIPPED-CONTROLS.md`.
+  `docs/controls.md`.
 - Both of the package's own guards (G1 import allowlist, G5 dependency graph) carry working RED
   controls, and G5's negative control genuinely observes `modernc.org/…` under
   `internal/ingest/cache`. These are real guards, not decorative ones.

@@ -1,6 +1,3 @@
-// Package bootstrap fills a feed's ingestion cache ONCE, from a bulk artifact,
-// so that the conditional-GET poller only ever has to carry deltas.
-//
 // This is the bulk bootstrap (plan node bootstrap). Lane A is the
 // zero-inference half of Anvil (the spine's corrected-requirements table): CVE/OSV/GHSA describe
 // vulnerable PACKAGE VERSIONS and a version comparator answers that exactly and
@@ -124,6 +121,7 @@
 //   - It does not name a feed. There is no feed id, URL, cadence or format
 //     mapping compiled into this file. Which feeds exist comes from the feed
 //     table; what an artifact CONTAINS is decided by looking at the bytes.
+
 package bootstrap
 
 import (

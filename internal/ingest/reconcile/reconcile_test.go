@@ -52,9 +52,8 @@
 // httptest. NO TEST USES A REAL CREDENTIAL.
 //
 // A green run does NOT prove the self-heal is affordable against a 300,000
-// record cvelistV5 baseline; the fixtures here are tens of records. Nor does
-// it prove anything about `go test -race`, which cannot run on the Windows dev
-// host this was written on.
+// record cvelistV5 baseline; the fixtures here are tens of records. `go test -race` covers
+// this file on the Debian development machine (measured 2026-10-03) and in CI.
 package reconcile
 
 import (
@@ -1779,7 +1778,6 @@ func TestIntegrationNotesForTheManualRun(t *testing.T) {
 		"  - affordability. The fixtures are tens of records; a real cvelistV5 baseline is ~300,000",
 		"    records and ~570 MB, and neither the wall time of the merge join nor the disk cost of the",
 		"    scratch database has been measured against one.",
-		"  - go test -race. It cannot run on the Windows dev host (cgo.exe exit 2); CI runs it on Linux.",
 		"  - that the bulk bootstrap's decoder and delta ingestion's decoder agree about every REAL publisher document. They agree",
 		"    about the synthetic CVE 5.1 documents in this file, which is what makes the 'matched' count",
 		"    meaningful here; a disagreement on a real corpus would surface as a wall of 'divergent' rows",

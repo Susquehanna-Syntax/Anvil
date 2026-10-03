@@ -801,8 +801,8 @@ func (q *Queue) packetGate(ctx context.Context, h Handle) error {
 // data=writeback. This code does not depend on that heuristic.
 //
 // Windows has no fsync-able directory handle, so the parent fsync is skipped
-// there and only there. Anvil's packet lives on tmpfs on Linux; Windows is a
-// development host.
+// there and only there. Anvil's packet lives on tmpfs on Linux; Windows is
+// only ever a build and test platform.
 func (q *Queue) WritePacket(h Handle, data []byte) (string, error) {
 	return q.WritePacketContext(context.Background(), h, data)
 }

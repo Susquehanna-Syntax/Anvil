@@ -1,5 +1,3 @@
-// Package poller is Lane A's authenticated conditional-GET poller.
-//
 // ===========================================================================
 // WHAT THIS PACKAGE IS FOR
 // ===========================================================================
@@ -104,6 +102,7 @@
 // in that declaration and nowhere else. They are a fact about a PROVIDER's rate
 // limiter that several feeds happen to share, not a fact about any feed — see
 // the declaration.
+
 package poller
 
 import (
@@ -738,7 +737,7 @@ func (p *Poller) Poll(ctx context.Context, feed config.FeedConfig) (PollResult, 
 		return res, err
 	}
 
-	// The licence gate BEFORE THE NETWORK. See the package comment: a feed whose licence
+	// The licence gate BEFORE THE NETWORK. See the comment at the top of this file: a feed whose licence
 	// evidence is absent is not fetched, because the bytes could not be kept
 	// and the request would still have cost budget.
 	decision, err := p.resolveLicense(feed)

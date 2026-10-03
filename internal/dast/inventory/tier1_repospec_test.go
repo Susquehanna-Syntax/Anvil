@@ -6,7 +6,7 @@
 //
 // EVERYTHING IN THIS PACKET IS PROVEN END TO END. Tier 1 issues no request, so
 // none of it depends on the kernel admitting anything, none of it needs a
-// SpecFetcher, and nothing in it belongs in internal/SKIPPED-CONTROLS.md.
+// SpecFetcher, and nothing in it belongs in docs/controls.md.
 // There is no t.Skip in this file.
 //
 //	all five input formats the packet names parse to Route lists — OpenAPI
@@ -1955,7 +1955,7 @@ func TestTheTier1StructuralScannersCanSeeAViolation(t *testing.T) {
 }
 
 // TestTier1ContainsNoSkip. The packet's standing rule is that an unprovable
-// control is written down in internal/SKIPPED-CONTROLS.md, never turned into a
+// control is written down in docs/controls.md, never turned into a
 // t.Skip. Tier 1 issues no request and has nothing unprovable in it, so the
 // rule reduces to a scan.
 func TestTier1ContainsNoSkip(t *testing.T) {
@@ -1973,7 +1973,7 @@ func TestTier1ContainsNoSkip(t *testing.T) {
 			switch sel.Sel.Name {
 			case "Skip", "Skipf", "SkipNow":
 				t.Errorf("%s calls t.%s at %s. An unprovable control is written down in "+
-					"internal/SKIPPED-CONTROLS.md naming what would settle it, never "+
+					"docs/controls.md naming what would settle it, never "+
 					"skipped", file, sel.Sel.Name, fset.Position(sel.Pos()))
 			}
 			return true

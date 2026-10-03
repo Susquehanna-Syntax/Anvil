@@ -35,7 +35,7 @@
 // So it runs in the ordinary `go test ./...` lane, where it is a real control
 // with real numbers, and TestGate4ReadsTheCallersScopeBytesExactlyOnce — a
 // source-level assertion, no goroutines — is what runs in every lane. The
-// exclusion is recorded in internal/SKIPPED-CONTROLS.md as G4-1 rather than
+// exclusion is recorded in docs/controls.md as G4-1 rather than
 // hidden behind a t.Skip.
 //
 // ===========================================================================

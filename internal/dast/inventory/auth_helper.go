@@ -131,7 +131,7 @@
 //	inertImports; adding it is a one-line edit in
 //	internal/dast/authz/egress_chokepoint_test.go, is reported to the
 //	orchestrator rather than made here, and is recorded as U10 in
-//	internal/SKIPPED-CONTROLS.md.
+//	docs/controls.md.
 //
 //	a compressed artifact. compress/gzip IS allowlisted, so this one is
 //	reachable; it is not done because an artifact sink that stores compressed
@@ -214,6 +214,7 @@
 // are stated on that interface and enforced nowhere here — the same shape
 // ClientSpider and engines.ZapRunner have, and the same integration lane owes
 // the proof.
+
 package inventory
 
 import (
@@ -929,7 +930,7 @@ type AuthDriver interface {
 // Helper either.
 //
 // MEASURED 2026-08-22, PowerShell, on the development host (recorded in
-// internal/dast/engines/zap.go's header and in SKIPPED-CONTROLS U5): no zap.sh,
+// internal/dast/engines/zap.go's header and in docs/controls.md U5): no zap.sh,
 // no zap, no zap.bat, no docker. A JVM is present; ZAP is not.
 //
 // It never returns (nil, nil).
@@ -2970,7 +2971,7 @@ func (s *Session) stepKind(oneBased int) AuthStepKind {
 //	is NOT on gate 3's inertImports; adding it is a one-line edit in
 //	internal/dast/authz/egress_chokepoint_test.go, is reported to the
 //	orchestrator rather than made here, and is U10 in
-//	internal/SKIPPED-CONTROLS.md. It is the spelling the backstop's own
+//	docs/controls.md. It is the spelling the backstop's own
 //	positive-control test uses.
 //
 //	a compressed artifact, and A CREDENTIAL RENDERED AS PIXELS. Both are in

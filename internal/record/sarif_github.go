@@ -136,7 +136,7 @@ package record
 // visible rather than absorbed. fingerprint.go says the key "is owned by the
 // GitHub projection (the GitHub projection)"; plan/design/record-and-store.md's Record Field
 // Contract names the producer as the fingerprint engine; and
-// internal/record/REVIEW-contract-and-fingerprint.md's MAJOR 3 records that the disagreement is
+// docs/reviews/contract-and-fingerprint.md's MAJOR 3 records that the disagreement is
 // unruled and that no code in the tree produces the value today. The GitHub projection's
 // packet scopes this file to the projection and says nothing about producing
 // a fingerprint.

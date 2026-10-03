@@ -169,7 +169,7 @@ func TestThePatternsRefuseTheOldShapesAndNothingElse(t *testing.T) {
 		"gates 4, 5, 8, 9 and 10",
 		"Phase 4: close the confirmation gate",
 		"the read-only-boundary review's finding M1(a)",
-		"U7 is recorded in internal/SKIPPED-CONTROLS.md",
+		"U7 is recorded in docs/controls.md",
 		"SARIF 2.1.0 §3.27.4",
 		"research/10-prior-art-and-landscape.md",
 		"the confirmation gate's rules R1, R2 and R3",

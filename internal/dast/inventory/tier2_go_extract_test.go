@@ -1489,7 +1489,7 @@ const (
 // repoRootForLicenceGuard walks up to the module root, and FAILS rather than
 // skipping when it cannot find it.
 //
-// internal/SKIPPED-CONTROLS.md records this repository shipping two guards that
+// docs/controls.md records this repository shipping two guards that
 // vanished silently when they could not run. A compliance check that cannot
 // locate the tree it guards has not passed; it has not run.
 func repoRootForLicenceGuard(t *testing.T) string {

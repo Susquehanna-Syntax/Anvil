@@ -87,6 +87,7 @@
 // path", the annotated Tier-1 task card); research/24-coding-agent-consumption
 // .md ("What the audit record must carry"); plan/design/record-and-store.md
 // (the read path); the spine's corrected-requirements, record and safety sections.
+
 package record
 
 import (
@@ -1210,8 +1211,7 @@ func formatTime(t time.Time) string {
 // cardPath is the Tier-1 path for a finding id.
 //
 // Finding ids are `sast:8c1e4b0f…` in research/18's own example, and a colon
-// is not a legal path character on Windows — where this project is being
-// developed. The sanitisation is a total, deterministic function so the same
+// is not a legal path character on Windows, where the test suite also runs. The sanitisation is a total, deterministic function so the same
 // finding always lands at the same path on every platform.
 func (rd *Reader) cardPath(findingID string) string {
 	return rd.cardPrefix() + SanitizeCardFilename(findingID) + ".json"

@@ -1,5 +1,3 @@
-// Package config loads Anvil's advisory-feed table from DATA.
-//
 // This is the feed table (plan node feeds). Lane A is the
 // zero-inference half of Anvil (the spine's corrected-requirements table): a tiered conditional-GET
 // poller filling one SQLite+FTS5 cache, plus two collectors feeding a version
@@ -59,6 +57,7 @@
 // and no SPDX identifier, and that "attribution is requested" is a request,
 // not a grant. Such a feed is legal here only at LicenseTier3 — optional,
 // opt-in, risk-accepted — and Anvil must never describe it as open licensed.
+
 package config
 
 import (

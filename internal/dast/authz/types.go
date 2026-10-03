@@ -1,6 +1,3 @@
-// Package authz is Anvil's authorization kernel: the only thing in the system
-// that may turn a proposed network request into a permitted one.
-//
 // The decision flow — Decide, Adjudicate, Authorization, RequireAuthorization —
 // is documented at the top of kernel.go. This file holds the VOCABULARY: the
 // types every one of the 21 gates in plan/design/dynamic-tier.md's Authorization Gate
@@ -28,6 +25,7 @@
 // No net.Dial, no http.Client, no socket construction of any kind — the kernel core's
 // forbidden actions, and gate 3's whole point. This file imports stdlib only,
 // and gate 2 (phase0_build.go) is the machine check that keeps it that way.
+
 package authz
 
 import (
@@ -78,7 +76,7 @@ var (
 	ErrCapRaise = fmt.Errorf("%w: configuration may only LOWER a coded cap, never raise it", ErrRefused)
 
 	// ErrNotMeasured is the Phase 0 refusal: a build-time gate was handed
-	// facts that were never actually measured. internal/SKIPPED-CONTROLS.md
+	// facts that were never actually measured. docs/controls.md
 	// records two separate incidents in this repository where a guard that
 	// could not run reported success; a gate that cannot measure must fail,
 	// not pass.
@@ -1188,7 +1186,7 @@ func (s Scope) removePaths(host string, port uint16, policy RobotsPolicy, rec Sc
 //   - PermitsPath implies Permits. Everything Permits refuses, this refuses.
 //   - A SCOPE THAT WAS NEVER NARROWED PERMITS NO PATH. "Nobody determined this
 //     origin's robots.txt" and "robots.txt permitted this path" produce the
-//     same silence and opposite conclusions, and internal/SKIPPED-CONTROLS.md
+//     same silence and opposite conclusions, and docs/controls.md
 //     records two incidents in this repository where the first was read as the
 //     second. So a path needs a determination that COVERS ITS ORIGIN before it
 //     can be permitted here, and the zero Scope permits nothing at all.

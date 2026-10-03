@@ -1119,7 +1119,7 @@ func TestAFullWarmStartLeavesEveryTierDirectoryUntouched(t *testing.T) {
 // a directory that passes every string check and resolves elsewhere.
 //
 // THIS TEST USED TO SKIP ON WINDOWS, AND THAT SKIP IS THE FIRST OF THE TWO
-// INCIDENTS internal/SKIPPED-CONTROLS.md exists for. os.Symlink needs
+// INCIDENTS docs/controls.md exists for. os.Symlink needs
 // SeCreateSymbolicLinkPrivilege (Developer Mode or an elevated shell), so on an
 // ordinary Windows host the whole guard reported SUCCESS while checking
 // nothing, and the package still printed ok. A Windows DIRECTORY JUNCTION then

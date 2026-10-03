@@ -256,6 +256,7 @@
 // string into a tree and a tree into a program. Every package here that imports
 // `regexp` already links it transitively; gate 3 attributes by import line
 // rather than transitively, which is why the line was needed at all.
+
 package record
 
 import (

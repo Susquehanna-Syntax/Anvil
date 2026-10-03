@@ -1,6 +1,3 @@
-// Package handoff implements the claim/lease protocol for the single
-// `handoff` table defined by internal/store/schema.sql.
-//
 // WHAT THIS PACKAGE IS, AND WHY THERE IS ONLY ONE OF IT.
 // The handoff-table ruling: "The record area owns the table and the
 // claim/lease protocol." The handoff adapter no longer writes a migration and no longer
@@ -73,6 +70,7 @@
 // The tmpfs packet is still written by research/08 §C's durable recipe
 // (exclusive temp file in the same directory, fsync, rename, fsync parent) and
 // never relies on ext4's auto_da_alloc; see WritePacket.
+
 package handoff
 
 import (

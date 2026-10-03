@@ -412,7 +412,7 @@ func TestChainRefusesEveryMissingGateIndividually(t *testing.T) {
 			if r.Permits() {
 				t.Fatalf("the chain permitted with %s missing. A gate with no "+
 					"implementation compiled in is a REFUSAL, never a skipped step: "+
-					"internal/SKIPPED-CONTROLS.md records two incidents in this "+
+					"docs/controls.md records two incidents in this "+
 					"repository where a control that could not run reported success",
 					missing)
 			}

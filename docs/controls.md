@@ -41,14 +41,22 @@ be listed here.
 ## Method
 
 The **"skips here"** column is **measured, not reasoned**: `go test -count=1 -v
-./...` was run on the Windows dev host and the `--- SKIP` lines were read out of
-the output. The **"skips in CI"** column *is* reasoned, from the condition plus
+./...` was run on the development machine and the `--- SKIP` lines were read out
+of the output. Development moved from a Windows 11 machine to a Debian machine in
+September 2026; the column was re-measured on Debian on 2026-10-03, and where a
+row differs between the two the entry says which. The **"skips in CI"** column *is* reasoned, from the condition plus
 `.github/workflows/ci.yml` (`runs-on: ubuntu-latest`, `go test -race -count=1
 ./...`, no Trivy install, no `ANVIL_TRIVY_E2E`, no acquired licence bodies —
 CI is always a fresh clone). Where the reasoning does not settle it, the column
 says so rather than guessing.
 
-- Host measured: `go1.26.5 windows/amd64`, Windows 11, non-elevated,
+- Host measured on 2026-10-03: `go1.26.5 linux/amd64`, Debian 13, kernel
+  6.12.107, uid 1000 (not root). `dpkg-query` is present and lists 3,467
+  packages; `rpm`, `apk`, `nft`, `docker`, `podman`, `runsc`, `nuclei`, `zap.sh`,
+  `java`, `trivy` and `opengrep` are absent. `gcc` is present, so `-race` runs
+  locally. An unprivileged user and network namespace can be created
+  (`unshare -rn true` succeeds).
+- Host first measured: `go1.26.5 windows/amd64`, Windows 11, non-elevated,
   Developer Mode **off**.
 - Suite state after the changes below: `gofmt` clean, `go vet` clean,
   `go build ./...` clean, `go test -count=1 ./...` **green** (17 packages).
@@ -667,12 +675,13 @@ and all of it is tested:
   passes, so the first half is not passing because the function refuses
   everything. **The stop condition's FIRST clause — "Default-deny ruleset
   installs correctly on a real target fixture" — is NOT met and cannot be met
-  on this host**: nothing here installs a ruleset anywhere, and item (1) below
+  on the development machine** (Debian, measured 2026-10-03: no `nft` binary, uid
+  1000): nothing here installs a ruleset anywhere, and item (1) below
   is what would settle it. This entry previously claimed the whole stop
   condition was met, which is how a gap ships.
 - `SystemCommander` **refuses** on any non-Linux GOOS and
-  `TestSystemCommanderRefusesOffLinux` asserts that refusal on this host. There
-  is no no-op Commander, so there is no path by which Windows returns "contained".
+  `TestSystemCommanderRefusesOffLinux` asserts that refusal wherever GOOS is not
+  linux. There is no no-op Commander, so there is no path by which Windows returns "contained".
   **That guard now runs in a CI lane**: `containment-non-linux` in
   `.github/workflows/ci.yml` runs the package on `windows-latest`, asserts the
   named test actually executed and passed, then DELETES the
@@ -684,9 +693,12 @@ and all of it is tested:
 ### What it does not prove, and exactly what would settle it
 
 Everything above is a statement about Anvil's decision logic. None of it is a
-statement about a kernel. Windows has no network namespaces and no nftables;
-WSL2 is present on the dev host and is **not** the target runtime, so it does
-not settle this either.
+statement about a kernel. The Debian development machine (measured 2026-10-03)
+has network namespaces and lets an unprivileged process create a user and
+network namespace, but `nft` is not installed and the suite runs as uid 1000, so
+nothing installs a ruleset and nothing here settles this either. Installing
+nftables is the owner's decision; with it, item (1) below may be runnable inside
+an unprivileged user namespace on this machine, which has not been tried.
 
 What would settle it, in order of decreasing cost:
 
@@ -822,7 +834,8 @@ against.
 
 **Docker is not installed on the host this packet was written on.** Measured,
 not assumed: `Get-Command docker` and `Get-Command runsc` both return nothing
-on `go1.26.5 windows/amd64`, Windows 11.
+on `go1.26.5 windows/amd64`, Windows 11. Re-measured 2026-10-03 on the Debian
+development machine: `docker`, `podman` and `runsc` are still absent.
 
 **Nothing in the tree implements the `Docker` interface.** A repository-wide
 grep for `ComposeUp` and `EngineInfo(` finds the interface, its call sites in
@@ -1046,7 +1059,8 @@ container engine**, and this entry is the standing record of that.
 
 ### (a) nuclei is not installed, and no adapter exists
 
-**Measured** on the development host: `Get-Command nuclei` finds nothing, and
+**Measured** on the Windows development machine, and again on 2026-10-03 on the
+Debian one (`command -v nuclei` finds nothing): no engine binary, and
 `go list -m all` contains no `projectdiscovery` module. `SystemEngine()`
 therefore returns `*EngineUnavailableError` on **every** host — it never
 returns a no-op engine — and `ScanResult.AssertNotSilentlyEmpty` refuses to let
@@ -1256,7 +1270,8 @@ the same commit.
 
 **What would settle it, and what stops it here.** The plan's own suggestion is
 one `docker stats` run during a representative scheduled scan.
-**MEASURED 2026-08-22, PowerShell, on the development host:**
+**MEASURED 2026-08-22, PowerShell, on the Windows development machine** (re-measured
+2026-10-03 on the Debian one: `docker`, `zap.sh` and `java` are all absent there):
 
 ```
 Get-Command docker  -> NOT FOUND
@@ -1999,7 +2014,7 @@ consequence.
 |---|---|
 | **File** | `internal/collector/host/collect_test.go:3967` |
 | **Trigger** | `runtime.GOOS != "linux"` |
-| **Skipped here?** | **YES — measured.** `no native package manager on windows` |
+| **Skipped here?** | **No — measured 2026-10-03 on Debian**: `dpkg-query` is present and the test enumerates the host. It skipped on the Windows machine (`no native package manager on windows`) |
 | **Skips in CI?** | No. `ubuntu-latest` is Linux |
 | **Property unverified** | Real `dpkg-query`/`rpm`/`apk` enumeration against a live host |
 | **Security control?** | No — a collector coverage claim |
@@ -2011,7 +2026,7 @@ consequence.
 |---|---|
 | **File** | `internal/collector/host/collect_test.go:3976` |
 | **Trigger** | Linux, but none of `dpkg-query`/`rpm`/`apk` resolves |
-| **Skipped here?** | No — unreachable on Windows (L1 returns first) |
+| **Skipped here?** | No — measured 2026-10-03: `dpkg-query` resolves on the Debian machine |
 | **Skips in CI?** | No. `ubuntu-latest` ships `dpkg-query` |
 | **Property unverified** | As L1 |
 | **Security control?** | No |
@@ -2023,7 +2038,7 @@ consequence.
 |---|---|
 | **File** | `internal/collector/host/collect_test.go:3462` |
 | **Trigger** | `runtime.GOOS != "windows" && os.Geteuid() == 0` |
-| **Skipped here?** | No — measured. `os.Geteuid()` is `-1` on Windows, so the condition is short-circuited |
+| **Skipped here?** | No — measured 2026-10-03: the suite runs as uid 1000, so the condition is false (on Windows `os.Geteuid()` is `-1` and the GOOS check short-circuits it) |
 | **Skips in CI?** | No. GitHub's `ubuntu-latest` runs as the non-root `runner` user. **Would** skip in a root container |
 | **Property unverified** | Successful enumeration under a non-root UID |
 | **Security control?** | Partly — the root-free-by-design claim |
@@ -2154,11 +2169,11 @@ missing artefact and the command that produces it.
 | Hazards closed by a test-only change | 9 (7 sites removed, 2 narrowed) |
 | Hazards needing a non-test change | 4 (N1 closed by CI, N2 closed elsewhere, N3 closed, N4 closed) |
 | Legitimate skips, left in place | 11 |
-| Skips that fire on the Windows dev host | 4 tests / 15 subtest lines |
+| Skips that fire on the development machine (Debian, 2026-10-03) | 4 tests / 14 SKIP lines (L4, L5, L7 ×11, L11) |
 | `t.SkipNow` sites | 0 |
 
-Skips still firing on this host, all classified LEGITIMATE above:
-`TestCollectAgainstTheRealHost` (L1), `TestRealTrivyScansAFixtureRepo` (L4),
+Skips still firing on the development machine (Debian, measured 2026-10-03), all
+classified LEGITIMATE above: `TestRealTrivyScansAFixtureRepo` (L4),
 `TestBothConsumersAgree` (L5), `TestPinnedLicenceBodiesMatchTheirPins` ×11
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
 
@@ -2213,8 +2228,9 @@ What remains open in U4 and U5 is the **tooling**: no Nuclei engine and no ZAP
 on any host or CI lane here, and ZAP's JVM footprint still unmeasured.
 
 U1 (`internal/dast/containment`, network containment) is the
-highest-stakes of them: the package is green on Windows and has never run
-against a Linux kernel. See its entry for the privileged Linux CI lane that
+highest-stakes of them: the package is green on Windows and on the Debian
+development machine and has never installed a ruleset into a kernel (no `nft`
+binary there, measured 2026-10-03). See its entry for the privileged Linux CI lane that
 would close it, and U1a/U1b for the two things that lane would still not
 settle on its own.
 

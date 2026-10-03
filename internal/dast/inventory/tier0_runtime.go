@@ -1,7 +1,3 @@
-// Package inventory builds Anvil's attack-surface inventory: the list of
-// endpoints the DAST tier believes a target exposes, and — for every one of
-// them — WHERE THAT BELIEF CAME FROM and WHETHER ANVIL CONFIRMED IT.
-//
 // This file is the runtime spec probe: Tier 0, the runtime spec route.
 //
 // ===========================================================================
@@ -103,7 +99,7 @@
 // authz.Adjudicate is the only mint for an authz.Authorization, the admission
 // chain contains Gate11RobotsDeny, and nothing is registered for it — so the
 // chain refuses every target there and NO Authorization can be constructed
-// from outside package authz. internal/SKIPPED-CONTROLS.md U4 records this.
+// from outside package authz. docs/controls.md U4 records this.
 // The consequence for the runtime spec probe is exact: Probe's admit-and-fetch path cannot reach
 // a fetcher today, and every test of it asserts a refusal.
 //
@@ -152,6 +148,7 @@
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 319-323; internal/record/contract.go (InventoryProvenance, Trust,
 // DastCoverage).
+
 package inventory
 
 import (
@@ -229,7 +226,7 @@ const (
 //
 // # Why this is declared here and not in internal/record
 //
-// internal/record owns every shared enum (its package doc: "The record area owns every
+// internal/record owns every shared enum (contract.go's header comment: "The record area owns every
 // shared enum, because it owns the record contract, and no other area may
 // declare one"). record.InventoryProvenance is there for exactly that reason.
 // The confirmed/candidate axis is NOT — record carries it as two aggregate
@@ -1096,7 +1093,7 @@ func (p ParseResult) AssertAccountedFor() error {
 //
 // It is a PURE function of (target, servedAt, contentType, body) and it opens
 // nothing. That is what makes Tier 0's extraction fully testable while gate 11
-// keeps the fetch half unreachable (internal/SKIPPED-CONTROLS.md U4): a
+// keeps the fetch half unreachable (docs/controls.md U4): a
 // kernel Target is authz.NewTarget's output and needs no authorization,
 // because it is gate 8/9's product and not a permission.
 //

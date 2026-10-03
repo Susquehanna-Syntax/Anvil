@@ -1,7 +1,3 @@
-// Package cache owns the Lane A ingestion cache: a SECOND SQLite file,
-// `anvil-cache.sqlite`, holding advisory feed content (plan node cache; design in
-// plan/design/lane-a.md).
-//
 // # This is not the store of record
 //
 // internal/store is Anvil's audit store of record and it is a frozen
@@ -56,6 +52,7 @@
 //     directories by reading checked-in LICENSE file bodies. This schema only
 //     RECORDS the outcome, and refuses a row that records nothing at all.
 //   - It does not fetch. The poller polls and the bulk bootstrap bootstraps.
+
 package cache
 
 import (

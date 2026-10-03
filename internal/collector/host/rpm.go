@@ -20,7 +20,7 @@ import "strings"
 // database creates and updates /var/lib/rpm/__db.001..__db.003 when the caller
 // can write that directory, which in practice means when it runs as root. rpm
 // offers no flag that suppresses this, and this package will not branch on the
-// effective uid to avoid it. collect.go's package comment carries the full
+// effective uid to avoid it. the comment at the top of collect.go carries the full
 // statement, its limits, and the deployment-layer mitigation that is the only
 // place the behaviour can actually be prevented.
 //

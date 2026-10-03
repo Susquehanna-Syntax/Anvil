@@ -4142,7 +4142,7 @@ var permittedGraphEdges = map[graphEdge]string{
 	{"path/filepath", "syscall"}:                     "filepath consults the platform's path rules; resolveBinary joins the constant search directories with it",
 	{"internal/syscall/unix", "syscall"}:             "the standard library's per-family syscall shims on linux and darwin",
 	{"internal/syscall/execenv", "syscall"}:          "the standard library's environment plumbing for a child process, pulled in by os on every platform",
-	{"internal/syscall/windows", "syscall"}:          "the standard library's Win32 shims; present only on the Windows development host, never on a target",
+	{"internal/syscall/windows", "syscall"}:          "the standard library's Win32 shims; present only in a Windows build, never on a target",
 	{"internal/syscall/windows/registry", "syscall"}: "time's Windows time-zone lookup reads the registry; Windows-only",
 	{"internal/filepathlite", "syscall"}:             "filepath's allocation-free core on Windows; Windows-only",
 	{"crypto/internal/sysrand", "syscall"}:           "the kernel entropy source, reached by map iteration seeding; linux-only in this graph",
@@ -4348,8 +4348,8 @@ func TestTheImportGraphGuardCatchesASpawningDependency(t *testing.T) {
 
 // TestCollectAgainstTheRealHost runs the actual exec path when there is a
 // package manager to run it against. It is SKIPPED on any host without one —
-// including the Windows development host — so the evidence it produces belongs
-// to CI on Linux and to the fixture-container run, not to a developer laptop.
+// including any non-Linux host. On the Debian development machine it runs
+// against dpkg (measured 2026-10-03: 3,467 packages) and in CI on ubuntu-latest.
 func TestCollectAgainstTheRealHost(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skipf("no native package manager on %s", runtime.GOOS)

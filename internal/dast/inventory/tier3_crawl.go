@@ -111,6 +111,7 @@
 // exclusion list bounds nothing but waste. So the list failing open costs
 // coverage, never containment, and every miss is a recorded visit an operator
 // can read back.
+
 package inventory
 
 import (
@@ -741,7 +742,7 @@ type CrawlPage struct {
 // implementation declares which of these it is, and validateCrawlConfig
 // refuses anything that is not FetchDisciplineSingleRequest. A refusal Anvil
 // makes before the first request beats an obligation no implementation can
-// keep, and the gap is recorded in internal/SKIPPED-CONTROLS.md rather than
+// keep, and the gap is recorded in docs/controls.md rather than
 // left as a control that exists only in prose.
 type FetchDiscipline string
 
@@ -801,7 +802,7 @@ func (d FetchDiscipline) PermitsCrawl() bool { return admittedDisciplines()[d] }
 // pass Discipline() and Anvil refuses to drive it. That is not a decision
 // against ZAP; it is the honest consequence of obligation 1 below. What would
 // settle it is a seam that hands each sub-request back for admission, and it
-// is written up in internal/SKIPPED-CONTROLS.md rather than implied by a
+// is written up in docs/controls.md rather than implied by a
 // promise nobody can keep.
 //
 // # The obligations an implementation takes on
@@ -845,7 +846,7 @@ type ClientSpider interface {
 // silent-clean failure this whole tier is written against.
 //
 // MEASURED 2026-08-22, PowerShell, on the development host (recorded in
-// internal/dast/engines/zap.go's header and in SKIPPED-CONTROLS U5): no zap.sh,
+// internal/dast/engines/zap.go's header and in docs/controls.md U5): no zap.sh,
 // no zap, no zap.bat, no docker. A JVM is present; ZAP is not.
 //
 // It never returns (nil, nil).
@@ -1362,7 +1363,7 @@ func checkFetchDiscipline(d FetchDiscipline) error {
 			"kernel and not a style question. CrawlPage has no field in which the seam "+
 			"could report them, so Anvil cannot admit them after the fact either. This "+
 			"is refused rather than driven, and the gap is recorded in "+
-			"internal/SKIPPED-CONTROLS.md with what would close it",
+			"docs/controls.md with what would close it",
 			ErrRefused, string(d))
 	}
 	return fmt.Errorf("inventory: %w: the wired ClientSpider declares fetch discipline %q, "+
@@ -1493,7 +1494,7 @@ func (s *crawlState) crawlOne(ctx context.Context, item frontierItem, now authz.
 	// would mean resolving an attacker-chosen name — which is the DNS lookup
 	// gate 9 exists to bound, performed on behalf of the party the crawl is
 	// pointed at. Refusing the link without resolving it is the cheaper and
-	// safer order. internal/SKIPPED-CONTROLS.md records what would change it.
+	// safer order. docs/controls.md records what would change it.
 	intent, err := authz.NewRequestIntent(authz.RequestFacts{
 		Origin:   item.origin,
 		Admitted: s.cfg.Target,

@@ -1,7 +1,3 @@
-// Package decode turns a publisher's advisory document into the row shape
-// internal/ingest/cache stores. It is the ONE implementation of every wire
-// format Lane A reads.
-//
 // ===========================================================================
 // WHY THIS PACKAGE EXISTS — THE ONE-DECODER RULING
 // ===========================================================================
@@ -67,6 +63,7 @@
 // The callers re-prove it at the write site with sanitize.AssertAllSanitized
 // on the exact values about to be bound. This package's guarantee is not
 // trusted there; it is checked.
+
 package decode
 
 import (

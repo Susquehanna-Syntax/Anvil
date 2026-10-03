@@ -55,7 +55,7 @@
 // half it PROVED and which it could not, and which becomes a real two-sided
 // measurement the moment cmd/anvil-dast links the kernel. It is not fixed by
 // fabricating a consumer: a consumer invented to make a gate green is the
-// exact shape internal/SKIPPED-CONTROLS.md records this repository shipping
+// exact shape docs/controls.md records this repository shipping
 // twice.
 package authz
 
@@ -73,7 +73,7 @@ import (
 // records it as an ImportGraph.
 //
 // It fails rather than skips when the toolchain is unavailable.
-// internal/SKIPPED-CONTROLS.md names the failure this avoids: a dependency
+// docs/controls.md names the failure this avoids: a dependency
 // shape guard in this repository skipped whenever `go list` could not run,
 // "i.e. in exactly the hermetic environments it mattered in".
 //

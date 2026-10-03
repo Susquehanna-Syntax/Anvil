@@ -66,7 +66,7 @@
 //     a destroy-and-recreate discards the seed's effects and nothing in this
 //     tree can replay them. Returning an unseeded target and calling it "the
 //     declared initial state" is the silent lie this packet is about. Named,
-//     with what would settle it, in internal/SKIPPED-CONTROLS.md U3.
+//     with what would settle it, in docs/controls.md U3.
 //
 // # A failed reset stops the run for that target, structurally
 //
@@ -82,6 +82,7 @@
 // record.HalfStatusFailed. Its DastStatus() derives through
 // record.DeriveDastStatus, so this file writes no record enum literal and the
 // derived status can never be DastStatusCompletedClean.
+
 package containment
 
 import (
@@ -548,7 +549,7 @@ func NewResetter(p *Provisioner, m *target.Manifest) (*Resetter, error) {
 			"destroy-and-recreate discards its effects and nothing in this tree can "+
 			"replay it, so the target this would hand back is NOT the declared initial "+
 			"state -- it is an unseeded one. Refusing loudly beats returning it and "+
-			"calling the next probe independent. internal/SKIPPED-CONTROLS.md U3 names "+
+			"calling the next probe independent. docs/controls.md U3 names "+
 			"what would settle this",
 			ErrRefused, ErrResetSeedNotReplayable, m.Seed.Command)
 	}

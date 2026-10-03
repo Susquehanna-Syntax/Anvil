@@ -226,6 +226,7 @@
 // line 732 `6.0_p1 > 6.0`), and the three R8 shapes, which appear in no row of
 // it at all. Those vectors are tagged AUTHORED and name the rule they come
 // from; they may not name a file, because there is no line to name.
+
 package match
 
 import (

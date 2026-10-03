@@ -63,7 +63,7 @@
 //   - If ZAP is ever run WITHOUT the proxy, none of the above applies and
 //     nothing in this file can make it apply. That is why the proxy is
 //     required at construction rather than defaulted, and why
-//     internal/SKIPPED-CONTROLS.md U5 records that no run on this host has
+//     docs/controls.md U5 records that no run on this host has
 //     ever demonstrated the proxied path end to end.
 //
 // # WHAT IS NOT ENFORCED — read this before relying on the hop bound
@@ -170,7 +170,8 @@
 // this host to run and no Docker to run `docker stats` against, so any figure
 // here would be fabricated — and a fabricated figure is worse than the
 // acknowledged gap, because tier-M sizing would then be documented against it.
-// internal/SKIPPED-CONTROLS.md U5 records what measuring it takes.
+// docs/controls.md U5 records what measuring it takes.
+
 package engines
 
 import (
@@ -316,7 +317,7 @@ type ZapRunOutcome struct {
 //
 // Obligations 1 and 3 are STATED HERE AND ENFORCED NOWHERE IN THIS FILE.
 // They are contracts on the implementer, recorded in
-// internal/SKIPPED-CONTROLS.md U5 as the specific things an integration lane
+// docs/controls.md U5 as the specific things an integration lane
 // must prove.
 type ZapRunner interface {
 	Autorun(ctx context.Context, inv ZapInvocation) (ZapRunOutcome, error)
@@ -352,7 +353,7 @@ type ZapReportTemplate string
 // THESE TWO STRINGS ARE UNVERIFIED AGAINST AN INSTALLED ZAP. There is no ZAP
 // on this host to enumerate `zap.sh -cmd -autorun` report templates against,
 // so they are transcribed from the report add-on's documented template ids and
-// recorded in internal/SKIPPED-CONTROLS.md U5 as a thing a real lane settles
+// recorded in docs/controls.md U5 as a thing a real lane settles
 // in one command. What IS enforced here is that both are declared, both are
 // rendered into the plan, and a run that fails to write either one is a
 // refusal rather than a clean report.
@@ -1655,7 +1656,7 @@ type ZapConfig struct {
 //
 // So there is no trigger check here and no field for one. WHERE THAT
 // SCHEDULED-ONLY RULE IS ENFORCED: nowhere in this package. That is stated
-// rather than implied, and internal/SKIPPED-CONTROLS.md U5 records it as an
+// rather than implied, and docs/controls.md U5 records it as an
 // unenforced contract with the name of the check that must exist elsewhere.
 type ZapDriver struct {
 	mu       sync.Mutex

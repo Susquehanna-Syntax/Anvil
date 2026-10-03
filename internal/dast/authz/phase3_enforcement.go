@@ -71,6 +71,7 @@
 // CapOverrides / ThresholdOverrides, which carry plain numbers, and the only
 // operation on them is Lower. A config value therefore cannot BE a floor; it
 // can only be compared against one.
+
 package authz
 
 import (
@@ -1866,7 +1867,7 @@ func CheckGate16CircuitBreaker(m *HealthMonitor) GateResult {
 	if !m.Constructed() {
 		return gateFailed(g, ReasonMonitorUnconstructed,
 			"there is no health monitor for this target. A target nobody is monitoring is "+
-				"not a target known to be healthy — internal/SKIPPED-CONTROLS.md records "+
+				"not a target known to be healthy — docs/controls.md records "+
 				"two incidents in this repository where \"we did not look\" was read as "+
 				"\"we looked and it was fine\".")
 	}

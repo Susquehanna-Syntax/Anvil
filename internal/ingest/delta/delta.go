@@ -1,5 +1,3 @@
-// Package delta is Lane A's steady-state delta ingestion.
-//
 // ===========================================================================
 // WHAT THIS PACKAGE IS FOR
 // ===========================================================================
@@ -103,6 +101,7 @@
 //
 // A refusal is loud, typed and counted. It is not a silent no-op, and it is
 // not a t.Skip.
+
 package delta
 
 import (
@@ -159,7 +158,7 @@ var (
 	ErrNoDeltaLog = fmt.Errorf("%w: feed has no delta log", ErrSyncRefused)
 
 	// ErrNoReconciler is RouteReconcile with nothing wired to run it. See the
-	// package comment: defaulting it to the bulk bootstrap's bulk importer would cost 570 MB
+	// header comment: defaulting it to the bulk bootstrap's bulk importer would cost 570 MB
 	// a day.
 	ErrNoReconciler = fmt.Errorf("%w: no reconciler", ErrSyncRefused)
 
@@ -241,7 +240,7 @@ const (
 	RouteFeedBody Route = "feed_body"
 
 	// RouteReconcile is the periodic wider-window pass on
-	// reconcile_interval_seconds. See the package comment for why it is
+	// reconcile_interval_seconds. See the comment at the top of this file for why it is
 	// planned here and refused unless delegated.
 	RouteReconcile Route = "reconcile"
 
@@ -307,7 +306,7 @@ type Plan struct {
 	LastOK time.Time
 
 	// ReconcileDue and BaselineDue are the two wider passes. They are
-	// reported rather than run; see the package comment.
+	// reported rather than run; see the comment at the top of this file.
 	//
 	// Both are WINDOW-BOUNDARY tests, not elapsed-time tests: reconcile is due
 	// when `now` and `LastOK` fall in different reconcile windows. For the
@@ -596,7 +595,7 @@ type Source interface {
 	Record(ctx context.Context, feed config.FeedConfig, id string) ([]byte, error)
 }
 
-// Reconciler runs RouteReconcile. See the package comment for why this package
+// Reconciler runs RouteReconcile. See the comment at the top of this file for why this package
 // refuses rather than defaulting the route to the bulk bootstrap's bulk importer.
 type Reconciler interface {
 	Reconcile(ctx context.Context, feed config.FeedConfig) (BatchStats, error)

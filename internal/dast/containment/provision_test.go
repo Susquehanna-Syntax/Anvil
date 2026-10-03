@@ -25,7 +25,7 @@ import (
 // Every test in this file drives provisioning through RECORDED SHAPES of what
 // `docker info`, `docker compose up` and `docker inspect` return. Docker is
 // not installed on the host this packet was written on -- verified, and
-// recorded in internal/SKIPPED-CONTROLS.md as entry U2 with what would settle
+// recorded in docs/controls.md as entry U2 with what would settle
 // it -- so the decision logic is proven here in full and the fidelity of a
 // real implementation's shapes is not.
 //
@@ -1908,7 +1908,7 @@ func TestTheSealedSnapshotIsTakenByValue(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestEverySkippedControlsPointerResolves: this package defers its unproven
-// half to internal/SKIPPED-CONTROLS.md by ENTRY ID, in doc comments a reader is
+// half to docs/controls.md by ENTRY ID, in doc comments a reader is
 // expected to follow. Three of those pointers named an id numbered after the old
 // plan step -- one per line of provisioning's doc -- that was never filed under
 // that name; the entry exists as U2. So the one document holding
@@ -1917,7 +1917,7 @@ func TestTheSealedSnapshotIsTakenByValue(t *testing.T) {
 // A pointer nobody follows is a pointer nobody notices is broken, so this
 // resolves every one of them against the document's actual headings.
 func TestEverySkippedControlsPointerResolves(t *testing.T) {
-	const doc = "../../SKIPPED-CONTROLS.md"
+	const doc = "../../../docs/controls.md"
 	body, err := os.ReadFile(doc)
 	if err != nil {
 		t.Fatalf("this package's doc comments defer to %s and it cannot be read: %v", doc, err)
@@ -1932,7 +1932,7 @@ func TestEverySkippedControlsPointerResolves(t *testing.T) {
 		t.Fatalf("no entry headings were found in %s, so every assertion below is vacuous", doc)
 	}
 
-	// The id shapes SKIPPED-CONTROLS.md actually uses, as an ALLOWLIST of
+	// The id shapes docs/controls.md actually uses, as an ALLOWLIST of
 	// prefixes rather than a denylist of everything else a nearby sentence
 	// might contain. Other letter-and-number shapes are deliberately not in it.
 	idIn := regexp.MustCompile(`\b([DUNGHL][0-9]+(?:-[0-9]+)?[a-z]?)\b`)
@@ -1947,7 +1947,7 @@ func TestEverySkippedControlsPointerResolves(t *testing.T) {
 			t.Fatalf("reading %s: %v", f, err)
 		}
 		text := string(src)
-		const marker = "SKIPPED-CONTROLS.md"
+		const marker = "docs/controls.md"
 		for i := 0; ; {
 			j := strings.Index(text[i:], marker)
 			if j < 0 {
@@ -1971,11 +1971,11 @@ func TestEverySkippedControlsPointerResolves(t *testing.T) {
 		}
 	}
 	if checked == 0 {
-		t.Fatal("no SKIPPED-CONTROLS.md entry pointers were found in this package's sources. " +
+		t.Fatal("no docs/controls.md entry pointers were found in this package's sources. " +
 			"Either the deferral comments were deleted -- in which case the unproven half is now " +
 			"undocumented -- or this test's pattern no longer matches them and it is a no-op")
 	}
-	t.Logf("resolved %d SKIPPED-CONTROLS.md entry pointers against %d headings", checked, len(headings))
+	t.Logf("resolved %d docs/controls.md entry pointers against %d headings", checked, len(headings))
 }
 
 // TestNothingInThisPackageReadsConfiguration: plan/design/dynamic-tier.md forbids a
@@ -1997,7 +1997,7 @@ func TestNothingInThisPackageReadsConfiguration(t *testing.T) {
 }
 
 // TestThisPackageSkipsNothing: a skipped test still lets the package print ok.
-// internal/SKIPPED-CONTROLS.md exists because that has already cost this
+// docs/controls.md exists because that has already cost this
 // repository twice.
 func TestThisPackageSkipsNothing(t *testing.T) {
 	src, err := os.ReadFile("provision_test.go")
@@ -2011,7 +2011,7 @@ func TestThisPackageSkipsNothing(t *testing.T) {
 	for _, forbidden := range []string{tok + "(", tok + "f(", tok + "Now("} {
 		if strings.Contains(string(src), forbidden) {
 			t.Errorf("provision_test.go contains %q. If a control genuinely cannot run "+
-				"here, it belongs in internal/SKIPPED-CONTROLS.md with what would "+
+				"here, it belongs in docs/controls.md with what would "+
 				"settle it -- not behind a green tick", forbidden)
 		}
 	}

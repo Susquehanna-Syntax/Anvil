@@ -70,7 +70,7 @@ func mustScan(t *testing.T, files int, sites ...EgressCallSite) EgressScan {
 // THE FACT TYPES REFUSE AN UNMEASURED MEASUREMENT
 // ===========================================================================
 
-// TestUnmeasuredFactsAreRefused is the guard internal/SKIPPED-CONTROLS.md was
+// TestUnmeasuredFactsAreRefused is the guard docs/controls.md was
 // written about: "a guard that vanishes silently when it cannot run is worse
 // than no guard, because the green tick is read as an answer."
 func TestUnmeasuredFactsAreRefused(t *testing.T) {

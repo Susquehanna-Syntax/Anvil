@@ -2381,7 +2381,7 @@ func TestGate7CannotBeRegisteredAsAGateFunc(t *testing.T) {
 		t.Fatal("registerInto accepted a gate 7 implementation. A vacuous gate 7 — one " +
 			"that permits whenever the four inputs are well formed — is a gate that " +
 			"has never refused anything, which is the exact shape " +
-			"internal/SKIPPED-CONTROLS.md records this repository shipping twice")
+			"docs/controls.md records this repository shipping twice")
 	}
 	if !errors.Is(err, ErrRefused) {
 		t.Fatalf("the refusal does not unwrap to ErrRefused: %v", err)

@@ -71,6 +71,7 @@
 // `evidence_class`, `dast.reproduction`, `risk.*`, `locus.*`,
 // `advisory_excerpt` (<=800 tokens) and `group_id`. Every one has a field
 // below, and TestCardCarriesTheNonNegotiableFields asserts it.
+
 package record
 
 import (

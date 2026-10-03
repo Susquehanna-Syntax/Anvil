@@ -575,7 +575,7 @@ func TestTheReservedDefaultIgnorablesAreInTheClass(t *testing.T) {
 		// split a share-alike marker -- would come back invisibly.
 		t.Fatal("this toolchain does not ship Other_Default_Ignorable_Code_Point, so the reserved " +
 			"half of the invisible class was NOT checked. This fails rather than skips: " +
-			"see internal/SKIPPED-CONTROLS.md.")
+			"see docs/controls.md.")
 	}
 	reserved := 0
 	for r := rune(0); r <= unicode.MaxRune; r++ {

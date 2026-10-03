@@ -3,8 +3,8 @@
 **Verdict: FAIL.** One blocker, two majors, three minors.
 
 **This was a SAME-FAMILY critic.** The packet routes this review to OpenCode `openai/gpt-5.5`; that route is
-withdrawn per the OWNER DECISION block atop `plan/design/routing.md`. This review was performed by a Claude
-subagent — the same family that wrote record emission — and therefore carries none of the independence the
+withdrawn per the OWNER DECISION block atop `plan/design/routing.md`. This review was performed by an automated
+review agent from the same model family that wrote record emission, and therefore carries none of the independence the
 cross-family guard was written to buy. Do **not** record this as "cross-family critic: PASS". To
 compensate, every claim below is backed by a probe I wrote and ran against the committed code, not by
 reading record emission's own tests. Nine probes were written; six passed, three failed. The probes were deleted

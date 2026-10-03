@@ -21,8 +21,10 @@ import (
 // What this file can and cannot prove
 // ---------------------------------------------------------------------------
 //
-// This suite runs on the Windows development host, where Linux network
-// namespaces and nftables DO NOT EXIST. It therefore proves the DECISION LOGIC
+// This suite was written on Windows, where Linux network namespaces and
+// nftables do not exist, and runs on the Debian development machine as uid
+// 1000 with no nft binary (measured 2026-10-03). Neither can install a ruleset,
+// so it proves the DECISION LOGIC
 // -- ruleset construction, rule ordering, the deny-set relation with the
 // authorization kernel's gate 10, and every branch of the canary-report
 // evaluation -- and it proves that the platform path REFUSES rather than
@@ -30,7 +32,7 @@ import (
 // kernel drops the packet, or that a real canary in a real namespace reports
 // what this suite's fake canaries report.
 //
-// That gap is written down, not implied: internal/SKIPPED-CONTROLS.md entry U1
+// That gap is written down, not implied: docs/controls.md entry U1
 // names it and names exactly what would settle it.
 //
 // There is NO t.Skip in this file. Every test asserts something on every
@@ -1595,7 +1597,7 @@ func TestAssertContainmentRefusesANilCommanderAndAnEmptyCanaryPath(t *testing.T)
 // This test is the clause after the semicolon, and it is met. THE CLAUSE
 // BEFORE IT IS NOT MET AND CANNOT BE MET ON THIS HOST: there is no real target
 // fixture, no kernel, no nftables, and nothing here installs a ruleset
-// anywhere. internal/SKIPPED-CONTROLS.md entry U1 is the standing record of
+// anywhere. docs/controls.md entry U1 is the standing record of
 // that half, and a privileged Linux CI lane is what would settle it.
 //
 // The distinction is not pedantry. An exit criterion recorded as met when half
@@ -1762,8 +1764,8 @@ func (p recordingProbe) Attempt(_ context.Context, network, address string) (boo
 // a verdict. What it does not prove -- stated so the claim matches the
 // evidence -- is that a Linux kernel delivers the errno a ConnectProbe would
 // turn into each of these names. That mapping lives with the implementation,
-// which holds the socket; nothing on a Windows host can prove it. See
-// internal/SKIPPED-CONTROLS.md U1.
+// which holds the socket; nothing on a host without that implementation can prove it. See
+// docs/controls.md U1.
 func TestClassifyDialFailureTable(t *testing.T) {
 	cases := []struct {
 		f    DialFailure
@@ -1958,7 +1960,7 @@ func TestTimeoutIsBoundedAndNonZero(t *testing.T) {
 // that cannot run on the development host, which is exactly the condition
 // under which a skip is reached for -- and a skipped containment assertion
 // lets the package print `ok` while proving nothing about the sandbox. The gap
-// goes in internal/SKIPPED-CONTROLS.md (entry U1) instead, where it is read
+// goes in docs/controls.md (entry U1) instead, where it is read
 // rather than passed over.
 func TestThisFileSkipsNothing(t *testing.T) {
 	src, err := parser.ParseFile(token.NewFileSet(), "netns_test.go", nil, parser.SkipObjectResolution)
@@ -1980,7 +1982,7 @@ func TestThisFileSkipsNothing(t *testing.T) {
 		}
 		if strings.HasPrefix(sel.Sel.Name, tok[2:]) {
 			t.Errorf("netns_test.go calls t.%s. If a control genuinely cannot run here, it "+
-				"belongs in internal/SKIPPED-CONTROLS.md with what would settle it -- not "+
+				"belongs in docs/controls.md with what would settle it -- not "+
 				"behind a green tick", sel.Sel.Name)
 		}
 		return true

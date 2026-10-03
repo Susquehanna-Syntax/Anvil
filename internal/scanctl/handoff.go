@@ -141,7 +141,7 @@
 //     with the grant. A Go re-check here would be a second definition that
 //     could disagree, and it could not be atomic with anything.
 //
-// (Free-floating file comment: deadlines.go carries the package doc.)
+// (Free-floating file comment: doc.go carries the package doc.)
 
 package scanctl
 

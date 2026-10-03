@@ -1,12 +1,3 @@
-// Package policy resolves Anvil's trigger policy from the repository it is
-// scanning. Trigger policy is DATA: which events fire a scan, which refs and
-// paths they apply to, which semver bumps gate a full scan, and on what
-// cadence the daemon re-scans are all read from a file in the repository, never
-// compiled into Anvil. The spine's corrected-requirements table makes that a hard constraint, and
-// plan/design/control-plane.md restates the review rule it implies: a literal
-// such as "push" or "major" used as a match condition anywhere outside the
-// parser is a defect.
-//
 // This file is the policy schema's half of that: FINDING the policy file. Parsing it,
 // evaluating its rules (the policy engine), and computing the semver bump its rules match
 // against (semver bump classification) are separate steps in this same package.
@@ -18,6 +9,7 @@
 // side -- so a second schema for this one file, in the dynamic tier or in the GitHub
 // Action (the GitHub Action), would be the eleventh. Consumers validate against that file and
 // extend it there.
+
 package policy
 
 import (

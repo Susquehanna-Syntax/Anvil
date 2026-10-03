@@ -80,7 +80,8 @@
 // the annotated record's anvil/correlation block); the spine's safety section;
 // plan/design/record-and-store.md (Open Questions #1).
 //
-// (Free-floating file comment: contract.go carries the package doc.)
+// (Free-floating file comment: doc.go carries the package doc.)
+
 package record
 
 import (

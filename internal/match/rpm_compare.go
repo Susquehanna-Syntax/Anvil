@@ -74,6 +74,7 @@
 // the published suite minus the rows the implementation fails is a corpus
 // filtered by the implementation, and that circularity is what this project's
 // licence-marker table already paid for once.
+
 package match
 
 import (

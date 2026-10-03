@@ -66,7 +66,7 @@
 //     behaviour depend on test execution order.
 //  3. Register a gate 7 that permits whenever the four inputs are well formed.
 //     That is a gate that has never refused anything — the exact shape
-//     internal/SKIPPED-CONTROLS.md records this repository shipping twice, and
+//     docs/controls.md records this repository shipping twice, and
 //     the reason the engineering standard "a guard that has never failed has
 //     not been tested" exists.
 //
@@ -111,6 +111,7 @@
 // operator genuinely needs to see what was rejected, the value goes into
 // Evidence through redactUntrusted, which keeps an allowlisted charset and
 // bounds the length.
+
 package authz
 
 import (
@@ -523,7 +524,7 @@ func LoadScopeFile(path string, decl ModeDeclaration) (Scope, GateResult) {
 // it differ from another, so the harness is a data race by construction, and
 // `go test -race` reports it against THIS FILE'S COPY on a correct build. It
 // therefore cannot run in the -race lane without failing a correct tree.
-// Recorded in internal/SKIPPED-CONTROLS.md as G4-1, with the literal race
+// Recorded in docs/controls.md as G4-1, with the literal race
 // report.
 func CheckGate4ScopeFile(raw []byte, decl ModeDeclaration) (Scope, GateResult) {
 	// ONE guard, not two. An earlier draft checked decl.Declared() first and

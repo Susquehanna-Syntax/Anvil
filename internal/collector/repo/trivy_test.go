@@ -1011,7 +1011,7 @@ func TestRealTrivyScansAFixtureRepo(t *testing.T) {
 	//   no binary .............. somebody DID ask, and the install step that was
 	//                            supposed to provide it did not. This used to
 	//                            skip, which is the pattern internal/
-	//                            SKIPPED-CONTROLS.md exists for: the one test
+	//                            docs/controls.md exists for: the one test
 	//                            that proves a real scanner does not report a
 	//                            vulnerable fixture clean would have reported
 	//                            SUCCESS in exactly the run that was configured

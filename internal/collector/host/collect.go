@@ -1,7 +1,4 @@
-// Package host is Anvil's READ-ONLY host package collector (plan node
-// hostcollector; design in plan/design/lane-a.md).
-//
-// It enumerates the packages a Linux host has installed by asking the native
+// The collector enumerates the packages a Linux host has installed by asking the native
 // package database — `dpkg-query -W`, `rpm -qa`, `apk list --installed` /
 // `apk info -v` — reads /etc/os-release, and returns an Inventory. It then
 // exits. That is the whole product.
@@ -121,7 +118,8 @@
 // LIMITS OF THIS STATEMENT, so it is not over-read in the other direction:
 // this is a documented property of rpm's BDB backend, recorded because the
 // read-only-boundary review's review found the unconditional claim and could
-// not reproduce the behaviour on a Windows development host. It has NOT been
+// not reproduce the behaviour on the Windows machine it ran on, and the Debian
+// development machine (measured 2026-10-03) has no rpm at all. It has NOT been
 // reproduced by this repository on a BDB host, and the sqlite and ndb backends'
 // sidecar behaviour (`rpmdb.sqlite-wal`, `-shm`) has not been examined at all.
 // Nothing is asserted about them in either direction.
@@ -164,6 +162,7 @@
 // carrying a SQL driver. The `finding`-column vocabulary it must agree with is
 // asserted against cache's DDL by a TEST-ONLY import instead, so drift is
 // caught without the dependency.
+
 package host
 
 import (
@@ -201,7 +200,7 @@ import (
 // and must not try.
 const RemediableByAgent = false
 
-// ReadOnly records, in the emitted provenance, the claim the package comment's
+// ReadOnly records, in the emitted provenance, the claim the file comment's
 // "WHAT READ-ONLY CLAIMS HERE" section makes and no more: NO MUTATING PACKAGE
 // MANAGER COMMAND LINE IS EXPRESSIBLE BY THIS COLLECTOR. It does not claim
 // that a run changes no byte on the host — see RPMDB WRITE SIDE EFFECT in that
@@ -219,7 +218,7 @@ const InventorySchemaVersion = 1
 
 // Collector is the `finding.collector` value for rows derived from this
 // collector. It duplicates internal/ingest/cache's CollectorHost by VALUE
-// rather than by import — see the package comment on why the SQLite-linking
+// rather than by import — see the comment at the top of this file on why the SQLite-linking
 // cache package is not a dependency of a production-server collector — and
 // TestCollectorValueMatchesTheCacheSchema imports cache from the test binary
 // to prove the two have not drifted.

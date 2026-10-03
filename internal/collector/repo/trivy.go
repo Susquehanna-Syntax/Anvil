@@ -1,7 +1,3 @@
-// Package repo is Lane A's repository SCA collector (plan node repocollector;
-// design in plan/design/lane-a.md): it runs Trivy over a repository that is already on disk and
-// turns Trivy's JSON report into Lane A findings.
-//
 // # No model, ever
 //
 // The spine's corrected-requirements table: Lane A is "deterministic, zero inference — SBOM/host
@@ -48,6 +44,7 @@
 // attaches when a release artifact bakes the binary in — that is the container image's
 // call, not this package's, and this comment exists so the container image finds the fact
 // rather than re-deriving it.
+
 package repo
 
 import (

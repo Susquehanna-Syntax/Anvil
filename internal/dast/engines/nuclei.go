@@ -1,5 +1,4 @@
-// Package engines holds Anvil's probe-engine drivers. This file is the nuclei driver: the
-// Nuclei driver.
+// This file is the Nuclei driver.
 //
 // # What this driver is for, stated as the failure it prevents
 //
@@ -61,7 +60,7 @@
 // available failure, so they are separated here by type, by exit code, and by
 // a coverage predicate the caller must consult before reporting clean.
 //
-// internal/SKIPPED-CONTROLS.md entry U4 records exactly what remains
+// docs/controls.md entry U4 records exactly what remains
 // unexecuted and what would settle it. There is no t.Skip in this package.
 //
 // # What this driver assumes about template provenance: NOTHING
@@ -91,6 +90,7 @@
 // directory cannot reach a host the kernel did not admit, because it does not
 // get to name a host at all. It can, at most, cause a request the kernel then
 // gates like every other request.
+
 package engines
 
 import (
@@ -446,7 +446,7 @@ func (e *EngineUnavailableError) ExitCode() int { return ExitCodeArtefactAbsent 
 // does not control, and an engine that re-resolves reopens DNS rebinding.
 //
 // That obligation is STATED HERE AND ENFORCED NOWHERE IN THIS FILE. It is a
-// contract on the implementer, recorded in internal/SKIPPED-CONTROLS.md U4 as
+// contract on the implementer, recorded in docs/controls.md U4 as
 // the specific thing an integration lane must prove.
 type Engine interface {
 	// ExecuteCallbackWithCtx runs the plan and calls cb once per result.
@@ -1010,7 +1010,7 @@ func LoadTemplates(dir string) ([]Template, []RejectedTemplate, error) {
 		//
 		// This is an ALLOWLIST of two shapes rather than a check for
 		// os.ModeSymlink, and the reason is measured rather than
-		// theoretical. On this Windows host a DIRECTORY JUNCTION (`mklink
+		// theoretical. On the Windows machine this was written on, a DIRECTORY JUNCTION (`mklink
 		// /J`, which needs no privilege at all, unlike `mklink /D`) is
 		// reported by filepath.WalkDir as:
 		//
@@ -1019,7 +1019,7 @@ func LoadTemplates(dir string) ([]Template, []RejectedTemplate, error) {
 		// — os.ModeIrregular, with the symlink bit CLEAR and IsDir false. A
 		// `d.Type()&os.ModeSymlink != 0` check sees nothing there. That is
 		// the same primitive that walked through internal/mirror/accelerator's
-		// quarantine guard (internal/SKIPPED-CONTROLS.md H1), and it is why
+		// quarantine guard (docs/controls.md H1), and it is why
 		// the question here is "is this one of the two shapes a template tree
 		// is made of" rather than "is this one of the link kinds I have heard
 		// of".

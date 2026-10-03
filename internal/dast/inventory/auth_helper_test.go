@@ -1690,7 +1690,7 @@ func TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl(t *testing.T) {
 	// import it — which is also why the encoder below is written out by hand
 	// here. Adding the import is a one-line widening of the egress allowlist in
 	// internal/dast/authz/egress_chokepoint_test.go, is reported to the
-	// orchestrator, and is recorded in internal/SKIPPED-CONTROLS.md (U10).
+	// orchestrator, and is recorded in docs/controls.md (U10).
 	beyond := authBase64(authPassword)
 	if _, hit := credentialIn([]byte(beyond), secrets); hit {
 		t.Fatal("the sweep decoded base64, so this test no longer demonstrates the " +

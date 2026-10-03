@@ -47,7 +47,7 @@
 // chain REFUSES at that gate. It does not skip it, log a warning, or treat the
 // absence as a pass.
 //
-// That is not defensiveness for its own sake. internal/SKIPPED-CONTROLS.md
+// That is not defensiveness for its own sake. docs/controls.md
 // records two separate incidents in this repository where a control that could
 // not run reported success, and names the shape precisely: "a guard that
 // vanishes silently when it cannot run is worse than no guard, because the

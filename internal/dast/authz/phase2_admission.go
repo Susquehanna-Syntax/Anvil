@@ -49,7 +49,7 @@
 //     is a safety-section violation wearing a hat.
 //   - Registering a gate 11 that permits whenever the four inputs are well
 //     formed would be a gate that has never refused anything — the exact shape
-//     internal/SKIPPED-CONTROLS.md records this repository shipping twice.
+//     docs/controls.md records this repository shipping twice.
 //
 // GATE 11 IS ENFORCED IN TWO PLACES INSTEAD, and neither is a chain position.
 //
@@ -89,6 +89,7 @@
 // goes through redactUntrusted (phase1_run.go), which keeps an allowlisted
 // charset and bounds the length, and every parsed value is separately bounded
 // and charset-restricted at parse time.
+
 package authz
 
 import (
@@ -1304,7 +1305,7 @@ func gate10ReservedRanges(target Target, scope Scope, _ Attestation, _ Clock) Ru
 //
 // The distinction between "we looked and there was none" and "we did not
 // look" is the entire reason this type exists rather than a bool.
-// internal/SKIPPED-CONTROLS.md names the shape: "a guard that vanishes
+// docs/controls.md names the shape: "a guard that vanishes
 // silently when it cannot run is worse than no guard, because the green tick is
 // read as an answer." A policy nobody determined permits no path.
 type RobotsDetermination string
@@ -1677,7 +1678,7 @@ func CheckGate11RobotsDeny(policy RobotsPolicy, target Target, path string) Gate
 		return gateFailed(g, ReasonRobotsNotDetermined,
 			"no robots.txt determination was made for this origin. \"We did not look\" and "+
 				"\"we looked and there was nothing\" produce the same silence and opposite "+
-				"conclusions; internal/SKIPPED-CONTROLS.md records two incidents in this "+
+				"conclusions; docs/controls.md records two incidents in this "+
 				"repository where the first was read as the second.")
 	}
 	if policy.Determination() == RobotsUnavailable {

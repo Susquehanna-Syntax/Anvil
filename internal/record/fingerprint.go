@@ -143,7 +143,7 @@ package record
 // THE AUTHORITATIVE SPECIFICATION IS internal/record/FINGERPRINT-SPEC.md
 // ===========================================================================
 //
-// The contract-and-fingerprint review (REVIEW-contract-and-fingerprint.md)
+// The contract-and-fingerprint review (docs/reviews/contract-and-fingerprint.md)
 // proved that the four-clause `normalized_match` text in
 // plan/design/record-and-store.md is NOT sufficient to reproduce this file's
 // digests: a re-implementation written from that text alone emits 55e27b07...
