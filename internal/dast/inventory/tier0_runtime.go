@@ -1,7 +1,3 @@
-// Package inventory builds Anvil's attack-surface inventory: the list of
-// endpoints the DAST tier believes a target exposes, and — for every one of
-// them — WHERE THAT BELIEF CAME FROM and WHETHER ANVIL CONFIRMED IT.
-//
 // This file is the runtime spec probe: Tier 0, the runtime spec route.
 //
 // ===========================================================================
@@ -152,6 +148,7 @@
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 319-323; internal/record/contract.go (InventoryProvenance, Trust,
 // DastCoverage).
+
 package inventory
 
 import (
@@ -229,7 +226,7 @@ const (
 //
 // # Why this is declared here and not in internal/record
 //
-// internal/record owns every shared enum (its package doc: "The record area owns every
+// internal/record owns every shared enum (contract.go's header comment: "The record area owns every
 // shared enum, because it owns the record contract, and no other area may
 // declare one"). record.InventoryProvenance is there for exactly that reason.
 // The confirmed/candidate axis is NOT — record carries it as two aggregate

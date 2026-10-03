@@ -139,6 +139,7 @@
 // more visible act than passing a different time.Time to the next call, and it
 // is as far as a kernel with no trusted clock can go. Recorded in
 // internal/SKIPPED-CONTROLS.md as G18-2.
+
 package authz
 
 import (

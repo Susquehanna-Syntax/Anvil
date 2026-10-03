@@ -67,6 +67,7 @@
 // ("promote to confirmed only on a non-404 response") and Risk #4 ("more
 // endpoints can mean less coverage" — the phpBB regression from timeout
 // exhaustion), which is what ProbeBudget and AssertBudgetSufficed exist for.
+
 package inventory
 
 import (

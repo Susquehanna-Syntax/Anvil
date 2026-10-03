@@ -1,8 +1,3 @@
-// Package record defines Anvil's single frozen audit-record contract: the
-// SARIF 2.1.0 wire shape Anvil produces, the typed `anvil/*` property-bag
-// extension that carries what stock SARIF cannot, and — since the
-// 2026-08-07 orchestrator ruling — every enum shared across Anvil's areas.
-//
 // # Authority
 //
 // This file is the single point where shared cross-area vocabulary is fixed.
@@ -51,6 +46,7 @@
 // Specification", "Store Schema"); research/18-unified-audit-record.md
 // ("Recommendation For Anvil", the annotated record, Risks);
 // research/24-coding-agent-consumption.md ("What the audit record must carry").
+
 package record
 
 import (

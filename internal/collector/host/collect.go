@@ -1,7 +1,4 @@
-// Package host is Anvil's READ-ONLY host package collector (plan node
-// hostcollector; design in plan/design/lane-a.md).
-//
-// It enumerates the packages a Linux host has installed by asking the native
+// The collector enumerates the packages a Linux host has installed by asking the native
 // package database — `dpkg-query -W`, `rpm -qa`, `apk list --installed` /
 // `apk info -v` — reads /etc/os-release, and returns an Inventory. It then
 // exits. That is the whole product.
@@ -164,6 +161,7 @@
 // carrying a SQL driver. The `finding`-column vocabulary it must agree with is
 // asserted against cache's DDL by a TEST-ONLY import instead, so drift is
 // caught without the dependency.
+
 package host
 
 import (
@@ -201,7 +199,7 @@ import (
 // and must not try.
 const RemediableByAgent = false
 
-// ReadOnly records, in the emitted provenance, the claim the package comment's
+// ReadOnly records, in the emitted provenance, the claim the file comment's
 // "WHAT READ-ONLY CLAIMS HERE" section makes and no more: NO MUTATING PACKAGE
 // MANAGER COMMAND LINE IS EXPRESSIBLE BY THIS COLLECTOR. It does not claim
 // that a run changes no byte on the host — see RPMDB WRITE SIDE EFFECT in that
@@ -219,7 +217,7 @@ const InventorySchemaVersion = 1
 
 // Collector is the `finding.collector` value for rows derived from this
 // collector. It duplicates internal/ingest/cache's CollectorHost by VALUE
-// rather than by import — see the package comment on why the SQLite-linking
+// rather than by import — see the comment at the top of this file on why the SQLite-linking
 // cache package is not a dependency of a production-server collector — and
 // TestCollectorValueMatchesTheCacheSchema imports cache from the test binary
 // to prove the two have not drifted.

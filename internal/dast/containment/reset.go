@@ -82,6 +82,7 @@
 // record.HalfStatusFailed. Its DastStatus() derives through
 // record.DeriveDastStatus, so this file writes no record enum literal and the
 // derived status can never be DastStatusCompletedClean.
+
 package containment
 
 import (

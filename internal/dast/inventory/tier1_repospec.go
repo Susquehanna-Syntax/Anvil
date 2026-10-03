@@ -145,6 +145,7 @@
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 325-328; internal/record/contract.go (InventoryProvenance, Trust,
 // ArtifactLocation, ArtifactContent, DastCoverage).
+
 package inventory
 
 import (

@@ -1,6 +1,3 @@
-// Package accelerator is Anvil's OPTIONAL warm-start cache for package-range
-// matching. This is the accelerator (plan node accelerator).
-//
 // # ANVIL MUST WORK CORRECTLY WITHOUT THIS PACKAGE. THAT IS THE DESIGN.
 //
 // Everything here is a performance optimisation. If the accelerator is absent,
@@ -137,6 +134,7 @@
 //     what RegistryBase is for. It is stated here because no test can observe
 //     it: the spine's safety section forbids the network at test time, so the
 //     mock registry does not model the redirect the real one issues.
+
 package accelerator
 
 import (

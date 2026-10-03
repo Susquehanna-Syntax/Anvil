@@ -1,6 +1,3 @@
-// Package authz is Anvil's authorization kernel: the only thing in the system
-// that may turn a proposed network request into a permitted one.
-//
 // The decision flow — Decide, Adjudicate, Authorization, RequireAuthorization —
 // is documented at the top of kernel.go. This file holds the VOCABULARY: the
 // types every one of the 21 gates in plan/design/dynamic-tier.md's Authorization Gate
@@ -28,6 +25,7 @@
 // No net.Dial, no http.Client, no socket construction of any kind — the kernel core's
 // forbidden actions, and gate 3's whole point. This file imports stdlib only,
 // and gate 2 (phase0_build.go) is the machine check that keeps it that way.
+
 package authz
 
 import (

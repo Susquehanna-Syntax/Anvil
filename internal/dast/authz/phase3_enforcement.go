@@ -71,6 +71,7 @@
 // CapOverrides / ThresholdOverrides, which carry plain numbers, and the only
 // operation on them is Lower. A config value therefore cannot BE a floor; it
 // can only be compared against one.
+
 package authz
 
 import (

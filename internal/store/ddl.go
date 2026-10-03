@@ -1,5 +1,3 @@
-// Package store owns Anvil's single SQLite store of record.
-//
 // The spine's corrected-requirements table collapsed the originally-specified "8-hour buffer file"
 // into one SQLite database, a `handoff` table, and a regenerable tmpfs packet
 // that is never a source of truth. This package holds the DDL for that
@@ -12,6 +10,7 @@
 // enough read-only introspection for the migration runner's migration ledger and for the test
 // that proves the SQL vocabularies and internal/record's Go enums have not
 // drifted apart. It opens no database and executes no statement.
+
 package store
 
 import (

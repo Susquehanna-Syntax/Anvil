@@ -31,11 +31,12 @@
 // for three times over: a denylist loses, because the string nobody listed is
 // the one that walks through.
 //
-// The practical consequence is stated plainly in the package doc: this
+// The practical consequence is stated plainly in comparator.go's header comment: this
 // comparator covers `deb`, `rpm` and `apk`, and refuses `npm`, `pypi`,
 // `golang`, `maven`, `nuget`, `cargo`, `gem`, `composer` and everything else.
 // A refusal is a visible gap. A fallback to semver, or to a lexical compare,
 // would be an invisible wrong answer.
+
 package match
 
 import (

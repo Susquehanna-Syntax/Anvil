@@ -1,6 +1,3 @@
-// Command anvil-host-collector runs Anvil's read-only host package collector
-// once, writes the resulting inventory to stdout as JSON, and exits.
-//
 // # Why this main package exists
 //
 // deploy/systemd/anvil-host-collector.service has always declared
@@ -55,7 +52,7 @@
 //
 // RUN IT UNDER THE SHIPPED UNIT, OR REPRODUCE WHAT THE UNIT DOES. Running this
 // binary as root outside the unit re-opens the rpmdb write side effect
-// documented in internal/collector/host's package comment: on a
+// documented in the comment at the top of internal/collector/host/collect.go: on a
 // Berkeley-DB-backed rpmdb, `rpm -qa` creates /var/lib/rpm/__db.001..003 when
 // the caller can write that directory. The binary cannot prevent that — no rpm
 // flag suppresses it, and branching on the effective uid is forbidden — so the
@@ -72,6 +69,7 @@
 //	   is that a run never reports a silent "clean", and "we could not look" has
 //	   to be distinguishable from "there is nothing here" by a caller reading
 //	   the exit status alone.
+
 package main
 
 import (
@@ -85,7 +83,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/collector/host"
 )
 
-// Exit statuses, documented in the package comment above.
+// Exit statuses, documented in the comment at the top of this file.
 const (
 	exitCollected        = 0
 	exitFailed           = 1

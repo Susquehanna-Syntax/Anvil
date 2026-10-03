@@ -9,7 +9,7 @@
 // CREATE, no DELETE FROM advisory_fts that is not scoped to a single rowid, no
 // `INSERT INTO advisory_fts(advisory_fts) VALUES('rebuild')`.
 //
-// internal/ingest/cache's own package comment gives the reason: "FTS5 accepts
+// the comment at the top of internal/ingest/cache/schema.go gives the reason: "FTS5 accepts
 // incremental INSERT/DELETE, so an hourly delta touching 200 records costs 200
 // row upserts and NOT a rebuild. That is why no code path in Anvil may DROP or
 // rebuild `advisory_fts`." delta ingestion's design repeats it as a forbidden action, and
@@ -55,6 +55,7 @@
 // call. internal/ingest/sanitize's writer guard sees the assertion in the same
 // function as the bind, which is what it can check; the assertion is what makes
 // the claim true rather than merely visible.
+
 package delta
 
 import (

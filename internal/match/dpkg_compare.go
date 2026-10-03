@@ -64,6 +64,7 @@
 // any published comparison table can contain it. dpkgValidity in
 // corpus_transcribed_test.go transcribes the nine is_valid() assertions from
 // Dpkg_Version.t for exactly this reason.
+
 package match
 
 import (

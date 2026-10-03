@@ -1,7 +1,3 @@
-// Package match is Lane A's deterministic version comparator: the comparator of
-// plan/design/lane-a.md, and the component every other Lane A step
-// feeds.
-//
 // ===========================================================================
 // WHAT THIS PACKAGE IS
 // ===========================================================================
@@ -178,6 +174,7 @@
 //   - There is no clock. `as_of` and `detected_at` belong to the collector
 //     and to record emission's record emitter; a second time source here would be a
 //     second answer to a question already owned elsewhere.
+
 package match
 
 import (
@@ -816,8 +813,8 @@ func epochSpelling(scheme Scheme, v string) (present bool, value int, ok bool) {
 // advisory endpoint spelled `2.34-100.el9` gives `2 > 0`, so the installed
 // version sorts ABOVE the fixed endpoint, the range does not contain it, and
 // the run reports zero findings, zero refusals, Complete=true and a clean
-// verdict on a vulnerable host. That is the false negative the package doc's
-// first paragraph names as the worst output this lane can produce, on one of
+// verdict on a vulnerable host. That is the false negative the header comment's
+// first section names as the worst output this lane can produce, on one of
 // the most common shapes in the RPM world.
 //
 // ===========================================================================
@@ -1139,7 +1136,7 @@ func (d Defence) sortKey() string {
 // UpstreamOnlyAdvisory is the package-level residue of the vendor-first
 // policy: an advisory that was decided by an upstream range for a package
 // which HAS vendor coverage for some other advisory. It is REPORTED, not
-// suppressed — see the package doc's "SCOPE OF THE PRECEDENCE".
+// suppressed — see the header comment's "SCOPE OF THE PRECEDENCE".
 type UpstreamOnlyAdvisory struct {
 	Ecosystem string
 	Package   string
@@ -1174,7 +1171,7 @@ func (u UpstreamOnlyAdvisory) sortKey() string {
 // this package cannot fix it — a vendor row and an upstream row that share no
 // identifier cannot be shown to be about the same flaw, and guessing that
 // they are (by package name, say) is the package-scoped suppression the
-// package doc rejects as an unbounded false-negative generator.
+// header comment rejects as an unbounded false-negative generator.
 //
 // What it CAN do is stop the dependence being invisible. Every vendor range
 // that arrives without an alias is listed here, so "the defence did not fire"

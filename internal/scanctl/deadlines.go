@@ -1,15 +1,6 @@
-// Package scanctl is `anvil-scanctl`: the ONE named scan controller
-// the spine's one-controller rule requires, holding ONE state machine with ONE owner.
-// The spine's one-controller rule exists because four research branches each specified part
-// of an orchestrator (a consumption protocol with leases and ledgers, a
-// correlator process, sixteen validation gates, a target-lifecycle harness),
-// and "implement it as one named scan controller with one state machine and
-// one owner, or it will be re-implemented inconsistently in four places."
-//
-// This file (the deadline design) carries the package doc because it is the package's
-// first file and the one every other file in it depends on. Later files in
-// this package — statemachine.go (the controller's state wiring), handoff.go
-// (the handoff adapter) — must NOT add a second package comment.
+// This file is the deadline design, the one every other file in this package
+// depends on. The package doc lives in doc.go; no other file may attach a
+// comment to its package clause (test/hygiene's package-doc guard checks).
 //
 // scanctl OWNS NO VOCABULARY. Every enum token it handles is a Go constant
 // from internal/record, which the shared-vocabulary review makes the single
@@ -19,6 +10,7 @@
 // separate authors each defining the shared vocabulary from their own side.
 // A bare string literal for an enum value in this package is a second
 // definition and is how that recurs.
+
 package scanctl
 
 import (

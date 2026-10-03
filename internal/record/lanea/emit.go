@@ -1,6 +1,3 @@
-// Package lanea populates the Lane-A-owned fields of Anvil's canonical audit
-// record: record emission (plan node emission).
-//
 // ===========================================================================
 // WHAT THIS PACKAGE IS, AND THE ONE THING IT IS NOT
 // ===========================================================================
@@ -194,6 +191,7 @@
 //     (RefusalTrustValidationStep), and the named step travels on
 //     Emission.TrustValidationStep — the same treatment, and the same reported
 //     record-contract gap, as license_manual_note in deviation 1.
+
 package lanea
 
 import (

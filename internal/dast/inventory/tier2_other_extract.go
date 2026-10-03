@@ -112,6 +112,7 @@
 // Sources: non-Go route extraction's design (lines 677-708) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 330-341 and its Risk #2; internal/dast/inventory/tier2_go_extract.go (Go route extraction).
+
 package inventory
 
 import (

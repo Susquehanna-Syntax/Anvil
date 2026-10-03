@@ -1,5 +1,3 @@
-// Package reconcile owns the WEEKLY FULL-BASELINE SELF-HEAL.
-//
 // This is the weekly self-heal (plan node upkeep). Lane A is the
 // zero-inference half of Anvil (the spine's corrected-requirements table): CVE/OSV/GHSA describe
 // vulnerable PACKAGE VERSIONS and a version comparator answers that exactly
@@ -102,6 +100,7 @@
 // imported zero records all increment that counter in the LIVE cache and are
 // named in the report. See recordFailure for the one case that deliberately
 // does not increment it, and why.
+
 package reconcile
 
 import (

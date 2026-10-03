@@ -1,6 +1,3 @@
-// Package containment provisions and holds the ephemeral target a DAST scan
-// runs against.
-//
 // This file is target provisioning: given the DECLARED manifest that
 // internal/dast/target already parsed, bring up the operator's Compose project
 // under gVisor `runsc`, wait on the declared healthcheck with a hard timeout,
@@ -87,6 +84,7 @@
 // asserts the runner was never called. There is no flag, option or environment
 // variable in this package that relaxes any assertion in it; widening one is a
 // visible edit to this file.
+
 package containment
 
 import (

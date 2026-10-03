@@ -1,6 +1,3 @@
-// Package sanitize is Lane A's sanitizer: ingest-time neutralisation of hostile
-// text, plus the `anvil/trust` stamp that says where the bytes came from.
-//
 // ===========================================================================
 // WHY THIS RUNS AT INGEST AND NOWHERE ELSE
 // ===========================================================================
@@ -465,6 +462,7 @@
 // deleting text a reader might have seen is the survivable failure. The other
 // direction — keeping a span a reader will NOT see — is the one that puts
 // agent instructions in front of a repo-credentialed agent.
+
 package sanitize
 
 import (
@@ -679,7 +677,7 @@ type SanitizeStats struct {
 	// HiddenTagText counts HTML TAG tokens carrying text beyond their own tag
 	// name — attributes, junk after an end tag name, and the content of the
 	// raw-text elements. NOTHING WAS REMOVED FOR THIS COUNT. Tags are out of
-	// scope for removal (see the ruling in the package comment); this counter
+	// scope for removal (see the ruling in the comment at the top of this file); this counter
 	// exists so that "stats=clean" stops being the answer for a string that a
 	// renderer would partly hide.
 	HiddenTagText int
@@ -997,7 +995,7 @@ func IngestSlice(raw []string) ([]record.TrustedString, SanitizeStats) {
 }
 
 // stripRunes runs the rune classification. It is the first of Sanitize's two
-// passes and it must stay first: see the package comment on ordering.
+// passes and it must stay first: see the header comment on ordering.
 //
 // An invalid UTF-8 byte is DROPPED rather than replaced with U+FFFD. Replacing
 // preserves the position of the damage, which is friendlier to a human reading
@@ -1096,7 +1094,7 @@ func (s *SanitizeStats) count(cat category) {
 
 // ---------------------------------------------------------------------------
 // Hidden markup: comment spans and the four other productions that render as
-// nothing. See "WHICH HTML PRODUCTIONS ARE IN SCOPE" in the package comment
+// nothing. See "WHICH HTML PRODUCTIONS ARE IN SCOPE" in the comment at the top of this file
 // for the scope decision and for what is deliberately left alone.
 // ---------------------------------------------------------------------------
 
@@ -1482,7 +1480,7 @@ func indexCloseTag(s string, from int, name string) int {
 // IT IS NOT PART OF THE SANITIZE POST-CONDITION, and AssertSanitized does not
 // call it. Sanitize does not remove these spans, so a string that satisfies
 // AssertSanitized may still fail this; that asymmetry is the ruling in the
-// package comment, made checkable. The remedy for a failure is to escape or
+// header comment, made checkable. The remedy for a failure is to escape or
 // fence the text at the display site, never to delete it here.
 func AssertNoHiddenTagText(s string) error {
 	tags, runes, offset := scanHiddenTagText(s)
@@ -1521,7 +1519,7 @@ func AssertNoHiddenTagText(s string) error {
 //	               DOCTYPE opener.
 //	nil DOES NOT   mean every character in s is visible to a reader. HTML
 //	MEAN           TAGS are out of scope for removal (see the ruling in the
-//	               package comment) and a tag can hide text. The nearest
+//	               header comment) and a tag can hide text. The nearest
 //	               available check is AssertNoHiddenTagText; the actual
 //	               control is rendering s as plain text.
 func AssertSanitized(s string) error {

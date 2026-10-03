@@ -171,6 +171,7 @@
 // here would be fabricated — and a fabricated figure is worse than the
 // acknowledged gap, because tier-M sizing would then be documented against it.
 // internal/SKIPPED-CONTROLS.md U5 records what measuring it takes.
+
 package engines
 
 import (

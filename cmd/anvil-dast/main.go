@@ -1,6 +1,4 @@
-// Command anvil-dast is the Anvil dynamic-analysis (DAST) binary.
-//
-// It ships as a SEPARATE distribution artifact from the core anvil binary,
+// anvil-dast ships as a SEPARATE distribution artifact from the core anvil binary,
 // requires separate installation, and refuses to probe anything without an
 // explicit attestation. See the two-artifact split for why this is a
 // separate artifact rather than a configuration flag: a boolean inside a
@@ -12,6 +10,7 @@
 //
 // Bootstrap placeholder. The general entrypoint arrives with the live dynamic
 // tier (plan node live); every request it makes routes through internal/dast/authz.
+
 package main
 
 import (

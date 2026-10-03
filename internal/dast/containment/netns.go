@@ -1,7 +1,3 @@
-// Package containment holds the DAST half's network containment: a dedicated
-// Linux network namespace whose egress is default-deny under nftables, and an
-// assertion probe that re-proves the containment ON EVERY RUN.
-//
 // # The design spike the plan asked for
 //
 // plan/design/dynamic-tier.md's Open Questions (the network containment entry) leaves the assertion
@@ -96,6 +92,7 @@
 // declaration for the full reasoning; the short version is that the gate was
 // right, the first draft of this file was wrong, and the seam moved rather
 // than the gate.
+
 package containment
 
 import (
@@ -1092,7 +1089,7 @@ const CanarySubcommand = "__anvil-dast-netns-canary"
 // DefaultCanaryDialTimeout bounds one connect attempt. It is the contract a
 // ConnectProbe implementation honours.
 //
-// It is short on purpose, and the asymmetry in the package doc is why that is
+// It is short on purpose, and the asymmetry in the comment at the top of this file is why that is
 // safe rather than sloppy: a REACHABLE metadata endpoint is link-local and
 // answers in well under a millisecond, so a timeout in this range can only
 // convert a slow "blocked" into a "blocked" -- it can never convert a

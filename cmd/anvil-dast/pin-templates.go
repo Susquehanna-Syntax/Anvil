@@ -46,6 +46,7 @@
 // `code:` template is refused at load time. This job calls it on BOTH trees
 // and diffs the results, which means the definition of "dangerous" lives in
 // exactly one place and this file cannot drift from it.
+
 package main
 
 import (

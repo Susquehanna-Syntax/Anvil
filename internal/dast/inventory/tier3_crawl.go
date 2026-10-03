@@ -111,6 +111,7 @@
 // exclusion list bounds nothing but waste. So the list failing open costs
 // coverage, never containment, and every miss is a recorded visit an operator
 // can read back.
+
 package inventory
 
 import (

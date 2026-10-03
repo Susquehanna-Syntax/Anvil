@@ -1,5 +1,4 @@
-// Package engines holds Anvil's probe-engine drivers. This file is the nuclei driver: the
-// Nuclei driver.
+// This file is the Nuclei driver.
 //
 // # What this driver is for, stated as the failure it prevents
 //
@@ -91,6 +90,7 @@
 // directory cannot reach a host the kernel did not admit, because it does not
 // get to name a host at all. It can, at most, cause a request the kernel then
 // gates like every other request.
+
 package engines
 
 import (

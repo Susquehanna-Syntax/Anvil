@@ -1,5 +1,3 @@
-// Command anvil is the Anvil core binary.
-//
 // Anvil finds vulnerabilities in Linux servers and code repositories and
 // proposes fixes. This binary is the core artifact: Lane A (deterministic
 // SBOM/host package matching), Lane B (first-party source detection), the
@@ -15,6 +13,7 @@
 // Bootstrap placeholder. The real entrypoint — the anvil scan and
 // anvil daemon --loop subcommands wired to internal/scanctl and
 // internal/queue — is plan node cli (plan/anvil.html).
+
 package main
 
 import (

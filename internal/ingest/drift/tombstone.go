@@ -52,6 +52,7 @@
 //     INSERT OR REPLACE would delete and re-insert under a NEW rowid and
 //     orphan the FTS entry silently — the exact defect cache/schema.go
 //     documents at the `advisory` table.
+
 package drift
 
 import (

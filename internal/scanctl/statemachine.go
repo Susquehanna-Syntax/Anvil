@@ -102,7 +102,7 @@
 // "two areas meaning different things by the same field name" class the
 // shared-vocabulary review was convened over.
 //
-// (Free-floating file comment: deadlines.go carries the package doc.)
+// (Free-floating file comment: doc.go carries the package doc.)
 
 package scanctl
 

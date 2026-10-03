@@ -1,5 +1,3 @@
-// Package invisible is THE definition of "renders as nothing" for Lane A.
-//
 // ===========================================================================
 // WHY THIS PACKAGE EXISTS AT ALL
 // ===========================================================================
@@ -94,6 +92,7 @@
 // that a renderer must draw nothing for them, which is the class's question
 // answered from a table. An unassigned code point with no such property draws a
 // .notdef box, which is visible residue, and stays out.
+
 package invisible
 
 import "unicode"

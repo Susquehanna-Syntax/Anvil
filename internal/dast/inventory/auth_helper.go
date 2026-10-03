@@ -214,6 +214,7 @@
 // are stated on that interface and enforced nowhere here — the same shape
 // ClientSpider and engines.ZapRunner have, and the same integration lane owes
 // the proof.
+
 package inventory
 
 import (

@@ -87,6 +87,7 @@
 // path", the annotated Tier-1 task card); research/24-coding-agent-consumption
 // .md ("What the audit record must carry"); plan/design/record-and-store.md
 // (the read path); the spine's corrected-requirements, record and safety sections.
+
 package record
 
 import (

@@ -200,6 +200,7 @@
 // Sources: Go route extraction's design (lines 644-676) and the Coverage Reporting
 // Contract (lines 1142-1160); research/22-attack-surface-discovery.md lines
 // 330-341; third_party/go-apispec/PIN.md; internal/record/contract.go.
+
 package inventory
 
 import (

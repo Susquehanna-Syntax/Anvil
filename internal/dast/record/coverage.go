@@ -1,10 +1,3 @@
-// Package record aggregates the dynamic tier's per-tier inventory facts into the
-// record-level coverage fields internal/record freezes: `dast_coverage`
-// (record.DastCoverage), `endpoint_coverage`, `server_line_coverage` and
-// `inventory_provenance`, plus the two target fields `target_provenance`
-// (record.TargetProvenance) and `target.provisioning`
-// (record.TargetProvisioning).
-//
 // This is coverage reporting (plan node coverage). It produces THE NUMBER AN OPERATOR TRUSTS, so
 // every design decision below is about the number looking better than the
 // evidence behind it.
@@ -107,6 +100,7 @@
 // (DastCoverage, InventoryProvenance, TargetProvenance, TargetProvisioning);
 // research/22-attack-surface-discovery.md lines 364-374 and Risk #4;
 // research/23-dast-signal-sources.md Risk #1.
+
 package record
 
 import (
@@ -314,7 +308,7 @@ const (
 	QualifierTierFactsAbsent QualifierReason = "tier_facts_absent"
 
 	// QualifierOperationsCollapsed: more operations than addresses. See the
-	// package doc, decision 4.
+	// comment at the top of this file, decision 4.
 	QualifierOperationsCollapsed QualifierReason = "operations_collapsed_onto_addresses"
 
 	// QualifierProbeBudgetExhausted: endpoints in the union were never
@@ -499,7 +493,7 @@ type ProvenanceRow struct {
 
 	// Operations are the operation names this endpoint carries, sorted. It
 	// is non-empty mainly for GraphQL, where many operations share one
-	// address; see the package doc, decision 4.
+	// address; see the comment at the top of this file, decision 4.
 	Operations []string
 }
 
@@ -735,7 +729,7 @@ func (s Summary) CandidateCount() int { return s.InventoryUnionCount() - s.confi
 
 // OperationCount is route confirmation's second number: distinct (endpoint, operation)
 // pairs. Reported BESIDE the endpoint count, never substituted into the
-// denominator. See the package doc, decision 4.
+// denominator. See the comment at the top of this file, decision 4.
 func (s Summary) OperationCount() int { return s.operations }
 
 // RequestsIssued is how many requests actually left through the seam.

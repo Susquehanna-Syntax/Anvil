@@ -1,6 +1,3 @@
-// Package drift is drift handling: what Anvil does when a feed changes shape underneath
-// it, and what it does when a publisher takes an advisory back.
-//
 // ===========================================================================
 // THE ONE RULE THIS PACKAGE EXISTS TO KEEP
 // ===========================================================================
@@ -27,7 +24,7 @@
 // ===========================================================================
 //
 // It does NOT mean a second CVE decoder. internal/ingest/delta already has one
-// and internal/ingest/bootstrap has another, and delta's own package comment
+// and internal/ingest/bootstrap has another, and the comment at the top of delta.go
 // records that the second one is a real cross-area hazard which its
 // conformance test exists to contain. A THIRD would be the same defect with a
 // third name on it, so this package extracts NOTHING itself: it decides which
@@ -83,6 +80,7 @@
 //     cache on the tombstone path).
 //   - It does not compute a fingerprint, derive one, or compare against one.
 //     anvil-fp/v1 is internal/record's and is the only one (the spine's record section).
+
 package drift
 
 import (
@@ -623,7 +621,7 @@ func decodeOne(feedID string, raw []byte) (Record, error) {
 // primary key and the publisher's bytes.
 //
 // It is deliberately minimal. Reconstructing severity or version ranges here
-// would be the third decoder the package comment refuses to write, and a
+// would be the third decoder the comment at the top of this file refuses to write, and a
 // half-reconstructed record is exactly the "looks complete and is not" outcome
 // drift handling exists to prevent. What survives is enough for the record to be found
 // again and re-parsed by a later build that understands the shape.
