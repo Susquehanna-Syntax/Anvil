@@ -19,7 +19,7 @@ block dated 2026-08-07 at the top of `routing.md` withdrew all OpenCode/OpenRout
 because running one copies private repository contents to a third-party provider; this review's
 packet still says `OpenCode route (openai/gpt-5.5)` and that route is dead.
 
-The replacement is an Anthropic subagent given an explicit instruction to **refute rather than
+The replacement is a same-family review agent given an explicit instruction to **refute rather than
 assess**, with named failure modes to hunt. That narrows the shared-blind-spot gap; it does not
 close it. **Do not read this file as "cross-family critic: PASS."** It is a same-family critic,
 and a later reader deciding whether the cross-family gate has been met should treat it as

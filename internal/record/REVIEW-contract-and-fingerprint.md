@@ -12,7 +12,7 @@ the spine's corrected-requirements, record, safety and Go control-plane sections
 
 ## 0. WHICH GUARANTEE THIS DOCUMENT ACTUALLY PROVIDES — READ THIS FIRST
 
-**This was a SAME-FAMILY critic.** The critic and both implementers (the record contract, the fingerprint) are Anthropic models.
+**This was a SAME-FAMILY critic.** The critic and both implementers (the record contract, the fingerprint) are models from the same family.
 `plan/design/routing.md` originally required a **different model family** here precisely so that a shared
 blind spot could not survive review; the owner withdrew external routes on 2026-08-07 because running
 them means copying `plan/` — deliberately private — to a third-party provider. See the OWNER DECISION
