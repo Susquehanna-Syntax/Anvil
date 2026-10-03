@@ -1,0 +1,86 @@
+{
+  "id": "encoder-round-trip",
+  "measured_at": "2026-10-03",
+  "value": 0.0119,
+  "unit": "encoder round trip as a fraction of model-tier time per candidate (Tier S proxy)",
+  "command": "python -m anvil_eval.encoder report",
+  "git": {
+    "commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+    "dirty": true
+  },
+  "pins": {
+    "encoder": {
+      "from": {
+        "repo": "microsoft/unixcoder-base",
+        "revision": "5604afdc964f6c53782a6813140ade5216b99006"
+      },
+      "torch": "2.11.0+cpu",
+      "files": {
+        "unixcoder-base.onnx": {
+          "sha256": "0c38f2f8a2fdfec8b03d4b3bbb1b808dcfc8ff14d39be2cb7f51e292bbbbdc4c"
+        },
+        "unixcoder-base-int8.onnx": {
+          "sha256": "d725a8702fc35e6a18a8cffeb98ad002de9561e139aa15d0b80a1092604ab150"
+        }
+      },
+      "quantisation": "onnxruntime quantize_dynamic, QInt8 weights"
+    },
+    "threads": 4,
+    "max_tokens": 512,
+    "pairs": {
+      "corpus": {
+        "file": "primevul_test_paired.jsonl",
+        "sha256": "384758c25142b640f1768bb0d334c43f315c580022ae94973c66e77128fb3821",
+        "pairs": 435,
+        "dropped_by_length_rule": 42,
+        "max_function_chars": 12000
+      },
+      "distinct_pairs": 786
+    },
+    "prefill_artifact": "eval/results/prefill-sweep.json"
+  },
+  "result": {
+    "timings": [
+      {
+        "batch": 32,
+        "pairs": 5000,
+        "seconds": 429.715382634,
+        "ms_per_pair": 85.9430765268
+      },
+      {
+        "batch": 64,
+        "pairs": 5000,
+        "seconds": 453.0738794689969,
+        "ms_per_pair": 90.61477589379938
+      }
+    ],
+    "best": {
+      "batch": 32,
+      "pairs": 5000,
+      "seconds": 429.715382634,
+      "ms_per_pair": 85.9430765268
+    },
+    "model_tier_seconds_per_candidate": 7.22493430602046,
+    "prefill_tokens_per_s_tier_s": 276.819126,
+    "candidates_per_full_scan": 10714,
+    "encoder_seconds_per_full_scan": 920.7941219081353,
+    "model_tier_seconds_per_full_scan": 77407.94615470321,
+    "bar": 0.2,
+    "within_bar": true,
+    "batch_composition_effect": {
+      "alone_vs_beside_the_longest_function": 0.07872634559273972,
+      "note": "dynamic INT8 sets activation scales per batch, so batch-mates move scores"
+    }
+  },
+  "negative_control": {
+    "description": "the worker refuses other paths and malformed bodies, and scores one pair sent twice in a batch the same twice",
+    "expected": "404, 400, and a duplicate difference under 1e-9",
+    "observed": {
+      "other_path_status": 404,
+      "malformed_status": 400,
+      "duplicate_in_batch_difference": 0.0,
+      "alone_vs_mixed_batch_difference": 0.07872634559273972
+    },
+    "passed": true
+  }
+}

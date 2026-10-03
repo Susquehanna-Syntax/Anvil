@@ -1,8 +1,9 @@
 # The Anvil Record Field Contract
 
-**Status: frozen interface.** Everything Anvil produces or consumes crosses this boundary. Once the contract freeze's
-exit gate passes, no area may add, rename, or re-type a field here without amending
-`plan/design/record-and-store.md` and the shared-vocabulary review.
+**Status: frozen, record v1 (2026-10-03).** Everything Anvil produces or consumes crosses this boundary. The
+contract freeze passed on 2026-10-03 (the last amendment below): from here on, changes are additive and versioned
+through `anvil/schemaVersion`, and every one is a store migration as well as a code change. No area may add,
+rename, or re-type a field without amending `plan/design/record-and-store.md` and the shared-vocabulary review.
 
 | | |
 |---|---|
@@ -140,11 +141,17 @@ required:
 
 ### 1.6 `anvil/verdict` — triage judgment about the finding (the verdict-mapping ruling)
 
-`true_positive | false_positive | insufficient_context`
+`true_positive | false_positive | insufficient_context | unconfirmed`
 
-**Producer:** the detector model / triage gate, via **the Lane B pipeline's** named mapping. **Consumer:** the
-coding-agent consumption pipeline — it drops `false_positive` and demotes `insufficient_context` to
-report-only — plus the report and `finding.verdict`.
+**Producer:** Lane A's emission; Lane B, via **the Lane B pipeline's** named mapping; later the coding agent's
+triage gate. **Consumer:** the coding-agent consumption pipeline — it drops `false_positive`, demotes
+`insufficient_context` to report-only, and holds `unconfirmed` for the triage gate — plus the report and
+`finding.verdict`.
+
+**`unconfirmed`** (added before the v1 freeze, 2026-10-03): a recall rule matched and nothing has judged the
+match. The gate decision deleted the adjudicator, so this is what every Lane B finding carries until the triage
+gate decides it. It is not actionable as it stands, and it is neither dropped nor demoted to report-only for
+being unconfirmed.
 
 **Why `insufficient_context` is a verdict and not a low confidence score — do not replace it with a
 threshold on `anvil/confidence`.** The spine's record section is explicit: "`INSUFFICIENT_CONTEXT` as a valid
@@ -370,11 +377,11 @@ defect, not a convenience.
 | `result.rank` | SARIF-native §3.27.11 | optional | ranking | queue order. **Priority, not confidence**; ingested third-party `rank` is untrusted and re-derived (`research/18` Risk #8) |
 | `result.properties["anvil/findingId"]` | ext | required | record assembler | cross-reference (task cards, DB) |
 | `result.properties["anvil/half"]` | ext | required, must equal the run's half | detector | routing |
-| `result.properties["anvil/confidence"]` | ext | required, `[0,1]` | detector model | ranking, report |
+| `result.properties["anvil/confidence"]` | ext | required, `[0,1]` | detector (a deterministic match writes 1; see the 2026-10-03 freeze amendment) | ranking, report |
 | `result.properties["anvil/verdict"]` **NEW** | ext | required, §1.6 enum | detector / triage gate via the Lane B pipeline | consumption pipeline, report |
 | `result.properties["anvil/remediableByAgent"]` **NEW** | ext | required, boolean; **host findings are always `false`** | record assembler, derived from `detector` | coding agent (never attempts host fixes — the spine's safety section read-only host agent) |
-| `result.properties["anvil/reasoning"]` | ext | required | detector model | report, coding-agent context |
-| `result.properties["anvil/detector"]` (`.kind`, `.model`, `.revision`, `.promptDigest`) | ext | required | detector model | audit trail, prompt-digest replay, fingerprint tier selection |
+| `result.properties["anvil/reasoning"]` | ext | required | detector (Anvil-composed) | report, coding-agent context |
+| `result.properties["anvil/detector"]` (`.kind`, `.model`, `.revision`, `.promptDigest`) | ext | required; `.model` and `.revision` empty when no model ran | detector | audit trail, prompt-digest replay, fingerprint tier selection |
 | `result.properties["anvil/evidenceClass"]` | ext | required | record assembler, derived from detector + correlation state | ranking (the queue re-cut), coding agent (the read path read order) |
 | `result.properties["anvil/trust"]` **NEW** | ext | required — see §2 | whichever component ingests the external string | prompt builder (the spine's safety-section containment), report |
 | `result.properties["anvil/advisory"]` (`.ids`, `.cveIds`, `.sourceFeed`, `.snapshotDigest`, `.licenseSpdx`, `.asOf` **NEW**, `.stalenessSeconds` **NEW**, `.parseDegraded` **NEW**, `.excerpt`, `.licenseManualNote` **NEW**) | ext | required when an advisory is linked | ingestion subsystem at record-assembly time | coding agent (down-weight stale/degraded context), report; `.licenseSpdx` and `.licenseManualNote` → `plan/design/licences.md` |
@@ -676,3 +683,55 @@ deliberate limit.
 | An exported, ungated packet path | **Closed.** `ReadPacket` and `WritePacket` were already gated; `Queue.PacketPath(fingerprint)` still mapped any fingerprint to its file, which is a read around the gate. It is unexported. A lease holder still receives its own packet's path on the `Handle`. `DropPacket` stays exported: it only removes a regenerable cache. | `TestNoExportedPathToAnArbitraryPacket` |
 
 Every new check was seen failing with its fix reverted before it was trusted.
+
+## Amendment 2026-10-03 — the gate, `unconfirmed`, and the v1 freeze (plan nodes gate and freeze)
+
+**The gate.** The owner decided on 2026-10-03 to shrink the model tier to recall plus an optional ranker
+(`eval/register.yaml`, the `gate` block, which quotes the flip rate and the baseline comparison). The adjudicator
+is deleted, so no Lane B finding is ever judged by a detector model.
+
+**The one blocking finding, and its fix.** A Lane B finding is a rule match nothing has judged. Of the three
+verdicts it could carry, `true_positive` claims a confirmed defect and `insufficient_context` makes it report-only
+for ever, which contradicts the gate's "confirmation moves to the coding agent's triage gate". The owner chose to
+add a fourth literal, `unconfirmed`, before the freeze. It landed in all five places the vocabulary lives, each
+held by a test that was seen failing first:
+
+| Place | Held by |
+|---|---|
+| `contract.go` (`VerdictUnconfirmed`) | `TestFrozenEnumsMatchTheRuling` |
+| the wire schema's `verdict` enum | `TestVerdictVocabularyAgreesAcrossContractSchemaAndDoc` |
+| this document, §1.6 | the same test |
+| the store's `ck_finding_verdict` | `TestEnumCheckConstraintsMatchContractLiteralForLiteral` (internal/store) |
+| the consumption routing (`taskcard.go`) | `TestAnUnconfirmedFindingWaitsForTheTriageGate` |
+
+`schema.sql` was edited in place, not migrated, because v1 was not yet frozen. Migration 0001's checksum changes
+with it, so a store created before 2026-10-03 refuses to open with a ledger mismatch and must be recreated. Only
+test stores existed. After this freeze, a change like this one is a numbered migration.
+
+**The other gate-dependent slots, settled without a schema change.**
+
+* `anvil/confidence` stays required and keeps its meaning, detector certainty. A deterministic match, Lane A's
+  comparator or a Lane B rule, writes 1: the pattern is certainly present. Whether it is a defect is the
+  verdict's job. A ranker's score, if Phase 6 ships one, is priority and goes in `result.rank`, never here.
+* `anvil/reasoning` is the Anvil-composed account of the match (rule, CWE, location), labelled under `anvil/trust`
+  exactly as Lane A's is.
+* `anvil/detector` carries `kind: sast` with `.model` and `.revision` empty, as Lane A's does: no model ran.
+
+**The integration review.** Every producer and consumer of the record that exists on 2026-10-03, read against
+this contract:
+
+| Area | Role | Finding |
+|---|---|---|
+| `internal/record` (assembler, sealing, read path, task cards, correlation, fingerprint) | owner | the verdict gap above, closed |
+| `internal/record/lanea` | producer, SAST half (SCA and host) | writes `true_positive` or `insufficient_context`, confidence 1, empty model; unaffected |
+| `internal/scan`, `internal/scanctl` | producer of state and half status; seals | unaffected; state and status vocabularies unchanged |
+| `internal/store` | persistence | CHECK widened; payload codec and ledger unchanged |
+| `internal/handoff` | consumer | reads the consumption class and verdict through `record`; unaffected |
+| `internal/match`, `internal/collector/*`, `internal/ingest/*`, `internal/policy` | inputs to Lane A emission | unaffected |
+| `internal/dast/record`, `internal/dast/target`, `internal/dast/inventory`, `internal/dast/containment` | producer, DAST half (built, never run live) | unaffected; a live producer is Phase 8's to prove |
+| `cmd/anvil` | SARIF out | unaffected |
+| `eval/tools/validate_record.py` and CI's end-to-end job | the wire gate | validates against the updated schema |
+| Lane B pipeline | producer | does not exist yet; Phase 6 builds it against this frozen v1 and emits `unconfirmed` |
+
+No blocking finding remains open. `anvil/schemaVersion` is `1.0.0` and the wire schema is
+`schemas/anvil-record-v1.schema.json` (`x-anvil-contractVersion` 1.0.0): record v1 is frozen.

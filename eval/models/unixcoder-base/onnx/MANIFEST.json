@@ -1,0 +1,16 @@
+{
+  "from": {
+    "repo": "microsoft/unixcoder-base",
+    "revision": "5604afdc964f6c53782a6813140ade5216b99006"
+  },
+  "torch": "2.11.0+cpu",
+  "files": {
+    "unixcoder-base.onnx": {
+      "sha256": "0c38f2f8a2fdfec8b03d4b3bbb1b808dcfc8ff14d39be2cb7f51e292bbbbdc4c"
+    },
+    "unixcoder-base-int8.onnx": {
+      "sha256": "d725a8702fc35e6a18a8cffeb98ad002de9561e139aa15d0b80a1092604ab150"
+    }
+  },
+  "quantisation": "onnxruntime quantize_dynamic, QInt8 weights"
+}

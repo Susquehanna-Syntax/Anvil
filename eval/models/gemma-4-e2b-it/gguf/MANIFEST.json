@@ -1,0 +1,28 @@
+{
+  "llama_cpp": {
+    "build": "b11146",
+    "commit": "7fe450e19305b828c199d602c23a8337aaa1f03b"
+  },
+  "converter_env": {
+    "torch": "2.11.0+cpu",
+    "transformers": "5.18.0"
+  },
+  "from": {
+    "repo": "google/gemma-4-E2B-it",
+    "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7"
+  },
+  "files": {
+    "BF16": {
+      "path": "gemma-4-e2b-it-BF16.gguf",
+      "sha256": "6c82346173cbde07b4fc638cc0d06e512d346cfd309b22edd36196eb6a7c4deb"
+    },
+    "Q4_K_M": {
+      "path": "gemma-4-e2b-it-Q4_K_M.gguf",
+      "sha256": "423e16b63cd1cec3aadcb293e7e2eb95a84a7770b2fc75958a6374c390c3be7a"
+    },
+    "Q8_0": {
+      "path": "gemma-4-e2b-it-Q8_0.gguf",
+      "sha256": "563de73ec6b8f5c8fb8b7715d71e6faddcdf802d62af6ced3645d8c008922109"
+    }
+  }
+}

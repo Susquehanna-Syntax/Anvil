@@ -4,11 +4,12 @@ An open-source, **profit-free**, self-hostable system that finds vulnerabilities
 code repositories and proposes fixes — using locally-served open-weight models, and never browsing the
 live web at inference time.
 
-**Status (2026-10-03): Phases 0–4 of 10 are built; Phase 5, the evaluation that gates the model tier, is
-next.** `anvil scan` runs Lane A end to end: it matches a repository (through Trivy) or a host inventory
+**Status (2026-10-03): Phases 0–5 of 10 are done; Phase 6, Lane B, is next.** Phase 5's evaluation decided the
+model tier: the small detection model did not earn its place (`eval/register.yaml`), so the owner shrank it to
+recall rules plus an optional ranker, and the record contract is frozen at v1. `anvil scan` runs Lane A end to end: it matches a repository (through Trivy) or a host inventory
 (through Anvil's own comparator) against the advisory cache, seals the SAST half, writes the record and its
 findings to the store, marks each finding new, persisting, regressed or fixed against earlier scans, and writes
-the record as SARIF 2.1.0. What is not built yet: Lane B's model tier (it waits on the evaluation), remediation,
+the record as SARIF 2.1.0. What is not built yet: Lane B's recall tier, remediation,
 the dynamic tier running live (it is built but has never touched a kernel or a target), and the release packages.
 A fresh clone admits no real advisory feed until an operator acquires and certifies the publishers' licence
 texts (`mirror/README.md`); `testdata/lanea-fixture` is an offline snapshot that proves the chain without one.
@@ -35,8 +36,11 @@ Two detection lanes, one audit record, and a remediation tier that proposes and 
 - **Lane A — deterministic, zero inference.** SBOM and host-package matching by version comparator.
   Owns dependency and host findings. CVE/OSV/GHSA describe vulnerable *package versions*, and a version
   comparator answers that exactly, for free.
-- **Lane B — first-party source.** A deterministic recall tier produces candidates and a small model
-  adjudicates a short candidate list. It never forms the N×M cross product of advisories against code.
+- **Lane B — first-party source.** A deterministic recall tier (opengrep over GitLab's sast-rules and C/C++
+  rules, gosec, bandit) produces candidates, each placed on the record as `unconfirmed` for the coding agent's
+  triage gate to decide. The evaluation of 2026-10-03 deleted the planned small-model adjudicator: the primary
+  candidate flipped its verdict on a wrong advisory only about half the time and ranked vulnerable against patched
+  code no better than chance. A ranker ships only if it measurably beats chance on Anvil's own candidates.
 - **Dynamic tier.** Ships as a **separate artifact** (`anvil-dast`), separately installed, requiring
   explicit attestation before it probes anything.
 - **Remediation.** Proposes patches. It does not merge them.

@@ -69,9 +69,9 @@
       "enum": ["ephemeral_manifest", "live_url_authorized"]
     },
     "verdict": {
-      "description": "FROZEN ENUM 6/6 (anvil/verdict). `insufficient_context` is a real verdict, not a low confidence score (the spine's record section is explicit). A low score means 'probably not real'; insufficient_context means 'may well be real and the detector could not see enough to tell'. Those demand opposite handling and a float cannot express the difference.",
+      "description": "FROZEN ENUM 6/6 (anvil/verdict). `insufficient_context` is a real verdict, not a low confidence score (the spine's record section is explicit). A low score means 'probably not real'; insufficient_context means 'may well be real and the detector could not see enough to tell'. Those demand opposite handling and a float cannot express the difference. `unconfirmed` (added before the v1 freeze by the gate decision of 2026-10-03) is a recall rule match nothing has judged; the coding agent's triage gate decides it.",
       "type": "string",
-      "enum": ["true_positive", "false_positive", "insufficient_context"]
+      "enum": ["true_positive", "false_positive", "insufficient_context", "unconfirmed"]
     },
     "trust": {
       "description": "anvil/trust (the spine's record section, required on EVERY string originating outside Anvil). A repo source snippet is `untrusted` even though Anvil put it in the struct: the question is who wrote the bytes, never who assigned the field.",

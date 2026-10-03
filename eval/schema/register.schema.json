@@ -7,6 +7,21 @@
   "additionalProperties": false,
   "required": ["version", "experiments"],
   "properties": {
+    "gate": {
+      "description": "The gate decision (plan node gate), set by the owner only, with the flip rate and the baseline comparison quoted. Absent until the owner decides.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decided_on", "decided_by", "outcome", "decision", "flip_rate", "baseline_comparison", "consequences"],
+      "properties": {
+        "decided_on": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "decided_by": { "const": "the owner" },
+        "outcome": { "enum": ["KEEP", "SHRINK", "DELETE"] },
+        "decision": { "type": "string", "minLength": 1 },
+        "flip_rate": { "type": "string", "pattern": "\\[" },
+        "baseline_comparison": { "type": "string", "pattern": "engineering judgement, not a citation" },
+        "consequences": { "type": "string", "minLength": 1 }
+      }
+    },
     "version": {
       "description": "Register format version. 1 per plan/design/evaluation.md.",
       "type": "integer",
@@ -180,17 +195,18 @@
         },
         "deferred_reason": { "type": ["string", "null"] },
         "owning_future_phase": {
-          "description": "Milestone/lane that will own this row once deferred. Populated by the register roll-up; null until then. Milestone-0 exit criteria require this to be non-null for every deferred row before the evaluation milestone closes.",
+          "description": "The phase that must run this row before its own exit gate. Required and non-empty on every deferred row (set 2026-10-03); null on the rows Phase 5 runs.",
           "type": ["string", "null"]
         }
       },
       "allOf": [
         {
-          "description": "A deferred row must carry a non-empty deferred_reason and must be owned by 'deferred', not by an evaluation plan node.",
+          "description": "A deferred row must carry a non-empty deferred_reason and a non-empty owning_future_phase, and must be owned by 'deferred', not by an evaluation plan node. An experiment without an owner is a question nobody will answer (plan node deferred).",
           "if": { "properties": { "status": { "const": "deferred" } }, "required": ["status"] },
           "then": {
             "properties": {
               "deferred_reason": { "type": "string", "minLength": 1 },
+              "owning_future_phase": { "type": "string", "minLength": 1 },
               "owner_node": { "const": "deferred" }
             }
           }

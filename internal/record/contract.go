@@ -551,15 +551,17 @@ func ValidateTargetProvisioning(v string) error {
 // Verdict is the triage judgment about a FINDING,
 // `result.properties["anvil/verdict"]` and `finding.verdict`.
 //
-// FROZEN by the verdict-mapping ruling. Lane B keeps its own
-// in-process `Verdict.Result` vocabulary (`EXHIBITS|…`), which is a judgment
-// about the CODE; the Lane B pipeline owns the explicit, tested mapping onto these literals,
-// including the case normalisation, at the point it places findings on the
-// record. A mapping with an owner and a test is not the same thing as two
-// vocabularies drifting.
+// FROZEN by the verdict-mapping ruling, widened once before the v1 freeze by
+// the gate decision of 2026-10-03 (plan node gate): the owner shrank the model
+// tier to recall plus an optional ranker, so Lane B has no adjudicator and its
+// findings are rule matches no detector has judged. The Lane B pipeline owns
+// the one tested mapping from what its recall tier produces onto these
+// literals, including any case normalisation, at the point it places findings
+// on the record; it emits VerdictUnconfirmed. A mapping with an owner and a
+// test is not the same thing as two vocabularies drifting.
 type Verdict string
 
-// The three legal anvil/verdict literals.
+// The four legal anvil/verdict literals.
 //
 // WHY VerdictInsufficientContext IS A VERDICT AND NOT A LOW CONFIDENCE SCORE —
 // do not replace it with a threshold on Confidence:
@@ -585,14 +587,22 @@ const (
 	// VerdictInsufficientContext: the detector could not decide with the
 	// context it had. Report-only; never silently dropped. See above.
 	VerdictInsufficientContext Verdict = "insufficient_context"
+	// VerdictUnconfirmed: a recall rule matched and nothing has judged the
+	// match yet. It claims neither a defect nor its absence. It is not
+	// actionable as it stands: the coding agent's triage gate (Phase 7)
+	// decides it before any fix is proposed, and it is never dropped or
+	// demoted to report-only by the consumption pipeline merely for being
+	// unconfirmed. Lane B emits it; Lane A never does.
+	VerdictUnconfirmed Verdict = "unconfirmed"
 )
 
 // VerdictValues returns every legal anvil/verdict literal.
 func VerdictValues() []Verdict {
-	return []Verdict{VerdictTruePositive, VerdictFalsePositive, VerdictInsufficientContext}
+	return []Verdict{VerdictTruePositive, VerdictFalsePositive, VerdictInsufficientContext,
+		VerdictUnconfirmed}
 }
 
-// Valid reports whether v is one of the three legal anvil/verdict literals.
+// Valid reports whether v is one of the four legal anvil/verdict literals.
 func (v Verdict) Valid() bool { return inEnum(v, VerdictValues()) }
 
 // ValidateVerdict reports whether v is a legal anvil/verdict literal.

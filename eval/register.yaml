@@ -41,7 +41,58 @@
 #     populating it; the evaluation exit gate requires it non-null before evaluation
 #     closes. Null here means "not yet assigned", not "no owner needed".
 
+# PRE-REGISTRATION (2026-10-03, Phase 5, before any experiment ran):
+#   - advisory-permutation and code-metrics-baseline carry their pass, fail and
+#     ambiguity policies, their sample sizes and their interval rules in
+#     method / metric / threshold_pass / threshold_fail. The commit that wrote
+#     them precedes every file under eval/results/; `git log -- eval/register.yaml`
+#     is the evidence.
+#   - Owner decisions folded in on 2026-10-03: the recall corpus is the
+#     federation (candidates-per-scan), and ARVO is dropped for now
+#     (later that day the owner allowed ARVO for local-only patch-quality testing)
+#     (patch-quality).
+#   - Every deferred row names its owning phase.
+#   - `decision` is still UNRESOLVED on all fourteen rows. Only the owner sets it.
+#
+# RESULTS AND THE GATE (2026-10-03, Phase 5): five rows ran and are complete,
+# each with its artifact under eval/results/. The owner set their decisions by
+# the pre-registered bands and decided the gate (the `gate` block below).
+# patch-quality is deferred to Phase 7 by the owner; eight rows stay deferred.
+
 version: 1
+
+# ===========================================================================
+# THE GATE DECISION (plan node gate). Decided by the owner on 2026-10-03 and
+# written here at the owner's instruction, with the numbers it rests on.
+# ===========================================================================
+gate:
+  decided_on: "2026-10-03"
+  decided_by: the owner
+  outcome: SHRINK
+  decision: >-
+    Shrink the model tier to recall plus an optional ranker. The adjudicator and advisory-text
+    conditioning are deleted. Lane B ships the recall federation; a ranker (the code-metrics
+    regression or the unixcoder encoder) ships only if Phase 6 measures it beating chance on
+    Anvil's own candidates, and no ranker is the default. Confirmation moves to the coding
+    agent's triage gate.
+  flip_rate: >-
+    advisory-permutation, CWE-text framing (decides): Qwen3.5-2B 0.500 [0.407, 0.590], 57 flips
+    of 114 real-advisory exhibits over 393 pairs; Gemma-4-E2B-it 0.900 [0.750, 1.000], 18 of 20.
+    Both intervals cross a band edge, so the pre-registered reading is ambiguous twice, a FAIL
+    for v1. CVE-text framing (reported): Qwen3.5-2B 0.842 [0.766, 0.913], Gemma-4-E2B-it 1.000
+    [1.000, 1.000]. 95% percentile bootstrap, 10,000 resamples, seed 20261003.
+  baseline_comparison: >-
+    code-metrics-baseline, CWE-text framing, model arm Qwen3.5-2B, 393 pairs, paired resamples:
+    pairwise-correct 0.031 [0.015, 0.048] against the regression's 0.005 [0.000, 0.013] (model
+    clearly better, by 0.002); precision at recall 0.70 0.498 [0.488, 0.511] against 0.492
+    [0.487, 0.499] (overlap; both at chance, 0.5). One clear metric of two is AMBIGUOUS. The
+    equivalence rule is an engineering judgement, not a citation.
+  consequences: >-
+    Lane B (Phase 6) builds the recall federation, the candidate contract, the candidates-per-scan
+    metric and the pipeline that places recall findings on the record; it does not build the
+    adjudicator, its llama-server residency or its KL-divergence gate. The candidate volume must
+    be narrowed first (10,714 on curl's full scan against 500). The record's verdict, reasoning and
+    confidence slots for Lane B findings are settled at the contract freeze.
 
 experiments:
 
@@ -56,7 +107,7 @@ experiments:
       research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row;
       enumerated as experiment #1 in research/14-critique-and-gaps.md B7 table
     owner_node: ablation
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the detection model actually reads the advisory, i.e. whether advisory-conditioning is
       real. PASS: proceed with the three-tier design (research/02) using this candidate model.
@@ -70,43 +121,65 @@ experiments:
         licence_ref: >-
           research/03-detection-training-data-and-method.md S2, via
           plan/design/evaluation.md "## Pinned Versions And Licences"
-      - name: Qwen/Qwen3.5-2B (primary candidate)
-        licence: Apache-2.0 — pending text-only-variant confirmation (the candidate-model acquisition and the model-licence review)
-        licence_ref: plan/design/evaluation.md "## Pinned Versions And Licences"
-      - name: Gemma-4 (specific variant TBD, secondary candidate)
+      - name: Qwen/Qwen3.5-2B at 15852e8c16360a2fea060d615a32b45270f8a8fc (primary candidate)
         licence: >-
-          Apache-2.0 for the specific variant only — re-verify per-variant, do not infer from the
-          family-level reversal
-        licence_ref: >-
-          the spine's component table caveat, via plan/design/evaluation.md
-          "## Pinned Versions And Licences"
+          Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03. No
+          text-only repository exists; llama.cpp serves the language model without a vision projector
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue (evidence pinned by git blob hash)
+      - name: google/gemma-4-E2B-it at 3e22461f65e89153144f8adb70e3b8c2cc9845a7 (second candidate)
+        licence: >-
+          Apache-2.0, read from the model card's own text at that revision on 2026-10-03 (the
+          repository has no LICENSE file); the card links Google's Gemma 4 licence page, which held
+          the Apache 2.0 text that day
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue (evidence pinned by git blob hash)
+      - name: CWE 4.20 catalogue (cwec_v4.20.xml.zip, MITRE), the CWE-text framing
+        licence: MITRE CWE Terms of Use (attribution)
+        licence_ref: mirror/tier0/LICENSE-NOTES.md "CWE 4.20"
+      - name: llama.cpp b11146 (commit 7fe450e19305b828c199d602c23a8337aaa1f03b), llama-server
+        licence: MIT
+        licence_ref: the LICENSE body shipped in the b11146 release archive, read 2026-10-03
     method: >-
-      Substitute an unrelated advisory for the correct one and measure the EXHIBITS ->
-      DOES_NOT_EXHIBIT verdict flip rate over PrimeVul-Paired. Run against Qwen3.5-2B (primary) and
-      Gemma-4 (secondary) and report per-model breakdown, not a single aggregate — the two candidates
-      may diverge and that divergence is itself model-selection evidence. The permutation must be
-      drawn from the full advisory pool, never a CWE-matched subset (a CWE-matched subset understates
-      the true flip rate and biases toward a false PASS; the ablation review's critic gate).
+      Pre-registered 2026-10-03, before any run. Corpus: PrimeVul v0.1, primevul_test_paired.jsonl,
+      every pair whose vulnerable and patched functions are each at most 12,000 characters (one
+      model-independent length rule, shared with the code-metrics baseline; the excluded count is
+      reported). The map expects 564 pairs; the loader records the count it finds. No other
+      subsampling. For each pair the vulnerable function is judged twice in each framing: with its
+      real advisory, and with an unrelated advisory drawn uniformly at random (seed 20261003) from
+      the full pool of the other pairs' advisories, never a CWE-matched subset; a draw whose text is
+      identical to the real advisory is redrawn. Two framings: CVE text (the pair's cve_desc; pairs
+      without one are left out of this framing and counted) and CWE text (the name and description
+      of the pair's first CWE from the CWE 4.20 catalogue; pairs whose CWE is missing, NVD-CWE-Other
+      or NVD-CWE-noinfo are left out of this framing and counted). Each candidate is served by
+      llama-server from llama.cpp b11146 as a Q4_K_M GGUF converted from its pinned revision,
+      temperature 0, fixed seed, with grammar-constrained JSON whose verdict is exhibits,
+      does_not_exhibit or insufficient_context. Both candidates run in the same pass, Qwen3.5-2B
+      (primary) and Gemma-4-E2B-it (second), and each is reported separately. Command and pins are
+      in the result artifact.
     metric: >-
-      Flip rate (EXHIBITS -> DOES_NOT_EXHIBIT) on the PrimeVul-Paired test split, reported with a
-      bootstrap 95% confidence interval — n_pairs is only 564, so CI width matters at this sample size.
+      Flip rate, per candidate and per framing: among pairs whose real-advisory verdict is exhibits,
+      the share whose permuted-advisory verdict is does_not_exhibit. A move to insufficient_context
+      is not a flip; its rate is reported beside it. 95% percentile bootstrap interval, 10,000
+      resamples of pairs, seed 20261003. The interval is reported, never the point estimate alone.
     threshold_pass: >-
-      Flip rate > 80% (the first kill criterion; research/03-detection-training-data-and-method.md
-      Test 4 row).
+      Pre-registered 2026-10-03, before any run. The Lane-B-shaped number (CWE text) decides; the
+      CVE-text number is reported beside it. PASS when the primary candidate's 95% interval lies
+      wholly above 80%. Reading the band from the interval rather than the point estimate is an
+      engineering judgement: it can only make a pass harder.
     threshold_fail: >-
-      Flip rate < 50% (the first kill criterion) — CVE ingestion is decoration. The 50-80% band is
-      AMBIGUOUS; PROPOSED handling is to run the QLoRA runner-up (research/03) before a final call,
-      and plan/design/evaluation.md "## Open Questions" requires the gate decision's orchestrator to set an
-      explicit escalation policy for this band before it can occur in practice.
+      Pre-registered 2026-10-03, before any run. FAIL when the primary candidate's interval lies
+      wholly below 50%: advisory-text conditioning is deleted and the tier's fate goes to the
+      code-metrics baseline. Any other interval (inside 50-80%, or crossing 50% or 80%) is AMBIGUOUS: the
+      second candidate's result, from the same pass, is read by the same rule. If it passes, the
+      gate proceeds with the second candidate; otherwise the outcome is treated as FAIL for v1.
     reference_baseline: >-
       research/03-detection-training-data-and-method.md — "Evaluation harness" table, Test 4 row
       (bar: > 80% flip rate)
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
-    decision: UNRESOLVED
+      value: 0.5
+      unit: "flip rate, CWE-text framing, Qwen3.5-2B (interval, both framings and both candidates in the artifact)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/advisory-permutation.json"
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
@@ -122,7 +195,7 @@ experiments:
       research/02-small-detection-models.md finding B / S3 (arXiv:2509.19117);
       enumerated as experiment #2 in research/14-critique-and-gaps.md B7 table
     owner_node: baseline
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the small-model detection tier should exist at all. PASS (logistic regression is
       significantly worse than the model on both metrics — non-overlapping CIs, LR lower): the model
@@ -135,40 +208,62 @@ experiments:
         licence_ref: >-
           research/03-detection-training-data-and-method.md S2, via
           plan/design/evaluation.md "## Pinned Versions And Licences"
-      - name: Qwen/Qwen3.5-2B (model arm, shared with the advisory-permutation ablation)
-        licence: Apache-2.0 — pending text-only-variant confirmation (the candidate-model acquisition and the model-licence review)
-        licence_ref: plan/design/evaluation.md "## Pinned Versions And Licences"
+      - name: >-
+          The model arm: Qwen/Qwen3.5-2B, or google/gemma-4-E2B-it if the advisory-permutation
+          ambiguity rule moves to it (pins and licence evidence as in that row)
+        licence: Apache-2.0 (both), read from each model's own text on 2026-10-03
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue
+      - name: CWE 4.20 catalogue (cwec_v4.20.xml.zip, MITRE), the CWE-text framing
+        licence: MITRE CWE Terms of Use (attribution)
+        licence_ref: mirror/tier0/LICENSE-NOTES.md "CWE 4.20"
+      - name: llama.cpp b11146 (commit 7fe450e19305b828c199d602c23a8337aaa1f03b), llama-server
+        licence: MIT
+        licence_ref: the LICENSE body shipped in the b11146 release archive, read 2026-10-03
     method: >-
-      Train a logistic regression over classic code metrics (cyclomatic complexity, LoC, nesting
-      depth, etc.; full feature list recorded for reproducibility) on PrimeVul and score it against
-      the small model's arm on the identical held-out split and identical metric definitions used by
-      the advisory-permutation ablation, so the comparison is apples-to-apples. Two hard constraints: the LR must not be trained
-      on the paired test split used for evaluation (no leakage), and the training set must not be
-      class-balanced — research/03 and research/14 (S14 citation) both name balanced training as the
-      specific failure mode that manufactures false confidence (the 0.09-precision catastrophe).
-      Both arms reported with bootstrap CIs.
+      Pre-registered 2026-10-03, before any run. Evaluation set: the advisory-permutation pairs
+      (same length rule), both functions of each pair, each judged with the pair's real advisory in
+      the CWE-text framing, which is Lane-B-shaped and decides; the CVE-text framing is reported,
+      not decided on. Model arm: the candidate the advisory-permutation outcome proceeds with
+      (Qwen3.5-2B unless the ambiguity rule moved to Gemma-4-E2B-it). Its verdict exhibits counts as
+      vulnerable; does_not_exhibit and insufficient_context count as not vulnerable. Its ranking
+      score is the probability of the exhibits verdict, read from the raw next-token distribution at
+      the verdict's first token and normalised over the three verdicts' first tokens; it is an
+      evaluation-only measurement, and Anvil's verdict schema carries no score. Regression arm:
+      logistic regression (L2, C = 1, features standardised on the training set, no class weighting,
+      no rebalancing) over the classic metrics anvil_eval.metrics computes from the function text
+      alone (non-blank lines, tokens, cyclomatic complexity, maximum nesting depth, parameters,
+      calls, distinct callees, returns, loops, conditionals, pointer dereferences, array subscripts,
+      Halstead volume, comment lines), trained on primevul_train.jsonl and never on a paired split.
+      Its P-C threshold is the one that maximises P-C on primevul_valid_paired.jsonl.
     metric: >-
-      Test-1 pairwise-correct (P-C) rate and Test-2 precision at recall 0.70, computed for both the
-      LR arm and the model arm, each with a bootstrap 95% confidence interval.
+      Pairwise-correct rate (P-C: the vulnerable version predicted vulnerable and the patched
+      version predicted not) and precision at recall 0.70 over the 2n functions (at the highest
+      score threshold whose recall reaches 0.70), for both arms. 95% percentile bootstrap intervals,
+      10,000 resamples of pairs, the same resample indices for both arms, seed 20261003. Sample
+      size: every pair in the evaluation set, in one run with no stopping rule. Precision is
+      measured at 50% prevalence because the set is paired, so a scorer that guesses has precision
+      0.5; both arms see the same set.
     threshold_pass: >-
-      The LR is significantly worse than the small model on BOTH metrics — non-overlapping 95% CIs
-      with the LR lower. PROPOSED — no published Anvil-specific equivalence margin exists
-      (research/02-small-detection-models.md S3, arXiv:2509.19117; the second kill criterion).
+      Pre-registered 2026-10-03, before any run. PASS (the tier is justified) when on both metrics
+      the regression's interval lies wholly below the model's: regression upper bound < model lower
+      bound. The equivalence rule is an engineering judgement, not a citation; say so wherever the
+      result is quoted.
     threshold_fail: >-
-      The LR's Test-1 P-C and Test-2 precision-at-recall-0.70 fall within or exceed the small model's
-      95% CI. Note plan/design/evaluation.md "## Open Questions": this equivalence margin is an
-      engineering judgment call, not a citation — the statistical protocol (sample size, CI method)
-      must be confirmed before the code-metrics baseline runs.
+      Pre-registered 2026-10-03, before any run. FAIL (delete the adjudicator; ship recall plus an
+      optional ranker, which may be the regression itself) when on both metrics the regression's
+      interval overlaps or exceeds the model's: regression upper bound >= model lower bound. Clearly
+      below on one metric and overlapping on the other is AMBIGUOUS and goes to the owner with all
+      four intervals quoted. The equivalence rule is an engineering judgement, not a citation.
     reference_baseline: >-
       research/03-detection-training-data-and-method.md — "Evaluation harness" table: Test 1 bar
       P-C > 25% with reference GPT-4 CoT 12.94%; Test 2 bar F1 > 5.22% (flag-everything) with
       reference best fine-tune 5.82%
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
-    decision: UNRESOLVED
+      value: 1
+      unit: "metrics (of two) on which the model's 95% interval lies wholly above the regression's: 2 is PASS, 0 is FAIL, 1 is AMBIGUOUS (pre-registered)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/code-metrics-baseline.json"
+    decision: AMBIGUOUS
     depends_on:
       - advisory-permutation
     deferred_reason: null
@@ -183,7 +278,7 @@ experiments:
       research/02-small-detection-models.md S8 and research/05-inference-serving-and-hardware.md;
       enumerated as experiment #3 in research/14-critique-and-gaps.md B7 table
     owner_node: costs
-    status: not_started
+    status: complete
     decision_gated: >-
       Every downstream compute claim in the plan. PASS: the spine's ~17 min / ~2 min budget and the spine's tier
       assignments stand as written. FAIL: re-derive the candidates-per-scan ceiling from the candidates-per-scan instrument's
@@ -191,14 +286,17 @@ experiments:
       drop to Qwen3.5-0.8B, move Tier 3 to the encoder-only ranker (research/02 flip condition #2),
       or raise the minimum hardware tier for the detection path.
     corpus:
-      - name: Qwen/Qwen3.5-2B (primary candidate)
-        licence: Apache-2.0 — pending text-only-variant confirmation (the candidate-model acquisition and the model-licence review)
-        licence_ref: plan/design/evaluation.md "## Pinned Versions And Licences"
-      - name: Gemma-4 (specific variant TBD, secondary candidate)
-        licence: Apache-2.0 for the specific variant only — re-verify per-variant
-        licence_ref: >-
-          the spine's component table caveat, via plan/design/evaluation.md
-          "## Pinned Versions And Licences"
+      - name: Qwen/Qwen3.5-2B at 15852e8c16360a2fea060d615a32b45270f8a8fc (primary candidate)
+        licence: >-
+          Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03. No
+          text-only repository exists; llama.cpp serves the language model without a vision projector
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue (evidence pinned by git blob hash)
+      - name: google/gemma-4-E2B-it at 3e22461f65e89153144f8adb70e3b8c2cc9845a7 (second candidate)
+        licence: >-
+          Apache-2.0, read from the model card's own text at that revision on 2026-10-03 (the
+          repository has no LICENSE file); the card links Google's Gemma 4 licence page, which held
+          the Apache 2.0 text that day
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue (evidence pinned by git blob hash)
       - name: HuggingFaceTB/SmolLM3-3B (auditability runner-up)
         licence: Apache-2.0
         licence_ref: research/02-small-detection-models.md S13
@@ -232,26 +330,26 @@ experiments:
       (256 tok / 1.5 s), not a number printed in the source; the "Xeon Platinum 8480+" SKU is named by
       plan/design/evaluation.md, not by research/02, which says only "the new Xeon".
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
-    decision: UNRESOLVED
+      value: 276.8
+      unit: "tokens/s prefill at a 2000-token prompt, Qwen3.5-2B Q4_K_M, CPU with 4 threads (Tier S proxy); every arm in the artifact"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/prefill-sweep.json"
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
 
   # =========================================================================
   - id: patch-quality
-    name: Open-weight vs. frontier patch quality (ARVO / CWE-Bench-Java)
+    name: Open-weight patch quality (ARVO, local only; CWE-Bench-Java)
     kind: experiment
     spine_ref: the spine's evaluate-first and safety sections
     source_ref: >-
       research/10-prior-art-and-landscape.md, research/04-remediation-coding-model.md and
       research/11-fix-validation-and-false-positives.md S7; enumerated as experiment #4 in
       research/14-critique-and-gaps.md B7 table
-    owner_node: patchquality
-    status: not_started
+    owner_node: deferred
+    status: deferred
     decision_gated: >-
       Anvil's claimed central differentiator — the "possibly better system" framing in
       the spine's evaluate-first rule. PASS: the framing is supported; no redesign forced, since the spine's
@@ -260,36 +358,42 @@ experiments:
       should be revised. Either way this does not change the safety posture — the spine's safety section already mandates
       human review regardless of rate.
     corpus:
-      - name: ARVO (n132/ARVO repo commit SHA + specific n132/arvo:<id>-vul Docker tags)
-        licence: BSD-2-Clause
-        licence_ref: >-
-          research/16-fuzzing-and-dynamic-analysis.md S2/S25 — cite only the canonical 2024-08 paper
-          (arXiv:2408.02153); the 2026 posting is withdrawn
-      - name: CWE-Bench-Java (iris-sast/cwe-bench-java commit SHA)
+      - name: >-
+          ARVO, local only: the generator n132/ARVO at bc2a373c6b32fb3d9e7f86c516b1844885dcec51,
+          the dataset n132/ARVO-Meta (release v3.0.0, arvo.db, sha256
+          331184ca807c2f136f98dac9f1df94c893f4ee2fdf9329dca517ff88e72f97ce) and the per-case
+          n132/arvo:<id>-vul and <id>-fix Docker images
+        licence: >-
+          The generator is BSD-2-Clause (its LICENSE body, read 2026-10-03). The dataset and the
+          images carry no licence. The owner allowed local-only use on 2026-10-03: nothing from ARVO
+          is redistributed or committed, and no ARVO content is quoted in the repository.
+        licence_ref: n132/ARVO's LICENSE body; n132/ARVO-Meta's tree (no LICENSE file) read 2026-10-03
+      - name: CWE-Bench-Java (iris-sast/cwe-bench-java at afe0ebd0adc237abb46255f9cd479b1d71819136)
         licence: MIT
-        licence_ref: plan/design/spine-open-licences.md section 7
-      - name: Qwen/Qwen3-Coder-Next (coding-agent arm)
-        licence: Apache-2.0
-        licence_ref: >-
-          research/14-critique-and-gaps.md "Held up exactly" table (79.7B params, 512 experts,
-          10 active)
+        licence_ref: the repository's LICENSE body (GitHub reports MIT; body to be archived at acquisition)
+      - name: Qwen/Qwen3-Coder-30B-A3B-Instruct at b2cff646eb4bb1d68355c01b18ae02e7cf42d120 (coder)
+        licence: Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue
     method: >-
-      Run the open-weight coding agent over the sampled ARVO and CWE-Bench-Java subsets using the
-      AutoPatchBench-style three-stage validation gate (crash input no longer crashes -> 10-minute
-      fuzz survival -> differential behaviour check) and ARVO's reproduce() contract. The frontier
-      comparison arm is taken from published literature, never re-run: the spine's definition of Anvil requires
-      self-hosted open-weight models only, so no proprietary frontier API is called. The exploit
-      oracle (research/11 gate 9) is mandatory — a patch is never counted "fixed" on test-suite pass
-      alone, because research/11's Vul4J finding is that 10.3% of patches pass tests while remaining
-      exploitable, and ARVO itself found 300+ falsely-patched still-active vulnerabilities in
-      OSS-Fuzz's own "fixed" set. Upstream "fixed" labels are never trusted as ground truth.
+      ARVO is the oracle corpus, used locally only (the owner, 2026-10-03, after first dropping it
+      the same day): each sampled case's n132/arvo:<id>-vul image rebuilds the vulnerable project
+      with `arvo compile`, and `arvo` replays the fuzzer's crashing input, so a patch counts as
+      verified-fixed only when that input no longer crashes; nothing from ARVO is committed or
+      redistributed. CWE-Bench-Java has no oracle and reports build and test rates only. The loop
+      (anvil_eval.patchloop) is generate, apply, build, test and, when a case has one, reproduce:
+      the coder is served by llama-server from a Q4_K_M GGUF of the pinned revision and returns
+      SEARCH/REPLACE blocks; the harness anchors and applies them; a case with an exploit oracle
+      counts as verified-fixed only when the oracle no longer triggers. The loop is proven on a
+      synthetic C case with a crash reproducer; the ARVO adapter is Phase 7's to build. The frontier
+      comparison is taken from published literature, never re-run: no proprietary API is called.
     metric: >-
-      Verified-fix rate per corpus (fraction of cases clearing all three gates with a recorded
-      exploit-oracle re-execution), plus generation success rate and the full gate-failure breakdown
-      (compile_fail, test_fail, exploit_still_triggers, deceptive_pass) — never an aggregate
-      percentage alone.
+      Per corpus: generation rate, apply rate, build-pass rate and test-pass rate, and the
+      verified-fix rate where an oracle exists, with the full failure breakdown (no_patch, apply_fail,
+      build_fail, test_fail, exploit_still_triggers). Never an aggregate percentage alone. On
+      CWE-Bench-Java the verified-fix rate is not measurable and is reported as such.
     threshold_pass: >-
-      Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
+      These bars apply to the verified-fix rate on ARVO (local only), the corpus with exploit
+      oracles; they are unsigned and need the owner's sign-off. Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
       5.3%. PROPOSED — derived by analogy, not a number published for Qwen3-Coder-Next specifically;
       plan/design/evaluation.md "## Open Questions" requires explicit sign-off before this
       drives any messaging claim.
@@ -307,8 +411,16 @@ experiments:
       artifact_path: null
     decision: UNRESOLVED
     depends_on: []
-    deferred_reason: null
-    owning_future_phase: null
+    deferred_reason: >-
+      Deferred to Phase 7 by the owner on 2026-10-03; Remediation owns the coder and the validation
+      ladder. The owner then allowed ARVO for local-only use, so Phase 7 measures a real
+      verified-fix rate on it. Running it needs Docker (not installed on 2026-10-03), the ARVO
+      images for the sampled cases and the 61 GB coder; CWE-Bench-Java additionally needs two JDKs
+      (its pinned JDK 8u202 is an Oracle build under Oracle's licence) and Maven. The loop and its
+      CWE-Bench-Java adapter are built and tested; the bars stay unsigned until the owner signs
+      them.
+    owning_future_phase: >-
+      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
 
   # =========================================================================
   # PERMANENT INSTRUMENT — not a kill gate
@@ -321,7 +433,7 @@ experiments:
       the spine's affordability rule ("Instrument it on day one"); research/14-critique-and-gaps.md B1
       and its "Suggested fix"
     owner_node: candidatecount
-    status: not_started
+    status: complete
     decision_gated: >-
       The single number the spine's affordability rule says decides whether Anvil is affordable at all — "it,
       not model size, determines feasibility". PASS: affordability confirmed at the current
@@ -330,21 +442,47 @@ experiments:
       (research/14-critique-and-gaps.md B1 "Suggested fix") — before Milestone 1 proceeds. This row
       is a permanent instrument, not a kill gate; it is re-run, not retired.
     corpus:
-      - name: AikidoSec/opengrep-rules (pinned commit SHA, diffed before any future promotion)
-        licence: MIT
-        licence_ref: research/14-critique-and-gaps.md M6
-      - name: opengrep engine (pinned release version, subprocess invocation only)
+      - name: >-
+          The recall federation, chosen by the owner on 2026-10-03 (plan node recall): GitLab
+          sast-rules at 53bf5cf6df3c51b6c02110f5a638b5e6213666cd, rule directories c, csharp, go,
+          java, javascript, python and scala only
+        licence: >-
+          MIT Expat for content outside doc/ (CC BY-SA 4.0), ee/ and jh/, read from the LICENSE body
+          at that commit on 2026-10-03; third-party components keep their own licences, so Phase 6
+          vendors behind a directory allowlist
+        licence_ref: the LICENSE body of gitlab-org/security-products/sast-rules at the pinned commit
+      - name: opengrep engine v1.26.0 (subprocess only), which runs the GitLab and 0xdea rules
         licence: LGPL-2.1
-        licence_ref: the spine's component table
+        licence_ref: eval/tools/opengrep/LICENSES.md
+      - name: gosec v2.29.0 (gosec_2.29.0_linux_amd64.tar.gz, sha256 6431b119741c1f4a50fdfcf94e782e16b9e642afc8c7fa9b5d39d48bf3003095)
+        licence: Apache-2.0
+        licence_ref: LICENSE.txt body at tag v2.29.0, read 2026-10-03
+      - name: bandit 1.9.4
+        licence: Apache-2.0
+        licence_ref: LICENSE body at tag 1.9.4, read 2026-10-03
+      - name: 0xdea/semgrep-rules at dae50da6e6e629750f1daec73a01ef9206a372ab (C and C++)
+        licence: MIT
+        licence_ref: LICENSE body at that commit, read 2026-10-03
+      - name: >-
+          The sample repositories, scanned locally and never redistributed: Anvil at the commit
+          under measurement (Go), pallets/flask d73fa1cdcbd8b1465c151db8924ba58b1dd14e35 (Python),
+          curl/curl 21983c2fca1e4ecf3393e94455b343d082b6f1c9 (C), spring-projects/spring-petclinic
+          500158f732419217507c7656904b8e6aa1bcc0d6 (Java), expressjs/express
+          7ef98448f8b38099ab1ded55e458538ad47a51e7 (JavaScript)
+        licence: not redistributed; each repository's own licence applies to the local clone
+        licence_ref: the repositories' own LICENSE files
     method: >-
-      A re-runnable instrument (a standalone callable, never a throwaway script or notebook cell —
-      the spine's affordability rule asks for a permanent day-one measurement) that runs pinned opengrep plus
-      AikidoSec/opengrep-rules against a target repo and counts candidates emitted per full scan and
-      per push. Exercised in the evaluation milestone against at least 3 structurally different sample repos (e.g. a small
-      CLI tool, a web-app-shaped repo, a library) so the count is not an artifact of one repo's shape.
+      A re-runnable instrument (anvil_eval.candidates, a standalone callable) that runs the
+      federation over a pinned repository and counts candidates. A candidate is one finding from one
+      tool, de-duplicated across tools by (file, line, CWE). Full scan: the whole checkout at the
+      pinned commit. Per push: each of the 20 most recent first-parent commits before the pinned
+      commit, counting only candidates on lines that commit added or changed; the median and maximum
+      are reported. The engine, every rule set and every repository are pinned by SHA in the result
+      artifact. The candidate count recorded in the register row is the largest full-scan count over
+      the five repositories.
     metric: >-
-      candidates_full_scan and candidates_per_push per target repo, recorded together with the
-      ruleset commit SHA.
+      candidates_full_scan and candidates_per_push (median and maximum) per repository and per tool,
+      recorded with every pin.
     threshold_pass: >-
       Fewer than 500 candidates per full scan AND fewer than 50 per push (the spine's affordability rule, exact
       figures) — at which the model tier costs ~17 min and ~2 min respectively.
@@ -355,11 +493,11 @@ experiments:
       research/14-critique-and-gaps.md B1, restating the spine's figures: < 500 per full
       scan and < 50 per push
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
-    decision: UNRESOLVED
+      value: 10714
+      unit: "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/candidates-per-scan.json"
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
@@ -373,7 +511,7 @@ experiments:
       the spine's Go control-plane decision — the recorded counter-argument to the Go control-plane pick: "Measure
       encoder RTT under realistic pair volume during Milestone 0 before this is irreversible"
     owner_node: costs
-    status: not_started
+    status: complete
     decision_gated: >-
       Whether the spine's Go-for-the-control-plane pick survives contact with a measured number. PASS: the
       pick is confirmed; no action needed. FAIL: record as a "Conflict With Spine" item for the
@@ -409,11 +547,11 @@ experiments:
       not a sourced bar.
     reference_baseline: PROPOSED — no published baseline
     result:
-      value: null
-      unit: null
-      measured_at: null
-      artifact_path: null
-    decision: UNRESOLVED
+      value: 0.0119
+      unit: "encoder round trip as a fraction of model-tier time per candidate (Tier S proxy)"
+      measured_at: "2026-10-03"
+      artifact_path: "eval/results/encoder-round-trip.json"
+    decision: PASS
     depends_on:
       - prefill-sweep
       - candidates-per-scan
@@ -463,7 +601,8 @@ experiments:
       Milestone 0 executes only the six core items (advisory permutation, code-metrics baseline, prefill sweep, patch quality, candidates per scan, encoder round trip)
       (plan/design/evaluation.md "## Overview"). This experiment measures a parameter of the
       remediation consumption protocol, which does not exist yet — there is no PR pipeline to batch.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
 
   # =========================================================================
   - id: correlation-precision
@@ -504,7 +643,8 @@ experiments:
       exists" (plan/design/evaluation.md "## Go/No-Go Decision Table", the correlation-precision experiment row). The spine's record section
       record schema does not exist at Milestone 0, so no threshold can be set and the experiment
       cannot be run without inventing one.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 8 (The dynamic tier, live); it must run before Phase 8's exit gate
 
   # =========================================================================
   - id: route-extraction
@@ -547,7 +687,8 @@ experiments:
     deferred_reason: >-
       Milestone 0 executes only the six items named in plan/design/evaluation.md "## Overview".
       This experiment measures the DAST attack-surface inventory, which per the two-artifact split ships as a separate distribution artifact and has no implementation at the evaluation milestone to measure.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 8 (The dynamic tier, live); it must run before Phase 8's exit gate
 
   # =========================================================================
   - id: dast-model-size
@@ -589,7 +730,8 @@ experiments:
       Milestone 0 executes only the six items named in plan/design/evaluation.md "## Overview",
       and no DAST confirmation loop exists to evaluate. Per the two-artifact split, DAST is a
       separate distribution artifact whose model selection is not an evaluation-milestone decision.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 8 (The dynamic tier, live); it must run before Phase 8's exit gate
 
   # =========================================================================
   - id: gvisor-overhead
@@ -627,7 +769,8 @@ experiments:
       Milestone 0 executes only the six items named in plan/design/evaluation.md "## Overview".
       There is no probe workload to sandbox at the evaluation milestone; per the two-artifact split the DAST sandbox
       belongs to a separate distribution artifact.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 8 (The dynamic tier, live); it must run before Phase 8's exit gate
 
   # =========================================================================
   - id: zap-memory
@@ -667,7 +810,8 @@ experiments:
       Milestone 0 executes only the six items named in plan/design/evaluation.md "## Overview".
       No ZAP deployment exists at the evaluation milestone, and per the two-artifact split DAST ships as a separate
       distribution artifact whose resource budget is not an evaluation-milestone gate.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 8 (The dynamic tier, live); it must run before Phase 8's exit gate
 
   # =========================================================================
   - id: task-cards
@@ -712,7 +856,8 @@ experiments:
       Depends on the patch-quality experiment's corpus subset and harness, which do not exist until the patch-quality experiment runs, and on
       whether the spine's record section gains a task-card schema slot at all. Milestone 0 executes only the
       six items named in plan/design/evaluation.md "## Overview".
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
 
   # =========================================================================
   - id: lora-hot-swap
@@ -756,4 +901,5 @@ experiments:
       rows are UNRESOLVED. v1 ships zero-training (research/03 primary recommendation), and
       the spine forbids fine-tuned adapters before its evaluate-first rule resolves, so there is
       nothing to hot-swap.
-    owning_future_phase: null
+    owning_future_phase: >-
+      Phase 6 (Lane B: first-party source), and only if adapters are ever trained; v1 trains none, so the row stays deferred unless the gate keeps the adjudicator and a later decision proposes training

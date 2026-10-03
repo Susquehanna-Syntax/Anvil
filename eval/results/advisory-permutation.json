@@ -1,0 +1,312 @@
+{
+  "id": "advisory-permutation",
+  "measured_at": "2026-10-03",
+  "value": 0.5,
+  "unit": "flip rate, CWE-text framing, Qwen3.5-2B (interval, both framings and both candidates in the artifact)",
+  "command": "python -m anvil_eval.experiments.permutation report",
+  "git": {
+    "commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+    "dirty": true
+  },
+  "pins": {
+    "corpus": {
+      "file": "primevul_test_paired.jsonl",
+      "sha256": "384758c25142b640f1768bb0d334c43f315c580022ae94973c66e77128fb3821",
+      "pairs": 435,
+      "dropped_by_length_rule": 42,
+      "max_function_chars": 12000
+    },
+    "cwe_catalogue": {
+      "file": "cwec_v4.20.xml.zip",
+      "sha256": "3976f599e5e5200219a3108bb896d06e2a88fbb293369e1883cb423a5e9d7d50"
+    },
+    "llama_cpp": {
+      "build": "b11146",
+      "commit": "7fe450e19305b828c199d602c23a8337aaa1f03b"
+    },
+    "prompt_sha256": "0a4c17503947d5942a55536567080698263c1650b3bd03dcd7ad792046dc0d80",
+    "template_kwargs": {
+      "enable_thinking": false
+    },
+    "decoding": {
+      "temperature": 0,
+      "top_k": 1,
+      "n_predict": 200,
+      "n_probs": 20,
+      "ctx": 8192,
+      "quant": "Q4_K_M"
+    },
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 20261003,
+      "interval": "95% percentile"
+    },
+    "models": {
+      "qwen3.5-2b": {
+        "repo": "Qwen/Qwen3.5-2B",
+        "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+        "gguf_sha256": "d0968af7b00ba836feea6c04f010fc7bc08cf6f3b78486478f6951d8a4779004"
+      },
+      "gemma-4-e2b-it": {
+        "repo": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "gguf_sha256": "423e16b63cd1cec3aadcb293e7e2eb95a84a7770b2fc75958a6374c390c3be7a"
+      }
+    }
+  },
+  "result": {
+    "summaries": {
+      "qwen3.5-2b": {
+        "cwe": {
+          "pairs": 393,
+          "pairs_usable": 393,
+          "real_advisory_exhibits": 114,
+          "flips": 57,
+          "moves_to_insufficient_context": 0,
+          "flip_rate": {
+            "estimate": 0.5,
+            "low": 0.4065040650406504,
+            "high": 0.5904761904761905,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "insufficient_context_rate": {
+            "estimate": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "band": "ambiguous",
+          "model_arm": {
+            "pairwise_correct": {
+              "estimate": 0.030534351145038167,
+              "low": 0.015267175572519083,
+              "high": 0.04834605597964377,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "precision_at_recall_0_70": {
+              "estimate": 0.4981949458483754,
+              "low": 0.4876325088339223,
+              "high": 0.5110294117647058,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "scores_missing_counted_as_zero": 0
+          }
+        },
+        "cve": {
+          "pairs": 393,
+          "pairs_usable": 392,
+          "real_advisory_exhibits": 95,
+          "flips": 80,
+          "moves_to_insufficient_context": 0,
+          "flip_rate": {
+            "estimate": 0.8421052631578947,
+            "low": 0.7659574468085106,
+            "high": 0.9130434782608695,
+            "n": 392,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "insufficient_context_rate": {
+            "estimate": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "n": 392,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "band": "ambiguous",
+          "model_arm": {
+            "pairwise_correct": {
+              "estimate": 0.0663265306122449,
+              "low": 0.04336734693877551,
+              "high": 0.09183673469387756,
+              "n": 392,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "precision_at_recall_0_70": {
+              "estimate": 0.48500881834215165,
+              "low": 0.47586206896551725,
+              "high": 0.5018248175182481,
+              "n": 392,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "scores_missing_counted_as_zero": 0
+          }
+        }
+      },
+      "gemma-4-e2b-it": {
+        "cwe": {
+          "pairs": 393,
+          "pairs_usable": 393,
+          "real_advisory_exhibits": 20,
+          "flips": 18,
+          "moves_to_insufficient_context": 0,
+          "flip_rate": {
+            "estimate": 0.9,
+            "low": 0.75,
+            "high": 1.0,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "insufficient_context_rate": {
+            "estimate": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "band": "ambiguous",
+          "model_arm": {
+            "pairwise_correct": {
+              "estimate": 0.022900763358778626,
+              "low": 0.010178117048346057,
+              "high": 0.03816793893129771,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "precision_at_recall_0_70": {
+              "estimate": 0.5,
+              "low": 0.4842105263157895,
+              "high": 0.5027223230490018,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "scores_missing_counted_as_zero": 0
+          }
+        },
+        "cve": {
+          "pairs": 393,
+          "pairs_usable": 393,
+          "real_advisory_exhibits": 65,
+          "flips": 65,
+          "moves_to_insufficient_context": 0,
+          "flip_rate": {
+            "estimate": 1.0,
+            "low": 1.0,
+            "high": 1.0,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "insufficient_context_rate": {
+            "estimate": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "n": 393,
+            "resamples": 10000,
+            "undefined_resamples": 0
+          },
+          "band": "pass",
+          "model_arm": {
+            "pairwise_correct": {
+              "estimate": 0.058524173027989825,
+              "low": 0.035623409669211195,
+              "high": 0.08396946564885496,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "precision_at_recall_0_70": {
+              "estimate": 0.4842105263157895,
+              "low": 0.47840918274799976,
+              "high": 0.5009074410163339,
+              "n": 393,
+              "resamples": 10000,
+              "undefined_resamples": 0
+            },
+            "scores_missing_counted_as_zero": 0
+          }
+        }
+      }
+    },
+    "controls": {
+      "qwen3.5-2b": {
+        "cwe": {
+          "pairs": 50,
+          "verdict_changes": 0
+        },
+        "cve": {
+          "pairs": 50,
+          "verdict_changes": 0
+        }
+      },
+      "gemma-4-e2b-it": {
+        "cwe": {
+          "pairs": 50,
+          "verdict_changes": 0
+        },
+        "cve": {
+          "pairs": 50,
+          "verdict_changes": 0
+        }
+      }
+    },
+    "errors": {
+      "qwen3.5-2b": 1,
+      "gemma-4-e2b-it": 0
+    },
+    "reading": {
+      "primary_band": "ambiguous",
+      "second_band": "ambiguous",
+      "proceeds_with": null,
+      "pre_registered_outcome": "FAIL (ambiguous, treated as a fail for v1)"
+    },
+    "meta": {
+      "pairs_within_length": 393,
+      "eligible": {
+        "cwe": 393,
+        "cve": 393
+      },
+      "excluded": {
+        "cwe": {
+          "missing_or_placeholder": 0,
+          "not_in_catalogue": 0
+        },
+        "cve": {
+          "no_text": 0
+        }
+      }
+    }
+  },
+  "negative_control": {
+    "description": "identity permutation: the first 50 pairs of each framing asked again with their own advisory, prompt cache off",
+    "expected": "at most 1 verdict change per framing per candidate",
+    "observed": {
+      "qwen3.5-2b": {
+        "cwe": {
+          "pairs": 50,
+          "verdict_changes": 0
+        },
+        "cve": {
+          "pairs": 50,
+          "verdict_changes": 0
+        }
+      },
+      "gemma-4-e2b-it": {
+        "cwe": {
+          "pairs": 50,
+          "verdict_changes": 0
+        },
+        "cve": {
+          "pairs": 50,
+          "verdict_changes": 0
+        }
+      }
+    },
+    "passed": true
+  }
+}

@@ -1,0 +1,107 @@
+[
+ {
+  "n_prompt": 512,
+  "n_gen": 0,
+  "avg_ts": 6014.923871,
+  "stddev_ts": 211.63459,
+  "samples_ts": [
+   5638.69,
+   6141.69,
+   6112.74,
+   6106.05,
+   6075.44
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 1000,
+  "n_gen": 0,
+  "avg_ts": 6030.797455,
+  "stddev_ts": 208.061074,
+  "samples_ts": [
+   5664.17,
+   6147.05,
+   6061.34,
+   6148.75,
+   6132.68
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 2000,
+  "n_gen": 0,
+  "avg_ts": 6044.754722,
+  "stddev_ts": 39.416617,
+  "samples_ts": [
+   6000.86,
+   6086.04,
+   6025.79,
+   6023.98,
+   6087.1
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 4000,
+  "n_gen": 0,
+  "avg_ts": 5931.393581,
+  "stddev_ts": 17.465315,
+  "samples_ts": [
+   5936.07,
+   5931.48,
+   5957.98,
+   5915.86,
+   5915.58
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ },
+ {
+  "n_prompt": 0,
+  "n_gen": 128,
+  "avg_ts": 125.715304,
+  "stddev_ts": 0.129351,
+  "samples_ts": [
+   125.486,
+   125.772,
+   125.793,
+   125.78,
+   125.746
+  ],
+  "n_batch": 2048,
+  "n_ubatch": 512,
+  "n_threads": 6,
+  "n_gpu_layers": 999,
+  "devices": "CUDA1",
+  "flash_attn": -1,
+  "model_type": "gemma4 E2B Q4_K - Medium",
+  "build_number": 11146
+ }
+]

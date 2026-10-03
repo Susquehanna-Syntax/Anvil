@@ -39,3 +39,7 @@ Dockerfile text eol=lf
 *.gz           binary
 *.zip          binary
 *.png          binary
+
+# Archived third-party licence bodies are kept byte for byte: their pins are hashes of the
+# exact bytes the publisher shipped, CRLF included.
+eval/models/*/hf/LICENSE -text

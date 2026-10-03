@@ -1,0 +1,28 @@
+{
+  "llama_cpp": {
+    "build": "b11146",
+    "commit": "7fe450e19305b828c199d602c23a8337aaa1f03b"
+  },
+  "converter_env": {
+    "torch": "2.11.0+cpu",
+    "transformers": "4.57.6"
+  },
+  "from": {
+    "repo": "Qwen/Qwen3.5-2B",
+    "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc"
+  },
+  "files": {
+    "BF16": {
+      "path": "qwen3.5-2b-BF16.gguf",
+      "sha256": "6632ed7b9b0df9fbc77609b5fc615ad86f4226ccbe0c7fecbe72b56e5ab1cc71"
+    },
+    "Q4_K_M": {
+      "path": "qwen3.5-2b-Q4_K_M.gguf",
+      "sha256": "d0968af7b00ba836feea6c04f010fc7bc08cf6f3b78486478f6951d8a4779004"
+    },
+    "Q8_0": {
+      "path": "qwen3.5-2b-Q8_0.gguf",
+      "sha256": "aa1c08ad926d984cea412671952c003967eb342d0a3918d1e8202624f324e0b2"
+    }
+  }
+}

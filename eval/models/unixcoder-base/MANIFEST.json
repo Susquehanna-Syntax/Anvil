@@ -1,0 +1,59 @@
+{
+  "source": "https://huggingface.co/microsoft/unixcoder-base",
+  "repo": "microsoft/unixcoder-base",
+  "revision": "5604afdc964f6c53782a6813140ade5216b99006",
+  "acquired_at": "2026-10-03T19:02:12+00:00",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 1175,
+      "sha256": "fa057bb09b78fe6d33af5a01440be5e8c881cd8055de35ee5588ea759cf57bfc"
+    },
+    {
+      "path": "README.md",
+      "size": 6728,
+      "sha256": "4257702415ce5590e143f628b39dd434c94f911eccde62f723d8f97f32c41445"
+    },
+    {
+      "path": "config.json",
+      "size": 691,
+      "sha256": "a7c07558348da020fb6055541fd593f21a6f0142a398da17bc452d50d3aef927"
+    },
+    {
+      "path": "merges.txt",
+      "size": 444183,
+      "sha256": "3b84414c9f8804a621da0fd4bfe77104ef536c350baaaf3c99003356b0cc85f4"
+    },
+    {
+      "path": "pytorch_model.bin",
+      "size": 503809527,
+      "sha256": "6732b60037b086557e4c731c3748c99b4fec735d9ffe3c4c70061fd142e6b9d9"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size": 772,
+      "sha256": "c611b1f7d416eb001ee4f293d903ea8c88e703463f1d403f1866a0352743fd00"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 1113,
+      "sha256": "44b6e7a4fd703a619b6f8c297a8799f71ac14fdcb7f2d1ad8d8211649abed5e4"
+    },
+    {
+      "path": "vocab.json",
+      "size": 937652,
+      "sha256": "81c76e8f61bb1df102044d9b3d72070e3b2ac4d484b087ecb23b8633d6874f4b"
+    }
+  ],
+  "licence": {
+    "spdx": "Apache-2.0",
+    "evidence": {
+      "kind": "card",
+      "path": "README.md",
+      "git_oid": "06edcdcd5105be959feae49b1318bb2cb3e4685f",
+      "quote": "- **License:** Apache-2.0",
+      "read_on": "2026-10-03",
+      "note": "No LICENSE file; the card's prose names Apache-2.0. The weights are a pickled pytorch_model.bin, so the ONNX export loads them with torch.load(weights_only=True) and nothing else ever unpickles them."
+    }
+  }
+}

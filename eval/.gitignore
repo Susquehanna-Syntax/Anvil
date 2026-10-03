@@ -21,22 +21,23 @@ data/**
 !data/**/MANIFEST.*
 !data/**/*.md
 !data/**/.gitkeep
+# Fetched rule corpora and sample repositories: never tracked, Markdown included.
+data/recall/**
+# Feature caches computed from a corpus.
+data/**/.features-*
 
-# --- Model artifacts (the candidate-model acquisition) -------------------------------------------------
-# Weights are never committed. Only the pinned-download manifest, the exact HF
-# revision SHA, the archived LICENSE text (the spine's licence-compliance mechanics) and the
-# checksums are tracked.
+# --- Model artifacts (anvil_eval.models) -----------------------------------
+# Weights, tokenizers and model cards are the publishers' files and are never
+# committed or re-hosted. Only Anvil's own manifests (the pinned revision, every
+# file's hash, the licence evidence and the conversion record) and the licence
+# bodies the candidates ship are tracked.
 !models/
 models/**
 !models/**/
-!models/**/MANIFEST
-!models/**/MANIFEST.*
-!models/**/*.md
-!models/**/*.json
-!models/**/*.txt
-!models/**/*.sha256
-!models/**/LICENSE*
-!models/**/.gitkeep
+!models/*/MANIFEST.json
+!models/*/gguf/MANIFEST.json
+!models/*/onnx/MANIFEST.json
+!models/*/hf/LICENSE
 # Belt and braces: never track a weight file even if a rule above widens.
 models/**/*.gguf
 models/**/*.safetensors
@@ -74,6 +75,8 @@ datasets_cache/
 .coverage.*
 htmlcov/
 scratch/
+.venv-convert/
+.venv-recall/
 *.log
 
 # NOTE: eval/results/ is deliberately NOT ignored — the Milestone 0 exit
