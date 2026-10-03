@@ -24,22 +24,29 @@ def _write(tmp_path, rows):
     return p
 
 
-def test_pairs_in_either_order(tmp_path):
-    rows = [_row(1, VUL), _row(0, FIX),
-            _row(0, FIX.replace("parse", "lex"), commit="c2"),
-            _row(1, VUL.replace("parse", "lex"), commit="c2")]
+def _idx(row, i):
+    return dict(row, idx=i)
+
+
+def test_pairs_are_adjacent_rows_vulnerable_first(tmp_path):
+    # The second pair joins two differently named functions, as one real PrimeVul pair does.
+    rows = [_idx(_row(1, VUL), 1), _idx(_row(0, FIX), 2),
+            _idx(_row(1, VUL.replace("parse", "save"), commit="c2"), 3),
+            _idx(_row(0, FIX.replace("parse", "saveAs"), commit="c3"), 4)]
     ps = primevul.pairs(_write(tmp_path, rows))
-    assert [p.key for p in ps] == ["p@c1:parse", "p@c2:lex"]
+    assert [p.key for p in ps] == ["p:1", "p:3"]
     assert all(p.vulnerable.target == 1 and p.patched.target == 0 for p in ps)
     assert ps[0].cwe == "CWE-121" and ps[0].cve_desc == "overflow in parse"
+    assert primevul.cross_commit(ps) == 1
 
 
 @pytest.mark.parametrize(
     "rows,match",
     [
-        ([_row(1, VUL)], "1 vulnerable and 0 patched"),
-        ([_row(1, VUL), _row(1, VUL), _row(0, FIX)], "2 vulnerable"),
+        ([_row(1, VUL)], "cannot form pairs"),
+        ([_row(0, FIX), _row(1, VUL)], "not vulnerable then patched"),
         ([_row(1, VUL), _row(0, VUL)], "identical"),
+        ([_row(1, VUL), _row(0, FIX, project="q")], "two projects"),
         ([{"project": "p", "target": 1, "func": VUL}], "missing"),
         ([_row(2, VUL)], "target"),
     ],

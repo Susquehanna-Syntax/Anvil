@@ -5,16 +5,19 @@ owner fetches it by hand into ``eval/data/primevul/``. ``write_manifest`` then r
 size and SHA-256, and every experiment refuses to read a file whose hash differs from the
 manifest's.
 
-A paired file holds each vulnerable function and its patched version as two rows from the same fix
-commit. The loader pairs rows by (project, commit, function name), requires exactly one vulnerable
-and one patched row per key, and raises on anything else rather than guessing.
+A paired file holds each pair as two adjacent rows: the vulnerable function, then its patched
+version. That is the dataset's own structure, measured on 2026-10-03 on every v0.1 paired split
+(test 435 of 435, valid 480 of 480, train 3,789 of 3,789). The loader pairs by adjacency, requires
+the vulnerable row first, the patched row second and one project for both, and raises on anything
+else. Pairing by function name was tried first and is wrong: one test pair joins drogon's
+``HttpFileImpl::save`` with its patched ``saveAs``. A few pairs take the patched row from a later
+commit (2 of 435 in test); they are kept and counted.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,27 +120,28 @@ def read_rows(path: Path) -> list[Function]:
 
 
 def pairs(path: Path) -> list[Pair]:
-    """Pair a ``*_paired.jsonl`` file: each key needs one vulnerable and one patched row."""
-    groups: dict[str, list[Function]] = defaultdict(list)
-    order: list[str] = []
-    for f in read_rows(path):
-        key = f"{f.project}@{f.commit}:{function_name(f.func)}"
-        if key not in groups:
-            order.append(key)
-        groups[key].append(f)
+    """Pair a ``*_paired.jsonl`` file: rows 2k and 2k+1, vulnerable first, one project."""
+    rows = read_rows(path)
+    if len(rows) % 2:
+        raise CorpusError(f"{path.name}: {len(rows)} rows cannot form pairs")
     out = []
-    for key in order:
-        g = groups[key]
-        vul = [f for f in g if f.target == 1]
-        fix = [f for f in g if f.target == 0]
-        if len(vul) != 1 or len(fix) != 1:
-            raise CorpusError(
-                f"{path.name}: {key} has {len(vul)} vulnerable and {len(fix)} patched rows"
-            )
-        if vul[0].func == fix[0].func:
-            raise CorpusError(f"{path.name}: {key} pairs two identical functions")
-        out.append(Pair(key, vul[0], fix[0]))
+    for i in range(0, len(rows), 2):
+        vul, fix = rows[i], rows[i + 1]
+        if (vul.target, fix.target) != (1, 0):
+            raise CorpusError(f"{path.name}: rows {i + 1}-{i + 2} are not vulnerable then patched")
+        if vul.project != fix.project:
+            raise CorpusError(f"{path.name}: rows {i + 1}-{i + 2} join two projects")
+        if vul.func == fix.func:
+            raise CorpusError(f"{path.name}: rows {i + 1}-{i + 2} pair two identical functions")
+        out.append(Pair(f"{vul.project}:{vul.idx}", vul, fix))
+    if len({p.key for p in out}) != len(out):
+        raise CorpusError(f"{path.name}: two pairs share a vulnerable row's idx")
     return out
+
+
+def cross_commit(ps: list[Pair]) -> int:
+    """Pairs whose patched row comes from a different commit than the vulnerable one."""
+    return sum(p.vulnerable.commit != p.patched.commit for p in ps)
 
 
 def within_length(ps: list[Pair], limit: int = MAX_FUNC_CHARS) -> tuple[list[Pair], int]:
@@ -189,6 +193,8 @@ if __name__ == "__main__":
     m = write_manifest()
     for name, f in m["files"].items():
         print(f"{name}: {f['size']} bytes, sha256 {f['sha256']}")
-    test_pairs = pairs(PRIMEVUL_DIR / "primevul_test_paired.jsonl")
-    kept, dropped = within_length(test_pairs)
-    print(f"test pairs: {len(test_pairs)}; within {MAX_FUNC_CHARS} characters: {len(kept)}")
+    for split in ("test", "valid"):
+        ps = pairs(PRIMEVUL_DIR / f"primevul_{split}_paired.jsonl")
+        kept, _ = within_length(ps)
+        print(f"{split} pairs: {len(ps)}; within {MAX_FUNC_CHARS} characters: {len(kept)}; "
+              f"patched row from a later commit: {cross_commit(ps)}")

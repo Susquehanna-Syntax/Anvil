@@ -84,3 +84,16 @@ def test_only_the_allowlisted_gitlab_directories_are_read():
     assert recall.GITLAB_RULE_DIRS == ("c", "csharp", "go", "java", "javascript", "python",
                                        "scala")
     assert "doc" not in recall.GITLAB_RULE_DIRS  # CC BY-SA 4.0 under GitLab's LICENSE
+
+
+def test_go_test_files_alone_never_reach_gosec(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cps, "run_opengrep", lambda root, targets, has_c: [])
+    monkeypatch.setattr(cps, "run_gosec", lambda root, pkgs: calls.append(pkgs) or [])
+    (tmp_path / "go.mod").write_text("module m\n")
+    (tmp_path / "x_test.go").write_text("package m\n")
+    cps.scan(tmp_path, [tmp_path / "x_test.go"])
+    assert calls == []
+    (tmp_path / "x.go").write_text("package m\n")
+    cps.scan(tmp_path, [tmp_path / "x.go", tmp_path / "x_test.go"])
+    assert calls == [["./."]]

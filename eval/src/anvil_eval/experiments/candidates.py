@@ -111,7 +111,9 @@ def run_gosec(root: Path, packages: list[str]) -> list[Candidate]:
                GOFLAGS="-mod=mod")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.json"
-        proc = subprocess.run([str(exe), "-fmt=json", f"-out={out}", "-quiet", "-no-fail",
+        # Never -quiet: with it, gosec writes nothing at all for a package with no findings
+        # (seen on 2026-10-03), and silence must never be read as a count.
+        proc = subprocess.run([str(exe), "-fmt=json", f"-out={out}", "-no-fail",
                                *packages], capture_output=True, text=True, cwd=root, env=env)
         if proc.returncode != 0 or not out.is_file():
             raise ToolFailed(f"gosec exited {proc.returncode}: {proc.stderr[-800:]}")
@@ -160,7 +162,8 @@ def scan(root: Path, files: Iterable[Path] | None = None) -> list[Candidate]:
     py = [f for f in files if f.suffix == ".py"]
     if py:
         out += run_bandit(root, [root] if whole else py)
-    go = [f for f in files if f.suffix == ".go"]
+    # gosec skips test files by default; leave them out of its package list to match.
+    go = [f for f in files if f.suffix == ".go" and not f.name.endswith("_test.go")]
     if go and (root / "go.mod").is_file():
         pkgs = ["./..."] if whole else sorted({"./" + os.path.relpath(f.parent, root) for f in go})
         out += run_gosec(root, pkgs)
