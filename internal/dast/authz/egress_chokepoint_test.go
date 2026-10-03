@@ -199,6 +199,10 @@ var inertImports = map[string]string{
 	"unicode/utf8":         "rune encoding",
 	"modernc.org/sqlite":   "the pure-Go, file-backed SQLite driver the spine's Go control-plane decision mandates; no network protocol",
 	"golang.org/x/sys/cpu": "CPU feature detection",
+	// Checked 2026-10-03: `go list -deps` of this package names no net,
+	// net/*, crypto/tls or os/exec package; it compresses byte slices it is
+	// handed (internal/store's audit payload codec).
+	"github.com/klauspost/compress/zstd": "the pinned pure-Go zstd codec for audit_record.payload; byte slices in, byte slices out",
 }
 
 // inertSymbols is the single, narrow escape hatch: a package that is NOT inert
