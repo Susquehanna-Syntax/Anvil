@@ -118,7 +118,8 @@
 // LIMITS OF THIS STATEMENT, so it is not over-read in the other direction:
 // this is a documented property of rpm's BDB backend, recorded because the
 // read-only-boundary review's review found the unconditional claim and could
-// not reproduce the behaviour on a Windows development host. It has NOT been
+// not reproduce the behaviour on the Windows machine it ran on, and the Debian
+// development machine (measured 2026-10-03) has no rpm at all. It has NOT been
 // reproduced by this repository on a BDB host, and the sqlite and ndb backends'
 // sidecar behaviour (`rpmdb.sqlite-wal`, `-shm`) has not been examined at all.
 // Nothing is asserted about them in either direction.

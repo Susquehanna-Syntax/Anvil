@@ -410,7 +410,7 @@ func (q *Queue) ReapContext(ctx context.Context) (ReapReport, error) {
 //
 // Found by CI, not locally: the race detector slows execution enough to widen
 // the cancel-during-sweep window from rare to reliable. It reproduced on
-// ubuntu-latest under -race while passing every run on the Windows dev host,
+// ubuntu-latest under -race while passing every run on the Windows machine development then used,
 // which is precisely why -race is a required check rather than an optional one.
 func (q *Queue) Run(ctx context.Context, interval time.Duration, observe func(ReapReport, error)) error {
 	if interval <= 0 {

@@ -820,8 +820,8 @@ func NewController(policy DeadlinePolicy, marks WatermarkPolicy) (*Controller, e
 // IT TAKES THE MUTEX, for the same reason record.Sealer.SetClock takes its own
 // (controller-core finding m4). Construction-time use was always safe; a daemon that re-clocks at
 // runtime raced four readers — Transition, applyTick, publish and NextWake —
-// and the race detector cannot run on the Windows dev host, so only CI would
-// ever have seen it.
+// and only the race detector sees that, so it must run (locally on Linux and in
+// CI) for this to stay checked.
 func (c *Controller) SetClock(now func() time.Time) {
 	if now == nil {
 		now = time.Now

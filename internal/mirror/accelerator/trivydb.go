@@ -617,8 +617,8 @@ const caseInsensitivePaths = runtime.GOOS == "windows" || runtime.GOOS == "darwi
 // onto the tier form, so it can only ever refuse more — and refusing a cache
 // root that spells itself "Tier2" costs nothing, because no legitimate cache
 // root distinguishes Tier2 from tier2. Making it conditional would mean the
-// Linux CI run tests different code from the Windows dev host, on exactly the
-// question the Windows host got wrong.
+// Linux run tests different code from a Windows run, on exactly the question
+// the Windows build got wrong.
 func foldPathComponent(c string) string {
 	if c == "" || c == "." || c == ".." {
 		return c

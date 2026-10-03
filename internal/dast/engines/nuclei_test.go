@@ -5,8 +5,8 @@
 // ===========================================================================
 //
 // Nuclei is NOT INSTALLED here (`Get-Command nuclei` finds nothing; `go list
-// -m all` contains no projectdiscovery module — both measured on the
-// development host, Windows 11, go1.26.5 windows/amd64). So no test here runs
+// -m all` contains no projectdiscovery module — measured on the
+// Windows 11 development machine, and again on 2026-10-03 on the Debian one). So no test here runs
 // the engine, and none pretends to: the engine is behind an interface, driven
 // by recorded shapes, and SystemEngine refuses on every host rather than
 // returning a no-op that would let a scan come back clean.

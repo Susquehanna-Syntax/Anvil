@@ -109,7 +109,7 @@ jobs:
       #
       # This step exists so the ledger is READ on the machine where it says the
       # most: ubuntu-latest has dpkg, so host.Collect runs for real here and the
-      # host-inventory link is PROVEN, where on the Windows dev host it is not.
+      # host-inventory link is PROVEN, where on a host with no package manager it is not.
       - name: Lane A chain ledger (printed, not just passed)
         run: go test -count=1 -v -run TestLaneAChain ./test/conformance/lanea/
 

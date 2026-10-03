@@ -369,9 +369,9 @@ func TestWriteGuardsConsultTheSealerNotTheCallersSnapshot(t *testing.T) {
 // saved the old design, which is why the fix was to move the buffers onto the
 // Controller rather than to write a warning.
 //
-// -race cannot run on the Windows dev host; CI runs this on ubuntu-latest, where
-// this repository has already had one concurrency bug that passed every local
-// run (internal/handoff/reaper.go:415).
+// Run it under -race: locally on Linux and in CI on ubuntu-latest. This
+// repository has already had one concurrency bug that only -race found
+// (internal/handoff/reaper.go's Run).
 func TestConcurrentFanInLosesNoFindings(t *testing.T) {
 	const (
 		workers        = 8

@@ -37,7 +37,7 @@ package accelerator
 // understand IO_REPARSE_TAG_MOUNT_POINT. It is written in portable Go against
 // os and path/filepath only — no cgo, no golang.org/x/sys, no syscall, no build
 // tags — so on Linux and macOS it behaves exactly as symlink resolution always
-// did, and the CI run and the Windows dev host execute the same code on the same
+// did, and a Linux run and a Windows run execute the same code on the same
 // question. (Only the test that BUILDS a junction is platform-specific, in
 // reparse_windows_test.go, and it reaches package syscall rather than adding a
 // dependency.)

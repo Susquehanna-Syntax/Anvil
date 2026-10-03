@@ -21,8 +21,10 @@ import (
 // What this file can and cannot prove
 // ---------------------------------------------------------------------------
 //
-// This suite runs on the Windows development host, where Linux network
-// namespaces and nftables DO NOT EXIST. It therefore proves the DECISION LOGIC
+// This suite was written on Windows, where Linux network namespaces and
+// nftables do not exist, and runs on the Debian development machine as uid
+// 1000 with no nft binary (measured 2026-10-03). Neither can install a ruleset,
+// so it proves the DECISION LOGIC
 // -- ruleset construction, rule ordering, the deny-set relation with the
 // authorization kernel's gate 10, and every branch of the canary-report
 // evaluation -- and it proves that the platform path REFUSES rather than
@@ -1762,7 +1764,7 @@ func (p recordingProbe) Attempt(_ context.Context, network, address string) (boo
 // a verdict. What it does not prove -- stated so the claim matches the
 // evidence -- is that a Linux kernel delivers the errno a ConnectProbe would
 // turn into each of these names. That mapping lives with the implementation,
-// which holds the socket; nothing on a Windows host can prove it. See
+// which holds the socket; nothing on a host without that implementation can prove it. See
 // docs/controls.md U1.
 func TestClassifyDialFailureTable(t *testing.T) {
 	cases := []struct {

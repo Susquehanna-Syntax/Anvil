@@ -40,7 +40,7 @@ func TestTheBinaryRefusesEveryArgument(t *testing.T) {
 // On a Linux host with a package manager this is the host collector's stop condition and
 // the read-only-boundary review's "confirmation the binary runs successfully as
 // a non-root user in the test fixture" — the thing that could not be given
-// before, because there was no binary. Everywhere else (a Windows development
+// before, because there was no binary. Everywhere else (a non-Linux
 // host, a Linux container with no package manager) the collector reports no
 // package manager, which is exit status 3 WITH an inventory: the coverage
 // report is the point, and this asserts it is emitted rather than swallowed.

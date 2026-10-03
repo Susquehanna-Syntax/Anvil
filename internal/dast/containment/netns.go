@@ -63,11 +63,13 @@
 // that reads the inode through the same `ip netns exec` it later fails to apply
 // would agree with itself and report contained.
 //
-// # This host cannot prove any of it
+// # The development machine cannot prove any of it
 //
-// The development host for this packet is WINDOWS. Linux network namespaces
-// and nftables do not exist here, so nothing in this file that touches the
-// kernel can be executed, and no test in this package claims otherwise. The
+// This packet was written on Windows, where Linux network namespaces and
+// nftables do not exist. The Debian machine development moved to has network
+// namespaces but no nft binary, and the suite runs as uid 1000 (measured
+// 2026-10-03). Nothing in this file that touches the kernel has been executed,
+// and no test in this package claims otherwise. The
 // package is therefore split so that the honest part is testable everywhere:
 //
 //   - The ruleset is BUILT by a pure function (BuildRuleset) and pinned by

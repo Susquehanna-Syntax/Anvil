@@ -5,7 +5,8 @@
 // ===========================================================================
 //
 // ZAP is NOT INSTALLED here. MEASURED 2026-08-22 from PowerShell on the
-// development host (Windows 11, go1.26.5 windows/amd64):
+// Windows 11 development machine (re-measured 2026-10-03 on the Debian one:
+// zap.sh, docker and java are all absent there):
 //
 //	Get-Command zap.sh  -> NOT FOUND
 //	Get-Command zap     -> NOT FOUND

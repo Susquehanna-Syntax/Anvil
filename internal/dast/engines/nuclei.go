@@ -1010,7 +1010,7 @@ func LoadTemplates(dir string) ([]Template, []RejectedTemplate, error) {
 		//
 		// This is an ALLOWLIST of two shapes rather than a check for
 		// os.ModeSymlink, and the reason is measured rather than
-		// theoretical. On this Windows host a DIRECTORY JUNCTION (`mklink
+		// theoretical. On the Windows machine this was written on, a DIRECTORY JUNCTION (`mklink
 		// /J`, which needs no privilege at all, unlike `mklink /D`) is
 		// reported by filepath.WalkDir as:
 		//

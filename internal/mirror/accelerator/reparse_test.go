@@ -258,7 +258,7 @@ func assertSamePath(t *testing.T, got, want string) {
 // A-1 itself.
 //
 // TestSymlinkedCacheRootIntoTheQuarantineIsRefused reported SKIP four times on
-// the Windows dev host and the package still printed
+// the Windows development machine and the package still printed
 //
 //	ok  github.com/Susquehanna-Syntax/Anvil/internal/mirror/accelerator
 //

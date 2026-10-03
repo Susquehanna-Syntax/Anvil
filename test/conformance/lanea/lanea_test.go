@@ -107,9 +107,10 @@
 //	on this machine, and the corpus probe alone when none is.
 //
 // Both branches run the full chain. What differs is what the ledger may claim:
-// on a Linux CI host the host-inventory link is PROVEN and names the collected
-// package count, and on a developer's Windows machine it stays UNPROVEN and
-// says so. THE LEDGER LINE NAMES WHICH — a run that proved the collector and a
+// on a Linux host with a package manager (CI, and the Debian development
+// machine since 2026-10-03) the host-inventory link is PROVEN and names the
+// collected package count, and on a host with none it stays UNPROVEN and says
+// so. THE LEDGER LINE NAMES WHICH — a run that proved the collector and a
 // run that proved only a file must not render the same, because telling those
 // two apart is the entire point of that link.
 //
@@ -2009,8 +2010,8 @@ func hostSourceProblems(src hostInventorySource, collectedSubmitted int) []strin
 // TestTheHostLedgerLineNamesWhichInventoryItUsed is the control for the one
 // thing the host link exists to communicate.
 //
-// THE REAL PATH CANNOT RUN ON A WINDOWS DEVELOPMENT HOST — there is no dpkg,
-// rpm or apk, so host.Collect refuses and the chain above takes the probe
+// THE REAL PATH CANNOT RUN ON A HOST WITHOUT dpkg, rpm OR apk (any non-Linux
+// host, a minimal container), so host.Collect refuses and the chain above takes the probe
 // branch every time. Everything DOWNSTREAM of that call is host-independent
 // and is exercised here against two synthetic sources: a run that collected
 // real packages and a run that did not. They must not render the same, in the
@@ -2168,8 +2169,8 @@ func TestTheHostTripwiresFireOnDroppedEvidence(t *testing.T) {
 // not the best thing this machine can offer.
 //
 // It is deliberately not a statement about which branch is correct HERE: on a
-// Windows development host it asserts the probe branch, on a Linux CI host it
-// asserts the collected branch, and either way it asserts that the chain and
+// host with no package manager it asserts the probe branch, on a Linux host
+// with one it asserts the collected branch, and either way it asserts that the chain and
 // the machine agree.
 func TestTheChainUsesTheBestAvailableHostEvidence(t *testing.T) {
 	_, err := host.Collect(context.Background(), host.Options{
