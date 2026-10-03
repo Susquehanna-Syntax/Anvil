@@ -345,7 +345,7 @@ func (q *Queue) ExpireClaimTimeoutsContext(ctx context.Context) (ReapReport, err
 // dropPacketIfPresent unlinks a packet and reports whether one was there. A
 // Queue with no PacketDir has nothing to drop, which is not an error.
 func (q *Queue) dropPacketIfPresent(fingerprint string) (bool, error) {
-	path, err := q.PacketPath(fingerprint)
+	path, err := q.packetPath(fingerprint)
 	if errors.Is(err, ErrNoPacketDir) {
 		return false, nil
 	}

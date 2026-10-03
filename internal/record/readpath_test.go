@@ -2916,8 +2916,10 @@ func gateUngatedAllowlist() map[string]gateExemption {
 		"Result.ExternalStringPointers": {body: "b598635db55a205e", reason: "a pure accessor on a Result the caller already holds. " +
 			"It cannot obtain one: whoever calls it got the Result from somewhere, and that " +
 			"somewhere is what the gate covers."},
-		"ValidateResultTrust": {body: "45d470da65ff8018", reason: "a validator over one caller-held Result, returning only an error. " +
-			"Re-read 2026-09-29: the body changed only in the wording of one error message."},
+		"ValidateResultTrust": {body: "bbff534e61dffe8b", reason: "a validator over one caller-held Result, returning only an error. " +
+			"Re-read 2026-10-03 after plan node contractgaps added the validation-step check: the new " +
+			"branch reads the caller's own Result through verifiedLabels and puts JSON Pointers and the " +
+			"step name in its error, never a result's contents."},
 		"IsHostFinding": {body: "eaf63949394f43ee", reason: "a pure predicate over one caller-held Result. It reads two enum fields " +
 			"and returns a bool."},
 		"Correlate": {body: "2f5772b9f31ae65b", reason: "the correlation engine. It is handed two []Result by the PRODUCER, " +

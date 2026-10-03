@@ -39,7 +39,7 @@
 //	parse_degraded        -> Result.Properties.Advisory.ParseDegraded
 //	anvil/trust           -> Result.Properties.Trust (+ the excerpt's own)
 //	license_spdx          -> Result.Properties.Advisory.LicenseSpdx
-//	license_manual_note   -> Emission.LicenseManualNote  ** see DEVIATION 1 **
+//	license_manual_note   -> Result.Properties.Advisory.LicenseManualNote
 //
 // ===========================================================================
 // 1. remediable_by_agent IS FALSE FOR EVERY HOST FINDING. ALWAYS.
@@ -154,18 +154,11 @@
 // FOUR DEVIATIONS FROM THE PACKET, REPORTED RATHER THAN APPLIED QUIETLY
 // ===========================================================================
 //
-//  1. license_manual_note HAS NO SLOT IN THE FROZEN RECORD. record's
-//     AdvisoryContext carries LicenseSpdx and nothing else; run-level
-//     AdvisorySnapshot carries no licence field either. The spine's
-//     compliance mechanics require the manual-override field carrying the
-//     quoted operative sentence — precisely for the sources whose SPDX id is
-//     NONE, NOASSERTION or a LicenseRef-, which is where the SPDX id alone
-//     establishes nothing. Every slot it could be smuggled into is worse than
-//     no slot: LicenseSpdx is an identifier field and prose corrupts it, and
-//     Reasoning is anvil_generated while the note is a QUOTATION from a
-//     publisher's LICENSE file. So it travels on Emission, typed as a
-//     record.TrustedString, and the gap is reported to the orchestrator.
-//     Dropping it silently would lose a compliance obligation.
+//  1. CLOSED. license_manual_note had no slot in the frozen record, so it
+//     travelled out of band on Emission. The 2026-08-23 contract amendment
+//     added AdvisoryContext.LicenseManualNote, and plan node contractgaps
+//     moved the note into it: it now travels inside the record, beside the
+//     excerpt it licenses, as a record.TrustedString.
 //
 //  2. Result.Level IS LEFT UNSET. Severity mapping (advisory severity or CVSS
 //     -> SARIF level) is a vocabulary nobody has been assigned and is not one
@@ -181,16 +174,12 @@
 //     the same record drift handling says the parser did not fully understand. The
 //     finding is still emitted, as report-only.
 //
-//  4. `verified` HAS NO SLOT TO NAME ITS VALIDATION STEP IN. record.Trust
-//     defines TrustVerified as "the bytes originated outside Anvil AND passed
-//     an explicit validation step THAT IS NAMED IN THE RECORD ... Never a
-//     default", and the frozen AdvisoryContext has nowhere to put the step's
-//     name. Passing `verified` through unaccompanied would publish the label
-//     without the thing that makes it mean anything. So a row asserting
-//     `verified` without naming its step is REFUSED here
-//     (RefusalTrustValidationStep), and the named step travels on
-//     Emission.TrustValidationStep — the same treatment, and the same reported
-//     record-contract gap, as license_manual_note in deviation 1.
+//  4. CLOSED. `verified` had no slot to name its validation step in, so the
+//     step travelled on Emission. Plan node contractgaps added
+//     record.TrustAssertion.ValidationStep, and the step now goes there. A
+//     row asserting `verified` without naming its step is still REFUSED here
+//     (RefusalTrustValidationStep) before the record's own validator, which
+//     now refuses the same shape, ever sees it.
 
 package lanea
 
@@ -445,7 +434,8 @@ type AdvisoryRow struct {
 	// that value as "passed an explicit validation step that is named in the
 	// record ... Never a default", so the label without the name is not the
 	// value the contract describes. It must be EMPTY when Trust is
-	// untrusted. There is no cache column for it today; see deviation 4.
+	// untrusted. It is written to record.TrustAssertion.ValidationStep; the
+	// cache has no column for it yet, so a caller fills it from its own source.
 	TrustValidationStep string
 
 	// AsOf is `advisory.as_of`: THE CACHE WATERMARK. It is when this data
@@ -538,39 +528,23 @@ type Emitter struct {
 // Output
 // ---------------------------------------------------------------------------
 
-// Emission is one emitted finding: the canonical record.Result, plus the two
-// Lane-A-owned facts the frozen record contract has no slot for.
+// Emission is one emitted finding: the canonical record.Result, plus the one
+// Lane-A-owned fact the record contract has no slot for.
 //
 // IT IS NOT A PARALLEL FINDING STRUCT. It carries no fingerprint, no package
 // identity, no advisory identity and no copy of any field Result already
-// holds. Everything about the finding is read from Result; these two exist
-// because the contract has nowhere to put them and dropping them would lose,
-// respectively, a compliance obligation and the only machine-readable
-// statement that a feed missed its SLO. Both are reported to the orchestrator
-// as record-contract gaps rather than fixed here — this step must not write to
-// the record schema.
+// holds. The licence note and the trust validation step used to travel here
+// too; both now have slots in the record (deviations 1 and 4). The SLO stays
+// because it is the only machine-readable statement that a feed missed its
+// SLO, and the contract has no field for a feed's SLO.
 type Emission struct {
 	// Result is the canonical record. Everything about the finding is here.
 	Result record.Result `json:"result"`
-
-	// LicenseManualNote is the spine's manual-override field: the
-	// quoted operative sentence from the publisher's own licence text,
-	// required whenever the SPDX id is NONE, NOASSERTION or a LicenseRef-.
-	// It is a QUOTATION FROM OUTSIDE ANVIL and carries its own trust inline.
-	// Nil when the row states none.
-	LicenseManualNote *record.TrustedString `json:"licenseManualNote,omitempty"`
 
 	// FreshnessSLOSeconds is the feed's SLO, carried so a consumer can
 	// evaluate BeyondFreshnessSLO without holding the feed table. Zero when
 	// the caller stated none.
 	FreshnessSLOSeconds int `json:"freshnessSloSeconds"`
-
-	// TrustValidationStep names the explicit validation step the advisory
-	// row's bytes passed, and is non-empty exactly when the excerpt and the
-	// licence note are classified `verified`. See deviation 4: the frozen
-	// record has no slot for it, and `verified` without it is not the value
-	// record.Trust defines.
-	TrustValidationStep string `json:"trustValidationStep,omitempty"`
 }
 
 // RemediableByAgent is the CLAMPED answer, never a copy.
@@ -1108,6 +1082,8 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 				Fields: map[string]record.Trust{
 					reasoningPointer: record.TrustAnvilGenerated,
 				},
+				// Set below, and only when a `verified` string travels
+				// in this result; see deviation 4.
 			},
 			Advisory: &record.AdvisoryContext{
 				IDs:            []string{advisoryID},
@@ -1120,16 +1096,24 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 				// caller's assembly instant minus that watermark — and NOT
 				// the row's publisher-lag column, which measures something
 				// else. See the package header, section 3.
-				AsOf:             a.AsOf.UTC(),
-				StalenessSeconds: staleness,
-				ParseDegraded:    a.ParseDegraded,
-				Excerpt:          excerpt(a),
+				AsOf:              a.AsOf.UTC(),
+				StalenessSeconds:  staleness,
+				ParseDegraded:     a.ParseDegraded,
+				Excerpt:           excerpt(a),
+				LicenseManualNote: manualNote(a),
 			},
 			Risk: riskOf(a),
 		},
 	}
 	if loc := manifestLocation(m); loc != nil {
 		res.Locations = []record.Location{*loc}
+	}
+	// The step names the validation the row's bytes passed, so it goes into
+	// the record only when some of those bytes do: an excerpt or a licence
+	// note. A verified row with neither carries no verified string here, and
+	// the record refuses a step that names nothing.
+	if adv := res.Properties.Advisory; adv.Excerpt != nil || adv.LicenseManualNote != nil {
+		res.Properties.Trust.ValidationStep = step
 	}
 
 	// The contract's own validator, applied before this leaves the function.
@@ -1144,9 +1128,7 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 
 	return Emission{
 		Result:              res,
-		LicenseManualNote:   manualNote(a),
 		FreshnessSLOSeconds: a.FreshnessSLOSeconds,
-		TrustValidationStep: step,
 	}, nil
 }
 

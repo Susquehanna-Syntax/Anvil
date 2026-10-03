@@ -615,8 +615,15 @@
       "required": ["default"],
       "properties": {
         "default": { "$ref": "#/$defs/trust" },
-        "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/trust" } }
-      }
+        "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/trust" } },
+        "validationStep": {
+          "description": "Names the explicit validation step behind every `verified` label in this result (default, fields, and the inline trust of an advisory excerpt, licence note or reproduction span). Required exactly when some label in the result is `verified`; the Go validator enforces that across the whole result, and this schema enforces it for `default`.",
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "if": { "properties": { "default": { "const": "verified" } }, "required": ["default"] },
+      "then": { "required": ["validationStep"] }
     },
 
     "advisoryContext": {

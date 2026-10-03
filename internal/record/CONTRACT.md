@@ -658,3 +658,21 @@ skipped: `SpecHarvest{Outcome: SpecHarvestSkipped}` marshals `files` as `null`, 
 the schema refused while the Go validator accepted. The `harvest_skipped` branch now admits `null` and
 `[]` alike (they mean the same thing when there is no list to have been written down), and the
 `harvest_ran` branch narrows back to an array, which is where the distinction is load-bearing.
+
+---
+
+## Amendment 2026-10-03 — the contract gaps closed before the freeze (plan node contractgaps)
+
+Six open items were carried into Phase 4. Each now either lands with a test or is stated here as a
+deliberate limit.
+
+| Item | Outcome | Where it is held |
+|---|---|---|
+| No slot for the licence manual-override note | **Closed.** The slot (`anvil/advisory.licenseManualNote`) was added on 2026-08-23, but record emission still carried the note out of band on `Emission`. Emission now writes it into the record, beside the excerpt it licenses, and `Emission` no longer has the field. | `internal/record/lanea/emit_test.go` (the seven Lane A fields, read from the serialised record) |
+| No trust-validation step | **Closed.** `anvil/trust.validationStep` names the validation behind every `verified` label in a result — `default`, any `fields` entry, and the inline trust of an advisory excerpt, a licence note or a reproduction span. It is required, non-blank, exactly when some label is `verified`, and refused when none is. Emission fills it only when a `verified` string travels in the result. | `ValidateResultTrust`; `TestVerifiedNamesItsValidationStep`; the wire schema's `trustAssertion` (`if default is verified then validationStep is required`, checked with `jsonschema` 4.26.0 on 2026-10-03) |
+| An unpinned payload codec | **Closed.** `audit_record.payload` is zstd from `github.com/klauspost/compress` v1.20.1 (pure Go, BSD-3-Clause), pinned in `go.sum`; its three applicable licence bodies are archived and re-hashed (`third_party/klauspost-compress/PIN.md`). `payload_sha256` is the SHA-256 of the **canonical JSON**, not of the compressed bytes, so it identifies the record whatever the encoder. Decoding refuses a payload over 256 MiB decompressed, a corrupt frame, and bytes whose hash is not the row's. | `internal/store/payload.go`, `payload_test.go` |
+| A voluntary lease hand-back burned an attempt | **Closed.** `Queue.HandBack` ends a lease without an attempt and returns the one the claim counted. `ReleaseLease(ready)` still keeps it, because that is how a failed attempt goes back (scanctl's `ConsumeOne`). Stated limit: a holder that hands back on every lease never exhausts the row. | `TestAVoluntaryHandBackReturnsItsAttempt` |
+| `expired` settable outside the reaper | **Closed.** `Dispose` refuses `expired`; `ExpireClaimTimeouts` is its only writer. | `TestDisposeRefusesExpired` |
+| An exported, ungated packet path | **Closed.** `ReadPacket` and `WritePacket` were already gated; `Queue.PacketPath(fingerprint)` still mapped any fingerprint to its file, which is a read around the gate. It is unexported. A lease holder still receives its own packet's path on the `Handle`. `DropPacket` stays exported: it only removes a regenerable cache. | `TestNoExportedPathToAnArbitraryPacket` |
+
+Every new check was seen failing with its fix reverted before it was trusted.

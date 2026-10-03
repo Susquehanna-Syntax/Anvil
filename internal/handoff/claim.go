@@ -425,7 +425,7 @@ func (q *Queue) handleFor(ctx context.Context, handoffID int64, leaseToken strin
 		IdempotencyKey:   idemKey.String,
 		leaseToken:       leaseToken,
 	}
-	if path, err := q.PacketPath(r.Fingerprint); err == nil {
+	if path, err := q.packetPath(r.Fingerprint); err == nil {
 		h.PacketPath = path
 	}
 	return h, nil
@@ -530,6 +530,11 @@ func (q *Queue) RenewLeaseContext(ctx context.Context, h Handle) (Handle, error)
 // work is untouched. That is the mechanism by which reclaiming and
 // re-processing is idempotent: not a lock, a compare-and-swap on the exact
 // lease.
+//
+// Releasing to 'ready' here KEEPS the attempt spent: it is how an attempt that
+// ran and failed goes back to the ready set (scanctl's ConsumeOne does exactly
+// that), and `attempts` counts attempts started. A holder that is giving the
+// finding back WITHOUT having attempted it calls HandBack instead.
 func (q *Queue) ReleaseLease(h Handle, to record.HandoffState) error {
 	return q.ReleaseLeaseContext(context.Background(), h, to)
 }
@@ -570,6 +575,50 @@ func (q *Queue) ReleaseLeaseContext(ctx context.Context, h Handle, to record.Han
 		if err := q.DropPacket(h.Fingerprint); err != nil {
 			return fmt.Errorf("handoff: row %d is %s but its packet remains: %w", h.HandoffID, to, err)
 		}
+	}
+	return nil
+}
+
+// HandBack ends a lease WITHOUT an attempt: the holder gives the finding back to
+// the ready set and the attempt its claim counted is returned.
+//
+// `attempts` counts attempts STARTED, so the claim increments it, and a crash
+// or a failed attempt keeps it spent. A holder that declines the work before
+// attempting it (it is shutting down, it is the wrong worker for this finding)
+// has not started an attempt. Before HandBack existed the only way out was
+// ReleaseLease(ready), which kept the attempt, so two hand-backs with
+// max_attempts=2 stranded a row that had never been attempted as
+// ready-but-exhausted, forever (the sealing, claims and masking review's
+// finding F10).
+//
+// The cost is stated rather than hidden: a holder that hands back on every
+// lease never exhausts the row. A consumer that cannot make progress on a
+// finding must release it with a disposition, not hand it back.
+func (q *Queue) HandBack(h Handle) error {
+	return q.HandBackContext(context.Background(), h)
+}
+
+// HandBackContext is HandBack with a caller-supplied context.
+func (q *Queue) HandBackContext(ctx context.Context, h Handle) error {
+	if err := q.checkRecordVersion(ctx, h); err != nil {
+		return err
+	}
+	res, err := q.db.ExecContext(ctx,
+		`UPDATE handoff
+		    SET state = ?, claimed_by = NULL, lease_expires_at = NULL, updated_at = ?,
+		        attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END
+		  WHERE handoff_id = ? AND state = ? AND claimed_by = ? AND lease_expires_at = ?`,
+		string(record.HandoffStateReady), formatTime(q.Now()),
+		h.HandoffID, string(record.HandoffStateLeased), h.WorkerID, h.leaseToken)
+	if err != nil {
+		return fmt.Errorf("handoff: handing back row %d: %w", h.HandoffID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("handoff: handing back row %d: %w", h.HandoffID, err)
+	}
+	if n == 0 {
+		return q.explainLeaseLost(ctx, h)
 	}
 	return nil
 }
@@ -695,10 +744,15 @@ func (q *Queue) explainLeaseLost(ctx context.Context, h Handle) error {
 // directory at all.
 var ErrNoPacketDir = errors.New("handoff: no PacketDir is configured")
 
-// PacketPath returns where a fingerprint's packet lives. The fingerprint is
+// packetPath returns where a fingerprint's packet lives. The fingerprint is
 // validated as 64 hex first, which is also what stops a crafted value from
 // escaping PacketDir.
-func (q *Queue) PacketPath(fingerprint string) (string, error) {
+//
+// It is unexported on purpose. Exported, it handed any caller the file for any
+// fingerprint, and the file is the payload: a path is a read around
+// packetGate. The lease holder still gets its own packet's path on
+// Handle.PacketPath, which is the one caller entitled to it.
+func (q *Queue) packetPath(fingerprint string) (string, error) {
 	if err := ValidateFingerprint(fingerprint); err != nil {
 		return "", err
 	}
@@ -813,7 +867,7 @@ func (q *Queue) WritePacketContext(ctx context.Context, h Handle, data []byte) (
 		return "", err
 	}
 	fingerprint := h.Fingerprint
-	final, err := q.PacketPath(fingerprint)
+	final, err := q.packetPath(fingerprint)
 	if err != nil {
 		return "", err
 	}
@@ -874,7 +928,7 @@ func (q *Queue) ReadPacketContext(ctx context.Context, h Handle) ([]byte, error)
 	if err := q.packetGate(ctx, h); err != nil {
 		return nil, err
 	}
-	path, err := q.PacketPath(h.Fingerprint)
+	path, err := q.packetPath(h.Fingerprint)
 	if err != nil {
 		return nil, err
 	}
@@ -900,7 +954,7 @@ func (q *Queue) ReadPacketContext(ctx context.Context, h Handle) ([]byte, error)
 // Dropping a packet that is not there is success, because the packet is a
 // cache and its absence is the desired state.
 func (q *Queue) DropPacket(fingerprint string) error {
-	path, err := q.PacketPath(fingerprint)
+	path, err := q.packetPath(fingerprint)
 	if errors.Is(err, ErrNoPacketDir) {
 		return nil
 	}

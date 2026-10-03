@@ -22,7 +22,7 @@ go list -m -f '{{.Dir}}' modernc.org/sqlite | xargs -I{} sha256sum {}/LICENSE
 
 ## Go module dependencies — compiled into `anvil` and `anvil-dast`
 
-All ten are BSD-3-Clause or MIT. **No copyleft, no unclear licence, no `NOASSERTION` in the set.** All
+All eleven are BSD-3-Clause or MIT. **No copyleft, no unclear licence, no `NOASSERTION` in the set.** All
 are Apache-2.0 compatible in the inbound direction.
 
 | Module | Version | SPDX | Copyright holder | LICENSE file SHA-256 |
@@ -37,9 +37,12 @@ are Apache-2.0 compatible in the inbound direction.
 | `github.com/dustin/go-humanize` | v1.0.1 | MIT | Dustin Sallings (2005–2008) | `a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71` |
 | `github.com/mattn/go-isatty` | v0.0.24 | MIT | Yasuhiro Matsumoto | `08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1` |
 | `github.com/ncruces/go-strftime` | v1.0.0 | MIT | Nuno Cruces (2022) | `38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883` |
+| `github.com/klauspost/compress` | v1.20.1 | BSD-3-Clause; MIT for `zstd/internal/xxhash` | The Go Authors (2012), Klaus Post (2019); Caleb Spare (2016) for xxhash; The Snappy-Go Authors (2011) for `internal/snapref` | `0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf` (all three bodies in `third_party/klauspost-compress/`) |
 
-Only `modernc.org/sqlite` is a direct requirement; the other nine arrive through it. All nine are
-therefore pinned by `go.sum` and move only when the sqlite pin moves.
+`modernc.org/sqlite` and `github.com/klauspost/compress` are the direct requirements; the other nine
+arrive through sqlite, are pinned by `go.sum`, and move only when the sqlite pin moves. The compress module
+is the audit payload's zstd codec, added 2026-10-03; `third_party/klauspost-compress/PIN.md` records the
+three licence bodies that apply to the packages it links, and a test re-hashes them.
 
 ### BSD-3-Clause — required notice
 
