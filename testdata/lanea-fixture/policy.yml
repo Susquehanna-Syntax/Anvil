@@ -1,0 +1,9 @@
+# The fixture's trigger policy. A scheduled event runs a full Lane A scan; the
+# cadence is passed verbatim to the systemd timer, never parsed by Anvil.
+version: 1
+defaults:
+  detectors: [sca, host]
+scanRules:
+  - name: weekly-full
+    matchEvents: [schedule]
+    depth: full

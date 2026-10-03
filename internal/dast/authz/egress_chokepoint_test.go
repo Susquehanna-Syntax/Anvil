@@ -140,6 +140,7 @@ var inertImports = map[string]string{
 	"compress/gzip":       "byte-stream codec",
 	"context":             "cancellation and deadlines; carries no connection",
 	"crypto/sha256":       "hashing",
+	"crypto/rand":         "the operating system's random source (getrandom/urandom); internal/scan's audit ids",
 	"database/sql":        "SQL over a driver; the only driver in this module is file-backed",
 	"database/sql/driver": "the driver interface types",
 	"embed":               "compile-time file embedding",
@@ -173,6 +174,7 @@ var inertImports = map[string]string{
 	"net/netip":     "an address VALUE type; no dialer, listener or resolver",
 	"net/url":       "URL parsing; no dialer",
 	"os":            "files, environment and process state; cannot create a socket",
+	"os/signal":     "delivery of signals to this process; cmd/anvil's graceful stop under systemd",
 	"os/exec":       "subprocesses -- see limit 3 in this file's header, and network containment",
 	"path":          "slash-path string manipulation",
 	"path/filepath": "filesystem path string manipulation",
@@ -225,6 +227,7 @@ var inertSymbols = map[string]map[string]string{
 		"ENOENT":  "an errno CONSTANT",
 		"EEXIST":  "an errno CONSTANT",
 		"EACCES":  "an errno CONSTANT",
+		"SIGTERM": "a signal CONSTANT. cmd/anvil stops cleanly when systemd sends it",
 	},
 }
 

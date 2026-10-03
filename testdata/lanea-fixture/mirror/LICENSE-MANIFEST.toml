@@ -1,0 +1,16 @@
+# Licence manifest for the Lane A fixture snapshot. The body it pins is the
+# conformance corpus's synthetic CC0 excerpt; the digest was computed from the
+# file with sha256 on 2026-10-03, and the licence gate re-checks it on every
+# import.
+schema_version = 1
+generated_utc = "2026-10-03"
+generated_by = "testdata/lanea-fixture"
+
+[[body]]
+feed_id = "debian-osv-fixture"
+tier = 0
+dir = "debian-osv-fixture"
+spdx_id = "CC0-1.0"
+text_url = "https://example.invalid/LICENSE"
+sha256 = "0e2ef81abc2ec0c54bbd89aee497a1b2c2f3e049733b9289e18a51d6180a8d02"
+claim_source = "Lane A fixture: synthetic CC0 body"

@@ -1,0 +1,42 @@
+### Anvil scheduled full scan of one repository (plan node daemon).
+###
+### A one-shot `anvil scan --full` woken by anvil-full-scan@.timer. The
+### instance name is the repository's path, escaped:
+###
+###   systemctl enable --now "anvil-full-scan@$(systemd-escape --path /srv/repos/app).timer"
+###
+### The scan runs only when the repository's trigger policy has a rule for the
+### `schedule` event; with no rule it exits 3 (refused) and records nothing.
+### Nothing is held in memory between runs: the timer, not a daemon loop, is the
+### schedule.
+
+[Unit]
+Description=Anvil scheduled full scan of %I
+Documentation=https://github.com/Susquehanna-Syntax/Anvil
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/anvil scan --full --event schedule --repo %I
+
+# Exit 1 means the scan sealed and found something; that is a successful run.
+# 3 (refused) and 4 (missing tool) are failures the journal should show.
+SuccessExitStatus=1
+
+# The scan reads the repository and writes only Anvil's state directory. It
+# makes no network call: Trivy runs with --skip-db-update --offline-scan.
+User=anvil
+Group=anvil
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/anvil
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+
+# NO Restart= directive: a failed scan is reported and the next timer firing
+# retries it.

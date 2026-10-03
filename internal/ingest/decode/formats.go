@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/Susquehanna-Syntax/Anvil/internal/distro"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/cache"
 )
 
@@ -119,6 +120,15 @@ func (dc *Decoder) OSV(raw []byte) (Record, bool, error) {
 		// package vulnerable. research/12 §3, the CVE-2023-32681 /
 		// RHSA-2023:4520 class of false positive.
 		backport := IsDistroEcosystem(eco)
+		// A release the distro vocabulary knows is written in the comparator's
+		// scheme, with its release in the range purl's distro qualifier: the
+		// comparator asks for ranges by scheme, and only the release key keeps a
+		// Debian 11 range away from a Debian 12 package. A distro spelling
+		// outside the allowlist stays as published and the comparator refuses
+		// it by name. The publisher's own spelling is still in raw_json.
+		if h, ok := distro.FromOSVEcosystem(eco); ok {
+			eco, purl = h.Scheme, h.RangePurl(pkg)
+		}
 		emitted := false
 		for _, rg := range a.Ranges {
 			var introduced string

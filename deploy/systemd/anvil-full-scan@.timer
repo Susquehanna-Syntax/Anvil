@@ -1,0 +1,18 @@
+### Wakes anvil-full-scan@.service weekly (plan node daemon).
+###
+### Persistent=true runs a scan the machine slept through; RandomizedDelaySec
+### spreads many repositories' scans over six hours. The cadence is this file;
+### an installation that wants another one overrides OnCalendar with a drop-in
+### (`systemctl edit anvil-full-scan@.timer`). Anvil itself never parses a
+### calendar expression.
+
+[Unit]
+Description=Weekly Anvil full scan of %I
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "collector": "host",
+  "trust": "untrusted",
+  "osRelease": {
+    "id": "debian",
+    "versionId": "12",
+    "versionCodename": "bookworm",
+    "name": "Debian GNU/Linux",
+    "prettyName": "Debian GNU/Linux 12 (bookworm)",
+    "path": "/etc/os-release"
+  },
+  "packages": [
+    {
+      "ecosystem": "deb",
+      "package": "zzanvil-libfixture",
+      "version": "1.1.0-1",
+      "arch": "amd64"
+    },
+    {
+      "ecosystem": "deb",
+      "package": "zzanvil-toolfixture",
+      "version": "1.9.0-1",
+      "arch": "amd64"
+    },
+    {
+      "ecosystem": "deb",
+      "package": "zzanvil-cleanfixture",
+      "version": "1.0-1",
+      "arch": "amd64"
+    }
+  ],
+  "coverage": [
+    {
+      "ecosystem": "deb",
+      "query": "dpkg-query -W -f ${binary:Package}\\t${Version}\\t${Architecture}\\t${db:Status-Abbrev}\\n",
+      "status": "collected",
+      "packages": 3,
+      "lines": 3,
+      "skipped": 0,
+      "notInstalled": 0,
+      "degraded": false
+    },
+    {
+      "ecosystem": "rpm",
+      "query": "rpm -qa --qf %{NAME}\\t%{EPOCH}:%{VERSION}-%{RELEASE}\\t%{ARCH}\\n",
+      "status": "absent",
+      "packages": 0,
+      "lines": 0,
+      "skipped": 0,
+      "notInstalled": 0,
+      "degraded": false
+    },
+    {
+      "ecosystem": "apk",
+      "query": "apk list --installed",
+      "status": "absent",
+      "packages": 0,
+      "lines": 0,
+      "skipped": 0,
+      "notInstalled": 0,
+      "degraded": false
+    }
+  ],
+  "provenance": {
+    "method": "native-package-query",
+    "readOnly": true,
+    "hostname": "fixture-host.invalid",
+    "euid": 1000,
+    "goos": "linux",
+    "queryTimeout": "2m0s"
+  },
+  "parseDegraded": false,
+  "collectedAt": "2026-10-02T00:00:00Z",
+  "asOf": "2026-10-02T00:00:00Z",
+  "stalenessSeconds": 0,
+  "remediable_by_agent": false
+}

@@ -1,0 +1,16 @@
+# The Lane A fixture's feed table: one synthetic Debian OSV feed, imported
+# offline by `anvil feeds import`. The URL is never fetched (.invalid).
+version: 1
+
+feeds:
+  - id: debian-osv-fixture
+    url: https://debian-osv.invalid/advisories.json
+    enabled: true
+    auth_mode: none
+    sync_mechanism: conditional_get_last_modified
+    interval_seconds: 86400
+    freshness_slo_seconds: 172800
+    on_failure: serve_stale
+    license_tier: 0
+    license_spdx: CC0-1.0
+    bootstrap_mechanism: incremental_api
