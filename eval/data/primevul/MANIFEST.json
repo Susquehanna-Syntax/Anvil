@@ -1,0 +1,32 @@
+{
+  "corpus": "PrimeVul v0.1",
+  "source": "https://github.com/DLVulDet/PrimeVul (README: the v0.1 Google Drive folder)",
+  "licence": "MIT (the repository's LICENSE body, Copyright (c) 2024 DLVulDet)",
+  "recorded_at": "2026-10-03T20:25:44+00:00",
+  "files": {
+    "primevul_train.jsonl": {
+      "size": 470918175,
+      "sha256": "5cadee7f3383124cc26ef6e67c8dd76c321e5461c94bef399a2f03a28767e6f5"
+    },
+    "primevul_valid.jsonl": {
+      "size": 63564497,
+      "sha256": "7f0b4d05b063c20d5cf57478128538b8c0c36354e8def7f2d4febe6773b9dc7c"
+    },
+    "primevul_test.jsonl": {
+      "size": 66064689,
+      "sha256": "c9dcab5ee897da36eccf0dbb3b510de2dab66a7dec681af29a7a28c8a53331c4"
+    },
+    "primevul_train_paired.jsonl": {
+      "size": 52560540,
+      "sha256": "1b2853c09ac10b5b60d8e995cbf4461b65414dcf90e0cc5086b788caeae1aaaa"
+    },
+    "primevul_valid_paired.jsonl": {
+      "size": 5655335,
+      "sha256": "14516b7168e8d158e1e9fbeb163b655dd704eafd82c734e86cddc84c564b4285"
+    },
+    "primevul_test_paired.jsonl": {
+      "size": 6033298,
+      "sha256": "384758c25142b640f1768bb0d334c43f315c580022ae94973c66e77128fb3821"
+    }
+  }
+}

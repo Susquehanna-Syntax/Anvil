@@ -52,8 +52,46 @@
 #     (patch-quality).
 #   - Every deferred row names its owning phase.
 #   - `decision` is still UNRESOLVED on all fourteen rows. Only the owner sets it.
+#
+# RESULTS AND THE GATE (2026-10-03, Phase 5): five rows ran and are complete,
+# each with its artifact under eval/results/. The owner set their decisions by
+# the pre-registered bands and decided the gate (the `gate` block below).
+# patch-quality is deferred to Phase 7 by the owner; eight rows stay deferred.
 
 version: 1
+
+# ===========================================================================
+# THE GATE DECISION (plan node gate). Decided by the owner on 2026-10-03 and
+# written here at the owner's instruction, with the numbers it rests on.
+# ===========================================================================
+gate:
+  decided_on: "2026-10-03"
+  decided_by: the owner
+  outcome: SHRINK
+  decision: >-
+    Shrink the model tier to recall plus an optional ranker. The adjudicator and advisory-text
+    conditioning are deleted. Lane B ships the recall federation; a ranker (the code-metrics
+    regression or the unixcoder encoder) ships only if Phase 6 measures it beating chance on
+    Anvil's own candidates, and no ranker is the default. Confirmation moves to the coding
+    agent's triage gate.
+  flip_rate: >-
+    advisory-permutation, CWE-text framing (decides): Qwen3.5-2B 0.500 [0.407, 0.590], 57 flips
+    of 114 real-advisory exhibits over 393 pairs; Gemma-4-E2B-it 0.900 [0.750, 1.000], 18 of 20.
+    Both intervals cross a band edge, so the pre-registered reading is ambiguous twice, a FAIL
+    for v1. CVE-text framing (reported): Qwen3.5-2B 0.842 [0.766, 0.913], Gemma-4-E2B-it 1.000
+    [1.000, 1.000]. 95% percentile bootstrap, 10,000 resamples, seed 20261003.
+  baseline_comparison: >-
+    code-metrics-baseline, CWE-text framing, model arm Qwen3.5-2B, 393 pairs, paired resamples:
+    pairwise-correct 0.031 [0.015, 0.048] against the regression's 0.005 [0.000, 0.013] (model
+    clearly better, by 0.002); precision at recall 0.70 0.498 [0.488, 0.511] against 0.492
+    [0.487, 0.499] (overlap; both at chance, 0.5). One clear metric of two is AMBIGUOUS. The
+    equivalence rule is an engineering judgement, not a citation.
+  consequences: >-
+    Lane B (Phase 6) builds the recall federation, the candidate contract, the candidates-per-scan
+    metric and the pipeline that places recall findings on the record; it does not build the
+    adjudicator, its llama-server residency or its KL-divergence gate. The candidate volume must
+    be narrowed first (10,714 on curl's full scan against 500). The record's verdict, reasoning and
+    confidence slots for Lane B findings are settled at the contract freeze.
 
 experiments:
 
@@ -140,7 +178,7 @@ experiments:
       unit: "flip rate, CWE-text framing, Qwen3.5-2B (interval, both framings and both candidates in the artifact)"
       measured_at: "2026-10-03"
       artifact_path: "eval/results/advisory-permutation.json"
-    decision: UNRESOLVED
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
@@ -224,7 +262,7 @@ experiments:
       unit: "metrics (of two) on which the model's 95% interval lies wholly above the regression's: 2 is PASS, 0 is FAIL, 1 is AMBIGUOUS (pre-registered)"
       measured_at: "2026-10-03"
       artifact_path: "eval/results/code-metrics-baseline.json"
-    decision: UNRESOLVED
+    decision: AMBIGUOUS
     depends_on:
       - advisory-permutation
     deferred_reason: null
@@ -295,7 +333,7 @@ experiments:
       unit: "tokens/s prefill at a 2000-token prompt, Qwen3.5-2B Q4_K_M, CPU with 4 threads (Tier S proxy); every arm in the artifact"
       measured_at: "2026-10-03"
       artifact_path: "eval/results/prefill-sweep.json"
-    decision: UNRESOLVED
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
@@ -309,8 +347,8 @@ experiments:
       research/10-prior-art-and-landscape.md, research/04-remediation-coding-model.md and
       research/11-fix-validation-and-false-positives.md S7; enumerated as experiment #4 in
       research/14-critique-and-gaps.md B7 table
-    owner_node: patchquality
-    status: not_started
+    owner_node: deferred
+    status: deferred
     decision_gated: >-
       Anvil's claimed central differentiator — the "possibly better system" framing in
       the spine's evaluate-first rule. PASS: the framing is supported; no redesign forced, since the spine's
@@ -362,8 +400,15 @@ experiments:
       artifact_path: null
     decision: UNRESOLVED
     depends_on: []
-    deferred_reason: null
-    owning_future_phase: null
+    deferred_reason: >-
+      Deferred by the owner on 2026-10-03. ARVO, the only corpus with exploit oracles, was dropped
+      for licence reasons the same day, so no verified-fix rate is measurable in Phase 5; running
+      CWE-Bench-Java needs the 61 GB coder, two JDKs (its pinned JDK 8u202 is an Oracle build under
+      Oracle's licence) and Maven. Remediation owns the coder and the validation ladder. The loop
+      (anvil_eval.patchloop) and its CWE-Bench-Java adapter are built and tested; the bars stay
+      unsigned until a corpus with an oracle exists.
+    owning_future_phase: >-
+      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
 
   # =========================================================================
   # PERMANENT INSTRUMENT — not a kill gate
@@ -440,7 +485,7 @@ experiments:
       unit: "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)"
       measured_at: "2026-10-03"
       artifact_path: "eval/results/candidates-per-scan.json"
-    decision: UNRESOLVED
+    decision: FAIL
     depends_on: []
     deferred_reason: null
     owning_future_phase: null
@@ -494,7 +539,7 @@ experiments:
       unit: "encoder round trip as a fraction of model-tier time per candidate (Tier S proxy)"
       measured_at: "2026-10-03"
       artifact_path: "eval/results/encoder-round-trip.json"
-    decision: UNRESOLVED
+    decision: PASS
     depends_on:
       - prefill-sweep
       - candidates-per-scan

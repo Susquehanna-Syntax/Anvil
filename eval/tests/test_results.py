@@ -46,8 +46,8 @@ def test_record_fills_the_result_and_keeps_the_decision(tmp_path):
     row = rows["prefill-sweep"]
     assert row["status"] == "complete"
     assert row["result"]["value"] == 812.5 and row["result"]["unit"] == "tokens/s"
-    assert row["decision"] == "UNRESOLVED"
     original = {r["id"]: r for r in yaml.safe_load(REGISTER_PATH.read_text())["experiments"]}
+    assert row["decision"] == original["prefill-sweep"]["decision"]
     assert all(rows[k] == original[k] for k in rows if k != "prefill-sweep")
     assert reg.read_text().count("# HOW TO READ THE `decision` FIELD") == 1  # comments survive
 
@@ -66,10 +66,13 @@ def test_record_refuses_when_a_decision_would_change(tmp_path, monkeypatch):
     shutil.copy(REGISTER_PATH, reg)
     art = results.write_artifact(_artifact(), tmp_path / "prefill-sweep.json")
     real_subn = results.re.subn
+    rows = {r["id"]: r for r in yaml.safe_load(REGISTER_PATH.read_text())["experiments"]}
+    held = rows["prefill-sweep"]["decision"]
+    forged = "PASS" if held != "PASS" else "FAIL"
 
     def subn(pattern, repl, string, count=0):
         out, n = real_subn(pattern, repl, string, count=count)
-        return out.replace("decision: UNRESOLVED", "decision: PASS"), n
+        return out.replace(f"decision: {held}", f"decision: {forged}"), n
 
     monkeypatch.setattr(results.re, "subn", subn)
     with pytest.raises(results.RecordError):

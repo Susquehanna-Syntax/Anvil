@@ -186,3 +186,18 @@ def test_schema_rejects_a_deleted_row(schema: dict, register: dict) -> None:
     mutated = copy.deepcopy(register)
     del _rows(mutated)[0]
     assert _errors(schema, mutated), "schema accepted a register with a row removed"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("decided_by", "the agent"), ("outcome", "MAYBE"),
+     ("baseline_comparison", "the regression overlaps the model"), ("flip_rate", "0.5")],
+)
+def test_schema_rejects_a_gate_block_without_its_quotes_or_owner(
+    schema: dict, register: dict, field: str, value
+) -> None:
+    """Plan node gate: decided by the owner, with the flip rate and the baseline quoted."""
+    mutated = copy.deepcopy(register)
+    assert "gate" in mutated, "the gate decision is recorded in the register"
+    mutated["gate"][field] = value
+    assert _errors(schema, mutated), f"schema accepted gate.{field}={value!r}"
