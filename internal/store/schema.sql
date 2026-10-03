@@ -253,7 +253,7 @@ CREATE TABLE finding (
   CONSTRAINT ck_finding_evidence_class CHECK (
     evidence_class IN ('dast_confirmed', 'sast_reachable', 'sast_static_only', 'sca', 'host')),
   CONSTRAINT ck_finding_verdict CHECK (
-    verdict IN ('true_positive', 'false_positive', 'insufficient_context')),
+    verdict IN ('true_positive', 'false_positive', 'insufficient_context', 'unconfirmed')),
   CONSTRAINT ck_finding_state CHECK (state IN ('open', 'resolved', 'suppressed', 'regressed')),
   CONSTRAINT ck_finding_remediable_bool CHECK (remediable_by_agent IN (0, 1)),
   CONSTRAINT ck_finding_host_not_remediable CHECK (detector != 'host' OR remediable_by_agent = 0),

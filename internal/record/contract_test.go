@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -47,8 +49,13 @@ var frozenEnums = map[string][]string{
 	"anvil/target.provisioning": {
 		"ephemeral_manifest", "live_url_authorized",
 	},
+	// FOUR values since the gate decision of 2026-10-03 (plan node gate): the owner
+	// shrank the model tier to recall plus an optional ranker, so a Lane B finding
+	// is a rule match no detector has judged. `unconfirmed` says exactly that;
+	// true_positive would overclaim it and insufficient_context would make it
+	// report-only for ever.
 	"anvil/verdict": {
-		"true_positive", "false_positive", "insufficient_context",
+		"true_positive", "false_positive", "insufficient_context", "unconfirmed",
 	},
 }
 
@@ -884,5 +891,55 @@ func validLogForTargetTest() *SARIFLog {
 			Results:           []Result{},
 			Properties:        RunProperties{Half: HalfSast, Status: HalfStatusSealed, SealedAt: &sealed},
 		}},
+	}
+}
+
+// The verdict vocabulary lives in five places: contract.go, the wire schema, the store's CHECK
+// constraint (internal/store's TestEnumCheckConstraintsMatchContractLiteralForLiteral),
+// CONTRACT.md and the consumption routing in taskcard.go. This pins the wire schema and the
+// document to contract.go, so a value added in one place cannot be half landed.
+func TestVerdictVocabularyAgreesAcrossContractSchemaAndDoc(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "schemas", "anvil-record-v1.schema.json"))
+	if err != nil {
+		t.Fatalf("read the wire schema: %v", err)
+	}
+	var doc struct {
+		Defs map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse the wire schema: %v", err)
+	}
+	var want []string
+	for _, v := range VerdictValues() {
+		want = append(want, string(v))
+	}
+	if got := doc.Defs["verdict"].Enum; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("wire schema anvil/verdict enum %q, contract.go %q", got, want)
+	}
+	md, err := os.ReadFile("CONTRACT.md")
+	if err != nil {
+		t.Fatalf("read CONTRACT.md: %v", err)
+	}
+	if line := "`" + strings.Join(want, " | ") + "`"; !strings.Contains(string(md), line) {
+		t.Errorf("CONTRACT.md section 1.6 does not list %s", line)
+	}
+}
+
+// After the gate decision (plan node gate), a Lane B finding is a rule match nobody has judged.
+// It must not be handed to the coding agent as actionable, and the card must say that the
+// triage gate decides it: neither dropped nor report-only.
+func TestAnUnconfirmedFindingWaitsForTheTriageGate(t *testing.T) {
+	r := Result{Properties: ResultProperties{
+		Verdict: VerdictUnconfirmed, RemediableByAgent: true,
+		Detector: DetectorRef{Kind: DetectorKindSast},
+	}}
+	if isActionable(&r) {
+		t.Fatal("an unconfirmed finding is actionable before the triage gate has judged it")
+	}
+	blockers := strings.Join(actionBlockers(&r), "; ")
+	if !strings.Contains(blockers, "triage gate") || strings.Contains(blockers, "report-only") {
+		t.Errorf("blockers %q must name the triage gate and must not demote to report-only", blockers)
 	}
 }

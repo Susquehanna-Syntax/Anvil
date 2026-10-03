@@ -505,6 +505,10 @@ func actionBlockers(r *Result) []string {
 	case VerdictInsufficientContext:
 		out = append(out, fmt.Sprintf("%s is %q: report-only, never silently dropped",
 			PropResultVerdict, VerdictInsufficientContext))
+	case VerdictUnconfirmed:
+		out = append(out, fmt.Sprintf("%s is %q: a recall rule matched and nothing has judged it; "+
+			"the coding agent's triage gate decides it before any fix is proposed",
+			PropResultVerdict, VerdictUnconfirmed))
 	}
 	return out
 }
