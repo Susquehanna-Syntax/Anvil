@@ -969,7 +969,7 @@ func TestFeedStateAcceptsEveryFeedIDInTheShippedConfig(t *testing.T) {
 		// skip here reports "the produce/consume edge between the feed table
 		// and the ingestion cache was verified" whenever the file moves, is
 		// renamed, or stops parsing -- which is the exact failure mode
-		// internal/SKIPPED-CONTROLS.md is about.
+		// docs/controls.md is about.
 		t.Fatalf("The feed table's example config could not be loaded, so the feed_id domain shared by the feed table "+
 			"and the ingestion cache was NOT cross-checked: %v", err)
 	}

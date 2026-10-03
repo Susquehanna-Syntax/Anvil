@@ -1392,7 +1392,7 @@ func TestResetFileSkipsNothing(t *testing.T) {
 	for _, forbidden := range []string{tok + "(", tok + "f(", tok + "Now("} {
 		if strings.Contains(string(src), forbidden) {
 			t.Errorf("reset_test.go contains %q. If a control genuinely cannot run here "+
-				"it belongs in internal/SKIPPED-CONTROLS.md with what would settle it -- "+
+				"it belongs in docs/controls.md with what would settle it -- "+
 				"not behind a green tick", forbidden)
 		}
 	}

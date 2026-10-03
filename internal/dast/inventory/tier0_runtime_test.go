@@ -22,7 +22,7 @@
 // authz.Adjudicate is the only mint for an authz.Authorization, the admission
 // chain contains Gate11RobotsDeny, and nothing is registered for it — so no
 // Authorization can be constructed from outside package authz at all
-// (internal/SKIPPED-CONTROLS.md U4). Every test below that would need one
+// (docs/controls.md U4). Every test below that would need one
 // asserts a refusal instead, and
 // TestNoAuthorizationCanBeMintedUntilGate11IsRegistered FAILS on the day that
 // changes, listing what must then be written. There is no t.Skip in this file.
@@ -1854,7 +1854,7 @@ func TestTheHardCodedPathScannerCanSeeAViolation(t *testing.T) {
 // ===========================================================================
 // THE PROBE PATH, END TO END
 //
-// internal/SKIPPED-CONTROLS.md U4 records that no authz.Authorization could be
+// docs/controls.md U4 records that no authz.Authorization could be
 // minted from outside package authz, because Gate11RobotsDeny sat in the
 // admission chain with no implementation. That is NO LONGER TRUE in this tree:
 // gate 11 has moved to the Governor's per-request chain
@@ -1892,7 +1892,7 @@ func mintAuthorization(t *testing.T) (authz.Authorization, *countingSink) {
 Tier 0 cannot issue a spec fetch without an authz.Authorization, and Adjudicate
 is the only mint. If gate 11 has been put back into kernel.go's admissionChain,
 this whole file's fetch half becomes unreachable again and
-internal/SKIPPED-CONTROLS.md U4 needs reopening for Tier 0 as well as for the nuclei driver.`,
+docs/controls.md U4 needs reopening for Tier 0 as well as for the nuclei driver.`,
 			dec.Gate(), dec.Reason(), dec.Err())
 	}
 	auth, err := dec.Authorization()
@@ -2723,7 +2723,7 @@ func TestJSONNumbersAndBooleansInPlaceOfStringsDoNotBecomeRoutes(t *testing.T) {
 
 // TestThisPackageSkipsNothing.
 //
-// internal/SKIPPED-CONTROLS.md exists because "a guard that vanishes silently
+// docs/controls.md exists because "a guard that vanishes silently
 // when it cannot run is worse than no guard, because the green tick is read as
 // an answer" — and it happened twice in this repository before anyone noticed.
 // U6's entry claims this package has zero skip sites; this is what makes the
@@ -2775,7 +2775,7 @@ func TestThisPackageSkipsNothing(t *testing.T) {
 			}
 			t.Errorf(`%s calls %s.
 
-internal/SKIPPED-CONTROLS.md U6 records that this package has ZERO skip sites,
+docs/controls.md U6 records that this package has ZERO skip sites,
 and a skip here would let the package print "ok" while the control it guards
 went unrun. If the skip is genuinely platform-specific, it has to be listed in
 that document with what would settle it — and this test updated in the same

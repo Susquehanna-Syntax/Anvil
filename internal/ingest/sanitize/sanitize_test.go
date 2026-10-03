@@ -955,7 +955,7 @@ func TestNoDefaultIgnorableCodePointSurvives(t *testing.T) {
 		// text past AssertSanitized -- silently, on a toolchain bump.
 		t.Fatalf("this Go toolchain ships Other_Default_Ignorable_Code_Point=%v and "+
 			"Variation_Selector=%v, so the default-ignorable sweep was NOT checked. This fails "+
-			"rather than skips: see internal/SKIPPED-CONTROLS.md.", odi != nil, vs != nil)
+			"rather than skips: see docs/controls.md.", odi != nil, vs != nil)
 	}
 	n := 0
 	for r := rune(0); r <= unicode.MaxRune; r++ {

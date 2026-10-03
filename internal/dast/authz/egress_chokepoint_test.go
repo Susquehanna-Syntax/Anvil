@@ -430,7 +430,7 @@ func scanRepoForEgress(t *testing.T, root string) EgressScan {
 
 // repoRootForGuards returns the module root, or fails.
 //
-// It does not skip when it cannot find the root. internal/SKIPPED-CONTROLS.md
+// It does not skip when it cannot find the root. docs/controls.md
 // records this repository shipping two guards that vanished silently when they
 // could not run; a build-time invariant that cannot locate the tree it guards
 // has not passed, it has not run.

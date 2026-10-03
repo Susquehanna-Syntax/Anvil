@@ -2,7 +2,7 @@ package record
 
 // fingerprint_spec_test.go — the test that keeps FINGERPRINT-SPEC.md honest.
 //
-// The contract-and-fingerprint review (REVIEW-contract-and-fingerprint.md),
+// The contract-and-fingerprint review (docs/reviews/contract-and-fingerprint.md),
 // blocker 1: `normalized_match` was defined only in Go. The critic
 // re-implemented plan/design/record-and-store.md's four-clause spec text in
 // Python and got 55e27b07… where the committed golden for sast-01 is 13c60ccf….

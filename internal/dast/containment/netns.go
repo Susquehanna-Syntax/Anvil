@@ -80,7 +80,7 @@
 //
 // SystemCommander REFUSES on any non-Linux GOOS -- it does not return a
 // no-op that would let AssertContainment return nil. There is no t.Skip in
-// this package. See internal/SKIPPED-CONTROLS.md entry U1 for what remains
+// this package. See docs/controls.md entry U1 for what remains
 // unexecuted and exactly what would settle it.
 //
 // # Why this package holds no socket
@@ -187,7 +187,7 @@ const ChainName = "egress"
 // WHAT THIS STILL DOES NOT PROVE: the canary runs under `ip netns exec`, so it
 // holds a socket IN the namespace and its own dials traverse `output`, not
 // `forward`. It therefore exercises the chain the TARGET DOES NOT USE. Recorded
-// in internal/SKIPPED-CONTROLS.md as U1a, with what would settle it.
+// in docs/controls.md as U1a, with what would settle it.
 //
 // WHY THERE IS NO `input` CHAIN, stated rather than left as an omission. The
 // property asserted here is what the target can REACH. `input` is inbound: the
@@ -982,7 +982,7 @@ func splitAllowEntries(m *target.Manifest) ([]netip.Prefix, []string, error) {
 // package's own tests. So booted_clean today means "the container is contained
 // by gVisor" and does NOT mean "its egress is default-deny". Wiring that is the
 // integration packet's, not this one's, and it is recorded in
-// internal/SKIPPED-CONTROLS.md as U1c so it cannot be forgotten -- including
+// docs/controls.md as U1c so it cannot be forgotten -- including
 // the containment review's criterion that AssertContainment must run BEFORE any probe engine
 // starts.
 //
@@ -1110,7 +1110,7 @@ const CanarySubcommand = "__anvil-dast-netns-canary"
 // The canary remains the UNTRUSTED half and this package cannot authenticate
 // it: a substituted binary can write any number it likes. What the check buys
 // is that the ordinary way this control rots -- an honest probe with too short
-// a dialer -- now fails loudly. The rest is internal/SKIPPED-CONTROLS.md U1b.
+// a dialer -- now fails loudly. The rest is docs/controls.md U1b.
 const DefaultCanaryDialTimeout = 2 * time.Second
 
 // canaryTimingTolerance is how much short of DefaultCanaryDialTimeout a

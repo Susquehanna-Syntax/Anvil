@@ -702,7 +702,7 @@ type ExtractedRoute struct {
 // with network and toolchain reach that belongs behind network containment.
 //
 // Nothing implements this today. third_party/go-apispec/PIN.md section 5
-// records the two measured blockers. internal/SKIPPED-CONTROLS.md is where the
+// records the two measured blockers. docs/controls.md is where the
 // unprovable half is named; there is no t.Skip in this package.
 type TypeCheckedExtractor interface {
 	// ExtractTypeChecked returns one ExtractedRoute per registration the

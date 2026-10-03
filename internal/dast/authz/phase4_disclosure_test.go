@@ -3111,7 +3111,7 @@ func TestPhase4EmbargoConstantsPinTheRelationsNotOnlyTheValues(t *testing.T) {
 	//     NOT a constant-interaction defect and is deliberately not asserted
 	//     here: an embargo outliving the attestation that authorised the scan
 	//     is expected, and it is what makes the two-run divergent-clock
-	//     residual visible in the audit log at all. See SKIPPED-CONTROLS
+	//     residual visible in the audit log at all. See docs/controls.md
 	//     G18-2.
 }
 

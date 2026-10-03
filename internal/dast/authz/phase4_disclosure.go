@@ -99,7 +99,7 @@
 // accepts a "now", so the one instant the caller chose is the one every
 // comparison in the run is made against. A lie is still spellable; it is no
 // longer spellable INCONSISTENTLY, and the cost of telling it consistently is
-// in this file's closing section and in SKIPPED-CONTROLS G18-2.
+// in this file's closing section and in docs/controls.md G18-2.
 //
 // types.go's RunClock is sealed at run initiation by an unexported
 // constructor, exactly as Scope and Attestation are, and
@@ -138,7 +138,7 @@
 // runs are keyed to different attestation IDs. That is a materially larger and
 // more visible act than passing a different time.Time to the next call, and it
 // is as far as a kernel with no trusted clock can go. Recorded in
-// internal/SKIPPED-CONTROLS.md as G18-2.
+// docs/controls.md as G18-2.
 
 package authz
 
@@ -1582,7 +1582,7 @@ func (r DisclosureRecord) ScopeHash() ScopeHash { return r.key.ScopeHash() }
 // handoff buffer, and in this tree disclosure state lives NOWHERE. Every
 // refusal in this section is real and tested; the ALLOW has never been taken
 // by a caller that actually persisted anything. Recorded in
-// internal/SKIPPED-CONTROLS.md as G19-1, with what would settle it.
+// docs/controls.md as G19-1, with what would settle it.
 //
 // # The residual the declaration leaves even once one exists
 //

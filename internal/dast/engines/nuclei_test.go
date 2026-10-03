@@ -33,7 +33,7 @@
 // gate stack only ever shown to refuse could be refusing for the wrong reason,
 // so the positive control is what makes the negative ones mean anything.
 //
-// internal/SKIPPED-CONTROLS.md entry U4 is the standing record of what is
+// docs/controls.md entry U4 is the standing record of what is
 // still open: the engine, which is (a) and is about this host.
 //
 // ===========================================================================
@@ -41,7 +41,7 @@
 // ===========================================================================
 //
 // TestThisFileSkipsNothing reads this file's own syntax tree and fails if one
-// appears. internal/SKIPPED-CONTROLS.md's opening section records two
+// appears. docs/controls.md's opening section records two
 // separate occasions on which a skip retired a live security control behind a
 // green tick.
 package engines
@@ -464,7 +464,7 @@ func TestTemplateDigestIsOverTheExactBytes(t *testing.T) {
 	}
 }
 
-// TestALinkInTheTemplateTreeIsRejected. internal/SKIPPED-CONTROLS.md H1
+// TestALinkInTheTemplateTreeIsRejected. docs/controls.md H1
 // records this repository shipping a guard that a Windows DIRECTORY JUNCTION
 // walked straight through, because the test only ever created the privileged
 // kind of link. This one creates the strongest link the host permits and
@@ -2415,7 +2415,7 @@ func TestScrubRemovesEveryHiddenClassAndCountsIt(t *testing.T) {
 // Structural guards over this package's own source
 // ---------------------------------------------------------------------------
 
-// TestThisFileSkipsNothing. internal/SKIPPED-CONTROLS.md's opening section
+// TestThisFileSkipsNothing. docs/controls.md's opening section
 // records two occasions on which a skip retired a live security control
 // behind a green tick.
 func TestThisFileSkipsNothing(t *testing.T) {

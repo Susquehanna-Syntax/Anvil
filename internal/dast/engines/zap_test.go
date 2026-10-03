@@ -43,7 +43,7 @@
 // and the tests that exercise the authorization boundary itself now use the
 // production route in both directions.
 //
-// internal/SKIPPED-CONTROLS.md U5 records what remains unexecuted, including
+// docs/controls.md U5 records what remains unexecuted, including
 // the one plan/design/dynamic-tier.md explicitly asked this step to answer — ZAP's JVM
 // memory footprint â€” which is NOT answered here, because there is no ZAP to
 // measure and a fabricated number would become tier-M sizing documentation.
@@ -1798,7 +1798,7 @@ func TestNewZapDriverRefusesEveryUnauthorizedRoute(t *testing.T) {
 // The two tests here are the ones that could not be written: a ZapDriver built
 // by NewZapDriver from a real token, fired end to end, and the same driver
 // refusing a real kernel refusal without issuing anything. They are the ZAP
-// counterparts of nuclei_test.go's items (2) and (3), and the SKIPPED-CONTROLS
+// counterparts of nuclei_test.go's items (2) and (3), and the docs/controls.md
 // entry they close is U5(c), which recorded this blocker as shared with U4(b).
 
 // mustZapDriver assembles a ZapDriver against the real kernel: a real
@@ -2166,7 +2166,7 @@ func TestTheAutomationPlanCarriesNoReferenceAWriterCouldReach(t *testing.T) {
 // reconcile with the ZAP driver's instruction rather than to discover it.
 //
 // WHERE THE SCHEDULED-ONLY RULE IS ENFORCED: nowhere in this package.
-// internal/SKIPPED-CONTROLS.md U5 records it as an unenforced contract.
+// docs/controls.md U5 records it as an unenforced contract.
 func TestThisDriverIsTriggerAgnosticByInstruction(t *testing.T) {
 	v := reflect.TypeOf(ZapConfig{})
 	for i := 0; i < v.NumField(); i++ {
@@ -2175,7 +2175,7 @@ func TestThisDriverIsTriggerAgnosticByInstruction(t *testing.T) {
 			t.Fatalf("ZapConfig.%s exists. The ZAP driver's design requires this driver to be "+
 				"trigger-agnostic and puts the scheduled-only gate in the caller's "+
 				"trigger-policy check. If that instruction has changed, change "+
-				"internal/SKIPPED-CONTROLS.md U5 in the same commit", v.Field(i).Name)
+				"docs/controls.md U5 in the same commit", v.Field(i).Name)
 		}
 	}
 	f := reflect.TypeOf(ZapPlanFacts{})
@@ -2219,7 +2219,7 @@ func TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage(t *testing.T) {
 	body := string(raw)
 	if !strings.Contains(body, "unquantified") {
 		t.Fatal("zap.go no longer records ZAP's JVM footprint as unquantified. If it was " +
-			"MEASURED, this test and internal/SKIPPED-CONTROLS.md U5 both change in the " +
+			"MEASURED, this test and docs/controls.md U5 both change in the " +
 			"same commit as the measurement")
 	}
 	for _, f := range forbidden {
@@ -2229,7 +2229,7 @@ func TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage(t *testing.T) {
 				"ZAP and no Docker (both measured 2026-08-22, PowerShell). A figure here "+
 				"becomes tier-M sizing documentation. Settle it with a `docker stats` run "+
 				"during a representative scheduled scan and record the measurement in "+
-				"internal/SKIPPED-CONTROLS.md U5", f)
+				"docs/controls.md U5", f)
 		}
 	}
 }

@@ -8,7 +8,7 @@ be able to read the complete algorithm here and nowhere else, and emit byte-iden
 
 `plan/design/record-and-store.md`'s "Fingerprint Specification" section remains the record of *why* the
 research-branch conflict was resolved the way it was. It is a **summary**, not the definition.
-`internal/record/REVIEW-contract-and-fingerprint.md` (finding 1) proved the summary insufficient by re-implementing its
+`docs/reviews/contract-and-fingerprint.md` (finding 1) proved the summary insufficient by re-implementing its
 four-clause `normalized_match` text in Python and obtaining `55e27b07…` where the committed golden for
 `sast-01-go-sql-string-concat` is `13c60ccf…`. The orchestrator ruled on 2026-08-08 that the
 implementation was right and the specification incomplete, and that the fix was to write the

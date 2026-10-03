@@ -919,7 +919,7 @@ func retagAll(target authz.Target, pr ParseResult) ParseResult {
 // and cannot: Tier 1 issues no request at all, which is why this whole packet
 // is exercisable today while the runtime spec probe's fetch half depends on the kernel
 // admitting. There is no t.Skip anywhere in this tier and nothing in
-// internal/SKIPPED-CONTROLS.md belongs to it.
+// docs/controls.md belongs to it.
 func IngestSpecFile(cfg IngestConfig, f SpecFile) (FileResult, error) {
 	if !cfg.Target.Constructed() {
 		return FileResult{}, fmt.Errorf("inventory: %w: IngestSpecFile was handed a Target "+

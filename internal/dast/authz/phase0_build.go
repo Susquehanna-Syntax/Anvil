@@ -21,7 +21,7 @@
 // THE FACT TYPES REFUSE TO BE FABRICATED, AND REFUSE TO BE EMPTY
 // ===========================================================================
 //
-// internal/SKIPPED-CONTROLS.md opens with two incidents in this repository
+// docs/controls.md opens with two incidents in this repository
 // where a control that could not run reported success — a symlink test that
 // skipped on Windows while a directory junction walked through the guard it
 // protected, and a dependency-shape guard that skipped whenever `go list`
@@ -372,7 +372,7 @@ func isStdlibPackage(p string) bool {
 //
 // That is a vacuous positive, and it is written down rather than papered over.
 // The gate is not fabricated a consumer to satisfy it — a consumer invented to
-// make a gate green is the exact shape internal/SKIPPED-CONTROLS.md records
+// make a gate green is the exact shape docs/controls.md records
 // this repository shipping twice. The kernel's build-time guard owns the real
 // positive control: once cmd/anvil-dast links the kernel, gate 1 needs BOTH
 // graphs — anvil-dast MUST contain internal/dast/authz and anvil MUST NOT — so
