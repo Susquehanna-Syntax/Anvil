@@ -20,6 +20,7 @@ package repo
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -494,4 +495,49 @@ func checkVersionPin(ctx context.Context, runner Runner, required string) (strin
 
 func normalizeVersion(v string) string {
 	return strings.TrimPrefix(strings.TrimSpace(v), "v")
+}
+
+// DatabaseInfo is what `trivy --version --format json` reports about the
+// vulnerability database a scan reads. UpdatedAt is the database's own
+// watermark: when Aqua built it from its upstream feeds.
+type DatabaseInfo struct {
+	TrivyVersion string
+	DBVersion    int
+	UpdatedAt    time.Time
+	DownloadedAt time.Time
+}
+
+// ErrNoDatabase means Trivy reports no vulnerability database. A scan run
+// against it would fail ("--skip-db-update cannot be specified on the first
+// run"), so the caller refuses before scanning rather than after.
+var ErrNoDatabase = errors.New("repo: trivy has no vulnerability database")
+
+// Database asks the resolved binary which vulnerability database it would
+// scan with. A finding Trivy decides carries this UpdatedAt as its as_of: the
+// verdict is only as fresh as the database that produced it.
+func Database(ctx context.Context, runner Runner) (DatabaseInfo, error) {
+	out, err := runner.Run(ctx, versionArgs())
+	if err != nil {
+		return DatabaseInfo{}, err
+	}
+	var v struct {
+		Version         string
+		VulnerabilityDB *struct {
+			Version      int
+			UpdatedAt    time.Time
+			DownloadedAt time.Time
+		}
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return DatabaseInfo{}, fmt.Errorf("%w: `trivy --version --format json` is not JSON: %q", ErrTrivyFailed, oneLine(string(out)))
+	}
+	if v.VulnerabilityDB == nil || v.VulnerabilityDB.UpdatedAt.IsZero() {
+		return DatabaseInfo{TrivyVersion: v.Version}, ErrNoDatabase
+	}
+	return DatabaseInfo{
+		TrivyVersion: v.Version,
+		DBVersion:    v.VulnerabilityDB.Version,
+		UpdatedAt:    v.VulnerabilityDB.UpdatedAt.UTC(),
+		DownloadedAt: v.VulnerabilityDB.DownloadedAt.UTC(),
+	}, nil
 }

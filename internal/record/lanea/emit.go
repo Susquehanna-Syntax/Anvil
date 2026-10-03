@@ -1225,7 +1225,11 @@ func cveIDs(m match.MatchResult, a AdvisoryRow) []string {
 	case a.CVEID != "":
 		return []string{a.CVEID}
 	default:
-		return nil
+		// An empty list, not nil: the wire schema requires cveIds to be an
+		// array, and nil marshals as null. An advisory with no CVE alias
+		// (NSWG-ECO-516) reached the schema for the first time in plan node
+		// cli's end-to-end run.
+		return []string{}
 	}
 }
 
@@ -1443,11 +1447,12 @@ func validateEmitted(res *record.Result) error {
 			State:         record.StateBothSealed,
 			Version:       1,
 			CreatedAt:     createdAt,
-			// Placeholders in throwaway scaffolding: the enums have no
-			// "not applicable" member and this envelope is never emitted.
+			// Throwaway scaffolding, never emitted. A Lane A audit declares
+			// no runtime target, so provisioning is absent: the contract used
+			// to demand one, and this envelope had to write a value that was
+			// false (plan node cli fixed the contract).
 			Target: record.Target{
-				Provenance:   record.TargetProvenanceNoTargetDeclared,
-				Provisioning: record.TargetProvisioningEphemeralManifest,
+				Provenance: record.TargetProvenanceNoTargetDeclared,
 			},
 			DastStatus: record.DastStatusNotRun,
 			Deadline: record.Deadline{

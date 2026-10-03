@@ -1306,7 +1306,14 @@ type Target struct {
 	// measurement from Provenance; see TargetProvisioning's doc comment for
 	// why merging them loses information the spine's record section requires.
 	// Producer: target lifecycle harness (coverage reporting).
-	Provisioning TargetProvisioning `json:"provisioning"`
+	//
+	// ABSENT EXACTLY WHEN NO TARGET WAS DECLARED. Both legal values describe
+	// how a runtime target came to exist, and an audit whose provenance is
+	// no_target_declared (every audit from the core anvil artifact, which has
+	// no DAST half) had none, so either value would be a false statement about
+	// what was provisioned. Plan node cli's first end-to-end run found the
+	// contract demanding one.
+	Provisioning TargetProvisioning `json:"provisioning,omitempty"`
 }
 
 // Trigger names the configured policy that fired. `anvil/trigger`.
@@ -2455,7 +2462,12 @@ func (l *SARIFLog) Validate() error {
 	if err := ValidateTargetProvenance(string(p.Target.Provenance)); err != nil {
 		return err
 	}
-	if err := ValidateTargetProvisioning(string(p.Target.Provisioning)); err != nil {
+	if p.Target.Provenance == TargetProvenanceNoTargetDeclared {
+		if p.Target.Provisioning != "" {
+			return fmt.Errorf("record: %s.provisioning is %q but provenance is %q; a target that was "+
+				"never declared was never provisioned", PropAuditTarget, p.Target.Provisioning, p.Target.Provenance)
+		}
+	} else if err := ValidateTargetProvisioning(string(p.Target.Provisioning)); err != nil {
 		return err
 	}
 	if err := ValidateDastStatus(string(p.DastStatus)); err != nil {
@@ -2500,10 +2512,15 @@ func (l *SARIFLog) Validate() error {
 // sast_sealed, and the spine's "two INDEPENDENTLY-sealed halves"
 // would be false in the implementation while true in the document.
 func (l *SARIFLog) validateStateAgainstHalves(seen map[Half]bool) error {
+	// TERMINAL, not readable, advances the audit state: DeriveState's rule
+	// (sealing.go, "Terminal is not the same as readable"). This check used to
+	// count only HalfStatusSealed, so it refused the state the sealer itself
+	// produces for an audit whose SAST half failed; plan node cli's first
+	// end-to-end run with a failing half found the disagreement.
 	sastSealed, dastSealed := false, false
 	for i := range l.Runs {
 		rp := &l.Runs[i].Properties
-		if rp.Status != HalfStatusSealed {
+		if !IsTerminalHalfStatus(rp.Status) {
 			continue
 		}
 		switch rp.Half {

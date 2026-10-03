@@ -1756,11 +1756,10 @@ func sealedLog(t *testing.T, results []record.Result) record.SARIFLog {
 			Version:       1,
 			CreatedAt:     created,
 			Target: record.Target{
-				RepoURL:      "https://example.invalid/zzrepoqx.git",
-				Ref:          "refs/heads/main",
-				Commit:       "0000000000000000000000000000000000000000",
-				Provenance:   record.TargetProvenanceNoTargetDeclared,
-				Provisioning: record.TargetProvisioningEphemeralManifest,
+				RepoURL:    "https://example.invalid/zzrepoqx.git",
+				Ref:        "refs/heads/main",
+				Commit:     "0000000000000000000000000000000000000000",
+				Provenance: record.TargetProvenanceNoTargetDeclared,
 			},
 			DastStatus: record.DastStatusNotRun,
 			Deadline: record.Deadline{

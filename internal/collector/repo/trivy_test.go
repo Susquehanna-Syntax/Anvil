@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/cache"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/sanitize"
@@ -1084,5 +1085,33 @@ func TestRelativeManifestPathIsRepoRelative(t *testing.T) {
 	}
 	if got := RelativeManifestPath("", "./web/package-lock.json"); got != "web/package-lock.json" {
 		t.Errorf("RelativeManifestPath = %q, want %q", got, "web/package-lock.json")
+	}
+}
+
+// rawRunner answers every invocation with the same bytes.
+type rawRunner struct{ out string }
+
+func (r rawRunner) Run(context.Context, []string) ([]byte, error) { return []byte(r.out), nil }
+
+// TestDatabaseReadsTheWatermark: a Trivy-decided finding is only as fresh as
+// the database that decided it, so the scan reads the database's own
+// UpdatedAt, and a binary with no database is refused before any scan.
+func TestDatabaseReadsTheWatermark(t *testing.T) {
+	// The shape `trivy --version --format json` printed for 0.73.0 on 2026-10-03.
+	const out = `{"Version":"0.73.0","VulnerabilityDB":{"Version":2,"NextUpdate":"2026-10-04T07:01:46.027466402Z","UpdatedAt":"2026-10-03T07:01:46.027466673Z","DownloadedAt":"2026-10-03T14:11:10.745074719Z"}}`
+	got, err := Database(context.Background(), rawRunner{out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TrivyVersion != "0.73.0" || got.DBVersion != 2 ||
+		!got.UpdatedAt.Equal(time.Date(2026, 10, 3, 7, 1, 46, 27466673, time.UTC)) {
+		t.Fatalf("Database = %+v", got)
+	}
+
+	if _, err := Database(context.Background(), rawRunner{`{"Version":"0.73.0"}`}); !errors.Is(err, ErrNoDatabase) {
+		t.Errorf("no VulnerabilityDB block: err = %v, want ErrNoDatabase", err)
+	}
+	if _, err := Database(context.Background(), rawRunner{"Version: 0.73.0\n"}); err == nil || errors.Is(err, ErrNoDatabase) {
+		t.Errorf("plain-text output: err = %v, want a parse failure, not 'no database'", err)
 	}
 }

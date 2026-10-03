@@ -64,7 +64,7 @@
       "enum": ["booted_clean", "boot_failed", "build_failed", "no_target_declared", "unreachable_at_scan_time"]
     },
     "targetProvisioning": {
-      "description": "FROZEN ENUM 5/6 (anvil/target.provisioning). NEW required field. WHICH PROVISIONING PATH produced the target. A different measurement from target.provenance; merging them loses information the spine's record section requires, and the two carry different authorization consequences (the spine's safety section).",
+      "description": "FROZEN ENUM 5/6 (anvil/target.provisioning). Required unless target.provenance is no_target_declared, and absent then: both values describe how a runtime target came to exist. WHICH PROVISIONING PATH produced the target. A different measurement from target.provenance; merging them loses information the spine's record section requires, and the two carry different authorization consequences (the spine's safety section).",
       "type": "string",
       "enum": ["ephemeral_manifest", "live_url_authorized"]
     },
@@ -166,7 +166,7 @@
 
     "target": {
       "type": "object",
-      "required": ["repoUrl", "ref", "commit", "subpath", "provenance", "provisioning"],
+      "required": ["repoUrl", "ref", "commit", "subpath", "provenance"],
       "properties": {
         "repoUrl": { "type": "string" },
         "ref": { "type": "string" },
@@ -175,7 +175,10 @@
         "runtimeBaseUrl": { "type": "string" },
         "provenance": { "$ref": "#/$defs/targetProvenance" },
         "provisioning": { "$ref": "#/$defs/targetProvisioning" }
-      }
+      },
+      "if": { "properties": { "provenance": { "const": "no_target_declared" } }, "required": ["provenance"] },
+      "then": { "not": { "required": ["provisioning"] } },
+      "else": { "required": ["provisioning"] }
     },
 
     "trigger": {

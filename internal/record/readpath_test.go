@@ -1800,7 +1800,10 @@ func gateScenarios(t *testing.T) []gateScenario {
 			l.Runs[i].Properties.SealedAt = nil
 			l.Runs[i].AutomationDetails.CorrelationGUID = failed.auditID
 		}
-		l.Properties.State = StateCollecting
+		// Two failed halves are two TERMINAL halves, so the audit is
+		// both_sealed (DeriveState); neither is readable. This fixture said
+		// collecting until the validator learned the sealer's rule.
+		l.Properties.State = StateBothSealed
 		l.Properties.DastStatus = DastStatusCompletedFailed
 	})
 	failed.sealer = gateSealer(t, failed.auditID, false)
@@ -2900,10 +2903,11 @@ func gateUngatedAllowlist() map[string]gateExemption {
 			"reason as RecordMap.Record: it returns whatever the caller's own function returns."},
 
 		// ---- the PRODUCER side: these run before a half is readable -------
-		"SARIFLog.Validate": {body: "5e4bedd55119ae6e", reason: "contract.go's producer-side validator. It walks every run to check " +
+		"SARIFLog.Validate": {body: "e30ddcf301efcd16", reason: "contract.go's producer-side validator. It walks every run to check " +
 			"the record is well-formed and returns only an error; validation must work on a " +
 			"record NO half of which has sealed yet, so gating it would make an unsealed " +
-			"record unvalidatable."},
+			"record unvalidatable. Re-read 2026-10-03: the change only reads anvil/target's " +
+			"provenance and provisioning to decide whether provisioning may be absent."},
 		"MaskRecord": {body: "1d1496b8964a1f30", reason: "Secrets masking's masker, which runs BEFORE the read path and is the precondition " +
 			"Reader.load asserts. It mutates the record in place and returns only an error. " +
 			"Masking an unsealed half is exactly what it is for."},
@@ -2916,6 +2920,9 @@ func gateUngatedAllowlist() map[string]gateExemption {
 		"Result.ExternalStringPointers": {body: "b598635db55a205e", reason: "a pure accessor on a Result the caller already holds. " +
 			"It cannot obtain one: whoever calls it got the Result from somewhere, and that " +
 			"somewhere is what the gate covers."},
+		"Assemble": {body: "adedd1ebaf48cab2", reason: "the record assembler, producer side. It builds a record from " +
+			"results its caller already holds, before any half is consumable, and hands the same results " +
+			"back inside the record; it reads nothing from a sealed half, a store or a packet."},
 		"ValidateResultTrust": {body: "bbff534e61dffe8b", reason: "a validator over one caller-held Result, returning only an error. " +
 			"Re-read 2026-10-03 after plan node contractgaps added the validation-step check: the new " +
 			"branch reads the caller's own Result through verifiedLabels and puts JSON Pointers and the " +

@@ -38,48 +38,38 @@
 // false.
 //
 // ===========================================================================
-// THE OPEN SEAMS THIS HARNESS FOUND
+// THE THREE SEAMS THIS HARNESS FOUND, AND HOW EACH CLOSED
 // ===========================================================================
 //
-// All three are the same defect wearing three hats: FOUR COMPONENTS EACH
-// DEFINE THEIR OWN PACKAGE-IDENTITY VOCABULARY AND NOBODY OWNS THE MAPPING.
-// None is visible from inside any one package, because each package's fixtures
-// speak its own dialect.
+// All three were the same defect wearing three hats: FOUR COMPONENTS EACH
+// DEFINED THEIR OWN PACKAGE-IDENTITY VOCABULARY AND NOBODY OWNED THE MAPPING.
+// None was visible from inside any one package, because each package's
+// fixtures spoke its own dialect. Plan node cli closed all three in their
+// owning packages, and the harness now asserts them closed (assertSeamsClosed).
 //
-//	SEAM 1 — ECOSYSTEM VOCABULARY, INGESTION SIDE.
-//	internal/ingest/decode writes the publisher's own ecosystem spelling into
-//	`affected.ecosystem`: "Debian:11", "Alpine:v3.19", "PyPI", "Red Hat".
-//	internal/match's ecosystemAllowlist is exact-match over {deb, rpm, apk} and
-//	its comment says "the ingestion layer owns normalisation into this
-//	vocabulary". The ingestion layer does not normalise. It is HALF normalised,
-//	which is worse than neither: the Alpine secdb and Red Hat CSAF decoders
-//	write "apk" and "rpm" and do reach the comparator, so a spot check on
-//	either says the chain works, while every OSV- and CVE-5.x-sourced range —
-//	which is most of the corpus — is silently unreachable.
-//	PROVEN BY: TestLaneAChain/comparator, which ingests a real-shaped Debian
-//	OSV export and finds it cannot be consulted for a deb host package.
+//	SEAM 1 — ECOSYSTEM VOCABULARY, INGESTION SIDE. internal/ingest/decode
+//	wrote the publisher's spelling ("Debian:11", "Alpine:v3.19") into
+//	`affected.ecosystem`, which the comparator matches exactly against
+//	{deb, rpm, apk}, so every OSV-sourced distro range was unreachable.
+//	CLOSED: decode writes the comparator's scheme and puts the release in the
+//	range purl's distro qualifier (internal/distro), and
+//	internal/scan.CacheSource consults only the host release's ranges. The
+//	release scope is the part a bare vocabulary fix would have missed: a
+//	Debian 11 range is wrong about a Debian 12 package.
 //
-//	SEAM 2 — NO PURL ON HOST PACKAGES.
-//	internal/collector/host's Package is {ecosystem, package, version, arch}
-//	and carries no purl. internal/match passes PackageRecord.Purl through
-//	untouched. internal/record/lanea refuses any emission with no purl
-//	(RefusalNoPurl) and says so deliberately: "this package will not
-//	synthesise one — the namespace (debian vs ubuntu, redhat vs fedora) comes
-//	from os-release". The host collector HAS os-release and does not build one.
-//	So no host finding can be emitted today. Record emission's own tests do not see it
-//	because their host fixtures supply a purl.
-//	PROVEN BY: TestLaneAChain/emission, which runs the real host inventory
-//	shape through and captures the refusal.
+//	SEAM 2 — NO PURL ON HOST PACKAGES. record emission refuses a finding with
+//	no purl, and the namespace a purl needs comes from os-release, which the
+//	inventory carried and nothing used. CLOSED: internal/scan.HostRecords
+//	builds each package's purl from the inventory's own os-release. The
+//	emitter still refuses a purl-less host match, and emitAll asserts it.
 //
-//	SEAM 3 — ECOSYSTEM VOCABULARY, REPO SIDE.
-//	internal/collector/repo's Finding.Ecosystem is Trivy's `Type` ("redhat",
-//	"npm", "gomod"). Same allowlist, same mismatch, same silence.
-//	PROVEN BY: TestLaneAChain/comparator.
-//
-// Where the harness has to cross one of these seams to exercise the links
-// BEHIND it, it does so through bridgeEcosystem / bridgePurl — named,
-// commented, TEST-ONLY functions. Their existence is the finding. They are not
-// a fix and must not be copied into internal/.
+//	SEAM 3 — ECOSYSTEM VOCABULARY, REPO SIDE. Trivy reports language
+//	ecosystems (npm, gomod) and the comparator implements only OS schemes, so
+//	no repository finding could become a record. CLOSED by routing, not by a
+//	comparator change: Trivy has already decided those verdicts against its
+//	own database, so internal/scan.RepoMatches sends them to emission
+//	directly, under the owner's accelerator decision of 2026-10-03 (off by
+//	default, tier-2 attribution on every finding).
 //
 // ===========================================================================
 // THE CORPUS
@@ -162,6 +152,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/match"
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 	"github.com/Susquehanna-Syntax/Anvil/internal/record/lanea"
+	"github.com/Susquehanna-Syntax/Anvil/internal/scan"
 )
 
 //go:embed fixtures
@@ -491,50 +482,58 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 
 	// --- LINK 5: the comparator ----------------------------------------
 	// The host side is real collector output wherever a package manager
-	// exists and the corpus probe where none does; see hostInventoryForChain
+	// exists, plus the corpus probe on every host; see hostInventoryForChain
 	// for the rule and decideHostLink for what each case entitles the ledger
-	// to claim.
+	// to claim. Every inventory is matched the way the production scan
+	// matches it: internal/scan.HostRecords builds each package's purl from
+	// the inventory's own os-release, and internal/scan.CacheSource consults
+	// only the ranges for that release.
 	hostSrc := hostInventoryForChain(t)
 	out.hostSourceLabel = hostSrc.label()
 	out.hostRows = hostSrc.rows()
 
-	scan := repoScan(t)
-	// Mapped SEPARATELY so decideHostLink can assert that every REAL package
-	// reached the comparator. A single combined count could not tell a
-	// dropped collector package from a probe package standing in its place.
-	collectedRecords := hostPackageRecords(hostSrc.collected)
-	probeRecords := hostPackageRecords(hostSrc.probe)
-	hostRecords := append(collectedRecords, probeRecords...)
-	records := append(hostRecords, repoPackageRecords(scan)...)
-
-	m, err := match.NewMatcher(&cacheSource{db: db})
-	if err != nil {
-		t.Fatalf("match.NewMatcher: %v", err)
-	}
-	results, cov, err := m.Match(ctx, records)
-	if err != nil {
-		t.Fatalf("match: %v", err)
+	var (
+		results            []match.MatchResult
+		cov                match.CoverageReport
+		collectedSubmitted int
+	)
+	for _, inv := range hostSrc.inventories() {
+		records, rel, err := scan.HostRecords(inv)
+		if err != nil {
+			t.Fatalf("scan.HostRecords for %s %s: %v", inv.OSRelease.ID, inv.OSRelease.VersionID, err)
+		}
+		if inv == hostSrc.inv {
+			collectedSubmitted = len(records)
+		}
+		m, err := match.NewMatcher(&scan.CacheSource{DB: db, Release: rel.Key})
+		if err != nil {
+			t.Fatalf("match.NewMatcher: %v", err)
+		}
+		r, c, err := m.Match(ctx, records)
+		if err != nil {
+			t.Fatalf("match (%s): %v", rel.Key, err)
+		}
+		results = append(results, r...)
+		cov = mergeCoverage(cov, c)
 	}
 	out.matches, out.coverage = results, cov
 
-	assertComparatorSeams(t, db, cov, results)
-	decideHostLink(t, led, hostSrc, len(collectedRecords), results)
+	assertSeamsClosed(t, db, cov, results)
+	decideHostLink(t, led, hostSrc, collectedSubmitted, results)
 	led.proven(linkComparator, fmt.Sprintf(
-		"the comparator ran over %d collector-shaped packages against the cache's own `affected` "+
-			"rows and produced %d findings with a populated CoverageReport (Complete=%v, "+
-			"RangesConsidered=%d, PackagesWithNoAdvisoryData=%d). SEAM 1 and SEAM 3 are asserted "+
-			"here: the Debian OSV export landed with ecosystem %q and could not be consulted for a "+
-			"deb host package, and the repository collector's %q findings were refused as an "+
-			"unimplemented scheme (%d refused, ecosystems %v). Complete is FALSE because of that "+
-			"refusal, which is the report doing its job. HOST INPUT: %s — read that before "+
-			"quoting the submitted count, because the findings below come from the corpus probe "+
-			"and NOT from any real package this machine has installed",
-		cov.PackagesSubmitted, len(results), cov.Complete, cov.RangesConsidered,
-		cov.PackagesWithNoAdvisoryData, "Debian:11", "npm",
-		cov.PackagesRefusedScheme, cov.EcosystemsRefused, hostSrc.label()))
+		"the comparator ran over %d collector-shaped packages in %d release-scoped inventories against "+
+			"the cache's own `affected` rows, through internal/scan.CacheSource, and produced %d findings "+
+			"with a populated CoverageReport (RangesConsidered=%d, PackagesWithNoAdvisoryData=%d). The "+
+			"seams this harness used to report are asserted CLOSED here: the Debian OSV export landed "+
+			"as scheme %q scoped to debian-11 and decided the debian-11 probe, and a Debian 11 range "+
+			"was never consulted for another release. HOST INPUT: %s — read that before quoting the "+
+			"submitted count, because the findings come from the corpus probe and NOT from any real "+
+			"package this machine has installed",
+		cov.PackagesSubmitted, len(hostSrc.inventories()), len(results), cov.RangesConsidered,
+		cov.PackagesWithNoAdvisoryData, match.EcosystemDeb, hostSrc.label()))
 
 	// --- LINK 6: record emission ---------------------------------------
-	emissions := emitAll(t, db, out.feeds, results, led)
+	emissions := emitAll(t, db, out.feeds, results, repoScan(t), led)
 	blob, err := json.MarshalIndent(emissions, "", "  ")
 	if err != nil {
 		t.Fatalf("marshalling emissions: %v", err)
@@ -548,13 +547,13 @@ func runChain(t *testing.T, led *ledger) chainOutput {
 // Emission, and the seam in front of it
 // ---------------------------------------------------------------------------
 
-func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.MatchResult, led *ledger) []lanea.Emission {
+func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.MatchResult, scanned repo.ScanResult, led *ledger) []lanea.Emission {
 	t.Helper()
 	if len(results) == 0 {
 		t.Fatal("the comparator produced no findings at all, so emission cannot be exercised; " +
-			"the corpus is supposed to produce one host finding from the Alpine secdb ranges")
+			"the corpus is supposed to produce host findings from the Alpine, Debian and Red Hat ranges")
 	}
-	lookup := advisoryLookup(t, db, feeds)
+	rows := &scan.AdvisoryRows{DB: db, Feeds: feeds}
 	e := lanea.Emitter{
 		TargetID: "anvil-conformance-target",
 		// REQUIRED, and deliberately not defaultable. The emission review found that
@@ -571,65 +570,81 @@ func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.Mat
 		AssembledAt: fixtureClock,
 	}
 
-	// SEAM 2, asserted rather than described: the host rows as the host
-	// collector actually reports them carry no purl, and the emitter refuses.
-	var hostAsCollected []match.MatchResult
+	// The emitter's own contract still holds: a host match with no purl is
+	// refused, because the namespace comes from os-release. Production
+	// supplies the purl (scan.HostRecords); stripping it must still refuse.
 	for _, r := range results {
 		if r.Collector != cache.CollectorHost {
 			continue
 		}
-		bare := r
-		bare.Purl = "" // what host.Package actually supplies: nothing
-		hostAsCollected = append(hostAsCollected, bare)
-	}
-	if len(hostAsCollected) == 0 {
-		t.Fatal("no host finding to test the purl seam with")
-	}
-	if _, err := e.EmitAll(hostAsCollected, lookup); err == nil {
-		t.Error("SEAM 2 HAS CLOSED: a host match with no purl was emitted. internal/collector/host " +
-			"now supplies one, or internal/record/lanea stopped requiring one. Delete bridgePurl, " +
-			"emit the real inventory, and promote the host link to PROVEN.")
-	} else {
-		var ref *lanea.Refusal
-		if !errors.As(err, &ref) || ref.Reason != lanea.RefusalNoPurl {
-			t.Errorf("the host emission failed for an unexpected reason: %v", err)
+		if r.Purl == "" {
+			t.Errorf("host match %s/%s for %s carries no purl; scan.HostRecords builds one from os-release",
+				r.Source, r.SourceID, r.Package)
 		}
+		bare := r
+		bare.Purl = ""
+		if _, err := e.EmitAll([]match.MatchResult{bare}, rows.Lookup); err == nil {
+			t.Error("a host match with no purl was emitted; internal/record/lanea stopped requiring one")
+		} else {
+			var ref *lanea.Refusal
+			if !errors.As(err, &ref) || ref.Reason != lanea.RefusalNoPurl {
+				t.Errorf("the purl-less host emission failed for an unexpected reason: %v", err)
+			}
+		}
+		break
 	}
 
-	emissions, err := e.EmitAll(results, lookup)
+	emissions, err := e.EmitAll(results, rows.Lookup)
 	if err != nil {
-		t.Fatalf("emitting the bridged results: %v", err)
+		t.Fatalf("emitting the host results: %v", err)
 	}
 	if len(emissions) != len(results) {
 		t.Fatalf("%d matches produced %d emissions", len(results), len(emissions))
 	}
 
-	// Exit criterion 21, end to end.
-	hosts := 0
-	for i, em := range emissions {
-		if em.Result.Properties.Detector.Kind != record.DetectorKindHost {
-			t.Errorf("emission %d is not host-sourced, but every finding this corpus can produce "+
-				"through a collector is: see the repo-SCA note in the ledger", i)
-			continue
+	// The repository half goes the production way: Trivy has decided each
+	// verdict, so its findings go to emission through scan.RepoMatches with
+	// tier-2 attribution, and the comparator is not asked to re-decide them.
+	repoMatches, repoRows := scan.RepoMatches(scanned, repo.DatabaseInfo{TrivyVersion: "recorded", DBVersion: 2, UpdatedAt: fixtureClock.Add(-time.Hour)})
+	for _, m := range repoMatches {
+		em, err := e.Emit(m, repoRows[[2]string{m.Source, m.SourceID}])
+		if err != nil {
+			t.Fatalf("emitting the repository finding %s/%s: %v", m.Source, m.SourceID, err)
 		}
-		hosts++
-		if em.RemediableByAgent() {
-			t.Errorf("emission %d is host-sourced and carries remediable_by_agent=true", i)
+		emissions = append(emissions, em)
+	}
+
+	// Exit criterion 21, end to end, over BOTH collectors' output.
+	hosts, repos, remediable := 0, 0, 0
+	for i, em := range emissions {
+		switch em.Result.Properties.Detector.Kind {
+		case record.DetectorKindHost:
+			hosts++
+			if em.RemediableByAgent() {
+				t.Errorf("emission %d is host-sourced and carries remediable_by_agent=true", i)
+			}
+		case record.DetectorKindSCA:
+			repos++
+			if a := em.Result.Properties.Advisory; a == nil || a.LicenseSpdx != scan.LicenseTrivyDBTier2 {
+				t.Errorf("repository emission %d does not carry tier-2 attribution: %+v", i, a)
+			}
+			if em.RemediableByAgent() {
+				remediable++
+			}
 		}
 	}
-	if hosts == 0 {
-		t.Error("no host-sourced record was emitted, so exit criterion 21 passed vacuously")
+	if hosts == 0 || repos == 0 {
+		t.Errorf("%d host and %d repository record(s) emitted; exit criterion 21 needs both to mean anything", hosts, repos)
 	}
 
 	led.proven(linkEmission, fmt.Sprintf(
-		"%d canonical record(s) emitted through internal/record/lanea from the comparator's output "+
-			"and the cache's own advisory rows, all host-sourced and all remediable_by_agent=false. "+
-			"SEAM 2 is asserted here — the same matches WITHOUT the harness's bridgePurl are "+
-			"refused with RefusalNoPurl, which is what the real inventory produces. NOTE WHAT THIS "+
-			"DOES NOT SAY: exit criterion 21 holds here over a set that contains ONLY host records, "+
-			"because no collector output can currently produce a non-host one. "+
-			"TestTheRemediablePathIsReachableAtAll is the positive control that keeps the "+
-			"assertion from being true only because nothing is.", len(emissions)))
+		"%d canonical record(s) emitted through internal/record/lanea: %d host-sourced, all "+
+			"remediable_by_agent=false, from the comparator's output and the cache's own advisory rows "+
+			"read by internal/scan.AdvisoryRows; and %d repository record(s) from the Trivy report through "+
+			"internal/scan.RepoMatches, every one carrying tier-2 attribution (%s), %d of them remediable "+
+			"by the agent because Trivy names a fixed version. Exit criterion 21 now holds over a set that "+
+			"contains both collectors' records",
+		len(emissions), hosts, repos, scan.LicenseTrivyDBTier2, remediable))
 	return emissions
 }
 
@@ -637,16 +652,12 @@ func emitAll(t *testing.T, db *sql.DB, feeds config.FeedSet, results []match.Mat
 // criterion 21.
 //
 // "No host record is remediable" is a weak claim if NO record is ever
-// remediable, and today none produced by a collector is: internal/collector/repo
-// reports only lang-pkgs findings (it skips os-pkgs as the host collector's territory), and
-// internal/match implements deb, rpm and apk only. The two halves of the SCA
-// path have disjoint domains, so no repository finding survives the comparator.
-//
-// The input below is therefore a PROBE and is labelled one: a repo-SCA package
-// record in an ecosystem the comparator implements. No collector emits this
-// shape today. The comparator still computes the verdict, so what is proven is
-// real — remediable_by_agent CAN be true, and the difference between the two
-// collectors is what decides it.
+// remediable. The chain now emits remediable repository records from Trivy's
+// verdicts (emitAll counts them); this test is the narrower control that the
+// COMPARATOR'S verdict can make a record remediable too, using a probe: a
+// repo-SCA package record in an ecosystem the comparator implements, which no
+// collector emits. The difference between the two collectors is what decides
+// remediable_by_agent, and this is where that is shown on one advisory.
 func TestTheRemediablePathIsReachableAtAll(t *testing.T) {
 	ctx := context.Background()
 	src := match.NewStaticSource([]match.AffectedRange{{
@@ -699,113 +710,6 @@ func TestTheRemediablePathIsReachableAtAll(t *testing.T) {
 	}
 }
 
-// advisoryLookup reads the `advisory` row a match was decided on.
-//
-// IT IS TEST-ONLY AND ITS EXISTENCE IS A FINDING. internal/record/lanea's
-// AdvisoryRow mirrors the cache's columns one for one and documents that "the
-// caller reads the row and fills this in" — and no caller exists. See
-// linkProductionUp.
-func advisoryLookup(t *testing.T, db *sql.DB, feeds config.FeedSet) func(string, string) (lanea.AdvisoryRow, bool) {
-	t.Helper()
-	slo := map[string]int{}
-	for _, f := range feeds.Feeds {
-		slo[f.ID] = f.FreshnessSLOSeconds
-	}
-	return func(source, sourceID string) (lanea.AdvisoryRow, bool) {
-		const q = `
-SELECT ifnull(cve_id,''), ifnull(license_spdx,''), ifnull(license_manual_note,''), anvil_trust,
-       as_of, staleness_seconds, parse_degraded, ifnull(data_version,''),
-       ifnull(cvss_vector,''), cvss_score, epss_score, ifnull(epss_as_of,''), kev
-FROM advisory WHERE source = ? AND source_id = ?`
-		var (
-			cveID, spdx, note, trust, asOf, dataVersion, vector, epssAsOf string
-			staleness, degraded, kev                                      int
-			cvss, epss                                                    sql.NullFloat64
-		)
-		err := db.QueryRow(q, source, sourceID).Scan(&cveID, &spdx, &note, &trust, &asOf,
-			&staleness, &degraded, &dataVersion, &vector, &cvss, &epss, &epssAsOf, &kev)
-		if err != nil {
-			return lanea.AdvisoryRow{}, false
-		}
-		when, err := time.Parse(time.RFC3339, asOf)
-		if err != nil {
-			return lanea.AdvisoryRow{}, false
-		}
-		row := lanea.AdvisoryRow{
-			Source: source, SourceID: sourceID, CVEID: cveID,
-			FeedID:              source,
-			SnapshotDigest:      cache.SchemaSHA256(),
-			LicenseSPDX:         spdx,
-			LicenseManualNote:   note,
-			Trust:               record.Trust(trust),
-			AsOf:                when,
-			StalenessSeconds:    staleness,
-			FreshnessSLOSeconds: slo[source],
-			ParseDegraded:       degraded == 1,
-			DataVersion:         dataVersion,
-			CVSSVector:          vector,
-			KEVMember:           kev == 1,
-		}
-		if cvss.Valid {
-			v := cvss.Float64
-			row.CVSSScore = &v
-		}
-		if epss.Valid {
-			v := epss.Float64
-			row.EPSSScore = &v
-		}
-		return row, true
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Collector inputs, and the two bridges the seams force
-// ---------------------------------------------------------------------------
-
-// bridgePurl builds the purl internal/collector/host does not.
-//
-// IT IS TEST-ONLY. SEAM 2: the emitter refuses a match with no purl and says
-// explicitly that it will not synthesise one because the namespace comes from
-// os-release. The host collector reads os-release and does not build the purl,
-// so this function stands in for a component nobody has written. The namespace
-// it picks is deliberately crude — this is not a proposed implementation, it is
-// a scaffold holding the seam open long enough to test what is behind it.
-func bridgePurl(p host.Package) string {
-	ns := map[string]string{
-		host.EcosystemDeb: "debian",
-		host.EcosystemRPM: "redhat",
-		host.EcosystemAPK: "alpine",
-	}[p.Ecosystem]
-	u := "pkg:" + p.Ecosystem + "/" + ns + "/" + p.Name + "@" + p.Version
-	if p.Arch != "" {
-		u += "?arch=" + p.Arch
-	}
-	return u
-}
-
-// bridgeEcosystem maps a collector's ecosystem string onto the comparator's
-// vocabulary.
-//
-// IT IS TEST-ONLY. SEAM 1 and SEAM 3: internal/match's allowlist is exact-match
-// over {deb, rpm, apk} and its comment says the ingestion layer owns
-// normalisation into that vocabulary. Nothing does. This is the missing owner,
-// written here so the links behind it can be exercised — and it handles exactly
-// the strings this corpus produces, because a fuller table here would look like
-// a fix.
-func bridgeEcosystem(s string) (string, bool) {
-	switch s {
-	case match.EcosystemDeb, match.EcosystemRPM, match.EcosystemAPK:
-		return s, true
-	case "redhat", "Red Hat", "rocky", "almalinux":
-		return match.EcosystemRPM, true
-	case "debian", "Debian:11", "ubuntu":
-		return match.EcosystemDeb, true
-	case "alpine", "Alpine:v3.19":
-		return match.EcosystemAPK, true
-	}
-	return "", false
-}
-
 // ---------------------------------------------------------------------------
 // The host inventory: real output where it exists, a probe where it does not
 // ---------------------------------------------------------------------------
@@ -847,6 +751,37 @@ type hostInventorySource struct {
 	// corpus can decide. Present on BOTH paths, evidence for NEITHER path's
 	// host-collector claim.
 	probe []host.Package
+	// probeReleases is the os-release each probe ecosystem belongs to, so the
+	// probe is matched the way a real inventory is: release-scoped.
+	probeReleases map[string]host.OSRelease
+}
+
+// inventories is every inventory the chain matches, one per release: the real
+// collection first (when there is one), then the probe grouped by ecosystem in
+// a fixed order.
+func (s hostInventorySource) inventories() []*host.Inventory {
+	var out []*host.Inventory
+	if s.real {
+		out = append(out, s.inv)
+	}
+	groups := map[string][]host.Package{}
+	for _, p := range s.probe {
+		groups[p.Ecosystem] = append(groups[p.Ecosystem], p)
+	}
+	ecos := make([]string, 0, len(groups))
+	for e := range groups {
+		ecos = append(ecos, e)
+	}
+	sort.Strings(ecos)
+	for _, e := range ecos {
+		out = append(out, &host.Inventory{
+			SchemaVersion: host.InventorySchemaVersion,
+			Collector:     host.Collector,
+			OSRelease:     s.probeReleases[e],
+			Packages:      groups[e],
+		})
+	}
+	return out
 }
 
 // submitted is every host package the chain hands the comparator, real output
@@ -899,7 +834,8 @@ func (s hostInventorySource) rows() []string {
 // what the ledger is entitled to claim afterwards.
 func hostInventoryForChain(t *testing.T) hostInventorySource {
 	t.Helper()
-	src := hostInventorySource{probe: corpusProbePackages(t)}
+	probe, releases := corpusProbePackages(t)
+	src := hostInventorySource{probe: probe, probeReleases: releases}
 
 	inv, err := host.Collect(context.Background(), host.Options{
 		// The same instant as everything else in this run, so CollectedAt
@@ -924,13 +860,14 @@ func hostInventoryForChain(t *testing.T) hostInventorySource {
 // corpusProbePackages loads (b) above: host-shaped packages chosen to
 // intersect the synthetic advisory corpus.
 //
-// IT IS NOT A RECORDING AND MUST NEVER BE READ AS ONE. It carries no purl,
-// because host.Package carries no purl — that absence is SEAM 2 and is
-// asserted in emitAll rather than described.
-func corpusProbePackages(t *testing.T) []host.Package {
+// IT IS NOT A RECORDING AND MUST NEVER BE READ AS ONE. Like a real inventory it
+// carries no purl; scan.HostRecords builds each one from the os-release the
+// probe states for its ecosystem.
+func corpusProbePackages(t *testing.T) ([]host.Package, map[string]host.OSRelease) {
 	t.Helper()
 	var doc struct {
-		Packages []host.Package `json:"packages"`
+		Packages   []host.Package            `json:"packages"`
+		OSReleases map[string]host.OSRelease `json:"osReleases"`
 	}
 	if err := json.Unmarshal(readFixture(t, "fixtures/inventory/corpus-probe-packages.json"), &doc); err != nil {
 		t.Fatalf("reading the corpus probe packages: %v", err)
@@ -945,29 +882,11 @@ func corpusProbePackages(t *testing.T) []host.Package {
 			t.Fatalf("corpus probe package %+v is missing a field host.Package requires; the file "+
 				"is keyed on host.Package's JSON tags so that a struct change breaks it here", p)
 		}
-	}
-	return doc.Packages
-}
-
-// hostPackageRecords applies the field mapping internal/match documents on
-// PackageRecord — plus bridgePurl, which the mapping has no column for.
-func hostPackageRecords(pkgs []host.Package) []match.PackageRecord {
-	out := make([]match.PackageRecord, 0, len(pkgs))
-	for _, p := range pkgs {
-		eco, ok := bridgeEcosystem(p.Ecosystem)
-		if !ok {
-			continue
+		if _, ok := doc.OSReleases[p.Ecosystem]; !ok {
+			t.Fatalf("corpus probe package %+v has no os-release for its ecosystem", p)
 		}
-		out = append(out, match.PackageRecord{
-			Collector: host.Collector,
-			Ecosystem: eco,
-			Name:      p.Name,
-			Version:   p.Version,
-			Arch:      p.Arch,
-			Purl:      bridgePurl(p),
-		})
 	}
-	return out
+	return doc.Packages, doc.OSReleases
 }
 
 func repoScan(t *testing.T) repo.ScanResult {
@@ -983,83 +902,6 @@ func repoScan(t *testing.T) repo.ScanResult {
 		t.Fatalf("the parsed scan reports itself as silently empty: %v", err)
 	}
 	return res
-}
-
-// repoPackageRecords applies internal/match's documented repo.Finding mapping
-// AND NOTHING ELSE — no bridgeEcosystem here, deliberately.
-//
-// SEAM 3 is only visible if the comparator is allowed to see what the collector
-// actually reports. Trivy's `Type` for a lockfile is "npm"; the comparator
-// implements deb, rpm and apk. Bridging it here would hide the refusal inside
-// the harness, and the point is to make the comparator COUNT it — a refused
-// package is a countable gap in CoverageReport rather than a silent zero.
-func repoPackageRecords(scan repo.ScanResult) []match.PackageRecord {
-	out := make([]match.PackageRecord, 0, len(scan.Findings))
-	for _, f := range scan.Findings {
-		out = append(out, match.PackageRecord{
-			Collector:       f.Collector,
-			Ecosystem:       f.Ecosystem,
-			Name:            f.PackageName,
-			Version:         f.InstalledVersion,
-			Purl:            f.Purl,
-			ManifestRelPath: f.ManifestRelPath,
-		})
-	}
-	return out
-}
-
-// ---------------------------------------------------------------------------
-// The cache as an advisory source
-// ---------------------------------------------------------------------------
-
-// cacheSource is internal/match's AdvisorySource read straight off the ingestion cache
-// cache.
-//
-// IT IS TEST-ONLY AND ITS EXISTENCE IS A FINDING. internal/match defines the
-// interface precisely so the comparator opens no database, and NOTHING under
-// internal/ implements it against the cache — the comparator and the cache
-// have never been connected outside this file. See linkProductionUp.
-//
-// It excludes tombstoned advisories, which is exit criterion 22 seen from the
-// read side: a withdrawn advisory keeps its row and stops deciding findings.
-type cacheSource struct{ db *sql.DB }
-
-func (s *cacheSource) AffectedRanges(ctx context.Context, ecosystem, pkg string) ([]match.AffectedRange, error) {
-	const q = `
-SELECT a.source, a.source_id, ifnull(a.cve_id,''), af.ecosystem, af.package, ifnull(af.purl,''),
-       ifnull(af.introduced,''), ifnull(af.fixed,''), af.distro_backport
-FROM affected af
-JOIN advisory a ON a.source = af.source AND a.source_id = af.source_id
-WHERE af.ecosystem = ? AND af.package = ? AND a.state = ?
-ORDER BY a.source, a.source_id, af.id`
-	rows, err := s.db.QueryContext(ctx, q, ecosystem, pkg, cache.AdvisoryPublished)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	var out []match.AffectedRange
-	for rows.Next() {
-		var r match.AffectedRange
-		var backport int
-		if err := rows.Scan(&r.Source, &r.SourceID, &r.CVEID, &r.Ecosystem, &r.Package,
-			&r.Purl, &r.Introduced, &r.Fixed, &backport); err != nil {
-			return nil, err
-		}
-		r.DistroBackport = backport == 1
-		// An unbounded range is refused by the comparator, and an advisory
-		// that names only a fixed version is unbounded below by construction.
-		// "0" is the OSV convention for it and is what the corpus's own OSV
-		// documents carry.
-		if r.Introduced == "" && r.Fixed == "" && !r.AllVersions {
-			continue
-		}
-		if r.Introduced == "" {
-			r.Introduced = "0"
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -1162,100 +1004,54 @@ func assertCacheInvariants(t *testing.T, db *sql.DB) {
 	}
 }
 
-func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, results []match.MatchResult) {
+// assertSeamsClosed asserts that the three identity seams this harness found
+// stay closed, end to end, through the production code.
+func assertSeamsClosed(t *testing.T, db *sql.DB, cov match.CoverageReport, results []match.MatchResult) {
 	t.Helper()
 
 	// Exit criterion 20: coverage is populated on every run.
 	if cov.PackagesSubmitted == 0 || len(cov.SchemesImplemented) == 0 {
 		t.Errorf("exit criterion 20: the CoverageReport is not populated: %+v", cov)
 	}
-	if err := cov.AssertNotSilentlyClean(results); err != nil && len(results) == 0 {
-		t.Errorf("a zero-finding run was not reported as an absence: %v", err)
-	}
 
-	// SEAM 1, asserted. The Debian OSV export IS in the cache, and it is NOT
-	// reachable for a deb host package, because the decoder wrote the
-	// publisher's ecosystem spelling into a column the comparator matches
-	// exactly.
-	stored := count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ?`, "Debian:11")
-	if stored == 0 {
-		t.Fatal("the Debian OSV fixture did not land in `affected`, so SEAM 1 cannot be asserted")
+	// SEAM 1, closed. Ingestion writes a distro range in the comparator's
+	// scheme, with its release in the purl's distro qualifier; the
+	// publisher's spelling stays only in raw_json.
+	if n := count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ?`, "Debian:11"); n != 0 {
+		t.Errorf("SEAM 1 HAS REOPENED: %d `affected` row(s) carry the publisher's spelling \"Debian:11\", "+
+			"which the comparator never consults", n)
 	}
-	reachable := count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ?`, match.EcosystemDeb)
-	if reachable != 0 {
-		t.Errorf("SEAM 1 HAS CLOSED: %d rows now carry the comparator's own ecosystem vocabulary. "+
-			"Something normalises. Delete bridgeEcosystem, point the harness at the real column, "+
-			"and re-read this assertion.", reachable)
+	if n := count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ? AND purl LIKE ?`,
+		match.EcosystemDeb, "%distro=debian-11%"); n == 0 {
+		t.Error("the Debian OSV fixture did not land as a deb range scoped to debian-11")
 	}
+	debFound := false
 	for _, r := range results {
-		if r.Ecosystem == match.EcosystemDeb {
-			t.Errorf("a deb finding was produced (%s/%s); with no normalisation owner this is "+
-				"impossible and the assertion above is wrong", r.Package, r.InstalledVersion)
+		if r.Ecosystem == match.EcosystemDeb && r.Package == "openssl" {
+			debFound = true
+		}
+	}
+	if !debFound {
+		t.Error("the debian-11 probe's openssl was not decided against the Debian OSV range; SEAM 1 is " +
+			"closed only if the range is consulted")
+	}
+
+	// The release scope: a range is consulted only for its own release. The
+	// Alpine 3.19 ranges must not decide the debian-11 probe and vice versa,
+	// which shows as every result's purl naming the release of its range.
+	for _, r := range results {
+		if r.Purl == "" {
+			t.Errorf("%s/%s for %s has no purl (SEAM 2)", r.Source, r.SourceID, r.Package)
 		}
 	}
 
-	// SEAM 3, asserted. The repository collector reports lang-pkgs findings —
-	// it skips os-pkgs as the host collector's territory — and the comparator implements OS
-	// package schemes only. The two halves of the SCA path have DISJOINT
-	// DOMAINS, so no repository finding can ever become a record. What the
-	// comparator does right is refuse it COUNTABLY rather than returning a
-	// quiet zero.
-	if cov.PackagesRefusedScheme == 0 {
-		t.Error("SEAM 3 HAS CLOSED, or the repo fixture stopped reaching the comparator: no package " +
-			"was refused for an unimplemented scheme, though Trivy reported an npm dependency and " +
-			"internal/match implements deb, rpm and apk only")
+	// The vendor range is consulted, and the rpm host package sitting exactly
+	// ON the vendor's fixed version is NOT flagged: `fixed` is an EXCLUSIVE
+	// upper bound, and this is the backport false-positive class.
+	if count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ? AND distro_backport = 1 AND purl LIKE ?`,
+		match.EcosystemRPM, "%distro=rhel-9%") == 0 {
+		t.Error("the CSAF fixture produced no backported rpm range scoped to rhel-9, so the vendor-first path is untested here")
 	}
-	// The refusal must be findable BY NAME somewhere, or "1 package refused"
-	// is a number an operator cannot act on.
-	named := false
-	for _, r := range cov.Refusals {
-		if strings.Contains(r.Detail, "npm") || r.Ecosystem == "npm" {
-			named = true
-		}
-	}
-	if !named {
-		t.Errorf("no entry in CoverageReport.Refusals names the ecosystem that was refused: %+v",
-			cov.Refusals)
-	}
-	// THIS WAS A LOGGED FINDING AND IS NOW AN ASSERTION. The Lane A exit gate reported that
-	// EcosystemsRefused — documented as "the list an operator uses to decide
-	// what to implement next" — was populated only from
-	// RefusalUnsupportedEcosystem, so a record carrying a purl (every repo-SCA
-	// finding, and what every collector is encouraged to supply) was refused
-	// as RefusalUnsupportedPurlType and vanished from the list. The count was
-	// visible; the thing to implement next was not. internal/match now feeds
-	// both routes into the list (see Refusal.refusedIdentityToken), and this
-	// is the end-to-end guard against it regressing.
-	if cov.PackagesRefusedScheme > 0 && len(cov.EcosystemsRefused) == 0 {
-		t.Errorf("%d package(s) were refused for an unimplemented scheme and "+
-			"CoverageReport.EcosystemsRefused is EMPTY. The count is visible and the thing to "+
-			"implement next is not, which is the exact defect the Lane A exit gate reported and internal/match "+
-			"fixed: a refusal arriving by the purl route (RefusalUnsupportedPurlType) is the same "+
-			"fact about coverage as one arriving by the ecosystem route. Refusals: %+v",
-			cov.PackagesRefusedScheme, cov.Refusals)
-	}
-	// And specifically: this corpus's refusal arrives by the PURL route, so
-	// the assertion above cannot be satisfied by the ecosystem route alone.
-	if !containsString(cov.EcosystemsRefused, "npm") {
-		t.Errorf("the repository collector's npm dependency was refused, but %q is not in "+
-			"EcosystemsRefused (%v). The refusal reaches the comparator carrying a purl, so this "+
-			"is the purl route specifically — an operator reading the list would not learn that "+
-			"npm is what Anvil cannot yet handle.", "npm", cov.EcosystemsRefused)
-	}
-	if cov.Complete {
-		t.Error("the run refused a package and still reported Complete; Complete must be false " +
-			"whenever something was refused, or \"nothing was found\" cannot be read as an answer")
-	}
-
-	// The vendor range IS consulted where the vocabulary happens to line up:
-	// the Red Hat CSAF decoder writes "rpm" and the Alpine secdb decoder
-	// writes "apk", so those two reach the comparator.
-	if count(t, db, `SELECT count(*) FROM affected WHERE ecosystem = ? AND distro_backport = 1`, match.EcosystemRPM) == 0 {
-		t.Error("the CSAF fixture produced no backported rpm range, so the vendor-first path is untested here")
-	}
-
-	// The rpm host package sits exactly ON the vendor's fixed version and must
-	// NOT be flagged: `fixed` is an EXCLUSIVE upper bound.
 	for _, r := range results {
 		if r.Collector == cache.CollectorHost && r.Package == "python3-requests" {
 			t.Errorf("the host's python3-requests %s was flagged against a vendor advisory that "+
@@ -1263,6 +1059,29 @@ func assertComparatorSeams(t *testing.T, db *sql.DB, cov match.CoverageReport, r
 				r.InstalledVersion)
 		}
 	}
+}
+
+// mergeCoverage sums the counts of per-release coverage reports. Complete is
+// true only when every report was.
+func mergeCoverage(a, b match.CoverageReport) match.CoverageReport {
+	first := a.PackagesSubmitted == 0 && len(a.SchemesImplemented) == 0
+	a.PackagesSubmitted += b.PackagesSubmitted
+	a.PackagesEvaluated += b.PackagesEvaluated
+	a.PackagesUnidentifiable += b.PackagesUnidentifiable
+	a.PackagesRefusedScheme += b.PackagesRefusedScheme
+	a.PackagesRefusedVersion += b.PackagesRefusedVersion
+	a.PackagesWithNoAdvisoryData += b.PackagesWithNoAdvisoryData
+	a.RangesConsidered += b.RangesConsidered
+	a.RangesRefused += b.RangesRefused
+	a.SchemesImplemented = b.SchemesImplemented
+	a.EcosystemsRefused = append(a.EcosystemsRefused, b.EcosystemsRefused...)
+	a.Refusals = append(a.Refusals, b.Refusals...)
+	a.Defences = append(a.Defences, b.Defences...)
+	a.UpstreamOnlyAdvisories = append(a.UpstreamOnlyAdvisories, b.UpstreamOnlyAdvisories...)
+	a.UngroupedVendorAdvisories = append(a.UngroupedVendorAdvisories, b.UngroupedVendorAdvisories...)
+	a.SourceErrors = append(a.SourceErrors, b.SourceErrors...)
+	a.Complete = b.Complete && (first || a.Complete)
+	return a
 }
 
 // ---------------------------------------------------------------------------
@@ -1330,29 +1149,56 @@ func decideHostLink(t *testing.T, led *ledger, src hostInventorySource, collecte
 		collectedSubmitted, hostFindings))
 }
 
+// decideRepoCollector proves the repository collector itself wherever Trivy
+// and its database exist, by running repo.ScanRepo over the Lane A fixture
+// repository (testdata/lanea-fixture/repo, a lockfile pinning lodash 4.17.15).
+// Where they do not, the parse path is what is proven and the ledger says so.
+// The earlier tripwire here FAILED the run when Trivy appeared; it fired on
+// 2026-10-03 when Trivy was installed on the development machine, and was
+// honoured by writing this branch.
 func decideRepoCollector(t *testing.T, led *ledger) {
 	t.Helper()
-	scan := repoScan(t)
-	if bin, err := repo.ResolveBinary(repo.BinaryName); err == nil {
-		led.proven(linkRepoCollect, "trivy resolved at "+bin+" and the scan ran end to end")
-		t.Errorf("trivy is installed at %s, so the recorded-report fixture is no longer the best "+
-			"available evidence. Run repo.ScanRepo against a fixture tree and prove the collector "+
-			"itself, not only its parser. The Trivy E2E job's finding — that the collector cannot "+
-			"run without a pre-seeded database — is exactly what a recorded report cannot show.", bin)
+	recorded := repoScan(t)
+	bin, err := repo.ResolveBinary(repo.BinaryName)
+	if err != nil {
+		led.unproven(linkRepoCollect,
+			fmt.Sprintf("the trivy binary is not on PATH, so repo.ScanRepo cannot run here. What IS "+
+				"proven is the report path: repo.ParseReport turned a recorded-shape Trivy report into "+
+				"%d finding(s) with populated Coverage, and AssertNotSilentlyEmpty accepted it. The "+
+				"SCAN is not proven, and a recorded report presupposes the successful run it is "+
+				"standing in for.", len(recorded.Findings)),
+			"install the pinned trivy release and seed its vulnerability database; this branch then "+
+				"runs repo.ScanRepo over testdata/lanea-fixture/repo and the link becomes PROVEN")
 		return
 	}
-	led.unproven(linkRepoCollect,
-		fmt.Sprintf("the trivy binary is not on PATH, so repo.ScanRepo cannot run here. What IS "+
-			"proven is the report path: repo.ParseReport turned a recorded-shape Trivy report into "+
-			"%d finding(s) with populated Coverage, and AssertNotSilentlyEmpty accepted it. The "+
-			"SCAN is not proven, and a recorded report presupposes the successful run it is "+
-			"standing in for — the precise gap the Trivy E2E job found.", len(scan.Findings)),
-		"install the pinned trivy release and its vulnerability database on the CI host, then call "+
-			"repo.ScanRepo against a fixture repository; only that exercises binary resolution, "+
-			"argument construction, the exit-code contract and the DB-absent failure mode")
+	db, err := repo.Database(context.Background(), repo.DefaultConfig().Runner())
+	if err != nil {
+		led.unproven(linkRepoCollect,
+			fmt.Sprintf("trivy is at %s but reports no usable vulnerability database (%v), so a scan "+
+				"would fail on its first run", bin, err),
+			"seed the database once (`trivy image --download-db-only`); the collector never updates it itself")
+		return
+	}
+	res, err := repo.ScanRepo(context.Background(), filepath.Join(repoRoot, "testdata", "lanea-fixture", "repo"))
+	if err != nil {
+		t.Errorf("trivy and its database are present and repo.ScanRepo failed over the fixture repository: %v", err)
+		led.unproven(linkRepoCollect, "repo.ScanRepo failed: "+err.Error(), "fix the failure above")
+		return
+	}
+	if err := res.AssertNotSilentlyEmpty(); err != nil || len(res.Findings) == 0 {
+		t.Errorf("the fixture repository pins lodash 4.17.15 and the real scan found %d finding(s) (%v)",
+			len(res.Findings), err)
+	}
+	led.proven(linkRepoCollect, fmt.Sprintf(
+		"repo.ScanRepo ran %s (trivy %s, database v%d built %s) over testdata/lanea-fixture/repo and "+
+			"returned %d finding(s) for lodash 4.17.15 with %d target(s) detected: binary resolution, "+
+			"argument construction, the exit-code contract and a seeded database, end to end",
+		bin, db.TrivyVersion, db.DBVersion, db.UpdatedAt.Format(time.RFC3339), len(res.Findings),
+		res.Coverage.TargetsDetected))
 }
 
-// decideNotWired records the links that exist as packages with no caller.
+// decideNotWired records the links that are not exercised by this harness,
+// and the production caller, which now is.
 func decideNotWired(t *testing.T, led *ledger) {
 	t.Helper()
 	led.unproven(linkSelfHeal,
@@ -1365,19 +1211,17 @@ func decideNotWired(t *testing.T, led *ledger) {
 	led.unproven(linkAccelerator,
 		"internal/mirror/accelerator is not in this chain at all. It is a warm-start optimisation "+
 			"that pulls a compiled Trivy-DB/Grype-DB artifact, and pulling one requires a registry "+
-			"this harness must not contact",
+			"this harness must not contact. The owner's decision of 2026-10-03 keeps Trivy-decided "+
+			"findings off by default and attributes them to tier 2 when an operator enables them",
 		"The accelerator and the accelerator review's own tests cover the version gate and the consume-only write refusal against "+
 			"synthetic artifacts; an end-to-end proof needs a local OCI registry fixture")
-	led.unproven(linkProductionUp,
-		"NOTHING UNDER internal/ WIRES THIS CHAIN TOGETHER. Two components this harness needed do "+
-			"not exist in production form: an internal/match.AdvisorySource backed by the ingestion cache "+
-			"(the comparator has never been connected to the cache outside this file) and a reader "+
-			"that fills internal/record/lanea.AdvisoryRow from an `advisory` row (its doc says "+
-			"\"the caller reads the row and fills this in\"; there is no caller). cacheSource and "+
-			"advisoryLookup in this file are stand-ins written for the test",
-		"implement both in internal/ — a cache-backed AdvisorySource and an AdvisoryRow reader — "+
-			"and have this harness call them instead of its own copies; the diff between the two "+
-			"implementations is then the thing that gets reviewed")
+	led.proven(linkProductionUp,
+		"the chain above ran through the production code cmd/anvil runs: internal/scan.HostRecords "+
+			"built every host purl from os-release, internal/scan.CacheSource served the comparator "+
+			"release-scoped ranges, internal/scan.AdvisoryRows read every advisory row emission used, "+
+			"and internal/scan.RepoMatches carried the repository findings. cmd/anvil's TestExitStatuses "+
+			"and internal/scan's TestHostScanEndToEnd drive the same chain through scan.Run to a sealed, "+
+			"stored record")
 }
 
 // ---------------------------------------------------------------------------
@@ -2000,8 +1844,8 @@ func hostSourceProblems(src hostInventorySource, collectedSubmitted int) []strin
 	if collectedSubmitted != len(src.collected) {
 		problems = append(problems, fmt.Sprintf(
 			"host.Collect returned %d package(s) but %d of them became comparator records; the "+
-				"rest were dropped between the collector and the comparator (bridgeEcosystem "+
-				"recognises only deb, rpm and apk). The ledger entry would then be a claim about "+
+				"rest were dropped between the collector and the comparator (scan.HostRecords "+
+				"submits every package, so this is a defect in the harness). The ledger entry would then be a claim about "+
 				"output the chain did not consume.", len(src.collected), collectedSubmitted))
 	}
 	return problems

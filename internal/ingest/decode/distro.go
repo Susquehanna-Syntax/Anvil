@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Susquehanna-Syntax/Anvil/internal/distro"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/cache"
 )
 
@@ -48,6 +49,10 @@ func (dc *Decoder) AlpineSecdb(raw []byte, emit func(Record) error) (int, error)
 	}
 
 	branch := dc.s(FirstNonEmpty(d.DistroVersion, "alpine"))
+	// The branch is the release every range in this file belongs to. A file
+	// whose branch is not a release ("edge", absent) leaves its ranges with no
+	// distro qualifier, and the cache-backed source consults them for no host.
+	release, released := distro.FromAlpineBranch(branch)
 	byCVE := map[string]*Record{}
 	var order []string
 	for _, p := range d.Packages {
@@ -78,9 +83,14 @@ func (dc *Decoder) AlpineSecdb(raw []byte, emit func(Record) error) (int, error)
 					byCVE[key] = rec
 					order = append(order, key)
 				}
+				var purl string
+				if released {
+					purl = release.RangePurl(pkg)
+				}
 				rec.Affected = append(rec.Affected, AffectedRange{
 					Ecosystem: "apk",
 					Package:   pkg,
+					PURL:      purl,
 					Fixed:     fixed,
 					// Alpine ships backported fixes with an -rN suffix, which
 					// is precisely the case an upstream range gets wrong.
@@ -208,7 +218,7 @@ func (dc *Decoder) CSAF(raw []byte) (Record, bool, error) {
 				continue
 			}
 			rec.Affected = append(rec.Affected, AffectedRange{
-				Ecosystem: "rpm", Package: dc.s(name),
+				Ecosystem: "rpm", Package: dc.s(name), PURL: rhelRangePurl(name, version),
 				Fixed: dc.s(version), DistroBackport: true,
 			})
 		}
@@ -218,7 +228,7 @@ func (dc *Decoder) CSAF(raw []byte) (Record, bool, error) {
 				continue
 			}
 			rec.Affected = append(rec.Affected, AffectedRange{
-				Ecosystem: "rpm", Package: dc.s(name),
+				Ecosystem: "rpm", Package: dc.s(name), PURL: rhelRangePurl(name, version),
 				Introduced: dc.s(version), DistroBackport: true,
 			})
 		}
@@ -398,4 +408,16 @@ func (dc *Decoder) EPSS(br *bufio.Reader, emit func(Record) error) (int, error) 
 			return n, err
 		}
 	}
+}
+
+// rhelRangePurl places a Red Hat CSAF range on its RHEL release by the version's
+// dist tag (2.25.1-3.el9 is RHEL 9). A version with no elN tag gets no purl, so
+// the cache-backed source consults the range for no host rather than for every
+// RHEL release.
+func rhelRangePurl(name, version string) string {
+	h, ok := distro.FromRHELRelease(version)
+	if !ok {
+		return ""
+	}
+	return h.RangePurl(name)
 }
