@@ -1175,16 +1175,17 @@ func TestEveryRecordFromTheComparatorCarriesTheSevenLaneAFields(t *testing.T) {
 		if _, err := jsonAt(raw, "properties/anvil~1advisory/licenseSpdx"); err != nil {
 			t.Errorf("result %d: %v", i, err)
 		}
-		// 7. license_manual_note, on the crossing artifact.
+		// 7. license_manual_note, inside the record beside the excerpt.
+		note := em.Result.Properties.Advisory.LicenseManualNote
 		if src.LicenseManualNote != "" {
-			if em.LicenseManualNote == nil || em.LicenseManualNote.Text != src.LicenseManualNote {
-				t.Errorf("result %d lost the licence manual note", i)
+			if note == nil || note.Text != src.LicenseManualNote {
+				t.Fatalf("result %d lost the licence manual note", i)
 			}
-			if em.LicenseManualNote.Trust == record.TrustAnvilGenerated {
+			if note.Trust == record.TrustAnvilGenerated {
 				t.Errorf("result %d labels a quoted licence sentence as Anvil's own", i)
 			}
-			assertJSONString(t, em, "licenseManualNote/text", src.LicenseManualNote)
-		} else if em.LicenseManualNote != nil {
+			assertJSONString(t, em.Result, "properties/anvil~1advisory/licenseManualNote/text", src.LicenseManualNote)
+		} else if note != nil {
 			t.Errorf("result %d invented a licence manual note", i)
 		}
 
@@ -1602,10 +1603,10 @@ func TestVerifiedTrustMustNameItsValidationStep(t *testing.T) {
 	named.Trust = record.TrustVerified
 	named.TrustValidationStep = fixtureValidationStep
 	em := mustEmit(t, hostMatch(), named)
-	if em.TrustValidationStep != fixtureValidationStep {
-		t.Fatalf("the validation step was lost: %q", em.TrustValidationStep)
+	if got := em.Result.Properties.Trust.ValidationStep; got != fixtureValidationStep {
+		t.Fatalf("the validation step was lost: %q", got)
 	}
-	assertJSONString(t, em, "trustValidationStep", fixtureValidationStep)
+	assertJSONString(t, em.Result, "properties/anvil~1trust/validationStep", fixtureValidationStep)
 	if em.Result.Properties.Advisory.Excerpt.Trust != record.TrustVerified {
 		t.Fatalf("the excerpt is %q, not the row's own trust",
 			em.Result.Properties.Advisory.Excerpt.Trust)
@@ -1614,11 +1615,11 @@ func TestVerifiedTrustMustNameItsValidationStep(t *testing.T) {
 	// An untrusted row names nothing, and the key is absent from the bytes
 	// rather than present and empty.
 	plain := mustEmit(t, hostMatch(), hostRow())
-	if plain.TrustValidationStep != "" {
-		t.Errorf("an untrusted row produced the validation step %q", plain.TrustValidationStep)
+	if got := plain.Result.Properties.Trust.ValidationStep; got != "" {
+		t.Errorf("an untrusted row produced the validation step %q", got)
 	}
-	if _, err := jsonAt(marshal(t, plain), "trustValidationStep"); err == nil {
-		t.Error("an untrusted emission carries a trustValidationStep key")
+	if _, err := jsonAt(marshal(t, plain.Result), "properties/anvil~1trust/validationStep"); err == nil {
+		t.Error("an untrusted emission carries a validationStep key")
 	}
 }
 

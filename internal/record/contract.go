@@ -51,6 +51,7 @@ package record
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1804,6 +1805,51 @@ type TrustAssertion struct {
 	// returned by Result.ExternalStringPointers must appear here or be
 	// covered by an untrusted Default.
 	Fields map[string]Trust `json:"fields,omitempty"`
+
+	// ValidationStep NAMES the explicit validation step behind every
+	// `verified` label in this result — Default, any entry in Fields, and the
+	// inline trust of an advisory excerpt, a licence note or a reproduction's
+	// evidence span. TrustVerified means "originated outside Anvil AND passed
+	// an explicit validation step that is named in the record"; without this
+	// slot the record had nowhere to name it, so a `verified` label published
+	// the claim without the thing that makes it mean anything (record
+	// emission's deviation 4, closed by plan node contractgaps).
+	//
+	// Required, and non-blank, exactly when some label in the result is
+	// `verified`; refused otherwise, because a step named for bytes nobody
+	// claims were validated is a statement about nothing. One result names one
+	// step: every producer today takes a result's external text from one
+	// source, and a result that needs two steps is refused rather than given a
+	// second slot nobody has designed.
+	ValidationStep string `json:"validationStep,omitempty"`
+}
+
+// verifiedLabels lists where a result claims `verified`, as JSON Pointers
+// relative to the result, for ValidateResultTrust's error messages.
+func (r *Result) verifiedLabels() []string {
+	var at []string
+	if r.Properties.Trust.Default == TrustVerified {
+		at = append(at, "/properties/anvil~1trust/default")
+	}
+	for ptr, t := range r.Properties.Trust.Fields {
+		if t == TrustVerified {
+			at = append(at, "/properties/anvil~1trust/fields/"+strings.ReplaceAll(strings.ReplaceAll(ptr, "~", "~0"), "/", "~1"))
+		}
+	}
+	inline := func(ptr string, s *TrustedString) {
+		if s != nil && s.Trust == TrustVerified {
+			at = append(at, ptr)
+		}
+	}
+	if a := r.Properties.Advisory; a != nil {
+		inline("/properties/anvil~1advisory/excerpt/trust", a.Excerpt)
+		inline("/properties/anvil~1advisory/licenseManualNote/trust", a.LicenseManualNote)
+	}
+	if rp := r.Properties.Repro; rp != nil {
+		inline("/properties/anvil~1repro/observedSignal/match/trust", rp.ObservedSignal.Match)
+	}
+	sort.Strings(at)
+	return at
 }
 
 // DetectorRef identifies the model and prompt behind a finding.
@@ -2330,6 +2376,17 @@ func (r *Result) ExternalStringPointers() []string {
 func ValidateResultTrust(r *Result) error {
 	if err := ValidateTrust(string(r.Properties.Trust.Default)); err != nil {
 		return err
+	}
+	verified := r.verifiedLabels()
+	step := r.Properties.Trust.ValidationStep
+	switch {
+	case len(verified) > 0 && strings.TrimSpace(step) == "":
+		return fmt.Errorf("record: %v claim %q but anvil/trust.validationStep names no validation step; "+
+			"%q means the bytes passed an explicit validation step that is NAMED IN THE RECORD",
+			verified, TrustVerified, TrustVerified)
+	case len(verified) == 0 && step != "":
+		return fmt.Errorf("record: anvil/trust.validationStep is %q but nothing in the result is %q; "+
+			"a step named for bytes nobody claims were validated states nothing", step, TrustVerified)
 	}
 	for ptr, t := range r.Properties.Trust.Fields {
 		if err := ValidateTrust(string(t)); err != nil {

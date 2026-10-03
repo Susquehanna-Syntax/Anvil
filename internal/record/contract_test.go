@@ -752,6 +752,9 @@ func TestLicenseManualNoteRefusesTheAbsentValueInLegitimateClothes(t *testing.T)
 			r.Properties.Advisory.LicenseManualNote = &TrustedString{
 				Text: "Redistribution permitted with attribution.", Trust: trust,
 			}
+			if trust == TrustVerified {
+				r.Properties.Trust.ValidationStep = "signature-checked feed snapshot"
+			}
 			if err := r.validate(HalfSast); err != nil {
 				t.Errorf("a note classified %q was refused: %v", trust, err)
 			}
@@ -766,4 +769,67 @@ func TestLicenseManualNoteRefusesTheAbsentValueInLegitimateClothes(t *testing.T)
 				"refusing here would be this area claiming a subject that is not its own", err)
 		}
 	})
+}
+
+// TestVerifiedNamesItsValidationStep is plan node contractgaps' trust-validation
+// slot. TrustVerified means "passed an explicit validation step that is named
+// in the record", so every `verified` label — default, per-field or inline —
+// needs anvil/trust.validationStep, and a step with nothing verified is refused.
+func TestVerifiedNamesItsValidationStep(t *testing.T) {
+	const step = "signature-checked feed snapshot"
+	cases := []struct {
+		name    string
+		mutate  func(r *Result)
+		wantErr bool
+	}{
+		{"nothing verified, no step", func(r *Result) {}, false},
+		{"nothing verified, a step anyway", func(r *Result) { r.Properties.Trust.ValidationStep = step }, true},
+		{"verified excerpt, no step", func(r *Result) {
+			r.Properties.Advisory.Excerpt = &TrustedString{Text: "x", Trust: TrustVerified}
+		}, true},
+		{"verified excerpt, blank step", func(r *Result) {
+			r.Properties.Advisory.Excerpt = &TrustedString{Text: "x", Trust: TrustVerified}
+			r.Properties.Trust.ValidationStep = "   "
+		}, true},
+		{"verified excerpt, named step", func(r *Result) {
+			r.Properties.Advisory.Excerpt = &TrustedString{Text: "x", Trust: TrustVerified}
+			r.Properties.Trust.ValidationStep = step
+		}, false},
+		{"verified licence note, no step", func(r *Result) {
+			r.Properties.Advisory.LicenseManualNote = &TrustedString{Text: "x", Trust: TrustVerified}
+		}, true},
+		{"verified default, no step", func(r *Result) { r.Properties.Trust.Default = TrustVerified }, true},
+		{"verified field, no step", func(r *Result) {
+			r.Properties.Trust.Fields = map[string]Trust{"/message/text": TrustVerified}
+		}, true},
+		{"verified field, named step", func(r *Result) {
+			r.Properties.Trust.Fields = map[string]Trust{"/message/text": TrustVerified}
+			r.Properties.Trust.ValidationStep = step
+		}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := chAdvisoryResult()
+			c.mutate(r)
+			err := ValidateResultTrust(r)
+			if c.wantErr && err == nil {
+				t.Error("accepted")
+			}
+			if !c.wantErr && err != nil {
+				t.Errorf("refused: %v", err)
+			}
+		})
+	}
+
+	// The step reaches the wire.
+	r := chAdvisoryResult()
+	r.Properties.Trust.Default = TrustVerified
+	r.Properties.Trust.ValidationStep = step
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"validationStep":"`+step+`"`) {
+		t.Errorf("validationStep did not reach the serialised bytes: %s", raw)
+	}
 }
