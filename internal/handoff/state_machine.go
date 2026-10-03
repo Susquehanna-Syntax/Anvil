@@ -629,6 +629,12 @@ func (q *Queue) EnqueueContext(ctx context.Context, req EnqueueRequest) (Row, er
 // A leased row is not disposable this way — ReleaseLease is the only exit from
 // 'leased', because only the lease holder may decide the outcome of its own
 // attempt.
+//
+// 'expired' is not disposable this way either. It is the claim-timeout
+// terminal state, and the reaper that owns that clock (ExpireClaimTimeouts) is
+// its only writer. Through Dispose any caller could expire a finding whose
+// deadline had not passed (the sealing, claims and masking review's finding
+// F13).
 func (q *Queue) Dispose(handoffID int64, to record.HandoffState) error {
 	return q.DisposeContext(context.Background(), handoffID, to)
 }
@@ -638,7 +644,7 @@ func (q *Queue) DisposeContext(ctx context.Context, handoffID int64, to record.H
 	if err := CheckTransition(record.HandoffStateReady, to); err != nil {
 		return err
 	}
-	if to == record.HandoffStateLeased {
+	if to == record.HandoffStateLeased || to == record.HandoffStateExpired {
 		return &TransitionError{From: record.HandoffStateReady, To: to}
 	}
 	res, err := q.db.ExecContext(ctx,

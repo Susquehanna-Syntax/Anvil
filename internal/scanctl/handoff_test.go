@@ -1232,10 +1232,11 @@ func sneakyReadable(s record.State, h record.HalfStatus) bool {
 }
 
 // The adapter must not be the only thing standing between a caller and the
-// queue: Queue() is the documented escape hatch, and the packet path it
-// returns is the same one the Task carries. If those two ever disagree, a
-// caller reaching around the adapter reads a different file from one going
-// through it.
+// queue: Queue() is the documented escape hatch. It no longer maps an
+// arbitrary fingerprint to a packet path (that was a read around the packet
+// gate; see handoff's TestNoExportedPathToAnArbitraryPacket), so the Task's
+// path is checked against the one file it may name, and the bytes written
+// through the adapter must read back through it.
 func TestTheEscapeHatchAgreesWithTheAdapter(t *testing.T) {
 	f := newHFFixture(t, handoff.Options{})
 	audit := f.sealedAudit()
@@ -1245,12 +1246,8 @@ func TestTheEscapeHatchAgreesWithTheAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
-	direct, err := f.c.Queue().PacketPath(fingerprint)
-	if err != nil {
-		t.Fatalf("PacketPath: %v", err)
-	}
-	if task.PacketPath != direct {
-		t.Fatalf("Task.PacketPath = %q, Queue().PacketPath = %q", task.PacketPath, direct)
+	if filepath.Base(task.PacketPath) != fingerprint+".sarif" {
+		t.Fatalf("Task.PacketPath = %q does not name this finding's packet", task.PacketPath)
 	}
 
 	body := []byte(`{"version":"2.1.0","runs":[]}`)
@@ -1269,7 +1266,7 @@ func TestTheEscapeHatchAgreesWithTheAdapter(t *testing.T) {
 	if err := f.c.ReleaseLease(task, record.HandoffStateValidated); err != nil {
 		t.Fatalf("ReleaseLease: %v", err)
 	}
-	if _, err := os.Stat(direct); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(task.PacketPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stat packet after a terminal disposition = %v, want os.ErrNotExist", err)
 	}
 }

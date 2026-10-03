@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -247,9 +248,9 @@ func (f *fixture) state(handoffID int64) record.HandoffState {
 // would test the gate instead of the sweep.
 func (f *fixture) packetExists(fingerprint string) bool {
 	f.t.Helper()
-	path, err := f.q.PacketPath(fingerprint)
+	path, err := f.q.packetPath(fingerprint)
 	if err != nil {
-		f.t.Fatalf("PacketPath: %v", err)
+		f.t.Fatalf("packetPath: %v", err)
 	}
 	_, err = os.Stat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -1264,8 +1265,8 @@ func TestPacketPathRejectsTraversal(t *testing.T) {
 		"",
 		strings.Repeat("z", 64),
 	} {
-		if _, err := f.q.PacketPath(bad); err == nil {
-			t.Errorf("PacketPath(%q) was accepted", bad)
+		if _, err := f.q.packetPath(bad); err == nil {
+			t.Errorf("packetPath(%q) was accepted", bad)
 		}
 	}
 }
@@ -1278,8 +1279,8 @@ func TestPacketDirIsOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := q.PacketPath(fp(16)); !errors.Is(err, ErrNoPacketDir) {
-		t.Errorf("PacketPath without a dir: err = %v, want ErrNoPacketDir", err)
+	if _, err := q.packetPath(fp(16)); !errors.Is(err, ErrNoPacketDir) {
+		t.Errorf("packetPath without a dir: err = %v, want ErrNoPacketDir", err)
 	}
 	if err := q.DropPacket(fp(16)); err != nil {
 		t.Errorf("DropPacket without a dir: %v", err)
@@ -1993,5 +1994,84 @@ func TestHasDynamicEvidenceClassifiesEveryDastStatus(t *testing.T) {
 	if len(want) != len(record.DastStatusValues()) {
 		t.Errorf("the table classifies %d statuses, the enum has %d",
 			len(want), len(record.DastStatusValues()))
+	}
+}
+
+// TestAVoluntaryHandBackReturnsItsAttempt is the sealing, claims and masking
+// review's finding F10. With max_attempts=2, two hand-backs used to leave the
+// row ready with attempts=2/2, so the third claim was ErrExhausted although
+// nothing had been attempted. HandBack returns the attempt; ReleaseLease(ready),
+// which is how a FAILED attempt goes back, keeps it spent.
+func TestAVoluntaryHandBackReturnsItsAttempt(t *testing.T) {
+	f := newFixture(t, Options{MaxAttempts: 2})
+	audit := f.sealedAudit()
+	fingerprint, row := f.enqueue(40, record.ConsumptionClassStaticOnly, audit)
+
+	for i := 1; i <= 3; i++ {
+		h, err := f.q.Claim(fingerprint, "worker-a")
+		if err != nil {
+			t.Fatalf("claim %d after %d hand-backs: %v", i, i-1, err)
+		}
+		if h.Attempt != 1 {
+			t.Errorf("claim %d: Attempt = %d, want 1 (hand-backs must not count)", i, h.Attempt)
+		}
+		if err := f.q.HandBack(h); err != nil {
+			t.Fatalf("hand-back %d: %v", i, err)
+		}
+	}
+	got, err := f.q.Get(row.HandoffID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Attempts != 0 || got.State != record.HandoffStateReady || got.ClaimedBy != "" {
+		t.Fatalf("after three hand-backs: state=%q attempts=%d claimed_by=%q, want ready, 0, none",
+			got.State, got.Attempts, got.ClaimedBy)
+	}
+
+	// A failed attempt released to 'ready' keeps the attempt it used.
+	h, err := f.q.Claim(fingerprint, "worker-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.q.ReleaseLease(h, record.HandoffStateReady); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.q.Get(row.HandoffID); got.Attempts != 1 {
+		t.Errorf("ReleaseLease(ready) returned the attempt: attempts=%d, want 1", got.Attempts)
+	}
+
+	// A hand-back from a lease that was reclaimed is refused, like any stale holder.
+	if err := f.q.HandBack(h); !errors.Is(err, ErrLeaseLost) {
+		t.Errorf("HandBack on a released lease: err = %v, want ErrLeaseLost", err)
+	}
+}
+
+// TestDisposeRefusesExpired is the sealing, claims and masking review's
+// finding F13: 'expired' belongs to the claim-timeout reaper, and Dispose used
+// to let any caller set it on a row whose deadline had not passed.
+func TestDisposeRefusesExpired(t *testing.T) {
+	f := newFixture(t, Options{})
+	audit := f.sealedAudit()
+	_, row := f.enqueue(41, record.ConsumptionClassStaticOnly, audit)
+	if err := f.q.Dispose(row.HandoffID, record.HandoffStateExpired); !errors.Is(err, ErrIllegalTransition) {
+		t.Fatalf("Dispose(expired): err = %v, want ErrIllegalTransition", err)
+	}
+	if got := f.state(row.HandoffID); got != record.HandoffStateReady {
+		t.Errorf("state = %q after a refused Dispose, want ready", got)
+	}
+}
+
+// TestNoExportedPathToAnArbitraryPacket: an exported function that maps any
+// fingerprint to its packet file is a read around packetGate, because the file
+// is the payload. Only the lease holder's Handle carries a path.
+func TestNoExportedPathToAnArbitraryPacket(t *testing.T) {
+	typ := reflect.TypeOf(&Queue{})
+	for i := 0; i < typ.NumMethod(); i++ {
+		m := typ.Method(i)
+		if m.Type.NumIn() == 2 && m.Type.In(1).Kind() == reflect.String &&
+			m.Type.NumOut() == 2 && m.Type.Out(0).Kind() == reflect.String {
+			t.Errorf("(*Queue).%s maps a string to a string; if that string is a packet path, it "+
+				"bypasses packetGate", m.Name)
+		}
 	}
 }
