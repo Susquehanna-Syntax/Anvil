@@ -1461,9 +1461,6 @@ func gateArmAllowlist() map[string]string {
 			"Every other site asks HalfReadGate, which asks halfReadRefusal, which asks this.",
 
 		// ---- the producer-side validator ---------------------------------
-		"contract.go:SARIFLog.validateStateAgainstHalves:HalfStatusSealed": "derives which " +
-			"anvil/state the halves imply, so the envelope and the runs cannot disagree. It " +
-			"runs on the PRODUCER side, on records no half of which may be readable yet.",
 		"contract.go:SARIFLog.validateStateAgainstHalves:StateExpired": "exempts the two " +
 			"terminal states from that derivation, because consumed and expired are not " +
 			"derivable from the halves. Same validator, same producer side.",

@@ -833,3 +833,56 @@ func TestVerifiedNamesItsValidationStep(t *testing.T) {
 		t.Errorf("validationStep did not reach the serialised bytes: %s", raw)
 	}
 }
+
+// TestProvisioningIsAbsentExactlyWhenNoTargetWasDeclared: both provisioning
+// literals describe how a runtime target came to exist, so an audit that
+// declared none must carry neither, and an audit that declared one must carry
+// one. Plan node cli's first end-to-end run found the contract demanding a
+// false value for every core-only audit.
+func TestProvisioningIsAbsentExactlyWhenNoTargetWasDeclared(t *testing.T) {
+	check := func(prov TargetProvenance, p TargetProvisioning) error {
+		l := validLogForTargetTest()
+		l.Properties.Target.Provenance = prov
+		l.Properties.Target.Provisioning = p
+		return l.Validate()
+	}
+	if err := check(TargetProvenanceNoTargetDeclared, ""); err != nil {
+		t.Errorf("no target declared, no provisioning: refused: %v", err)
+	}
+	if err := check(TargetProvenanceNoTargetDeclared, TargetProvisioningEphemeralManifest); err == nil {
+		t.Error("no target declared but a provisioning path claimed: accepted")
+	}
+	if err := check(TargetProvenanceBootedClean, ""); err == nil {
+		t.Error("a booted target with no provisioning path: accepted")
+	}
+	if err := check(TargetProvenanceBootedClean, TargetProvisioningLiveURLAuthorized); err != nil {
+		t.Errorf("a booted target with a provisioning path: refused: %v", err)
+	}
+}
+
+// validLogForTargetTest is a sealed, DAST-disabled audit with no results.
+func validLogForTargetTest() *SARIFLog {
+	created := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	sealed := created.Add(time.Minute)
+	return &SARIFLog{
+		Schema:  SARIFSchemaURI,
+		Version: SARIFVersion,
+		Properties: AuditProperties{
+			SchemaVersion: SchemaVersion,
+			AuditID:       "aud-target-test",
+			State:         StateBothSealed,
+			Version:       1,
+			CreatedAt:     created,
+			DastStatus:    DastStatusNotRun,
+			Deadline: Deadline{
+				DeadlineAt:          created.Add(DefaultClaimTimeoutSeconds * time.Second),
+				ClaimTimeoutSeconds: DefaultClaimTimeoutSeconds,
+			},
+		},
+		Runs: []Run{{
+			AutomationDetails: RunAutomationDetails{CorrelationGUID: "aud-target-test"},
+			Results:           []Result{},
+			Properties:        RunProperties{Half: HalfSast, Status: HalfStatusSealed, SealedAt: &sealed},
+		}},
+	}
+}
