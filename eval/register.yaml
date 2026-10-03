@@ -49,6 +49,7 @@
 #     is the evidence.
 #   - Owner decisions folded in on 2026-10-03: the recall corpus is the
 #     federation (candidates-per-scan), and ARVO is dropped for now
+#     (later that day the owner allowed ARVO for local-only patch-quality testing)
 #     (patch-quality).
 #   - Every deferred row names its owning phase.
 #   - `decision` is still UNRESOLVED on all fourteen rows. Only the owner sets it.
@@ -340,7 +341,7 @@ experiments:
 
   # =========================================================================
   - id: patch-quality
-    name: Open-weight patch quality (CWE-Bench-Java; ARVO dropped for now)
+    name: Open-weight patch quality (ARVO, local only; CWE-Bench-Java)
     kind: experiment
     spine_ref: the spine's evaluate-first and safety sections
     source_ref: >-
@@ -357,6 +358,16 @@ experiments:
       should be revised. Either way this does not change the safety posture — the spine's safety section already mandates
       human review regardless of rate.
     corpus:
+      - name: >-
+          ARVO, local only: the generator n132/ARVO at bc2a373c6b32fb3d9e7f86c516b1844885dcec51,
+          the dataset n132/ARVO-Meta (release v3.0.0, arvo.db, sha256
+          331184ca807c2f136f98dac9f1df94c893f4ee2fdf9329dca517ff88e72f97ce) and the per-case
+          n132/arvo:<id>-vul and <id>-fix Docker images
+        licence: >-
+          The generator is BSD-2-Clause (its LICENSE body, read 2026-10-03). The dataset and the
+          images carry no licence. The owner allowed local-only use on 2026-10-03: nothing from ARVO
+          is redistributed or committed, and no ARVO content is quoted in the repository.
+        licence_ref: n132/ARVO's LICENSE body; n132/ARVO-Meta's tree (no LICENSE file) read 2026-10-03
       - name: CWE-Bench-Java (iris-sast/cwe-bench-java at afe0ebd0adc237abb46255f9cd479b1d71819136)
         licence: MIT
         licence_ref: the repository's LICENSE body (GitHub reports MIT; body to be archived at acquisition)
@@ -364,25 +375,25 @@ experiments:
         licence: Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03
         licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue
     method: >-
-      ARVO dropped by the owner on 2026-10-03, for now, with local use possible later: ARVO's
-      BSD-2-Clause covers its generator code (n132/ARVO) only, while the dataset (n132/ARVO-Meta)
-      and the n132/arvo Docker images carry no licence. Without ARVO no case in this phase has a
-      crash reproducer, so no patch can be counted verified-fixed. The loop (anvil_eval.patchloop)
-      is generate, apply, build, test and, when a case has one, reproduce: the coder is served by
-      llama-server from a Q4_K_M GGUF of the pinned revision and returns SEARCH/REPLACE blocks; the
-      harness applies them with git apply; the build and the project's own tests run in the case's
-      checkout; a case with an exploit oracle counts as verified-fixed only when the oracle no
-      longer triggers. The loop is proven on a synthetic C case with a crash reproducer. The
-      frontier comparison is taken from published literature, never re-run: no proprietary API is
-      called.
+      ARVO is the oracle corpus, used locally only (the owner, 2026-10-03, after first dropping it
+      the same day): each sampled case's n132/arvo:<id>-vul image rebuilds the vulnerable project
+      with `arvo compile`, and `arvo` replays the fuzzer's crashing input, so a patch counts as
+      verified-fixed only when that input no longer crashes; nothing from ARVO is committed or
+      redistributed. CWE-Bench-Java has no oracle and reports build and test rates only. The loop
+      (anvil_eval.patchloop) is generate, apply, build, test and, when a case has one, reproduce:
+      the coder is served by llama-server from a Q4_K_M GGUF of the pinned revision and returns
+      SEARCH/REPLACE blocks; the harness anchors and applies them; a case with an exploit oracle
+      counts as verified-fixed only when the oracle no longer triggers. The loop is proven on a
+      synthetic C case with a crash reproducer; the ARVO adapter is Phase 7's to build. The frontier
+      comparison is taken from published literature, never re-run: no proprietary API is called.
     metric: >-
       Per corpus: generation rate, apply rate, build-pass rate and test-pass rate, and the
       verified-fix rate where an oracle exists, with the full failure breakdown (no_patch, apply_fail,
       build_fail, test_fail, exploit_still_triggers). Never an aggregate percentage alone. On
       CWE-Bench-Java the verified-fix rate is not measurable and is reported as such.
     threshold_pass: >-
-      These bars apply to a verified-fix rate, which needs a corpus with an exploit oracle; with
-      ARVO dropped on 2026-10-03 they cannot be evaluated in Phase 5. Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
+      These bars apply to the verified-fix rate on ARVO (local only), the corpus with exploit
+      oracles; they are unsigned and need the owner's sign-off. Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
       5.3%. PROPOSED — derived by analogy, not a number published for Qwen3-Coder-Next specifically;
       plan/design/evaluation.md "## Open Questions" requires explicit sign-off before this
       drives any messaging claim.
@@ -401,12 +412,13 @@ experiments:
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: >-
-      Deferred by the owner on 2026-10-03. ARVO, the only corpus with exploit oracles, was dropped
-      for licence reasons the same day, so no verified-fix rate is measurable in Phase 5; running
-      CWE-Bench-Java needs the 61 GB coder, two JDKs (its pinned JDK 8u202 is an Oracle build under
-      Oracle's licence) and Maven. Remediation owns the coder and the validation ladder. The loop
-      (anvil_eval.patchloop) and its CWE-Bench-Java adapter are built and tested; the bars stay
-      unsigned until a corpus with an oracle exists.
+      Deferred to Phase 7 by the owner on 2026-10-03; Remediation owns the coder and the validation
+      ladder. The owner then allowed ARVO for local-only use, so Phase 7 measures a real
+      verified-fix rate on it. Running it needs Docker (not installed on 2026-10-03), the ARVO
+      images for the sampled cases and the 61 GB coder; CWE-Bench-Java additionally needs two JDKs
+      (its pinned JDK 8u202 is an Oracle build under Oracle's licence) and Maven. The loop and its
+      CWE-Bench-Java adapter are built and tested; the bars stay unsigned until the owner signs
+      them.
     owning_future_phase: >-
       Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
 
