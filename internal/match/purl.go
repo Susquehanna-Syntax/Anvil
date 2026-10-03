@@ -1,4 +1,4 @@
-// purl.go is the package-identity half of A.17: turning the identity strings a
+// purl.go is the package-identity half of the comparator: turning the identity strings a
 // collector reports into something a comparator may act on, and REFUSING every
 // string it cannot account for.
 //

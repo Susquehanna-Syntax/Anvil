@@ -1,6 +1,6 @@
 package record
 
-// sarif_github_test.go — R.14's evidence.
+// sarif_github_test.go — the GitHub projection's evidence.
 //
 // The packet's stop condition is two tests: the sharding test and the
 // DAST-exclusion-is-logged test. Both are here (TestGitHubShardsBeyondResults
@@ -448,7 +448,7 @@ func TestGitHubProjectionEmitsNoUnsupportedBytes(t *testing.T) {
 		{"\"taxa\"", "a result taxa reference reached the upload with no taxonomies array to resolve it"},
 		{"relationships", "a rule's taxonomy relationship reached the upload"},
 		{"provenance", "SARIF §3.48 regression history reached the upload"},
-		{"\"fixes\"", "a proposed fix reached the upload (00-SPINE.md S7: propose only)"},
+		{"\"fixes\"", "a proposed fix reached the upload (the spine's safety section: propose only)"},
 		{"externalPropertyFileReferences", "a reference GitHub will never fetch reached the upload"},
 		{ghEndpoint, "an internal hostname was published to GitHub"},
 		{PartialFingerprintRegionSHA256, "an unread partial fingerprint reached the upload"},
@@ -995,7 +995,8 @@ func TestGitHubNilRecordIsAnError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 B1 — the read gate reaches the most externally visible consumer
+// The queue and read-path review's finding B1 — the read gate reaches the most
+// externally visible consumer
 // ---------------------------------------------------------------------------
 
 // TestGitHubNeverPublishesAnUnreadableHalf is the regression test for the
@@ -1004,7 +1005,7 @@ func TestGitHubNilRecordIsAnError(t *testing.T) {
 // an EXPIRED audit — projected its results to GitHub code scanning
 // unconditionally, with the loss ledger recording zero drops in every case.
 //
-// The consequences are ordered in CRITIQUE-03 §6 B1 and the worst is not the
+// The consequences are ordered in the queue and read-path review §6 B1 and the worst is not the
 // first: because GitHub keys an analysis on `runAutomationDetails.id`, a
 // premature upload of a `running` half is REPLACED by the real upload after
 // the seal, so the visible alert set silently depends on upload order.
@@ -1051,7 +1052,7 @@ func TestGitHubNeverPublishesAnUnreadableHalf(t *testing.T) {
 
 			// The loss is COUNTABLE. A withheld result that is not ledgered is
 			// a silent drop, and the ledger is the entire mechanism by which
-			// R.14 answers research/18 Risk #6.
+			// the GitHub projection answers research/18 Risk #6.
 			loss := GitHubLossOf(files)
 			if loss == nil {
 				t.Fatal("a fully-withheld projection must still carry a reachable ledger")
@@ -1076,8 +1077,9 @@ func TestGitHubNeverPublishesAnUnreadableHalf(t *testing.T) {
 }
 
 // The projection and readpath.go must agree about which halves are readable.
-// Two gates would be two answers, which is the shape CRITIQUE-02 F6 recorded
-// and CRITIQUE-03 found twice more.
+// Two gates would be two answers, which is the shape the sealing, claims and
+// masking review's finding F6 recorded and the queue and read-path review found
+// twice more.
 func TestGitHubReadGateAgreesWithTheReadPath(t *testing.T) {
 	for _, status := range HalfStatusValues() {
 		for _, state := range StateValues() {
@@ -1128,7 +1130,7 @@ func TestGitHubRefusesAnUnmaskedRecord(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 M2 — the rule ledger counts against the shard set
+// The queue and read-path review's finding M2 — the rule ledger counts against the shard set
 // ---------------------------------------------------------------------------
 
 // A rule referenced only by shard 2 used to be tallied as "stripped" while
@@ -1244,7 +1246,7 @@ func TestGitHubDuplicateRuleDescriptorIsCounted(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 M4 — relatedLocations count against the locations cap
+// The queue and read-path review's finding M4 — relatedLocations count against the locations cap
 // ---------------------------------------------------------------------------
 
 // `locations` was truncated at GitHubMaxLocationsPerResult and

@@ -1,11 +1,11 @@
-// Package sanitize is Lane A step A.3: ingest-time neutralisation of hostile
+// Package sanitize is Lane A's sanitizer: ingest-time neutralisation of hostile
 // text, plus the `anvil/trust` stamp that says where the bytes came from.
 //
 // ===========================================================================
 // WHY THIS RUNS AT INGEST AND NOWHERE ELSE
 // ===========================================================================
 //
-// plan/00-SPINE.md S7 is one sentence and the whole design follows from it:
+// The spine's safety section is one sentence and the whole design follows from it:
 //
 //	"Prompt injection: sanitize at ingest, not at prompt time."
 //
@@ -23,12 +23,12 @@
 //	  MaskReport                  SanitizeStats
 //	  AssertMasked                AssertSanitized
 //
-// Advisory text is the textbook case for S7. It is prose written by strangers,
-// mirrored from feeds Anvil does not control, and it ends up in the context of
-// a repo-credentialed coding agent. An attacker who can get text into an
-// upstream advisory — a package description, a reference title, a GHSA
-// summary — can write agent instructions into it. So every string this package
-// returns is `untrusted` (see IngestTrust).
+// Advisory text is the textbook case for the spine's safety section. It is
+// prose written by strangers, mirrored from feeds Anvil does not control, and
+// it ends up in the context of a repo-credentialed coding agent. An attacker
+// who can get text into an upstream advisory — a package description, a
+// reference title, a GHSA summary — can write agent instructions into it. So
+// every string this package returns is `untrusted` (see IngestTrust).
 //
 // ===========================================================================
 // THERE IS NO WRITER YET, AND THIS COMMENT WILL NOT MAKE ONE CALL Sanitize
@@ -37,17 +37,17 @@
 // An earlier draft of this paragraph said "every writer into the cache runs
 // its externally-sourced strings through Sanitize before it binds a
 // parameter". That was PROSE IN THE PRESENT TENSE ABOUT CODE THAT DOES NOT
-// EXIST. A.5's review checked it and reported the literal truth:
+// EXIST. The sanitizer review checked it and reported the literal truth:
 //
 //	no writer call site bypasses Sanitize() — because no writer call site
 //	exists. `grep -rn "sanitize\|Sanitize" --include=*.go .` returns zero
 //	references to this package from anywhere outside it and its own test.
 //
 // internal/ingest/cache exports statement TEXTS (UpsertAdvisorySQL and
-// friends) and migration plumbing. It has no Exec path, so A.3's stop
+// friends) and migration plumbing. It has no Exec path, so the sanitizer's stop
 // condition — a claim about "every write path into `advisory`, `affected` and
 // `advisory_fts`" — is today satisfied VACUOUSLY, and a reader must not record
-// it as verified. It is carried forward to A.7/A.8, unmet.
+// it as verified. It is carried forward to the poller and the bulk bootstrap, unmet.
 //
 // What this package can do about that from here, and does:
 //
@@ -63,7 +63,7 @@
 //     it inherits that guard's limits — read its own KNOWN LIMITS section
 //     before treating a green run as a proof.
 //   - What it CANNOT do is make the compiler refuse a raw string, because the
-//     writer's signature is not ours to declare. A.7/A.8 must take
+//     writer's signature is not ours to declare. The poller and the bulk bootstrap must take
 //     record.TrustedString (which Ingest returns) rather than string for every
 //     externally-sourced column. A signature that cannot accept a raw string
 //     is the only version of this rule that survives a future contributor.
@@ -85,7 +85,7 @@
 //   - KEEP: tab, newline, carriage return, U+0020 SPACE, and anything
 //     unicode.IsGraphic reports as graphic (letters, marks, digits,
 //     punctuation, symbols) — minus the graphic-but-unreadable sets below.
-//   - REMOVE, counted by category: the zero-width/bidi block A.3 names, Unicode
+//   - REMOVE, counted by category: the zero-width/bidi block the sanitizer names, Unicode
 //     tag characters, variation selectors, DEFAULT-IGNORABLE code points that
 //     Unicode nonetheless classifies as graphic, BLANK-GLYPH code points that
 //     carry no property at all, C0/C1 controls, every other Cf
@@ -111,7 +111,7 @@
 //     are recognised as complete comments precisely to keep that cost small.
 //   - Hidden-markup stripping runs to a FIXED POINT, because removing one span
 //     can splice a new opener out of its neighbours (`<` + `<!-- -->` + `!--`).
-//     A TRUNCATION IS NOT AN EXIT FROM THAT LOOP. It used to be, and A.5's
+//     A TRUNCATION IS NOT AN EXIT FROM THAT LOOP. It used to be, and the sanitizer review's
 //     blocker was exactly that: the surviving prefix is where the splice
 //     happens, so returning it un-rechecked handed back an intact `<!-- … -->`
 //     span carrying the payload — for the one class of input constructed to
@@ -133,7 +133,7 @@
 // INVISIBLE IS A CLASS, NOT THE TABLE THE CLASS WAS DERIVED FROM
 // ===========================================================================
 //
-// A.5 widened this package from a hand list of thirteen characters to the
+// The sanitizer review widened this package from a hand list of thirteen characters to the
 // Other_Default_Ignorable_Code_Point property, and wrote down — correctly and
 // in the source — that the property is "the class this set is derived FROM,
 // not the whole of what renders as nothing". A declared limit is better than a
@@ -168,7 +168,7 @@
 //
 // SPACE SEPARATORS ARE FOLDED, NOT DELETED, AND THE HARM MODEL IS WHY.
 // The harm this whole set exists to prevent is a MATCHING-INTEGRITY harm, and
-// A.5's own statement of it is the test: two strings a reviewer reads as
+// the sanitizer review's own statement of it is the test: two strings a reviewer reads as
 // identical must not be different strings. Apply that to U+00A0:
 //
 //	"lib foo" with U+00A0   reads identical to   "lib foo" with U+0020
@@ -184,7 +184,7 @@
 //
 // THIS IS STILL NOT NORMALISATION. The package refuses NFC/NFKC below because
 // NFKC rewrites LETTERS AND DIGITS — `①` to `1`, `ﬁ` to `fi`, full-width to
-// ASCII — and those are the bytes A.17's comparator matches on. Folding within
+// ASCII — and those are the bytes the comparator matches on. Folding within
 // category Zs onto U+0020 touches no letter, no digit and no symbol; it maps a
 // class of code points onto the member of that same class that a reader cannot
 // tell them apart from. The cost is real and small: U+00A0's non-breaking
@@ -197,7 +197,7 @@
 //
 //   - It does not normalise (NFC/NFKC). NFKC folds `①` to `1`, `ﬁ` to `fi`
 //     and full-width forms to ASCII; run on an advisory it would silently
-//     rewrite package names and version strings, which are the inputs A.17's
+//     rewrite package names and version strings, which are the inputs the comparator's
 //     comparator matches on. Homoglyph confusion is a display problem for a
 //     different layer, not a licence to mutate identifiers at ingest.
 //   - It does not strip HTML TAGS, escape entities, or attempt to render
@@ -213,9 +213,9 @@
 //     whether that also degrades the parse is the caller's call, not ours.
 //   - It does not log. It RETURNS the counts. The packet requires that no
 //     unrecognised character is dropped without a count being recorded, and a
-//     package that writes to a global logger cannot be composed by A.7, A.14
-//     and A.15 on their own terms. SanitizeStats is the log record; A.16's
-//     drift/staleness story consumes it.
+//     package that writes to a global logger cannot be composed by the poller, delta ingestion
+//     and the weekly self-heal on their own terms. SanitizeStats is the log
+//     record; drift handling's drift/staleness story consumes it.
 //
 // ===========================================================================
 // WHICH HTML PRODUCTIONS ARE IN SCOPE, AND WHY THAT LINE AND NOT ANOTHER
@@ -223,7 +223,7 @@
 //
 // This package emulates the HTML tokenizer where emulating it is what makes a
 // removal correct: `--!>` closes a comment because browsers close on it, and
-// `<!-->` is a complete comment because HTML says so. A.5 pointed out that the
+// `<!-->` is a complete comment because HTML says so. The sanitizer review pointed out that the
 // same criterion, applied consistently, covers more than `<!--`: HTML has
 // FIVE ways to turn text into something a reader never sees, and an earlier
 // version of this file handled one of them while AssertSanitized returned nil
@@ -341,10 +341,10 @@
 //     record.Message, which declares Text AND NO `markdown` FIELD. SARIF
 //     §3.11 defines `text` as plain text. A consumer rendering `message.text`
 //     as HTML or Markdown is already outside the record contract.
-//   - plan/60-remediation.md X.20 (internal/remediation/pr) composes a PR body
+//   - The pull-request lifecycle's design (internal/remediation/pr) composes a PR body
 //     that "embeds the evidence vector … advisory source URL + licence". A PR
 //     body is rendered as GFM by GitHub, so that is the first site in the plan
-//     where advisory-derived text meets an HTML renderer. X.20 is where the
+//     where advisory-derived text meets an HTML renderer. The pull-request lifecycle is where the
 //     escape-or-fence belongs, and AssertNoHiddenTagText is what it can call
 //     to fail closed instead of guessing.
 //   - internal/record/taskcard.go carries `advisory_excerpt` as JSON to the
@@ -379,12 +379,12 @@
 //
 // It has now fired. Four production callers exist:
 //
-//	internal/ingest/poller/poller.go        A.7  the conditional-GET poller
-//	internal/ingest/bootstrap/bootstrap.go  A.8  the bulk-archive importer
-//	internal/collector/host/collect.go      A.9  the host collector
-//	internal/collector/repo/trivy.go        A.10 the repo SCA collector
+//	internal/ingest/poller/poller.go        the conditional-GET poller
+//	internal/ingest/bootstrap/bootstrap.go  the bulk-archive importer
+//	internal/collector/host/collect.go      the host collector
+//	internal/collector/repo/trivy.go        the repo SCA collector
 //
-// So A.3's stop condition — a claim about "every write path into `advisory`,
+// So the sanitizer's stop condition — a claim about "every write path into `advisory`,
 // `affected` and `advisory_fts`" — is no longer satisfied VACUOUSLY. But read
 // what it is now satisfied BY: TestNoIngestWriterBindsAnUnsanitizedString, an
 // AST walk over the ingest packages that flags a function binding an advisory
@@ -400,7 +400,7 @@
 // obtained honestly and then used stale) before it was closed at runtime.
 // The poller is the one caller that currently goes further than the guard
 // requires: it DROPS a value the sanitizer modified rather than storing the
-// modified form. That is a property of A.7, not a property of this package.
+// modified form. That is a property of the poller, not a property of this package.
 //
 // internal/ingest/license is in the same position with respect to its Gate(),
 // and its own doc is not this package's to edit.
@@ -488,13 +488,13 @@ import (
 // internal/record.TrustUntrusted, aliased so that a Lane A caller writes a Go
 // constant and never a bare string literal.
 //
-// plan/IMPLEMENTATION-PLAN.md §6: area 40 (internal/record) owns every shared
+// The shared-vocabulary review: the record area (internal/record) owns every shared
 // enum and no other area may declare one. Nine of the ten confirmed defects in
 // that section were the same mistake — separate areas naming the same
 // vocabulary from their own side — so this constant is a reference, not a copy.
 //
 // IT IS NOT `anvil_generated`, AND THE DISTINCTION IS THE WHOLE POINT.
-// internal/record.Trust records that area B was found stamping
+// internal/record.Trust records that Lane B was found stamping
 // TrustAnvilGenerated on verbatim target-repo source, which would have
 // disabled the containment check on exactly the string that most needed it.
 // Advisory text is the same shape of error waiting to happen: Anvil is the
@@ -503,7 +503,7 @@ import (
 // "who wrote these bytes", never "who assigned this field".
 //
 // TrustVerified is reachable for feed data — a signature-checked snapshot
-// earns it — but only from an explicit, named validation step (A.8), never
+// earns it — but only from an explicit, named validation step (the bulk bootstrap), never
 // from here and never by default. Sanitising a string does not verify it;
 // it only bounds what the string can do.
 const IngestTrust = record.TrustUntrusted
@@ -519,7 +519,7 @@ const IngestTrust = record.TrustUntrusted
 // they happened to hold: U+13440, U+13441, U+13442 and U+303F against this
 // package; U+034F, U+3164, U+115F, U+FFA0, U+2800, U+17B4, U+16FE4 and U+FFFC
 // against the licence normaliser. Two hand lists that drift apart is the defect
-// class plan/IMPLEMENTATION-PLAN.md §6 closed ten instances of, and the fix
+// class the shared-vocabulary review closed ten instances of, and the fix
 // there was one owner per definition.
 //
 // internal/ingest/invisible is that owner. It holds the derivation (Cf, the
@@ -639,9 +639,9 @@ func classify(r rune) category {
 // SanitizeStats — the count the packet forbids dropping characters without
 // ---------------------------------------------------------------------------
 
-// SanitizeStats is what Sanitize removed, by category. A.3's Forbidden actions
+// SanitizeStats is what Sanitize removed, by category. The sanitizer's Forbidden actions
 // are explicit: "Do not silently drop unrecognised control characters without
-// logging a count (needed for the drift/staleness story in A.16)." This struct
+// logging a count (needed for the drift/staleness story in drift handling)." This struct
 // is that count. Every caller that persists a sanitised string is expected to
 // persist or emit these numbers alongside it.
 //
@@ -731,7 +731,7 @@ type SanitizeStats struct {
 	//
 	// IT IS NOT CAPPED AT ONE PER CALL. It used to say it was, on the
 	// reasoning that the first truncation ended the operation. That is
-	// exactly the early return A.5's blocker was about: the fixed-point loop
+	// exactly the early return the sanitizer review's blocker was about: the fixed-point loop
 	// now continues after a truncation, so a string whose surviving prefix
 	// splices a fresh unterminated opener truncates again and counts again.
 	// Two here means two openers were destroyed, which is more information
@@ -747,7 +747,7 @@ type SanitizeStats struct {
 	CommentPassLimitHit bool
 }
 
-// Stats is a shorter alias for SanitizeStats. A.3 names the exported type
+// Stats is a shorter alias for SanitizeStats. The sanitizer names the exported type
 // SanitizeStats and that name is the contract; this alias exists so callers
 // inside long expressions can write sanitize.Stats without stuttering.
 type Stats = SanitizeStats
@@ -825,11 +825,11 @@ func (s *SanitizeStats) Merge(o SanitizeStats) {
 }
 
 // statKeys is the persisted name of every counter, in a fixed order. It is
-// fixed because A.16 stores these and a reordered or renamed key is a schema
+// fixed because drift handling stores these and a reordered or renamed key is a schema
 // change, not a formatting change.
 //
 // THE VOCABULARY IS APPEND-ONLY. `default_ignorables`, `bogus_comments` and
-// `bogus_comment_runes` arrived after A.5's review and are at the END rather
+// `bogus_comment_runes` arrived after the sanitizer review and are at the END rather
 // than beside the counters they read most naturally with, because moving an
 // existing key is the schema change this comment forbids and grouping is only
 // a readability preference. Counts() is keyed, so nothing but String()'s
@@ -927,12 +927,12 @@ func (s SanitizeStats) String() string {
 // ---------------------------------------------------------------------------
 
 // Sanitize neutralises one externally-sourced string and reports what it
-// removed. It is the function A.3's Expected output schema names, and it is
+// removed. It is the function the sanitizer's Expected output schema names, and it is
 // the only entry point the rest of Lane A needs for raw text.
 //
 // It is TOTAL — every input produces an output — and IDEMPOTENT: sanitising an
 // already-sanitised string removes nothing and returns it unchanged. Callers
-// rely on the second property, because a row that is re-upserted by A.14's
+// rely on the second property, because a row that is re-upserted by delta ingestion's
 // delta path must not drift under repeated passes.
 //
 // The returned string always satisfies AssertSanitized.
@@ -1051,7 +1051,7 @@ func needsRuneStrip(raw string) bool {
 
 // count increments the counter for cat. catKeep is unreachable here; it is
 // listed so that adding a category without a counter fails to compile rather
-// than silently dropping runes uncounted, which is precisely what A.3's
+// than silently dropping runes uncounted, which is precisely what the sanitizer's
 // Forbidden actions prohibit.
 func (s *SanitizeStats) count(cat category) {
 	switch cat {
@@ -1152,7 +1152,7 @@ func openerName(k openerKind) string {
 // It runs AFTER stripRunes, on text that already has no invisible characters,
 // so `<!` ZWSP `--` has already become `<!--` by the time this sees it.
 //
-// THE LOOP HEAD IS THE ONLY CLEAN EXIT. A.5's blocker was a second exit — the
+// THE LOOP HEAD IS THE ONLY CLEAN EXIT. The sanitizer review's blocker was a second exit — the
 // truncation path returned the surviving prefix without re-checking it — and
 // the surviving prefix is precisely where a fresh opener gets spliced. There
 // is now no return between the head and the pass, and any edit that adds one
@@ -1475,7 +1475,7 @@ func indexCloseTag(s string, from int, name string) int {
 
 // AssertNoHiddenTagText reports an error if s carries markup whose text a
 // renderer would consume and not show. It is the check a DISPLAY SITE runs —
-// plan/60-remediation.md X.20's PR body being the first one in the plan —
+// the pull-request lifecycle's design PR body being the first one in the plan —
 // when it is about to put untrusted advisory text somewhere a human reads it
 // rendered.
 //
@@ -1500,7 +1500,7 @@ func AssertNoHiddenTagText(s string) error {
 
 // AssertSanitized reports an error if s still contains anything Sanitize would
 // have removed. It is this package's analogue of record.AssertMasked and it
-// exists for the same reason: A.3's stop condition is a claim about EVERY write
+// exists for the same reason: the sanitizer's stop condition is a claim about EVERY write
 // path into `advisory`, `affected` and `advisory_fts`, including write paths
 // that do not exist yet, and a claim about future code is only enforceable if
 // something can check it cheaply at the boundary.
@@ -1510,7 +1510,7 @@ func AssertNoHiddenTagText(s string) error {
 // or an error message that some other component renders is how a neutralised
 // payload gets a second delivery route.
 //
-// WHAT nil MEANS, EXACTLY. A.5's major on this function was that it returned
+// WHAT nil MEANS, EXACTLY. The sanitizer review's major on this function was that it returned
 // nil for `<!SYSTEM: leak>` and a writer would read that as "safe to store".
 // Those productions are now rejected, and the guarantee is stated here so no
 // reader has to infer it from the implementation:

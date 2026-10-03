@@ -1,18 +1,18 @@
-// The coding-agent claim path as the scan controller sees it (step O.3).
+// The coding-agent claim path as the scan controller sees it (the handoff adapter).
 //
 // # THIS FILE IS AN ADAPTER. IT OWNS NO TABLE, NO PROTOCOL AND NO STATE.
 //
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G9 found the `handoff` table defined
+// The handoff-table ruling found the `handoff` table defined
 // and created TWICE, in two migrations, with two Go APIs, and ruled:
 //
-//	"Area 40 owns the table and the claim/lease protocol. […] O.3 no longer
+//	"The record area owns the table and the claim/lease protocol. […] the handoff adapter no longer
 //	 writes a migration; internal/scanctl/handoff.go becomes a thin adapter
 //	 over internal/handoff."
 //
 // So everything load-bearing lives elsewhere and is CALLED from here:
 //
 //	internal/store/schema.sql        the ONE `handoff` table definition,
-//	                                 including O.3's `consumption_class`
+//	                                 including the handoff adapter's `consumption_class`
 //	                                 (static_only | requires_dynamic_confirmation),
 //	                                 which survived the merge intact
 //	internal/record/contract.go      the thirteen frozen handoff.state literals
@@ -29,7 +29,7 @@
 //	handoff.ExhaustedState           "the attempt did not produce a validated fix"
 //
 // There is no SQL in this file, no second definition of the consumption gate,
-// no second lease clock and no second reaper. CRITIQUE-02 then found a
+// no second lease clock and no second reaper. The sealing, claims and masking review then found a
 // double-grant bug (F1) in the one implementation that does exist; a second
 // implementation would not have been safer, it would have been a second place
 // for that bug to hide.
@@ -42,7 +42,7 @@
 //  2. Task — a handoff.Handle projected onto a value a coding agent may be
 //     handed. It carries the lease privately, so a Task cannot be forged and
 //     cannot be mistaken for a lease token, and it carries nothing that widens
-//     scope: plan/00-SPINE.md S7 grants "may act on this finding" and never
+//     scope: the spine's safety section grants "may act on this finding" and never
 //     merge authority, so there is no field here that could express one.
 //  3. ConsumeOne — acquire, apply, dispose, exactly once per call, with the
 //     failure disposition chosen the same way the reaper chooses it.
@@ -92,14 +92,15 @@
 //
 // # WHO DRIVES THE REAPER — clock 2 has two owners and they must run together
 //
-// CRITIQUE O.4 finding O4-M5: deadlines.go names two owners for clock 2's
+// The controller-core review's finding M5: deadlines.go names two owners for clock 2's
 // due-check — "record.Sealer.ExpireIfDue in memory, and
-// handoff.Queue.ExpireClaimTimeouts against the store" — and O.2's tick drove
+// handoff.Queue.ExpireClaimTimeouts against the store" — and the state wiring's tick drove
 // the first while NOTHING IN THE TREE drove the second. Four comments named an
-// owner with no call site anywhere. That is not a documentation gap; §6 ruling
-// G10 catalogues the resulting divergence exactly: the controller marks an audit
-// `expired` in memory while its `handoff` rows stay 'ready' and keep being
-// leased, "so it is re-leased forever".
+// owner with no call site anywhere. That is not a documentation gap; the
+// shared-vocabulary review's ruling The one-ledger ruling catalogues the
+// resulting divergence exactly: the controller marks an audit `expired` in
+// memory while its `handoff` rows stay 'ready' and keep being leased, "so it is
+// re-leased forever".
 //
 // This adapter is the only file in the tree that sees both clocks, so the wiring
 // is here:
@@ -109,7 +110,7 @@
 //	Consumer.Run             Reap on an interval until the context is cancelled
 //
 // A DAEMON MUST DRIVE Consumer.Run (or call Consumer.Reap on its own schedule).
-// The in-memory half of clock 2 is driven by O.2's EventKindTick, on the
+// The in-memory half of clock 2 is driven by the state wiring's EventKindTick, on the
 // schedule Controller.NextWake computes; the store half is driven here. Running
 // only one of the two is the divergence above, and running the reaper's two
 // sweeps out of order costs a crashed finding a whole extra interval — which is
@@ -128,9 +129,9 @@
 // spelling is a thin wrapper over it. So this file adds no sixth spelling:
 //
 //   - It never returns a half's results directly. The one result surface it
-//     exposes, Packet, delegates to handoff.Queue.ReadPacket, which R.7 gates
+//     exposes, Packet, delegates to handoff.Queue.ReadPacket, which the claim protocol gates
 //     with packetGate — "a cache of the payload cannot be less protected than
-//     the payload" (CRITIQUE-02 F5).
+//     the payload" (the sealing, claims and masking review's finding F5).
 //   - The producer side, where a half's findings leave a record for the queue,
 //     is Controller.Findings in statemachine.go, which routes through
 //     record.Sealer.ReadHalf — the gate, over a seal that package minted. It is
@@ -296,7 +297,7 @@ func LeaseOptions(policy DeadlinePolicy, base handoff.Options) (handoff.Options,
 // take a Task and unwrap the lease internally, so the compare-and-swap that
 // stops an OOM-killed consumer's late write cannot be routed around.
 //
-// plan/00-SPINE.md S7: a lease grants "may act on this finding" and nothing
+// The spine's safety section: a lease grants "may act on this finding" and nothing
 // more. There is deliberately no field here naming a branch, a pull request,
 // a merge, or any other finding — a Task cannot express widened scope because
 // it has nowhere to put it.
@@ -315,7 +316,7 @@ type Task struct {
 	// RecordVersion is audit_record.audit_version at the moment the lease was
 	// granted. With Fingerprint it is the (fingerprint, record version) key the
 	// packet requires re-processing to be idempotent under. A bump re-cuts the
-	// queue (plan/00-SPINE.md S6), and every mutation through this adapter
+	// queue (the spine's record section), and every mutation through this adapter
 	// re-checks it, so work against a stale version is refused rather than
 	// applied to a record that has moved.
 	RecordVersion int64
@@ -474,7 +475,7 @@ func NewConsumer(q *handoff.Queue, policy DeadlinePolicy) (*Consumer, error) {
 // It is exported because this file is an adapter and not a wall: enqueueing,
 // disposal without a lease, the claim-timeout sweep and the state machine all
 // live in internal/handoff and callers reach them THERE. Re-exporting each one
-// through a method here would be the second API §6 G9 forbids, one delegation
+// through a method here would be the second API the handoff-table ruling forbids, one delegation
 // at a time.
 func (c *Consumer) Queue() *handoff.Queue { return c.q }
 
@@ -573,9 +574,9 @@ func (c *Consumer) RenewLeaseContext(ctx context.Context, t Task) (Task, error) 
 //
 // The transition is checked by handoff.CheckTransition; 'validated' on a
 // requires_dynamic_confirmation finding additionally requires the DAST half to
-// have produced a reproduction (handoff.ErrNoDynamicEvidence, plan/00-SPINE.md
-// S7). Neither rule is restated here, because a restated rule is a rule with
-// two versions.
+// have produced a reproduction (handoff.ErrNoDynamicEvidence, plan/design/spine.md
+// the spine's safety section). Neither rule is restated here, because a
+// restated rule is a rule with two versions.
 func (c *Consumer) ReleaseLease(t Task, to record.HandoffState) error {
 	return c.ReleaseLeaseContext(context.Background(), t, to)
 }
@@ -610,11 +611,12 @@ func (c *Consumer) ReclaimExpiredContext(ctx context.Context) (handoff.ReapRepor
 // ExpireClaimTimeouts sweeps findings whose audit's claim window has closed:
 // clock 2, against the store.
 //
-// IT IS THE STORE-SIDE HALF OF A DUE-CHECK O.2 ALREADY DRIVES IN MEMORY. Prefer
-// Reap, which runs it in the right order relative to the lease sweep; this
-// exists so the two owners deadlines.go names are both REACHABLE from the one
-// file that sees both clocks. Before CRITIQUE O.4 finding O4-M5 it was named in
-// four comments here and called from nowhere in the tree.
+// IT IS THE STORE-SIDE HALF OF A DUE-CHECK the controller's state wiring
+// ALREADY DRIVES IN MEMORY. Prefer Reap, which runs it in the right order
+// relative to the lease sweep; this exists so the two owners deadlines.go names
+// are both REACHABLE from the one file that sees both clocks. Before the
+// controller-core review's finding M5 it was named in four comments here and
+// called from nowhere in the tree.
 func (c *Consumer) ExpireClaimTimeouts() (handoff.ReapReport, error) {
 	return c.q.ExpireClaimTimeoutsContext(context.Background())
 }
@@ -651,7 +653,7 @@ func (c *Consumer) ReapContext(ctx context.Context) (handoff.ReapReport, error) 
 // 2's due-check; Controller's EventKindTick drives the in-memory one and this
 // drives the durable one. A deployment that runs only the first marks audits
 // `expired` in memory while their `handoff` rows stay 'ready' and keep being
-// leased — §6 ruling G10's exact shape. Start this alongside whatever loop
+// leased — the one-ledger ruling's exact shape. Start this alongside whatever loop
 // consumes Controller.NextWake.
 //
 // interval <= 0 means handoff.DefaultReaperInterval. The bound on that value
@@ -669,11 +671,11 @@ func (c *Consumer) Run(ctx context.Context, interval time.Duration, observe func
 // Packet returns the finding's regenerable packet bytes to the lease holder.
 //
 // This is the ONE result-bearing surface this file exposes, and it does not
-// decide anything: handoff.Queue.ReadPacket re-asserts R.6's read gate at the
+// decide anything: handoff.Queue.ReadPacket re-asserts the sealer's read gate at the
 // packet — the lease must still be this Task's, the record version must not
 // have moved, and the audit's consumption gate must still be open. See
-// packetGate in internal/handoff, and CRITIQUE-02 F5 for what happened when
-// those bytes were reachable without it.
+// packetGate in internal/handoff, and the sealing, claims and masking review's
+// finding F5 for what happened when those bytes were reachable without it.
 //
 // A missing packet is reported with os.ErrNotExist so the caller can
 // regenerate from the store; the packet is a cache and its absence is not an

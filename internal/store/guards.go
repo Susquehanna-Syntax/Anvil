@@ -1,6 +1,6 @@
-// Startup guards for the Anvil store (step R.5).
+// Startup guards for the Anvil store (the migration runner).
 //
-// plan/40-record-and-storage.md, "Startup guards (R.5), both mandatory":
+// plan/design/record-and-store.md, "Startup guards (the migration runner), both mandatory":
 // refuse to start if the data directory is on a network-mounted filesystem,
 // and refuse to start if an FTS5 smoke-test virtual table cannot be created.
 // Both must run before any other store operation; CheckStartup runs them in
@@ -8,9 +8,9 @@
 // builds its own *sql.DB cannot skip it.
 //
 // Neither guard trusts a version number, a build tag, or a claim in a
-// document. plan/00-SPINE.md S12 calls modernc.org/sqlite's FTS5 support
+// document. The spine's Go control-plane decision calls modernc.org/sqlite's FTS5 support
 // "orchestrator-verified", but the research trail behind that
-// (plan/spine-c-language.md C5-C7) grades its own evidence B,
+// (plan/design/spine-language.md C5-C7) grades its own evidence B,
 // "absence-of-evidence, not evidence-of-absence". A dependency bump can drop a
 // build-time feature without any signal at all, and the only thing that
 // catches that is executing the feature at every process start. So CheckFTS5
@@ -119,7 +119,7 @@ type fsTypeProbe func(path string) (string, error)
 //
 // KNOWN LIMIT, stated plainly because a guard that overstates its coverage is
 // worse than one that does not exist. Filesystem type detection here is pure
-// Go with no cgo and no build-tagged files (plan/00-SPINE.md S12), which means
+// Go with no cgo and no build-tagged files (the spine's Go control-plane decision), which means
 // it reads /proc/self/mountinfo (falling back to /proc/mounts). On Linux —
 // Anvil's deployment target — that is authoritative. On Windows it detects a
 // UNC path but CANNOT see that a mapped drive letter such as Z: points at a
@@ -411,7 +411,7 @@ func CheckFTS5(db *sql.DB) error {
 }
 
 // CheckFTS5Context is CheckFTS5 with a caller-supplied context. The
-// context-free signature is the one plan/40-record-and-storage.md's R.5 packet
+// context-free signature is the one the migration runner's design (plan/design/record-and-store.md)
 // specifies, so it stays; this is the form startup code with a deadline wants.
 func CheckFTS5Context(ctx context.Context, db *sql.DB) error {
 	if db == nil {
@@ -432,7 +432,7 @@ func CheckFTS5Context(ctx context.Context, db *sql.DB) error {
 	defer func() { _, _ = conn.ExecContext(ctx, drop) }()
 
 	const remedy = "Anvil's store needs FTS5 for schema.sql's advisory_fts table. " +
-		"plan/00-SPINE.md S12 pins modernc.org/sqlite precisely because it bundles " +
+		"The spine's Go control-plane decision pins modernc.org/sqlite precisely because it bundles " +
 		"FTS5; if this fails, the SQLite build behind this binary changed and the " +
 		"store cannot be opened safely"
 

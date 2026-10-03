@@ -1,5 +1,5 @@
-// Package match is Lane A's deterministic version comparator: step A.17 of
-// plan/20-lane-a-ingestion-sca.md, and the component every other Lane A step
+// Package match is Lane A's deterministic version comparator: the comparator of
+// plan/design/lane-a.md, and the component every other Lane A step
 // feeds.
 //
 // ===========================================================================
@@ -10,7 +10,7 @@
 //
 //	Is this installed version inside a range some advisory says is vulnerable?
 //
-// plan/00-SPINE.md S1 is why the question is that small. CVE, OSV and GHSA
+// The spine's corrected-requirements table is why the question is that small. CVE, OSV and GHSA
 // describe vulnerable PACKAGE VERSIONS; a version comparator answers that
 // exactly and for free, and research/12's Table A says "Should Anvil use an
 // LLM? No — never" for both OS-package and dependency matching. THERE IS NO
@@ -66,8 +66,9 @@
 //     which owns that column. Vendor rows that arrive without it are listed
 //     in CoverageReport.UngroupedVendorAdvisories rather than silently
 //     failing to defend.
-//   - Epoch normalisation across feeds belongs to ingestion (A.14/A.16). Until
-//     it exists, the epoch refusal above is how the gap stays countable.
+//   - Epoch normalisation across feeds belongs to ingestion (delta ingestion
+//     and drift handling). Until it exists, the epoch refusal above is how the
+//     gap stays countable.
 //   - apk's ordering is IMPLEMENTED IN PART, and the part is now measured
 //     rather than estimated. Against all 738 ordering rows of apk-tools'
 //     own `test/unit/version.data` (transcribed in
@@ -87,7 +88,7 @@
 // a distinct algorithm with a distinct order, and none of them is implemented
 // here. See ecosystemAllowlist in purl.go.
 //
-// SEMVER IS NOT IMPLEMENTED HERE AND IS NOT BORROWED FROM O.7.
+// SEMVER IS NOT IMPLEMENTED HERE AND IS NOT BORROWED FROM semver bump classification.
 // internal/policy/semver.go exists, and its own header states its scope: it
 // parses a GIT TAG for the policy engine's `matchSemverBump`, its parser is
 // unexported for exactly this reason, and it says in as many words that using
@@ -114,7 +115,7 @@
 // leaves no trace is indistinguishable from a bug.
 //
 // SCOPE OF THE PRECEDENCE, AND A DELIBERATE DEVIATION FROM THE PACKET WORDING.
-// A.17's Forbidden-actions line says "do not fall back to upstream-only
+// The comparator's Forbidden-actions line says "do not fall back to upstream-only
 // version ranges when a vendor/distro advisory range exists for the same
 // PACKAGE". Read literally, one vendor advisory about openssl would suppress
 // every upstream advisory about openssl, including CVEs the vendor has never
@@ -140,7 +141,7 @@
 // has not run. All three are reported as what they are.
 //
 // The third one is in this list because it was NOT, and the guard named for
-// preventing it did not read the field that detects it. A.18 walked 400 valid
+// preventing it did not read the field that detects it. The comparator review walked 400 valid
 // packages past it. "The tool ran and found nothing" and "the tool had
 // nothing to compare against" are indistinguishable to a caller, and for a
 // security scanner the second read as the first is the worst output
@@ -159,7 +160,7 @@
 // DETERMINISM
 // ===========================================================================
 //
-// plan/00-SPINE.md S6 requires a stable verdict. Everything in this package is
+// The spine's record section requires a stable verdict. Everything in this package is
 // a pure function of its inputs:
 //
 //   - The inventory is COPIED AND SORTED before evaluation, so two callers
@@ -175,7 +176,7 @@
 //     corpus in a SECOND OS PROCESS and compares, the way
 //     internal/record's fingerprint conformance test does.
 //   - There is no clock. `as_of` and `detected_at` belong to the collector
-//     and to A.19's record emitter; a second time source here would be a
+//     and to record emission's record emitter; a second time source here would be a
 //     second answer to a question already owned elsewhere.
 package match
 
@@ -478,9 +479,9 @@ func ValidVersion(scheme Scheme, v string) error {
 // ---------------------------------------------------------------------------
 
 // PackageRecord is one installed package to be matched. It is the union of
-// what A.9's host inventory and A.10's repository SCA scan each report, and
-// its field names deliberately mirror internal/ingest/cache's `finding`
-// columns.
+// what the host collector's host inventory and the repo collector's repository
+// SCA scan each report, and its field names deliberately mirror
+// internal/ingest/cache's `finding` columns.
 //
 // FIELD MAPPING, stated here because this package does NOT import either
 // collector — internal/collector/host links os/exec and internal/ingest/cache
@@ -810,7 +811,7 @@ func epochSpelling(scheme Scheme, v string) (present bool, value int, ok bool) {
 // about how this package's versions are spelled, and reading it as an
 // ordering picks a winner silently.
 //
-// A.18's probe P5 is what this costs when it is left to parsing: a RHEL 9
+// The comparator review's probe P5 is what this costs when it is left to parsing: a RHEL 9
 // glibc `2:2.34-60.el9` — every RHEL 9 host carries that epoch — against an
 // advisory endpoint spelled `2.34-100.el9` gives `2 > 0`, so the installed
 // version sorts ABOVE the fixed endpoint, the range does not contain it, and
@@ -836,7 +837,7 @@ func epochSpelling(scheme Scheme, v string) (present bool, value int, ok bool) {
 //
 //	UPPER BOUND (fixed / last_affected), installed spells N>0, endpoint does
 //	not: installed sorts ABOVE the bound and falls OUT of the range —
-//	reported not-affected, silently. THIS IS A.18's PROBE P5. REFUSED.
+//	reported not-affected, silently. THIS IS the comparator review's PROBE P5. REFUSED.
 //
 //	UPPER BOUND, endpoint spells N>0, installed does not: installed sorts
 //	BELOW the bound and stays IN the range — reported affected. Accepted,
@@ -869,8 +870,8 @@ func epochSpelling(scheme Scheme, v string) (present bool, value int, ok bool) {
 //
 // Normalising epochs during ingestion would also close this, and would close
 // it better — a feed's endpoints could be rewritten into the archive's own
-// spelling once, rather than refused on every scan. That is A.14/A.16's
-// territory, not A.17's, and this comparator must not silently assume it has
+// spelling once, rather than refused on every scan. That is delta ingestion and drift handling's
+// territory, not the comparator's, and this comparator must not silently assume it has
 // happened. If ingestion ever guarantees it, this refusal stops firing on its
 // own and costs nothing; until then it is a countable gap in CoverageReport
 // instead of an invisible one.
@@ -1021,14 +1022,14 @@ func (a AffectedRange) attribute(err error) error {
 // Outputs
 // ---------------------------------------------------------------------------
 
-// MatchResult is one package that matched one advisory. It is A.17's Expected
+// MatchResult is one package that matched one advisory. It is the comparator's Expected
 // output schema — {source, source_id, package, purl, installed_version,
-// matched_range, distro_backport_defended} — plus the fields A.19 needs in
+// matched_range, distro_backport_defended} — plus the fields record emission needs in
 // order to emit a canonical record without re-deriving anything.
 //
 // It carries NO FINGERPRINT. anvil-fp/v1 is defined once, in internal/record,
 // and a second digest under the same name is the cross-area failure
-// plan/00-SPINE.md S6 forbids. A.19 calls record.Sca with the fields below.
+// the spine's record section forbids. Record emission calls record.Sca with the fields below.
 type MatchResult struct {
 	// Source and SourceID identify the advisory in the cache's primary key.
 	Source   string
@@ -1071,7 +1072,7 @@ type MatchResult struct {
 	EvidenceClass record.EvidenceClass
 	// Trust is record.TrustAnvilGenerated: the CONCLUSION is Anvil's own,
 	// which is what internal/ingest/cache's FindingTrustDefault says. The
-	// package name and version strings inside it remain untrusted, and A.19
+	// package name and version strings inside it remain untrusted, and record emission
 	// carries that distinction into the record's per-string trust.
 	Trust record.Trust
 	// RemediableByAgent is false for every host row, with no code path able
@@ -1163,7 +1164,7 @@ func (u UpstreamOnlyAdvisory) sortKey() string {
 // source_id) primary key when there is not. That is right for the case it was
 // written for — a GHSA row with no CVE must not be merged with an unrelated
 // advisory under one empty key — but it has a consequence in the other
-// direction that A.18 found and that nothing here said out loud: IF THE
+// direction that the comparator review found and that nothing here said out loud: IF THE
 // VENDOR ROW IS THE ONE MISSING THE ALIAS, the vendor range and the upstream
 // range it was meant to displace land in two different groups, and the
 // displacement never happens. The CVE-2023-32681 false positive comes back,
@@ -1224,7 +1225,7 @@ type CoverageReport struct {
 	// zero-finding result mean anything.
 	PackagesEvaluated int
 	// PackagesUnidentifiable is research/12 §3's false-negative-risk class:
-	// records with no ecosystem, no name or no version. A.17's Expected
+	// records with no ecosystem, no name or no version. The comparator's Expected
 	// output schema names this count specifically.
 	PackagesUnidentifiable int
 	// PackagesRefusedScheme is how many carried a usable identity in an
@@ -1237,7 +1238,7 @@ type CoverageReport struct {
 	// set of advisory ranges. A high count here with zero findings means the
 	// cache is empty, not that the host is clean.
 	//
-	// AssertNotSilentlyClean READS THIS FIELD. It did not until A.18, and
+	// AssertNotSilentlyClean READS THIS FIELD. It did not until the comparator review, and
 	// the omission meant an entirely empty advisory cache over a full,
 	// well-formed inventory passed the one guard written to prevent exactly
 	// that reading.
@@ -1268,7 +1269,7 @@ type CoverageReport struct {
 	// double-count.
 	//
 	// IT DID NOT ALWAYS DO THIS. Only the ecosystem route fed the list
-	// until A.21, which meant the list was EMPTY exactly when the input was
+	// until the Lane A exit gate, which meant the list was EMPTY exactly when the input was
 	// well-formed enough to carry a purl — every repo-SCA finding, and what
 	// every collector is encouraged to supply. PackagesRefusedScheme counted
 	// them; nothing said what they were.
@@ -1299,7 +1300,7 @@ type CoverageReport struct {
 	// or an absence" — promised the second thing and only ever established
 	// the first, so it is deleted rather than qualified.
 	//
-	// THE LAST CONDITION IS THE ONE A.18 ADDED. Without it, a run over 400
+	// THE LAST CONDITION IS THE ONE the comparator review ADDED. Without it, a run over 400
 	// well-formed packages against an advisory cache holding nothing at all
 	// refused nothing, errored on nothing and evaluated everything — and so
 	// reported Complete, which the sentence above promises means "no
@@ -1357,7 +1358,7 @@ func (e *ErrSilentlyClean) Error() string {
 // sentence above, the negative ones included, because a limit that is only
 // written down is a limit nobody has checked.
 //
-// plan/20 exit criterion 20 and A.17's Forbidden-actions line both require
+// plan/design/lane-a.md exit criterion 20 and the comparator's Forbidden-actions line both require
 // this check, and it is a function rather than a documented convention
 // because a documented convention is what this project keeps finding
 // unenforced.
@@ -1370,10 +1371,10 @@ func (e *ErrSilentlyClean) Error() string {
 // against" are the same output to a caller, and for a security scanner the
 // second read as the first is the worst answer available. This function used
 // to branch on four things and NEVER READ PackagesWithNoAdvisoryData — the
-// field whose own doc comment exists to name this exact failure. A.18's probe
+// field whose own doc comment exists to name this exact failure. The comparator review's probe
 // R1 walked straight through it: 400 well-formed Debian packages against a
 // source holding zero rows returned Complete, zero refusals and nil from
-// here. That is the state of a deployment where A.5's bootstrap has not run,
+// here. That is the state of a deployment where the sanitizer review's bootstrap has not run,
 // or ran and produced nothing, or where ingestion normalised ecosystem
 // strings into a vocabulary the `affected` rows do not use — which is the
 // most likely failure mode of the whole lane. The same class already bit the
@@ -1441,7 +1442,7 @@ type AdvisorySource interface {
 }
 
 // StaticSource is an in-memory AdvisorySource over a fixed slice of ranges. It
-// is the source A.19 can use once it has read the cache, and the source the
+// is the source record emission can use once it has read the cache, and the source the
 // tests use.
 type StaticSource struct {
 	byPackage map[string][]AffectedRange
@@ -1481,7 +1482,7 @@ func sortRanges(rs []AffectedRange) {
 
 // Matcher is the comparator bound to one advisory source.
 //
-// A.17's Expected output schema names `Match(ctx, inventory) ([]MatchResult,
+// The comparator's Expected output schema names `Match(ctx, inventory) ([]MatchResult,
 // CoverageReport, error)`. That signature has nowhere to put the advisory
 // data, so the source is bound to the receiver instead of appearing as a
 // parameter; the method below has exactly the named signature.
@@ -1689,7 +1690,7 @@ type identity struct {
 //     such case is a case where the two names agree.
 //
 //     Refusing too much, or accepting without adopting, misses the other way.
-//     Before A.18 the check accepted a case difference and then KEPT THE
+//     Before the comparator review the check accepted a case difference and then KEPT THE
 //     REPORTED SPELLING, which Match hands verbatim to
 //     AdvisorySource.AffectedRanges as the lookup key: `Name: "OpenSSL"` next
 //     to `pkg:deb/debian/openssl` produced zero findings, one
@@ -1720,7 +1721,7 @@ type identity struct {
 //  5. The version must parse in the resolved scheme.
 //
 //  6. If the purl carries a VERSION, it must be the reported Version, byte
-//     for byte. This is rule 6 and A.18's §4.4: the purl's version was
+//     for byte. This is rule 6 and the comparator review's §4.4: the purl's version was
 //     parsed and dropped on the floor, so a stale purl beside a fresh version
 //     column — which is what a re-scanned SBOM looks like — produced a false
 //     positive in one direction (probe P6: `purl@3.0.11-1` patched,
@@ -1825,7 +1826,7 @@ func identify(p PackageRecord) (identity, error) {
 		}
 		// Rule 3's other half: the surviving name is the CANONICAL FORM of
 		// the purl's name, which for deb/rpm/apk is its ASCII lowercasing.
-		// Not the reported spelling (A.18 §3.3: the check accepted a case
+		// Not the reported spelling (the comparator review §3.3: the check accepted a case
 		// difference and then handed the reported spelling to the advisory
 		// lookup, which matched nothing) and not the purl's spelling as
 		// written either — `pkg:deb/debian/CURL` is a legal spelling of a
@@ -1899,7 +1900,7 @@ func identify(p PackageRecord) (identity, error) {
 // licence for Unicode folding lets a name-shaped string from an untrusted
 // producer be DECLARED equal to a real package name and then fail to match it
 // in the advisory index — a guard that matches a spelling instead of
-// enforcing a canonical form. A.18's probe R3 did exactly that.
+// enforcing a canonical form. The comparator review's probe R3 did exactly that.
 // asciiLower folds ASCII upper-case letters to lower case and CHANGES NOTHING
 // ELSE. It is the canonical form asciiFoldEqual compares under, so that "the
 // two names are the same name" and "this is the name" cannot disagree: if
@@ -1986,7 +1987,7 @@ func missingIdentityDetail(eco, name string) string {
 //
 // This function's contract has always been that "an unparseable range must
 // not be able to decide anything, IN EITHER DIRECTION". Standing a refused
-// range aside honours the first direction and breaks the second: A.18's probe
+// range aside honours the first direction and breaks the second: the comparator review's probe
 // P7 malformed the VENDOR endpoint of the CVE-2022-2068 backport fixture, the
 // vendor range dropped out of the group, the upstream range was left alone in
 // it — and the run emitted the exact backport false positive the vendor-first
@@ -2209,7 +2210,7 @@ func evaluatePackage(id identity, p PackageRecord, ranges []AffectedRange) (
 // to be simply the first containing range in sortKey() order — a key that
 // begins with Source. So when two feeds carried the same CVE for the same
 // package, THE ALPHABETICALLY FIRST SOURCE NAME WON and the other advisory's
-// fixed version was silently discarded. A.18's probe Q1 showed `cvelistv5`
+// fixed version was silently discarded. The comparator review's probe Q1 showed `cvelistv5`
 // beating `ghsa` on a repo-sca row, which meant MatchResult.FixedVersion —
 // the version a coding agent is dispatched to bump to — became the coarse
 // upstream `9.9.9` instead of the Debian `1.1.1n-0+deb11u5` the host could
@@ -2339,7 +2340,7 @@ func buildResult(id identity, p PackageRecord, r AffectedRange, displacedUpstrea
 
 // remediableByAgent is the ONE place this flag is computed.
 //
-// plan/00-SPINE.md S6 and S7, Lane A exit criterion 21 and
+// The spine's record and safety sections, Lane A exit criterion 21 and
 // internal/ingest/cache's `finding_host_not_remediable` CHECK all say the same
 // thing: a host finding is never remediable by the coding agent, with no code
 // path, flag or config key able to override it. The function takes no options

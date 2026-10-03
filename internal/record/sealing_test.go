@@ -34,7 +34,7 @@ func newTestSealer(t *testing.T) (*Sealer, *time.Time) {
 	return s, &now
 }
 
-// beginSAST starts a DAST-DISABLED audit — plan/00-SPINE.md S9-AMENDED's
+// beginSAST starts a DAST-DISABLED audit — the two-artifact split's
 // common case, the core `anvil` artifact with no probing capability compiled
 // in.
 func beginSAST(t *testing.T, s *Sealer, id string) AuditSeal {
@@ -69,7 +69,7 @@ func beginDAST(t *testing.T, s *Sealer, id string) AuditSeal {
 // THE HARD READ GATE
 // ---------------------------------------------------------------------------
 
-// TestReadGateRefusesEveryNonSealedStatus is R.6's central obligation, stated
+// TestReadGateRefusesEveryNonSealedStatus is the sealer's central obligation, stated
 // directly: "no consumer may read a half's results before that half's status
 // equals sealed."
 //
@@ -78,7 +78,7 @@ func beginDAST(t *testing.T, s *Sealer, id string) AuditSeal {
 // for readable — and asserts the read is refused with a typed *ReadGateError
 // carrying no seal data.
 //
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G5 records why this test exists: area
+// The half-status ruling records why this test exists: area
 // O keyed its transitions on `complete`, "which meant the gate never opens".
 func TestReadGateRefusesEveryNonSealedStatus(t *testing.T) {
 	for _, half := range HalfValues() {
@@ -110,7 +110,7 @@ func TestReadGateRefusesEveryNonSealedStatus(t *testing.T) {
 				}
 				var gate *ReadGateError
 				if !errors.As(err, &gate) {
-					t.Fatalf("ReadHalf error %v is not a *ReadGateError; R.6 requires a TYPED refusal", err)
+					t.Fatalf("ReadHalf error %v is not a *ReadGateError; the sealer requires a TYPED refusal", err)
 				}
 				if gate.Half != half || gate.Status != status {
 					t.Errorf("ReadGateError = {half:%q status:%q}, want {half:%q status:%q}",
@@ -163,7 +163,7 @@ func TestReadGateOpensOnlyAtSealed(t *testing.T) {
 	}
 
 	// The DAST half is still running, so it is still refused. The two halves
-	// gate INDEPENDENTLY (plan/00-SPINE.md S1).
+	// gate INDEPENDENTLY (the spine's corrected-requirements table).
 	if _, err := s.ReadHalf("a", HalfDast); !errors.Is(err, ErrHalfNotSealed) {
 		t.Errorf("DAST read after a SAST-only seal: err = %v, want ErrHalfNotSealed", err)
 	}
@@ -204,10 +204,10 @@ func TestSealedAtNilForEveryUnsealedTerminalStatus(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDastDisabledAuditReachesBothSealed is the case
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G2 says area O's four-state machine
-// could not express, and the reason area 40's six-value enum won.
+// the audit-state ruling says the control plane's four-state machine
+// could not express, and the reason the record area's six-value enum won.
 //
-// A core `anvil` install (plan/00-SPINE.md S9-AMENDED: no DAST artifact, so
+// A core `anvil` install (the two-artifact split: no DAST artifact, so
 // no DAST worker exists to seal anything) must still reach StateBothSealed on
 // its SAST seal alone, with dast_status = 'not_run' — never NULL and never
 // 'completed_clean'.
@@ -216,7 +216,7 @@ func TestDastDisabledAuditReachesBothSealed(t *testing.T) {
 	seal := beginSAST(t, s, "sast-only")
 
 	// Before any seal, the DAST half is ALREADY terminal, so the audit sits
-	// in dast_sealed — a state area O's machine had no value for.
+	// in dast_sealed — a state the control plane's machine had no value for.
 	if seal.State != StateDastSealed {
 		t.Errorf("initial state = %q, want %q", seal.State, StateDastSealed)
 	}
@@ -267,7 +267,7 @@ func TestDastDisabledAuditReachesBothSealed(t *testing.T) {
 	}
 }
 
-// TestDastDisabledDistinguishableFromCleanDastScan is R.6's named validation
+// TestDastDisabledDistinguishableFromCleanDastScan is the sealer's named validation
 // item: "a test asserting a DAST-disabled scan's dast_status is
 // distinguishable from a DAST-enabled scan that found nothing
 // ('completed_clean')".
@@ -366,10 +366,10 @@ func TestDeadlineAnchoredToScanStart(t *testing.T) {
 	}
 }
 
-// TestDeadlineUnchangedByLateSeal is R.6's second named validation item: "a
+// TestDeadlineUnchangedByLateSeal is the sealer's second named validation item: "a
 // test asserting `deadline_at` is unchanged by a late write to either half".
 //
-// R.6's forbidden actions: "Do not compute `deadline_at` from any write
+// The sealer's forbidden actions: "Do not compute `deadline_at` from any write
 // timestamp". Anchoring the claim clock to the last write makes the timeout
 // unbounded for a chatty scan, so the reaper never fires.
 func TestDeadlineUnchangedByLateSeal(t *testing.T) {
@@ -428,7 +428,7 @@ func TestDeadlineUnchangedByLateSeal(t *testing.T) {
 		t.Fatal("sast SealedAt is nil after a clean seal")
 	}
 	if snap.Sast.SealedAt.Equal(snap.DeadlineAt) {
-		t.Error("sealedAt equals deadlineAt; R.6 forbids conflating the per-half seal with the claim clock")
+		t.Error("sealedAt equals deadlineAt; the sealer forbids conflating the per-half seal with the claim clock")
 	}
 	if !snap.Sast.SealedAt.After(snap.DeadlineAt) {
 		t.Errorf("sealedAt %v did not track the clock past deadlineAt %v", snap.Sast.SealedAt, snap.DeadlineAt)
@@ -466,7 +466,7 @@ func TestSealHalfDoesNotResetOnIdempotentReseal(t *testing.T) {
 // TestDeriveStateCoversEveryCombination walks all 25 (sast, dast) status
 // pairs and asserts the derived state, then asserts every one of the four
 // derivable states is actually produced — including StateDastSealed, whose
-// unreachability in area O's machine is what ruling G2 struck.
+// unreachability in the control plane's machine is what the audit-state ruling struck.
 func TestDeriveStateCoversEveryCombination(t *testing.T) {
 	seen := map[State]bool{}
 	for _, sast := range HalfStatusValues() {
@@ -499,9 +499,9 @@ func TestDeriveStateCoversEveryCombination(t *testing.T) {
 	}
 }
 
-// TestDastFirstSealReachesDastSealed is plan/00-SPINE.md S1's "two
+// TestDastFirstSealReachesDastSealed is the spine's "two
 // INDEPENDENTLY-sealed halves" in its awkward direction: the DAST half seals
-// first while the SAST half is still running. Ruling G2: area O's machine
+// first while the SAST half is still running. The audit-state ruling: the control plane's machine
 // "cannot express a DAST-first seal at all".
 func TestDastFirstSealReachesDastSealed(t *testing.T) {
 	s, _ := newTestSealer(t)
@@ -646,7 +646,7 @@ func TestConsumeRequiresBothSealed(t *testing.T) {
 	}
 }
 
-// TestConsumerIsReEntrant: plan/00-SPINE.md S1 requires a RE-ENTRANT
+// TestConsumerIsReEntrant: the spine's corrected-requirements table requires a RE-ENTRANT
 // consumer, so consuming the record must not shut the gate behind it.
 func TestConsumerIsReEntrant(t *testing.T) {
 	s, _ := newTestSealer(t)
@@ -762,7 +762,8 @@ func TestDeriveDastStatusTable(t *testing.T) {
 		// A half that broke against a target that was up is a DAST-side
 		// failure, not a coverage decision. Before the section 6 amendment
 		// this derived completed_partial, which invited a reader to take
-		// DastCoverage's numbers as a deliberate scope. CRITIQUE-02 F8/rule 8.
+		// DastCoverage's numbers as a deliberate scope. The sealing, claims and
+		// masking review's finding F8/rule 8.
 		{"failed mid-scan", HalfStatusFailed, DastOutcome{TierInstalled: true, Provenance: clean}, DastStatusCompletedFailed},
 		{"sealed partial", HalfStatusSealed, DastOutcome{TierInstalled: true, Provenance: clean, PartialCoverage: true}, DastStatusCompletedPartial},
 		{"sealed partial outranks findings", HalfStatusSealed, DastOutcome{TierInstalled: true, Provenance: clean, PartialCoverage: true, FindingCount: 3}, DastStatusCompletedPartial},
@@ -785,7 +786,7 @@ func TestDeriveDastStatusTable(t *testing.T) {
 	}
 }
 
-// TestCompletedCleanIsUnreachableWithoutAScannedTarget is S6's requirement
+// TestCompletedCleanIsUnreachableWithoutAScannedTarget is the spine's requirement
 // stated as a negative: "a target that failed to boot must be
 // distinguishable from 'scanned clean'". Zero findings plus a sealed half is
 // NOT sufficient for DastStatusCompletedClean; the target must also have
@@ -817,7 +818,7 @@ func TestCompletedCleanIsUnreachableWithoutAScannedTarget(t *testing.T) {
 // inputs against contract.go's frozen enums rather than trusting them.
 func TestDeriveDastStatusRejectsIllegalLiterals(t *testing.T) {
 	if _, err := DeriveDastStatus(HalfStatus("complete"), DastOutcome{TierInstalled: true, Provenance: TargetProvenanceBootedClean}); err == nil {
-		t.Error(`DeriveDastStatus accepted area O's struck "complete" token`)
+		t.Error(`DeriveDastStatus accepted the control plane's struck "complete" token`)
 	} else {
 		var ee *EnumError
 		if !errors.As(err, &ee) {
@@ -901,8 +902,8 @@ func TestUnknownAuditIsAlwaysRefused(t *testing.T) {
 // TestSealHalfRejectsBareStringsOutsideTheFrozenEnums. The package-level
 // SealHalf takes strings because it is a process boundary; it must reject
 // anything that is not a contract.go literal, with an *EnumError naming the
-// legal set. Area O's struck `complete` is the concrete regression this
-// guards (plan/IMPLEMENTATION-PLAN.md §6 ruling G5).
+// legal set. The control plane's struck `complete` is the concrete regression this
+// guards (the half-status ruling).
 func TestSealHalfRejectsBareStringsOutsideTheFrozenEnums(t *testing.T) {
 	s, _ := newTestSealer(t)
 	beginDAST(t, s, "a")
@@ -935,12 +936,12 @@ func TestSealHalfRejectsBareStringsOutsideTheFrozenEnums(t *testing.T) {
 	}
 }
 
-// TestPackageLevelAPIMatchesR6Signatures exercises the two functions R.6
+// TestPackageLevelAPIMatchesTheSealerSignatures exercises the two functions the sealer
 // names by signature — SealHalf(auditID, half, status string) error and
 // ReadyForConsumption(auditID string) (sastReady, dastReady bool) — on the
 // default Sealer, threading contract.go's constants through rather than
 // hand-typed literals.
-func TestPackageLevelAPIMatchesR6Signatures(t *testing.T) {
+func TestPackageLevelAPIMatchesTheSealerSignatures(t *testing.T) {
 	const id = "pkg-level-r6-audit"
 	t.Cleanup(func() { DefaultSealer().Forget(id) })
 
@@ -1093,7 +1094,7 @@ func TestHalfStatusClassificationMatchesContract(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression guards for CRITIQUE-02 (R.10 critic gate 2).
+// Regression guards for the sealing, claims and masking review.
 // ---------------------------------------------------------------------------
 
 // TestDeriveDastStatusIsTotal is the amendment's real stop condition: after
@@ -1184,9 +1185,10 @@ func TestFailedHalfAgainstALiveTargetIsNotPartialCoverage(t *testing.T) {
 	}
 }
 
-// TestInspectHonoursTheExpiryArmOfTheReadGate reproduces CRITIQUE-02 F6
-// directly: ReadHalf refuses an expired audit, and before the fix Inspect
-// handed out the same HalfSeal with Readable() == true.
+// TestInspectHonoursTheExpiryArmOfTheReadGate reproduces the sealing, claims
+// and masking review's finding F6 directly: ReadHalf refuses an expired audit,
+// and before the fix Inspect handed out the same HalfSeal with Readable() ==
+// true.
 func TestInspectHonoursTheExpiryArmOfTheReadGate(t *testing.T) {
 	s, now := newTestSealer(t)
 	seal := beginSAST(t, s, "a")
@@ -1281,7 +1283,8 @@ func TestInspectAgreesWithReadHalfOnEveryState(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 B1/M1 — one gate, every spelling, every (state, status) pair
+// The queue and read-path review's findings B1/M1 — one gate, every spelling,
+// every (state, status) pair
 // ---------------------------------------------------------------------------
 
 // TestEverySpellingOfTheReadGateAgrees drives the whole cross product of
@@ -1339,7 +1342,7 @@ func TestEverySpellingOfTheReadGateAgrees(t *testing.T) {
 
 			// (3) The record-side spelling, built from a run and its envelope.
 			// This is the projection readpath.go, taskcard.go and
-			// sarif_github.go all go through, and the one CRITIQUE-03 found
+			// sarif_github.go all go through, and the one the queue and read-path review found
 			// two callers reaching around. Re-projected rather than reusing
 			// `seal`, so that two separately-minted seals over the same
 			// record still agree.
@@ -1371,7 +1374,8 @@ func TestEverySpellingOfTheReadGateAgrees(t *testing.T) {
 // The previous version counted function bodies that mentioned BOTH
 // `StateExpired` AND `IsReadableHalfStatus`, and required exactly one such
 // body (halfReadRefusal). It could not detect the defect it was written to
-// detect. CRITIQUE-03 M1's original bug, character for character, was
+// detect. The original bug behind the queue and read-path review's finding M1,
+// character for character, was
 //
 //	if !IsReadableHalfStatus(run.Properties.Status) { continue }
 //
@@ -1447,7 +1451,7 @@ func gateArmAllowlist() map[string]string {
 			"writing the field the gate later reads, not reading it.",
 		"sealing.go:DeriveDastStatus:HalfStatusSealed": "derives the audit-level DastStatus " +
 			"from the DAST half's outcome. It is a projection of the half's status onto a " +
-			"different enum; DastStatus is not a readability answer, and R.6 keeps " +
+			"different enum; DastStatus is not a readability answer, and the sealer keeps " +
 			"'completed_clean' distinct from 'readable' on purpose.",
 
 		// ---- the status arm's own definition ------------------------------
@@ -1528,7 +1532,7 @@ func TestReadGateArmsAppearOnlyInsideTheGate(t *testing.T) {
 					t.Errorf("%s spells %q outside the read gate.\n"+
 						"    ONE ARM IS NOT THE GATE. Readability is\n"+
 						"        IsReadableHalfStatus(status) AND the audit has not expired,\n"+
-						"    and CRITIQUE-03 M1 was exactly this: readOrder asked the status arm\n"+
+						"    and the queue and read-path review's finding M1 was exactly this: readOrder asked the status arm\n"+
 						"    alone, so an expired audit handed a coding agent nine task cards.\n"+
 						"    Call HalfReadGate (or HalfSeal.Readable), or — if this site is\n"+
 						"    deciding something OTHER than readability — add it to\n"+
@@ -1562,10 +1566,10 @@ func TestReadGateArmsAppearOnlyInsideTheGate(t *testing.T) {
 // gateHalfGateProbeSource is the negative control for the detector above: two
 // half-gates and one innocent function, as source text.
 //
-// readOrderStatusArmOnly is CRITIQUE-03 M1's original defect, character for
-// character — the status arm alone, in readOrder, which the previous
-// two-literal test could not see because one arm never matched a check that
-// required both.
+// readOrderStatusArmOnly is the original defect behind the queue and read-path
+// review's finding M1, character for character — the status arm alone, in
+// readOrder, which the previous two-literal test could not see because one arm
+// never matched a check that required both.
 //
 // expiryArmOnly is the mirror-image half-gate nobody has written yet.
 //
@@ -1646,7 +1650,7 @@ func TestTheHalfGateDetectorCatchesTheDefectItsPredecessorMissed(t *testing.T) {
 					fn.Name.Name, got)
 			} else {
 				t.Errorf("%s is a half-gate spelling %v, but the detector reported %v. This is "+
-					"the exact shape of CRITIQUE-03 M1, and a detector that cannot see it is "+
+					"the exact shape of the queue and read-path review's finding M1, and a detector that cannot see it is "+
 					"the detector this one replaced.", fn.Name.Name, exp, got)
 			}
 		}

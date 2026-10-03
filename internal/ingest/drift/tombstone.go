@@ -1,4 +1,4 @@
-// tombstone.go is the other half of A.16: what happens when a publisher takes
+// tombstone.go is the other half of drift handling: what happens when a publisher takes
 // an advisory back.
 //
 // ===========================================================================
@@ -7,7 +7,7 @@
 //
 // research/06 Risk #4: "Withdrawn and poisoned advisories... Anvil must
 // propagate retractions as tombstones... must be able to re-open and
-// invalidate a prior finding when its advisory is withdrawn." A.2 exit
+// invalidate a prior finding when its advisory is withdrawn." Lane A exit
 // criterion 22 says the same thing from the schema's side, and
 // internal/ingest/cache enforces the pairing with a named CHECK: a state that
 // is not 'published' must carry a `tombstoned_at`.
@@ -22,7 +22,7 @@
 // driver must be on allowedStatements, an ALLOWLIST of exact texts. There is
 // no DELETE against `advisory` on it and no way to add one by accident: a
 // statement that is not a member is refused with ErrStatementNotAllowed before
-// it reaches the database. The shape is A.14's, deliberately — a denylist of
+// it reaches the database. The shape is delta ingestion's, deliberately — a denylist of
 // forbidden verbs is what this project has already lost three guards to.
 //
 // ===========================================================================
@@ -30,10 +30,11 @@
 // ===========================================================================
 //
 // internal/ingest/cache/schema.go names this step explicitly: the advisory
-// write shape is exported "because the alternative — each of A.7, A.8, A.14,
-// A.15 and A.16 composing its own upsert — is how a second, subtly different
-// write shape enters a schema and breaks the FTS linkage or the tombstone
-// invariant with no error message."
+// write shape is exported "because the alternative — each of the poller, the
+// bulk bootstrap, delta ingestion, the weekly self-heal and drift handling
+// composing its own upsert — is how a second, subtly different write shape
+// enters a schema and breaks the FTS linkage or the tombstone invariant with no
+// error message."
 //
 // So the tombstone is a READ-MODIFY-WRITE through the shared statement: the
 // row is read back, two columns are replaced, and the whole row is bound to
@@ -45,7 +46,7 @@
 // oversights:
 //
 //   - THE LICENCE COLUMNS ARE RE-BOUND FROM THE ROW, never re-derived. A
-//     retraction is not a licence decision. A.4's Gate owns that, and a second
+//     retraction is not a licence decision. The licence gate owns that, and a second
 //     gate invoked from here would be an unreviewed one.
 //   - THE ROWID IS PRESERVED, because ON CONFLICT DO UPDATE updates in place.
 //     INSERT OR REPLACE would delete and re-insert under a NEW rowid and
@@ -71,7 +72,7 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	// ErrNoCache is a Tombstoner built without the A.2 ingestion cache.
+	// ErrNoCache is a Tombstoner built without the ingestion cache.
 	ErrNoCache = fmt.Errorf("%w: no ingestion cache", ErrDriftRefused)
 
 	// ErrNoSuchAdvisory is a tombstone for a (source, source_id) the cache
@@ -121,7 +122,7 @@ const (
 	//
 	// It maps to the WITHDRAWN state, and the mapping is a fact about the
 	// schema and not a judgement: `advisory.state`'s CHECK admits exactly
-	// three values, A.2 is merged and frozen, and inventing a fourth here
+	// three values, the ingestion cache is merged and frozen, and inventing a fourth here
 	// would be a write the database refuses. The distinction survives on the
 	// returned TombstoneResult, which carries the Reason as given.
 	ReasonPoisoned Reason = "poisoned"
@@ -185,7 +186,7 @@ SELECT rowid, cve_id, published, modified, state, tombstoned_at,
 FROM advisory WHERE source = ? AND source_id = ?`
 
 // selectFindingsForAdvisorySQL is the "active findings referencing this
-// advisory" query A.16's validation names.
+// advisory" query drift handling's validation names.
 //
 // IT IS A LEFT JOIN, and that is the load-bearing detail. An inner join would
 // drop a finding whose advisory row had gone missing — which is precisely the
@@ -221,7 +222,7 @@ ORDER BY f.source, f.source_id, f.id`
 // that deletes from `advisory` or `finding`, so the guard cannot be defeated
 // by adding a member rather than by routing around the check.
 //
-// It is a package-level var and not a function on purpose, for A.14's reason:
+// It is a package-level var and not a function on purpose, for delta ingestion's reason:
 // internal/ingest/sanitize's writer guard walks FUNCTION bodies looking for
 // the names of the cache's advisory write shapes, and a function that named
 // them only to build this map would be flagged as an unsanitised writer. A var
@@ -236,7 +237,7 @@ var allowedStatements = map[string]string{
 		"this statement rather than an UPDATE of its own, so there is exactly one statement in this " +
 		"system that writes an advisory row.",
 	strings.TrimSpace(cache.DeleteAdvisoryFTSSQL): "one FTS row by rowid, for a tombstoned advisory. The " +
-		"`advisory` row itself is never deleted (A.2 exit criterion 22); its TEXT stops matching, which " +
+		"`advisory` row itself is never deleted (Lane A exit criterion 22); its TEXT stops matching, which " +
 		"is the same requirement seen from the index side.",
 	strings.TrimSpace(selectAdvisoryRowSQL):         "read-only: the row about to be re-bound, by primary key.",
 	strings.TrimSpace(selectFindingsForAdvisorySQL): "read-only: findings referencing one advisory, with its state.",
@@ -251,7 +252,7 @@ func checkStatement(q string) error {
 	}
 	return refuse(ErrStatementNotAllowed,
 		"this package may only execute statements on its allowlist and this one is not on it:\n\t%s\n"+
-			"If it removes an `advisory` row, it is the thing A.16's packet forbids outright: a withdrawn "+
+			"If it removes an `advisory` row, it is the thing drift handling's design forbids outright: a withdrawn "+
 			"or REJECTED advisory is TOMBSTONED so a prior finding referencing it can be re-opened and "+
 			"invalidated, and a removed row cannot be referenced at all.",
 		condense(q))
@@ -301,9 +302,9 @@ func queryTx(ctx context.Context, tx *sql.Tx, q string, args ...any) (*sql.Rows,
 // Tombstoner
 // ---------------------------------------------------------------------------
 
-// Tombstoner applies retractions to the A.2 ingestion cache.
+// Tombstoner applies retractions to the ingestion cache.
 //
-// A NOTE ON THE SHAPE, reported rather than silently applied. A.16's packet
+// A NOTE ON THE SHAPE, reported rather than silently applied. Drift handling's packet
 // specifies `func Tombstone(source, sourceID string, reason string) error`.
 // That signature has nowhere to put the database handle, the context or the
 // clock, so implementing it literally would mean a package-level database
@@ -317,14 +318,14 @@ type Tombstoner struct {
 	now func() time.Time
 }
 
-// NewTombstoner binds a Tombstoner to the A.2 cache.
+// NewTombstoner binds a Tombstoner to the ingestion cache.
 //
 // now may be nil, in which case time.Now is used. A test supplies its own so
 // that "the retraction timestamp did not move on the second call" is an
 // assertion about the code rather than about how fast the machine ran.
 func NewTombstoner(db *sql.DB, now func() time.Time) (*Tombstoner, error) {
 	if db == nil {
-		return nil, refuse(ErrNoCache, "a Tombstoner needs the A.2 ingestion cache")
+		return nil, refuse(ErrNoCache, "a Tombstoner needs the ingestion cache")
 	}
 	if now == nil {
 		now = time.Now
@@ -370,7 +371,7 @@ type TombstoneResult struct {
 	// visible as invalidated, which is what lets a prior finding be re-opened.
 	InvalidatedFindings int
 
-	// Sanitized reports what A.3 removed from the values read back out of the
+	// Sanitized reports what the sanitizer removed from the values read back out of the
 	// cache. It should be zero on every row this system wrote. A non-zero
 	// value means something reached the cache unsanitized, which is worth
 	// surfacing loudly — and worth surfacing WITHOUT blocking the retraction,
@@ -491,7 +492,7 @@ type advisoryRow struct {
 }
 
 // readRow reads one advisory back by primary key. It does not clean and does
-// not write; see writeTombstonedRow for where A.3 runs and why it runs there.
+// not write; see writeTombstonedRow for where the sanitizer runs and why it runs there.
 func (t *Tombstoner) readRow(ctx context.Context, tx *sql.Tx, source, sourceID string) (advisoryRow, error) {
 	var r advisoryRow
 	var tombstonedAt sql.NullString
@@ -519,8 +520,8 @@ func (t *Tombstoner) readRow(ctx context.Context, tx *sql.Tx, source, sourceID s
 
 // writeTombstonedRow re-binds the row with its state and tombstone replaced.
 //
-// A.3 RUNS IN THIS FUNCTION, in the same body as the bind, and not one call
-// further up. That is deliberate and it is the shape A.14 chose for the same
+// The sanitizer RUNS IN THIS FUNCTION, in the same body as the bind, and not one call
+// further up. That is deliberate and it is the shape delta ingestion chose for the same
 // reason: internal/ingest/sanitize's writer guard resolves the package-local
 // call graph by NAME and can therefore check "the function that binds is the
 // function that cleans". A sanitiser two frames away is a claim the guard
@@ -601,8 +602,8 @@ func nullFloat(v sql.NullFloat64) any {
 // advisory it rests on.
 //
 // FindingID IS NOT A FINGERPRINT. `finding.id` is a Lane-A-local identifier;
-// internal/ingest/cache/schema.go says so at the table, and plan/00-SPINE.md
-// S6 allows exactly one fingerprint algorithm, anvil-fp/v1, owned by
+// internal/ingest/cache/schema.go says so at the table, and the spine's
+// record section allows exactly one fingerprint algorithm, anvil-fp/v1, owned by
 // internal/record. This field must never be presented as, derived into, or
 // compared against one.
 type FindingStatus struct {
@@ -632,12 +633,12 @@ type FindingStatus struct {
 // FindingsReferencing returns every finding that rests on one advisory,
 // invalidated or not.
 //
-// This is the query A.16's validation names: after a tombstone, a finding that
+// This is the query drift handling's validation names: after a tombstone, a finding that
 // referenced the advisory comes back marked invalidated instead of
 // disappearing from the result set.
 func FindingsReferencing(ctx context.Context, db *sql.DB, source, sourceID string) ([]FindingStatus, error) {
 	if db == nil {
-		return nil, refuse(ErrNoCache, "FindingsReferencing needs the A.2 ingestion cache")
+		return nil, refuse(ErrNoCache, "FindingsReferencing needs the ingestion cache")
 	}
 	rows, err := queryDB(ctx, db, selectFindingsForAdvisorySQL, source, sourceID)
 	if err != nil {
@@ -651,7 +652,7 @@ func FindingsReferencing(ctx context.Context, db *sql.DB, source, sourceID strin
 // checking requires.
 func InvalidatedFindings(ctx context.Context, db *sql.DB) ([]FindingStatus, error) {
 	if db == nil {
-		return nil, refuse(ErrNoCache, "InvalidatedFindings needs the A.2 ingestion cache")
+		return nil, refuse(ErrNoCache, "InvalidatedFindings needs the ingestion cache")
 	}
 	rows, err := queryDB(ctx, db, selectInvalidatedFindingsSQL)
 	if err != nil {

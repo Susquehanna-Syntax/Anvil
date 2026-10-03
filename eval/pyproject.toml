@@ -23,25 +23,25 @@ classifiers = [
 
 # Core runtime dependencies. Kept deliberately small so that
 # `pip install -e eval/` resolves quickly in a fresh virtualenv with no
-# network access beyond the package index (M0.2 stop condition).
-# Anything heavy, platform-specific, or only needed by one later M0 step
+# network access beyond the package index (the evaluation-harness scaffold stop condition).
+# Anything heavy, platform-specific, or only needed by one later evaluation step
 # lives in an optional-dependency group below.
 dependencies = [
-  "jsonschema>=4.23",  # M0.1/M0.17 register validation against eval/schema/register.schema.json
+  "jsonschema>=4.23",  # register validation against eval/schema/register.schema.json
   "pyyaml>=6.0.2",     # eval/register.yaml read/write
-  "numpy>=2.1",        # bootstrap confidence intervals (EXP-01, EXP-02)
-  "requests>=2.32",    # pinned-artifact fetches, S12-RTT HTTP client
+  "numpy>=2.1",        # bootstrap confidence intervals (the advisory-permutation ablation, the code-metrics baseline)
+  "requests>=2.32",    # pinned-artifact fetches, the encoder round-trip measurement HTTP client
 ]
 
 [project.optional-dependencies]
-# EXP-02 code-metrics logistic-regression baseline.
+# The code-metrics logistic-regression baseline.
 stats = [
   "scikit-learn>=1.5",
   "scipy>=1.14",
 ]
-# M0.6 model acquisition and the S12-RTT ONNX encoder worker.
+# Model acquisition and the encoder round-trip measurement's ONNX worker.
 # Not installed by default: these wheels are large and platform-specific,
-# and M0.2 is forbidden from vendoring any model weight.
+# and the evaluation-harness scaffold is forbidden from vendoring any model weight.
 models = [
   "huggingface-hub>=0.26",
   "onnxruntime>=1.20",
@@ -67,7 +67,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
   "network: test reaches the public internet; skipped in offline runs",
-  "docker: test shells out to Docker (ARVO reproducers, EXP-04)",
+  "docker: test shells out to Docker (ARVO reproducers, the patch-quality experiment)",
   "model: test loads model weights from eval/models/",
   "slow: test takes more than a few seconds",
 ]

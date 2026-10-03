@@ -8,11 +8,11 @@ import (
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // newDB applies ConnectionPragmas and then schema.sql to a fresh in-memory
-// database, exactly as R.5's migration will, and returns it.
+// database, exactly as the migration runner's migration will, and returns it.
 //
 // MaxOpenConns is pinned to 1 because each new connection to ":memory:" is a
 // different, empty database.
@@ -28,7 +28,7 @@ func newDB(t *testing.T) *sql.DB {
 
 	for _, p := range ConnectionPragmas() {
 		// journal_mode is a no-op on an in-memory database (it reports
-		// "memory"), which is why the WAL guarantees themselves are R.5's to
+		// "memory"), which is why the WAL guarantees themselves are the migration runner's to
 		// verify on a real file. The rest apply normally.
 		if _, err := db.Exec(p); err != nil {
 			t.Fatalf("pragma %q: %v", p, err)
@@ -47,7 +47,7 @@ const (
 )
 
 // seedAll inserts exactly one FK-valid row into every table schema.sql
-// creates, then selects each row back. This is R.4's mandated smoke test.
+// creates, then selects each row back. This is the store schema's mandated smoke test.
 func seedAll(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -93,7 +93,7 @@ func seedAll(t *testing.T, db *sql.DB) {
 			// column read go back to `advisory`, which has no `aliases`
 			// column. See the KNOWN DEFECT note above this table in
 			// schema.sql. Writes and rowid-only MATCH queries are the part
-			// that works, and the part R.4 pins here.
+			// that works, and the part the store schema pins here.
 			verify: `SELECT rowid FROM advisory_fts WHERE advisory_fts MATCH 'sqli'`,
 		},
 		{
@@ -245,7 +245,7 @@ func enumStrings[T ~string](vals []T) []string {
 }
 
 // enumChecks maps every CHECK constraint in schema.sql that names a vocabulary
-// to the internal/record function that owns it. plan/IMPLEMENTATION-PLAN.md §6
+// to the internal/record function that owns it. The shared-vocabulary review
 // makes internal/record the single declaration site; SQL cannot reference a Go
 // constant, so this table is the seam, and this test is what keeps the seam
 // honest.
@@ -310,9 +310,9 @@ func TestEnumCheckConstraintsEnforceContractValues(t *testing.T) {
 	}
 }
 
-// TestHandoffCarriesAllThirteenDispositions is the G10 regression guard. Area
-// X's `anvil_ledger` was deleted and its four extra dispositions folded into
-// handoff.state; if that set ever shrinks, X.9 writes a disposition this
+// TestHandoffCarriesAllThirteenDispositions is the one-ledger ruling's regression guard.
+// Remediation's `anvil_ledger` was deleted and its four extra dispositions folded into
+// handoff.state; if that set ever shrinks, the queue cut writes a disposition this
 // column cannot hold and the ready-set index re-leases the finding forever.
 func TestHandoffCarriesAllThirteenDispositions(t *testing.T) {
 	got, err := EnumCheckValues("ck_handoff_state")
@@ -320,7 +320,7 @@ func TestHandoffCarriesAllThirteenDispositions(t *testing.T) {
 		t.Fatalf("ck_handoff_state: %v", err)
 	}
 	if len(got) != 13 {
-		t.Fatalf("ck_handoff_state admits %d states %v, want the 13 of IMPLEMENTATION-PLAN.md §6", len(got), got)
+		t.Fatalf("ck_handoff_state admits %d states %v, want the 13 of the shared-vocabulary review", len(got), got)
 	}
 	for _, needed := range []record.HandoffState{
 		record.HandoffStateSkippedBudget,
@@ -335,12 +335,13 @@ func TestHandoffCarriesAllThirteenDispositions(t *testing.T) {
 	}
 }
 
-// TestNoSecondDispositionTable guards the S1 spine rule directly: one durable
-// table carrying finding dispositions, not two.
+// TestNoSecondDispositionTable guards the spine's corrected-requirements table
+// spine rule directly: one durable table carrying finding dispositions, not
+// two.
 func TestNoSecondDispositionTable(t *testing.T) {
 	for _, table := range Tables() {
 		if strings.Contains(table, "ledger") {
-			t.Errorf("schema.sql creates %q; §6 G10 collapses every finding disposition into handoff.state", table)
+			t.Errorf("schema.sql creates %q; the one-ledger ruling collapses every finding disposition into handoff.state", table)
 		}
 	}
 	// No other column may admit a handoff disposition. `audit_record.state` is
@@ -367,7 +368,7 @@ func TestConsumptionClassHasNoDefault(t *testing.T) {
 		t.Error("handoff.consumption_class must be NOT NULL: the static-only vs requires-dynamic-confirmation gate has no other home in the schema")
 	}
 	if dflt.Valid {
-		t.Errorf("handoff.consumption_class has DEFAULT %q; a default silently grants every row the permissive value, which 00-SPINE.md S7 forbids", dflt.String)
+		t.Errorf("handoff.consumption_class has DEFAULT %q; a default silently grants every row the permissive value, which the spine's safety section forbids", dflt.String)
 	}
 }
 
@@ -398,9 +399,10 @@ func TestColumnDefaultsMatchContract(t *testing.T) {
 }
 
 // TestFingerprintColumnsEnforceContractDigestLength ties the SQL length check
-// to record.FingerprintDigestHexLen. CRITIQUE-01 §9 records that the digest is
-// 64 lowercase hex characters and is never truncated; a truncating writer must
-// fail at the column, not silently halve the collision resistance.
+// to record.FingerprintDigestHexLen. The contract-and-fingerprint review §9
+// records that the digest is 64 lowercase hex characters and is never
+// truncated; a truncating writer must fail at the column, not silently halve
+// the collision resistance.
 func TestFingerprintColumnsEnforceContractDigestLength(t *testing.T) {
 	db := newDB(t)
 	seedAll(t, db)
@@ -428,7 +430,7 @@ func TestFingerprintColumnsEnforceContractDigestLength(t *testing.T) {
 	}
 }
 
-// TestHostFindingsAreNeverAgentRemediable is 00-SPINE.md S7 in the schema: the
+// TestHostFindingsAreNeverAgentRemediable is the spine's safety section in the schema: the
 // host agent is read-only, "no package manager in a mutating mode, not behind
 // a flag."
 func TestHostFindingsAreNeverAgentRemediable(t *testing.T) {
@@ -493,7 +495,7 @@ func TestLeasedRowMustNameItsHolder(t *testing.T) {
 	}
 }
 
-// TestSchemaCarriesNoPragma: R.5 applies this DDL inside BEGIN...COMMIT, and
+// TestSchemaCarriesNoPragma: the migration runner applies this DDL inside BEGIN...COMMIT, and
 // `PRAGMA journal_mode = WAL` cannot run inside a transaction. The pragmas
 // live in ConnectionPragmas instead, because they are per connection anyway.
 func TestSchemaCarriesNoPragma(t *testing.T) {
@@ -512,7 +514,7 @@ func TestSchemaCarriesNoPragma(t *testing.T) {
 	}
 }
 
-// TestEveryResearch07TableSurvives: R.4 may not drop a research/07 table
+// TestEveryResearch07TableSurvives: the store schema may not drop a research/07 table
 // without logging the reason, and this schema drops none.
 func TestEveryResearch07TableSurvives(t *testing.T) {
 	carriedForward := []string{
@@ -529,7 +531,7 @@ func TestEveryResearch07TableSurvives(t *testing.T) {
 		}
 	}
 	if !contains(created, "handoff") {
-		t.Error("the handoff table is missing; S1 collapses the buffer into it")
+		t.Error("the handoff table is missing; the spine's corrected-requirements table collapses the buffer into it")
 	}
 }
 

@@ -1,4 +1,4 @@
-// The three-tier read path the coding agent consumes (step R.13).
+// The three-tier read path the coding agent consumes (the read path).
 //
 // # The three tiers, and why they are tiers
 //
@@ -25,7 +25,7 @@
 // budget: over-budget output degrades deterministically by spilling the
 // largest optional structures to Tier-2 blobs, in a fixed order, and only an
 // EXPLICIT, LOGGED override (Reader.AllowOversizeTier0 /
-// .AllowOversizeTier1) may produce an oversized tier. R.13's forbidden
+// .AllowOversizeTier1) may produce an oversized tier. The read path's forbidden
 // actions: "Do not exceed the 8KB Tier-0 manifest budget or the
 // ~1,500–2,500 token Tier-1 card budget without an explicit, logged override."
 //
@@ -54,8 +54,8 @@
 // # Two gates this file will not open
 //
 //  1. THE READ GATE. A half's results are readable only when its
-//     `anvil/status` is HalfStatusSealed (R.6, and IMPLEMENTATION-PLAN.md §6
-//     ruling G5: "`sealed` is load-bearing … the hard read gate") AND the
+//     `anvil/status` is HalfStatusSealed (the sealer, and the shared-vocabulary review's
+//     half-status ruling: "`sealed` is load-bearing … the hard read gate") AND the
 //     audit has not expired. BOTH ARMS, ASKED IN ONE PLACE: this file calls
 //     sealing.go's HalfReadGate and never re-derives readability from
 //     `run.Properties.Status`. See sealing.go's read-gate section for the four
@@ -67,26 +67,26 @@
 //     reads "no DAST findings" as "no dynamic vulnerabilities", which is
 //     research/23 Risk #1.
 //
-//  2. THE HOST GATE. plan/00-SPINE.md S7 makes the host agent read-only, "no
+//  2. THE HOST GATE. The spine's safety section makes the host agent read-only, "no
 //     package manager in a mutating mode, not behind a flag", so
 //     `remediable_by_agent` is false for every host finding
-//     (IMPLEMENTATION-PLAN.md §6, S7). contract.go's validator enforces that
-//     on the RECORD. This file enforces it again on the READ PATH, because
-//     the record's validator is the producer's gate and a card is what the
-//     agent actually receives: a host finding is never handed out as
-//     actionable, even if a malformed record claims it is.
+//     (the shared-vocabulary review, the spine's safety section). contract.go's
+//     validator enforces that on the RECORD. This file enforces it again on the
+//     READ PATH, because the record's validator is the producer's gate and a
+//     card is what the agent actually receives: a host finding is never handed
+//     out as actionable, even if a malformed record claims it is.
 //
 // # Masking is a precondition
 //
-// BuildTaskCards refuses a record that has not been through R.8's masker.
-// plan/00-SPINE.md S7 names the DAST response body "the highest-risk field —
+// BuildTaskCards refuses a record that has not been through secrets masking's masker.
+// The spine's safety section names the DAST response body "the highest-risk field —
 // up to 32 KB of attacker-controlled bytes fed to a repo-credentialed agent",
 // and the read path is precisely the step that does the feeding.
 //
 // Sources: research/18-unified-audit-record.md ("Size — the three-tier read
 // path", the annotated Tier-1 task card); research/24-coding-agent-consumption
-// .md ("What the audit record must carry"); plan/40-record-and-storage.md
-// (R.13); plan/00-SPINE.md S1, S6, S7.
+// .md ("What the audit record must carry"); plan/design/record-and-store.md
+// (the read path); the spine's corrected-requirements, record and safety sections.
 package record
 
 import (
@@ -109,7 +109,7 @@ import (
 //
 // It is DELIBERATELY PESSIMISTIC. research/18 records the budget as an
 // estimate rather than a measurement ("Token budget for task cards is an
-// estimate, not a measurement"), and R.13's expected output schema asks for
+// estimate, not a measurement"), and the read path's expected output schema asks for
 // "a token-count approximation, not a hard requirement on an exact
 // tokenizer". Real BPE tokenizers land between 3 and 4 bytes per token on
 // dense JSON carrying source code; choosing 3 means this package's count is an
@@ -158,10 +158,11 @@ func ApproxTokens(byteLen int) int {
 
 // RecordSource supplies the assembled, masked record for an audit id.
 //
-// R.13 depends only on R.1 and R.2, so this file holds no database handle and
-// no store import: the store (R.4/R.5) satisfies this interface from the
-// outside, and so does a test. The dependency runs from the store to the read
-// path, never back.
+// The read path depends only on the record contract and the fingerprint, so
+// this file holds no database handle and no store import: the store (the store
+// schema and the migration runner) satisfies this interface from the outside,
+// and so does a test. The dependency runs from the store to the read path,
+// never back.
 type RecordSource interface {
 	Record(auditID string) (*SARIFLog, error)
 }
@@ -210,7 +211,7 @@ type BudgetError struct {
 func (e *BudgetError) Error() string {
 	return fmt.Sprintf(
 		"record: %s for %q is %d bytes (~%d tokens) after every shrink step, over the %d-byte (%d-token) budget; "+
-			"set Reader.AllowOversize with a reason to emit it anyway (R.13 requires the override to be explicit and logged)",
+			"set Reader.AllowOversize with a reason to emit it anyway (the read path requires the override to be explicit and logged)",
 		e.Tier, e.Subject, e.Bytes, e.Tokens, e.Budget, e.MaxTok)
 }
 
@@ -279,10 +280,10 @@ type Manifest struct {
 	Blobs map[string][]byte `json:"-"`
 }
 
-// ManifestTarget is the trimmed `anvil/target`. Both G4+G7 fields survive:
-// provenance (what happened when we tried to run the target) and provisioning
-// (which path produced one) are different measurements and the agent needs
-// both to know what it is looking at.
+// ManifestTarget is the trimmed `anvil/target`. Both target fields (provenance
+// and provisioning) survive: provenance (what happened when we tried to run the
+// target) and provisioning (which path produced one) are different measurements
+// and the agent needs both to know what it is looking at.
 type ManifestTarget struct {
 	RepoURL        string             `json:"repoUrl"`
 	Ref            string             `json:"ref"`
@@ -353,7 +354,7 @@ type CardRef struct {
 
 	// Bucket is which of DefaultReadOrder()'s three buckets this finding came
 	// from. It is not decoration: it is how a consumer verifies the order it
-	// was handed is the order R.13 promises.
+	// was handed is the order the read path promises.
 	Bucket string `json:"bucket"`
 
 	Half          Half          `json:"half"`
@@ -407,14 +408,14 @@ type Reader struct {
 	// it, and only a caller that has deliberately set it to nil gets the old
 	// behaviour of a spill with nowhere to land.
 	//
-	// WHY THE DEFAULT IS NOT NIL (CRITIQUE-03 M3, consequence 2). The spilled
-	// bytes are returned in Manifest.Blobs / TaskCard.Blobs, both of which are
-	// `json:"-"`. A caller that marshals the manifest and drops the struct —
-	// the obvious thing to do with a projection — therefore shipped a Tier-0
-	// manifest whose most load-bearing content, the materialised read order,
-	// was a dangling `sha256:` reference. The hazard was documented; the
-	// default walked straight into it. It now takes an explicit `rd.Blobs =
-	// nil` to reach.
+	// WHY THE DEFAULT IS NOT NIL (the queue and read-path review's finding M3,
+	// consequence 2). The spilled bytes are returned in Manifest.Blobs /
+	// TaskCard.Blobs, both of which are `json:"-"`. A caller that marshals the
+	// manifest and drops the struct — the obvious thing to do with a projection
+	// — therefore shipped a Tier-0 manifest whose most load-bearing content,
+	// the materialised read order, was a dangling `sha256:` reference. The
+	// hazard was documented; the default walked straight into it. It now takes
+	// an explicit `rd.Blobs = nil` to reach.
 	Blobs BlobSink
 
 	// retained backs the default sink. It is per-Reader and unbounded, which
@@ -429,7 +430,7 @@ type Reader struct {
 	retained *blobRetainer
 
 	// AllowOversizeTier0 and AllowOversizeTier1 are the explicit, logged
-	// overrides R.13 requires before an over-budget tier may be emitted. The
+	// overrides the read path requires before an over-budget tier may be emitted. The
 	// string IS the log: it is the reason, it is recorded in the emitted
 	// tier's BudgetOverride, and an empty string means "not authorised", which
 	// is the default.
@@ -548,7 +549,7 @@ func (rd *Reader) load(auditID string) (*SARIFLog, error) {
 	if rd.RequireMasked {
 		if err := AssertMasked(l); err != nil {
 			return nil, fmt.Errorf("record: refusing to build the read path for audit %q: %w "+
-				"(00-SPINE.md S7: the read path feeds a repo-credentialed agent; masking is R.8's step and runs before this one)",
+				"(the spine's safety section: the read path feeds a repo-credentialed agent; masking is secrets masking's step and runs before this one)",
 				auditID, err)
 		}
 	}
@@ -557,7 +558,7 @@ func (rd *Reader) load(auditID string) (*SARIFLog, error) {
 
 // BuildManifest builds the Tier-0 manifest for auditID.
 //
-// R.13's expected output schema names `BuildManifest(auditID string)
+// The read path's expected output schema names `BuildManifest(auditID string)
 // (Manifest, error)`. It is a method rather than a package-level function
 // because the record has to come from somewhere and the alternative — a
 // package-level default source — is exactly the kind of hidden global state
@@ -635,21 +636,22 @@ func resultRank(r *Result) float64 {
 // Both are checked because they are set by different producers and a record in
 // which only one says "host" is a record whose host-ness is still true. The
 // read path's job is to never hand such a finding to an agent that cannot fix
-// it (plan/00-SPINE.md S7: the host agent is read-only).
+// it (the spine's safety section: the host agent is read-only).
 func IsHostFinding(r *Result) bool {
 	return r.Properties.Detector.Kind == DetectorKindHost ||
 		r.Properties.EvidenceClass == EvidenceClassHost
 }
 
-// readOrder returns every READABLE result in the one order R.13 permits:
+// readOrder returns every READABLE result in the one order the read path permits:
 // correlated clusters first, then SAST-only by rank, then DAST-only by rank.
 //
 // Results from a half the read gate refuses are omitted entirely. THE GATE IS
 // sealing.go's HalfReadGate AND NOTHING ELSE. This function used to ask
 // IsReadableHalfStatus(run.Properties.Status) directly, which is only the
-// status arm; CRITIQUE-03 M1 reproduced the consequence — an EXPIRED audit
-// yielded nine cards, six of them actionable, against a claim window that had
-// already closed and handoff rows already subject to ReclaimExpired.
+// status arm; the queue and read-path review's finding M1 reproduced the
+// consequence — an EXPIRED audit yielded nine cards, six of them actionable,
+// against a claim window that had already closed and handoff rows already
+// subject to ReclaimExpired.
 func (rd *Reader) readOrder(l *SARIFLog) []orderedResult {
 	var clustered, sastOnly, dastOnly []orderedResult
 
@@ -911,7 +913,7 @@ func (rd *Reader) ManifestFromLog(l *SARIFLog) (Manifest, error) {
 //	byCwe     — a convenience index; every card names its own taxa.
 //	byCluster — the cluster membership; the cards still carry cluster ids.
 //	cards     — the materialised read order. Dropped LAST, because without it
-//	            the agent has to reconstruct the order, and R.13 forbids any
+//	            the agent has to reconstruct the order, and the read path forbids any
 //	            order but this one.
 //
 // Nothing is deleted: each step writes the structure to a Tier-2 blob and
@@ -929,7 +931,7 @@ func (rd *Reader) ManifestFromLog(l *SARIFLog) (Manifest, error) {
 // order, and spills only the tail — with the spilled count in TierSpill.Items,
 // which the type has carried since it was written.
 //
-// CRITIQUE-03 M3 measured what the all-or-nothing version cost: at the
+// The queue and read-path review's finding M3 measured what the all-or-nothing version cost: at the
 // crossover — around fifty findings — the manifest went from just over 8,192
 // bytes to about 1,776 in one step, and roughly 78% of the Tier-0 budget then
 // sat unused while the agent had to fetch Tier 2 before it could start on the
@@ -1019,7 +1021,7 @@ func (rd *Reader) fitManifest(m *Manifest) error {
 // of the read order that fits the remaining Tier-0 budget and spills the rest
 // to one Tier-2 blob, returning the manifest's size afterwards.
 //
-// A PREFIX, not a sample: the read order is the order R.13 requires the agent
+// A PREFIX, not a sample: the read order is the order the read path requires the agent
 // to work in, so the refs worth keeping inline are the ones it needs FIRST.
 // The spilled blob holds the tail alone, so `m.Cards` followed by the blob's
 // contents is the whole order, once, in order — a consumer never has to
@@ -1141,7 +1143,7 @@ func measureManifest(m *Manifest) (int, error) {
 // ---------------------------------------------------------------------------
 
 // BlobRef returns the `sha256:<64 lowercase hex>` reference for content. It is
-// the same spelling R.8's masker writes, deliberately: one content-addressing
+// the same spelling secrets masking's masker writes, deliberately: one content-addressing
 // scheme, or a consumer has to guess which one it is looking at.
 func BlobRef(content []byte) string {
 	sum := sha256.Sum256(content)
@@ -1157,7 +1159,7 @@ func (rd *Reader) spill(dst *[]TierSpill, blobs map[string][]byte, field string,
 }
 
 // spillBytes is spill for content that is already bytes. A body spills as the
-// bytes themselves, not as a JSON string containing them: R.8's masker
+// bytes themselves, not as a JSON string containing them: secrets masking's masker
 // content-addresses the raw masked body, and two spellings of the same blob
 // would content-address to two different digests.
 func (rd *Reader) spillBytes(dst *[]TierSpill, blobs map[string][]byte, field string, raw []byte, items int) error {

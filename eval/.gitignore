@@ -1,4 +1,4 @@
-# eval/.gitignore — Anvil evaluation harness (M0.2)
+# eval/.gitignore — Anvil evaluation harness (the evaluation-harness scaffold)
 #
 # The repository-root .gitignore already covers the generic Python noise
 # (__pycache__/, *.egg-info/, .venv/) and blanket-ignores `models/`,
@@ -9,9 +9,9 @@
 # Deeper .gitignore files take precedence over shallower ones, so the
 # re-inclusions below override the root file's `models/` rule for eval/models.
 
-# --- Dataset payloads (M0.3 PrimeVul, M0.4 ARVO, M0.5 CWE-Bench-Java) -------
+# --- Dataset payloads (PrimeVul, ARVO, CWE-Bench-Java) -------
 # Corpora are acquired locally and never committed or re-hosted:
-# PrimeVul is Google-Drive-gated (M0.3 forbidden actions) and ARVO /
+# PrimeVul is Google-Drive-gated (the PrimeVul acquisition forbidden actions) and ARVO /
 # CWE-Bench-Java are pulled from their upstream repos at a pinned SHA.
 data/**
 # ...but keep the directory skeleton, the MANIFEST files that record the
@@ -22,9 +22,9 @@ data/**
 !data/**/*.md
 !data/**/.gitkeep
 
-# --- Model artifacts (M0.6) -------------------------------------------------
+# --- Model artifacts (the candidate-model acquisition) -------------------------------------------------
 # Weights are never committed. Only the pinned-download manifest, the exact HF
-# revision SHA, the archived LICENSE text (S8 compliance mechanics) and the
+# revision SHA, the archived LICENSE text (the spine's licence-compliance mechanics) and the
 # checksums are tracked.
 !models/
 models/**
@@ -46,10 +46,10 @@ models/**/*.bin
 models/**/*.pt
 models/**/*.pth
 
-# --- Tool binaries (M0.7 opengrep engine + pinned ruleset) ------------------
+# --- Tool binaries (opengrep engine + pinned ruleset) ------------------
 # The repository-root .gitignore blanket-ignores `tools/` (unanchored, so it
 # matches eval/tools/ too). That rule is meant for the root-level planning
-# tooling; eval/tools/ is M0.7's write scope and its pin records must be
+# tooling; eval/tools/ is the opengrep acquisition's write scope and its pin records must be
 # tracked, so re-include the directory here and exclude only the payloads.
 !tools/
 tools/**/bin/

@@ -27,8 +27,7 @@ WHAT IS ENFORCED IN CODE, AND WHAT IS NOT
 THIS SECTION IS ON ITS FIFTH REVISION AND THE FIRST FOUR WERE ALL FALSE. The
 history is kept because it is the reason for the rule this revision follows.
 
-  v1 presented the whole list as "enforced by internal/ingest/license (step
-     A.4) and not merely written here". FALSE for the rule that matters most,
+  v1 presented the whole list as "enforced by internal/ingest/license (the licence gate) and not merely written here". FALSE for the rule that matters most,
      the one about not publishing a merged corpus: no code in this repository
      can observe a publication.
   v2 claimed the gate refuses a tier 0/1 route for ANY source whose licence
@@ -146,7 +145,7 @@ ENFORCED IN CODE by internal/ingest/license:
      license.Resolve as well as license.Gate, and a refused Decision projects
      onto NO license_dir_manifest row. A caller who ignores the error cannot
      read tier 0 — the most permissive tier there is — out of a refusal, and
-     cannot write one into the A.2 cache's record of what may be merged.
+     cannot write one into the ingestion cache's record of what may be merged.
      Tests: TestResolveRefusalNeverCarriesAPublishableTier,
      TestARefusalHasNoManifestRow.
 
@@ -208,7 +207,7 @@ NOT ENFORCED IN CODE. THE OPERATOR CARRIES THESE:
      keep findings derived from it attributable to this tier. NO CODE IN THIS
      REPOSITORY CAN OBSERVE A PUBLICATION. The directory quarantine above is
      defence in depth against the mistake; it is not a guarantee against it,
-     and no future version of A.4 can make it one.
+     and no future version of the licence gate can make it one.
  10. Attribution to the Alpine Linux project accompanies any redistribution
      of this data, alongside a link to the licence and an indication of
      changes made. Also unobservable from inside Anvil: no component here

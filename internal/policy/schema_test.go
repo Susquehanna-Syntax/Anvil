@@ -1,6 +1,6 @@
 package policy
 
-// Schema conformance tests for schemas/policy.schema.json (step O.5).
+// Schema conformance tests for schemas/policy.schema.json (the policy schema).
 //
 // Anvil's module graph carries exactly one dependency (modernc.org/sqlite) and
 // adding a YAML library or a JSON Schema library for a test is not on the
@@ -19,7 +19,7 @@ package policy
 //     instead of quietly validating nothing.
 //
 // Neither is a general-purpose implementation and neither is exported. The
-// production loader (O.6) will parse with whatever the daemon links; these
+// production loader (the policy engine) will parse with whatever the daemon links; these
 // exist so the schema's claims are checked here, now, against the fixture the
 // owner's requirement is written in.
 
@@ -406,10 +406,10 @@ func TestPolicySchemaUsesOnlySupportedKeywords(t *testing.T) {
 	}
 }
 
-// TestPolicySchemaDoesNotForkFrozenEnums: `detectors` names area 40's
-// DetectorKind vocabulary, and `failOn` names area 40's severity vocabulary.
-// Neither may be re-enumerated here -- plan/IMPLEMENTATION-PLAN.md section 6
-// ruled that area 40 owns every shared enum and no other area may declare one.
+// TestPolicySchemaDoesNotForkFrozenEnums: `detectors` names the record area's
+// DetectorKind vocabulary, and `failOn` names the record area's severity vocabulary.
+// Neither may be re-enumerated here -- the first plan's shared-vocabulary review
+// ruled that the record area owns every shared enum and no other area may declare one.
 // A copy would validate today and drift tomorrow.
 func TestPolicySchemaDoesNotForkFrozenEnums(t *testing.T) {
 	schema := o5loadSchema(t)
@@ -423,7 +423,7 @@ func TestPolicySchemaDoesNotForkFrozenEnums(t *testing.T) {
 		t.Fatalf("$defs/detectorList is %T", defs["detectorList"])
 	}
 	if _, forked := detectorList["enum"]; forked {
-		t.Error("$defs/detectorList enumerates detector kinds -- that is area 40's DetectorKind, " +
+		t.Error("$defs/detectorList enumerates detector kinds -- that is the record area's DetectorKind, " +
 			"and copying it here creates the second definition section 6 closed ten of")
 	}
 	if _, ok := detectorList["x-anvil-enumSource"].(string); !ok {
@@ -450,7 +450,7 @@ func TestPolicySchemaDoesNotForkFrozenEnums(t *testing.T) {
 // two places: schemas/policy.schema.json#/$defs/glob's `maxLength` and
 // internal/policy.MaxGlobPatternBytes.
 //
-// The bound is not decoration. CRITIQUE O.4 finding O4-M4 established that this
+// The bound is not decoration. The controller-core review's finding M4 established that this
 // file is read from the repository under scan, so a pattern in it is untrusted
 // input reaching a matcher, and that the matcher was super-polynomial. The
 // matcher is now linear in len(pattern) x len(name); the cap is what bounds the
@@ -470,7 +470,7 @@ func TestPolicySchemaGlobBoundMatchesTheEngineCap(t *testing.T) {
 	max, ok := o5number(glob["maxLength"])
 	if !ok {
 		t.Fatal("$defs/glob must carry maxLength: an unbounded pattern from the scanned " +
-			"repository is O4-M4, and the schema must say so as well as the engine")
+			"repository is controller-core finding M4, and the schema must say so as well as the engine")
 	}
 	if int(max) != MaxGlobPatternBytes {
 		t.Errorf("$defs/glob maxLength = %d but policy.MaxGlobPatternBytes = %d; the two bounds have drifted",
@@ -495,11 +495,12 @@ func TestPolicySchemaGlobBoundMatchesTheEngineCap(t *testing.T) {
 // pins the per-pattern one.
 //
 // The per-pattern cap bounded the price of one match. It left the QUANTITY
-// unbounded, and the re-verification of O.4 counted the consequence: this schema
-// contained zero maxItems, so nothing bounded the number of rules or the number
-// of patterns in a rule, and the denial of service closed by recursion was open
-// again by multiplication. A schema that promised a looser bound than the engine
-// enforces would send an author a policy that validates and then refuses to run.
+// unbounded, and the re-verification of the controller-core review counted the
+// consequence: this schema contained zero maxItems, so nothing bounded the
+// number of rules or the number of patterns in a rule, and the denial of
+// service closed by recursion was open again by multiplication. A schema that
+// promised a looser bound than the engine enforces would send an author a
+// policy that validates and then refuses to run.
 func TestPolicySchemaAggregateBoundsMatchTheEngineCaps(t *testing.T) {
 	schema := o5loadSchema(t)
 	defs, ok := schema["$defs"].(map[string]any)

@@ -1,4 +1,4 @@
-"""End-to-end smoke run for M0.7's recall-tier acquisition.
+"""End-to-end smoke run for the recall-tier acquisition.
 
     python eval/tools/opengrep/smoke.py
 
@@ -11,7 +11,7 @@ AikidoSec ruleset, prints the candidate list, and exits:
     3  the scan itself failed (bad exit code, unparseable output)
 
 Exit 2 is deliberately distinct. An absent binary must never be reportable as
-"zero candidates found"; INSTR-01 (plan/10-milestone0-evaluation.md M0.11) reads
+"zero candidates found"; the candidates-per-scan instrument reads
 candidate counts as a measurement, and a silent zero would poison it.
 """
 
@@ -39,7 +39,7 @@ from anvil_opengrep.manifest import load_manifest  # noqa: E402
 
 def main() -> int:
     manifest = load_manifest()
-    print("=== Anvil M0.7 opengrep smoke run ===")
+    print("=== Anvil opengrep smoke run ===")
     print(f"engine  : {manifest.engine_repo} {manifest.engine_version} [{manifest.engine_license}]")
     print(
         f"ruleset : {manifest.ruleset_name} @ {manifest.ruleset_commit_sha} "
@@ -71,7 +71,7 @@ def main() -> int:
 
         print(f"\nexit    : {result.exit_code}")
         print(f"duration: {result.duration_seconds:.2f}s")
-        print(f"candidates (INSTR-01 quantity): {result.candidate_count}")
+        print(f"candidates (the candidates-per-scan instrument quantity): {result.candidate_count}")
         for finding in result.findings:
             print(f"  - {finding.rule_id}  {finding.path}:{finding.line}  [{finding.severity}]")
 

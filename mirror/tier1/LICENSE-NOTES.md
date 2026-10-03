@@ -18,7 +18,7 @@ kind to `mirror/tier0/LICENSE-NOTES.md`, and its longer explanation applies
 here unchanged. Every block below was written by Anvil in the same commit as
 the feed row it describes, so no block below can admit a feed.
 
-`plan/00-SPINE.md` S8's "LICENSE file bodies, never API metadata" means the
+The spine's "LICENSE file bodies, never API metadata" means the
 PUBLISHER'S body. `internal/ingest/license` reads the pin in
 `mirror/LICENSE-MANIFEST.toml`, the acquired publisher text at
 `mirror/tier1/<feed>/LICENSE.full.txt`, and this record — and refuses the feed

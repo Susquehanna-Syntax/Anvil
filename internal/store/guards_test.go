@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // ---------------------------------------------------------------------------
 // Guard 1 — CheckNetworkMount
 // ---------------------------------------------------------------------------
 
-// TestCheckNetworkMountRefusesInjectedNetworkFilesystems is the R.5 packet's
+// TestCheckNetworkMountRefusesInjectedNetworkFilesystems is the migration runner's
 // "CheckNetworkMount fails against an injected fake network filesystem type"
 // evidence item. The probe is the seam; no NFS server is involved.
 func TestCheckNetworkMountRefusesInjectedNetworkFilesystems(t *testing.T) {
@@ -162,7 +162,7 @@ func TestLongestMountPointWins(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestCheckFTS5PassesAgainstTheRealDriver is the positive control. It is also
-// the check the R.5 packet actually cares about at run time: if a future
+// the check the migration runner actually cares about at run time: if a future
 // modernc.org/sqlite bump drops FTS5, this test goes red in CI on the same
 // commit that bumps the dependency.
 func TestCheckFTS5PassesAgainstTheRealDriver(t *testing.T) {

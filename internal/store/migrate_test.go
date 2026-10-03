@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // openMemory returns an empty in-memory database with ConnectionPragmas
@@ -180,10 +180,10 @@ func TestIncludeExpansion(t *testing.T) {
 // Applying migrations
 // ---------------------------------------------------------------------------
 
-// TestMigrateBuildsExactlyR4Schema is the packet's schema-equivalence evidence
+// TestMigrateBuildsExactlyTheStoreSchema is the packet's schema-equivalence evidence
 // item: a database built by the migration runner and a database built by
 // applying schema.sql directly must be indistinguishable, object for object.
-func TestMigrateBuildsExactlyR4Schema(t *testing.T) {
+func TestMigrateBuildsExactlyTheStoreSchema(t *testing.T) {
 	migrated := openMemory(t)
 	applied, err := Migrate(context.Background(), migrated, "")
 	if err != nil {

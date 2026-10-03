@@ -2,7 +2,7 @@ package decode
 
 import "testing"
 
-// TestSplitNEVRADropsTheArchAndNothingElse is the direct test of the fix A.21's
+// TestSplitNEVRADropsTheArchAndNothingElse is the direct test of the fix the Lane A exit gate's
 // end-to-end harness forced.
 //
 // WHY IT MATTERS. `affected.fixed` is an EXCLUSIVE upper bound. A Red Hat VEX

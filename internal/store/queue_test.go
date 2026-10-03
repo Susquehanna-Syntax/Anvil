@@ -10,7 +10,7 @@ import (
 
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // ---------------------------------------------------------------------------
@@ -226,10 +226,10 @@ func mustRecut(t *testing.T, r *Recutter, remaining int) Cut {
 }
 
 // ---------------------------------------------------------------------------
-// THE test: the inversion S6 describes, reproduced and then prevented.
+// THE test: the inversion the spine's record section describes, reproduced and then prevented.
 // ---------------------------------------------------------------------------
 
-// arrivalSequence is one run of plan/00-SPINE.md S6's scenario, driven by a
+// arrivalSequence is one run of the spine's scenario, driven by a
 // single knob: the reserve fraction. Everything else — the findings, their
 // arrival order, the window size, the per-candidate cost — is identical between
 // runs, so any difference in outcome is attributable to the reservation and to
@@ -294,7 +294,7 @@ func runArrivalSequence(t *testing.T, fraction *float64, window, dastCount int) 
 }
 
 // TestRecutInvertsPriorityWithoutReservationAndDoesNotWithIt is the test the
-// R.11 packet demands: it demonstrates the inversion happening without the
+// the queue re-cut packet demands: it demonstrates the inversion happening without the
 // reservation and not happening with it. Asserting that a float equals 0.5
 // would prove nothing about either.
 func TestRecutInvertsPriorityWithoutReservationAndDoesNotWithIt(t *testing.T) {
@@ -335,7 +335,7 @@ func TestRecutInvertsPriorityWithoutReservationAndDoesNotWithIt(t *testing.T) {
 		// ... and the inversion is exactly that a weaker class was admitted
 		// while the strongest was not.
 		if !crossCutInversion(out) {
-			t.Fatal("expected the cross-cut priority inversion S6 describes, and it did not occur")
+			t.Fatal("expected the cross-cut priority inversion the spine's record section describes, and it did not occur")
 		}
 	})
 
@@ -378,7 +378,7 @@ func TestRecutInvertsPriorityWithoutReservationAndDoesNotWithIt(t *testing.T) {
 	})
 }
 
-// crossCutInversion is S6's failure mode stated as a predicate over the whole
+// crossCutInversion is the spine's failure mode stated as a predicate over the whole
 // arrival sequence rather than over one cut: a weaker evidence class was
 // admitted earlier, and a dast_confirmed finding arriving later found no budget.
 func crossCutInversion(out arrivalOutcome) bool {
@@ -393,7 +393,7 @@ func crossCutInversion(out arrivalOutcome) bool {
 }
 
 // TestRecutReserveIsConfigDriven runs the same sequence at the default 50% and
-// at an overridden 25%, which is the R.11 packet's stop condition: the value
+// at an overridden 25%, which is the queue re-cut's stop condition: the value
 // must be read from configuration, not compiled in. A change in the
 // configuration must change the arithmetic AND the row states, or the knob is
 // decorative.
@@ -503,7 +503,7 @@ func TestRecutGivesDastConfirmedAtLeastTheReservation(t *testing.T) {
 	}
 }
 
-// TestRecutReservesFromRemainingNotTotalBudget pins the R.11 packet's
+// TestRecutReservesFromRemainingNotTotalBudget pins the queue re-cut's
 // Forbidden action: "Do not let the reservation apply to total budget rather
 // than *remaining* budget at re-cut time." The window is the same; only what is
 // left of it differs.
@@ -578,16 +578,17 @@ func TestRecutTriggersOnVersionBumpAndNotOnHandoffWrites(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The CRITIQUE-02 §7 decision, asserted
+// The sealing, claims and masking review §7 decision, asserted
 // ---------------------------------------------------------------------------
 
 // TestRecutLeavesLeasedRowsAloneAndNeverWritesSuperseded is the executable form
-// of this file's ruling on CRITIQUE-02 §7: a version bump does NOT dispose the
-// rows leased at the old version. internal/handoff's checkRecordVersion makes
-// such a lease unable to renew, release or touch its packet, and its reaper is
-// the only component authorised to take a lease its holder still has. A re-cut
-// that yanked it would be the "expire a live claim" that research/08 §4 point 2
-// forbids and that CRITIQUE-02 verdict (e) currently passes.
+// of this file's ruling on the sealing, claims and masking review §7: a version
+// bump does NOT dispose the rows leased at the old version. internal/handoff's
+// checkRecordVersion makes such a lease unable to renew, release or touch its
+// packet, and its reaper is the only component authorised to take a lease its
+// holder still has. A re-cut that yanked it would be the "expire a live claim"
+// that research/08 §4 point 2 forbids and that the sealing, claims and masking
+// review's verdict (e) currently passes.
 func TestRecutLeavesLeasedRowsAloneAndNeverWritesSuperseded(t *testing.T) {
 	f := newRecutFixture(t, record.DastStatusRunning)
 	ids := f.enqueueMany(6, record.EvidenceClassSastReachable, "high")
@@ -687,7 +688,7 @@ func TestLateDastArrivalsPossibleIsTotalOverTheFrozenEnum(t *testing.T) {
 	values := record.DastStatusValues()
 	if got, want := len(values), 10; got != want {
 		t.Fatalf("record.DastStatusValues() has %d values, want %d; "+
-			"plan/IMPLEMENTATION-PLAN.md §6 freezes ten. Decide the new one here.", got, want)
+			"The shared-vocabulary review freezes ten. Decide the new one here.", got, want)
 	}
 	for _, v := range values {
 		expected, ok := want[v]

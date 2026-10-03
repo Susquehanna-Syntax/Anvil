@@ -1,12 +1,12 @@
 """Subprocess wrapper around the opengrep CLI.
 
 `subprocess.run` and nothing else. opengrep is an OCaml CLI with zero bindings
-in any language (plan/00-SPINE.md S12), so there is no in-process path to
+in any language (the spine's Go control-plane decision), so there is no in-process path to
 accidentally take, and the LGPL-2.1 combined-work question never engages.
 
 Output format is SARIF 2.1.0 via `--sarif-output=<file>`, which is both the
 invocation form documented in the opengrep v1.26.0 README and Anvil's record
-format (plan/00-SPINE.md S4/S6). Findings are read out of the SARIF document, so
+format (the spine's component and record sections). Findings are read out of the SARIF document, so
 this wrapper never has to parse decorated console text.
 
 Failure is always an exception. There is no code path in this module that
@@ -48,7 +48,7 @@ DEFAULT_TIMEOUT_SECONDS = 900
 class Finding:
     """One opengrep match, flattened out of SARIF.
 
-    `line` is advisory. plan/30-lane-b-detection.md treats file/function as the
+    `line` is advisory. plan/design/lane-b.md treats file/function as the
     authoritative identity for a candidate and line numbers as a hint, because
     line numbers drift the moment anything above them is edited.
     """
@@ -81,7 +81,7 @@ class ScanResult:
 
     @property
     def candidate_count(self) -> int:
-        """The INSTR-01 quantity: candidates produced by the recall tier."""
+        """The candidates-per-scan instrument quantity: candidates produced by the recall tier."""
         return len(self.findings)
 
 
@@ -110,7 +110,7 @@ class OpengrepRunner:
         self.timeout_seconds = timeout_seconds
         self.extra_args = tuple(extra_args)
 
-        # S5 gate, applied to whatever path the caller actually handed us — not
+        # The hard-exclusion gate, applied to whatever path the caller actually handed us — not
         # just to the manifest. A hard exclusion enforced only on the happy path
         # is not enforced.
         assert_rule_source_permitted(str(self.ruleset_path))

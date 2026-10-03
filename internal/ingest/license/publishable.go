@@ -123,7 +123,7 @@ import "strings"
 //
 // # Why an enumerated set is not the forbidden SPDX allowlist
 //
-// A.4's Forbidden actions rule out "a pure-SPDX allowlist as the sole gate", and
+// The licence gate's Forbidden actions rule out "a pure-SPDX allowlist as the sole gate", and
 // this is not one. An allowlist keys on the DECLARED identifier — the thing a
 // mislabelled artifact gets wrong, and the thing the CISA KEV case proves a
 // registry gets wrong. What follows keys on the OPERATIVE TEXT the publisher

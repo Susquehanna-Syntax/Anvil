@@ -3,22 +3,22 @@
 // format Lane A reads.
 //
 // ===========================================================================
-// WHY THIS PACKAGE EXISTS — ORCHESTRATOR RULING G11
+// WHY THIS PACKAGE EXISTS — THE ONE-DECODER RULING
 // ===========================================================================
 //
-// It did not exist until A.21. internal/ingest/bootstrap's decoders were
+// It did not exist until the Lane A exit gate. internal/ingest/bootstrap's decoders were
 // unexported, so internal/ingest/delta RE-DERIVED CVE 5.x, OSV and KEV
 // decoding, and the cache had two producers writing one table from one wire
 // format.
 //
-// That is worse than ordinary duplication. If the two drifted, A.15's weekly
+// That is worse than ordinary duplication. If the two drifted, the weekly
 // self-heal would RESTORE THE SAME ROWS FOREVER and nothing would surface it:
 // the baseline importer would rewrite what the delta importer wrote, each
 // convinced the other was wrong, and the cache would settle on whichever ran
 // last. A self-healing system healing toward the wrong answer is quieter than
 // one that breaks.
 //
-// A.14 guarded the duplication with a conformance test that ran both importers
+// Delta ingestion guarded the duplication with a conformance test that ran both importers
 // over identical fixtures — the right move available to it — but two
 // implementations agreeing today is a smoke alarm, not a fix. This package is
 // the fix. There is now one decodeOSV, one decodeCVE5, one KEV entry mapping,
@@ -33,11 +33,11 @@
 // what an unrecognised document MEANS, and collapsing that disagreement would
 // be a second bug wearing the first one's clothes:
 //
-//   - A.8's bulk importer walks 300,000 archive members written by strangers.
+//   - The bulk bootstrap's bulk importer walks 300,000 archive members written by strangers.
 //     A member it does not recognise is a README, a directory entry or a CWE
 //     catalog, and it is SKIPPED — one bad member must not cost the other
 //     299,999.
-//   - A.14's delta path fetched a document BECAUSE SOMETHING SAID IT CHANGED.
+//   - Delta ingestion's delta path fetched a document BECAUSE SOMETHING SAID IT CHANGED.
 //     A document it does not recognise means a change was dropped, so it is an
 //     ERROR that routes the feed to a path that does understand it.
 //
@@ -57,12 +57,12 @@
 //
 // Every string this package binds into a Record goes through Decoder.s, which
 // is internal/ingest/sanitize applied field by field with the removal counts
-// accumulated (A.3 forbids dropping characters without a count; spine S7 puts
-// prompt-injection defence at ingest, not at prompt time). Record.Raw is the
-// one exception and it is deliberate: `advisory.raw_json` stores the
-// PUBLISHER'S BYTES VERBATIM, because CVE-TOU requires records be stored
-// unedited, and because two importers that re-render a document store two
-// different digests of the same advisory.
+// accumulated (the sanitizer forbids dropping characters without a count; the
+// spine's safety section puts prompt-injection defence at ingest, not at prompt
+// time). Record.Raw is the one exception and it is deliberate:
+// `advisory.raw_json` stores the PUBLISHER'S BYTES VERBATIM, because CVE-TOU
+// requires records be stored unedited, and because two importers that re-render
+// a document store two different digests of the same advisory.
 //
 // The callers re-prove it at the write site with sanitize.AssertAllSanitized
 // on the exact values about to be bound. This package's guarantee is not
@@ -100,7 +100,7 @@ func (e errorString) Error() string { return string(e) }
 // AffectedRange is one row of the cache's `affected` table: a package, an
 // ecosystem, and the version window a comparator answers against.
 //
-// plan/00-SPINE.md S1 is why these rows are the point of Lane A at all:
+// The spine's corrected-requirements table is why these rows are the point of Lane A at all:
 // "CVE/OSV/GHSA describe vulnerable PACKAGE VERSIONS, and a version comparator
 // answers that exactly and for free."
 type AffectedRange struct {
@@ -117,7 +117,7 @@ type AffectedRange struct {
 	// DistroBackport marks a range that came from a vendor or distro advisory
 	// rather than from upstream. research/12 §3: a distro backports a fix
 	// without moving the upstream version, so an upstream range calls a
-	// patched package vulnerable. This column is what A.17 needs to not do
+	// patched package vulnerable. This column is what the comparator needs to not do
 	// that.
 	DistroBackport bool
 }
@@ -169,8 +169,8 @@ type Record struct {
 	Affected []AffectedRange
 
 	// DataVersion is the record schema version the document declared, and
-	// ParseDegraded is spine S6's field for "this was persisted anyway".
-	// A.2 exit criterion 23: an unknown CVE dataVersion is PERSISTED with
+	// ParseDegraded is the spine's field for "this was persisted anyway".
+	// Lane A exit criterion 23: an unknown CVE dataVersion is PERSISTED with
 	// parse_degraded = 1, never dropped, because silently discarding a record
 	// from a newer schema is how a vulnerability disappears from a security
 	// tool with no error anywhere.
@@ -196,11 +196,11 @@ func (r Record) ReferencesText() string { return strings.Join(r.References, "\n"
 // ---------------------------------------------------------------------------
 
 // Decoder is the per-import decoding context: which feed the rows belong to,
-// and the running report of everything A.3 removed.
+// and the running report of everything the sanitizer removed.
 //
 // The stats exist so the sanitizer's findings are not thrown away. A feed that
 // ships zero-width joiners, bidi overrides or HTML comments inside an advisory
-// description is not a curiosity — spine S7 puts prompt injection at ingest,
+// description is not a curiosity — the spine's safety section puts prompt injection at ingest,
 // and the counts are the only place the fact is visible after the bytes are
 // clean.
 type Decoder struct {
@@ -217,7 +217,7 @@ func (dc *Decoder) FeedID() string { return dc.feedID }
 // Stats is everything the sanitizer removed across every field decoded so far.
 func (dc *Decoder) Stats() sanitize.SanitizeStats { return dc.stats }
 
-// s is A.3 applied to one field, accumulating what it removed.
+// s is the sanitizer applied to one field, accumulating what it removed.
 //
 // It is a named method rather than an inline call at every site so that
 // internal/ingest/sanitize's writer guard — which resolves the package-local
@@ -350,7 +350,7 @@ func IsCVEID(s string) bool {
 // THIS LIST EXISTS ONCE. It used to exist twice — identically, and guarded by a
 // conformance test — and a divergence would have changed
 // `affected.distro_backport` for the same bytes depending on which importer
-// ran, which is the column A.17's vendor-first precedence rests on.
+// ran, which is the column the comparator's vendor-first precedence rests on.
 var distroEcosystemPrefixes = []string{
 	"ubuntu", "debian", "alpine", "red hat", "redhat", "rocky", "almalinux",
 	"suse", "photon", "chainguard", "wolfi", "mageia",
@@ -370,7 +370,7 @@ func IsDistroEcosystem(eco string) bool {
 
 // knownCVEDataVersions are the record schema versions these decoders were
 // written against. An UNKNOWN one is PERSISTED with parse_degraded = 1 and
-// never dropped (Lane A exit criterion 23, spine S6): silently discarding a
+// never dropped (Lane A exit criterion 23, the spine's record section): silently discarding a
 // record from a newer schema is how a vulnerability disappears from a security
 // tool with no error anywhere.
 var knownCVEDataVersions = map[string]bool{"5.0": true, "5.1": true, "5.2": true}

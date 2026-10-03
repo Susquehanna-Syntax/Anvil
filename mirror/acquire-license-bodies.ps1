@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-Anvil A.4 — deliberate acquisition of the publisher licence texts the licence
-gate reads as evidence. Windows counterpart of acquire-license-bodies.sh.
+Anvil's licence gate — deliberate acquisition of the publisher licence texts the gate
+reads as evidence. Windows counterpart of acquire-license-bodies.sh.
 
 .DESCRIPTION
 NOTHING RUNS THIS FOR YOU. It is not wired into any build, test or CI job, and

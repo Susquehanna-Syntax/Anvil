@@ -27,7 +27,7 @@ different reasons:
    `modernc.org/sqlite`, `net/http` and `internal/store` therefore reported
    SUCCESS in exactly the environments where it could not check: a hermetic
    build, a container with no toolchain, a CI job with a broken `PATH`. It now
-   `t.Fatalf`s, and its comment (A.12 m4) records why.
+   `t.Fatalf`s, and its comment (the read-only-boundary review's finding m4) records why.
 
 The shape is the same in both cases and it is worth naming precisely: **a guard
 that vanishes silently when it cannot run is worse than no guard, because the
@@ -139,12 +139,12 @@ today). With the gate on and no binary, it **fails**.
 
 | | |
 |---|---|
-| **File** | `internal/handoff/critique02_regression_test.go:485` (before the fix) |
+| **File** | `internal/handoff/sealing_review_test.go:485` (before the fix) |
 | **Trigger** | `f.tryNewAudit(...)` returned **any** error |
 | **Skipped here?** | **No — measured.** The schema admits every `dast_status` today |
 | **Skips in CI?** | No — the condition is platform-independent and the schema is checked in |
 | **Property unverified** | M5: a `requires_dynamic_confirmation` finding must not reach `validated` when no DAST reproduction can exist |
-| **Security control?** | **YES.** It is the integrity gate behind "verified fixed" (`plan/00-SPINE.md` S7) |
+| **Security control?** | **YES.** It is the integrity gate behind "verified fixed" (the spine's safety section) |
 | **Verdict** | **HAZARD** |
 
 The sibling test `TestValidatedRequiresDynamicEvidence`
@@ -181,7 +181,7 @@ fires today, so the suite stays green.
 
 | | |
 |---|---|
-| **File** | `internal/record/critique03_regression_test.go:318` (before the fix) |
+| **File** | `internal/record/readpath_review_test.go:318` (before the fix) |
 | **Trigger** | `ProjectForGitHub` returned zero results for the case — **unconditionally**, for any subtest |
 | **Skipped here?** | **YES — measured**, for `loc0_rel3000` only |
 | **Skips in CI?** | Yes, same subtest. The condition is pure logic, platform-independent |
@@ -207,7 +207,7 @@ ledgered (`TotalDropped() != 0`) before the skip is allowed.
 | **Trigger** | `config.Load("../config/feeds.example.yaml")` failed; or the table declared no feeds |
 | **Skipped here?** | **No — measured.** The file is checked in and parses |
 | **Skips in CI?** | No |
-| **Property unverified** | That `feed_state` accepts every `feed_id` the shipped config declares — the produce/consume edge between A.1 and A.2 |
+| **Property unverified** | That `feed_state` accepts every `feed_id` the shipped config declares — the produce/consume edge between the feed table and the ingestion cache |
 | **Security control?** | **No** — a data-integrity contract between two packages |
 | **Verdict** | **HAZARD** |
 
@@ -222,13 +222,102 @@ tests already fail on an empty table; these now agree.
 
 ## Hazards that need a change outside the test tree
 
+### N3 — CI had only a `-race` lane, so `!race` controls ran nowhere — **CLOSED**
+
+`.github/workflows/ci.yml` ran `go test -race -count=1 ./...` and nothing else.
+G4-1's harness is `//go:build !race`, so CI never compiled it and
+`TestScopeBytesAreReadOnceUnderAConcurrentWriter` — the behavioural control
+with the real numbers — existed in zero CI lanes.
+
+**Change made.** Two steps added to the `go` job:
+
+- `go test -count=1 ./...` with no `-race`, which is the only lane that
+  compiles a `//go:build !race` file. Any future `!race` control gets this lane
+  for free.
+- An assertion that the named harness actually **ran and passed**, because
+  `go test -run <pattern>` matching NOTHING exits 0 and prints
+  `no tests to run` — which is exactly how this lane would rot if the file were
+  renamed or the tag spread. The step greps for the `--- PASS:` line and for a
+  `(cached)` replay, and fails the job on either.
+
+**Both branches of the assertion were exercised before it was committed**, on
+this host, against the real workflow fragment:
+
+```
+$ <the step, with the real pattern>
+--- PASS: TestScopeBytesAreReadOnceUnderAConcurrentWriter (0.31s)
+    entries and hash agreed on all 200 constructed Scopes (benign=88 evil=112 torn=0)
+confirmed ... exit=0
+
+$ <the step, pattern renamed so it matches nothing>
+testing: warning: no tests to run
+ok  ... [no tests to run]
+::error::TestScopeBytesAreReadOnceUnderAConcurrentWriter did not run.
+exit=1
+
+$ <the step, with an assertion inside the harness mutated to fail>
+--- FAIL: TestScopeBytesAreReadOnceUnderAConcurrentWriter (0.33s)
+::error::the !race concurrency harness FAILED
+exit=1
+```
+
+The mutation was reverted and the file re-hashed to confirm a byte-for-byte
+restore (`sha256 8e17068...0dd1` before and after).
+
+That `-race` genuinely does not compile the file was confirmed the same way:
+`go test -race -count=1 -v -run TestScopeBytesAreReadOnceUnderAConcurrentWriter
+./internal/dast/authz/` reports `[no tests to run]`.
+
+### N4 — every CI job was `ubuntu-latest`, so the containment platform refusal ran nowhere — **CLOSED**
+
+`SystemCommander` refuses on any non-Linux GOOS, and that refusal is what stops
+Anvil reporting a sandbox as contained on a platform where it cannot check
+anything — the claim that authorizes firing DAST probes at all. Its only guard,
+`TestSystemCommanderRefusesOffLinux`, branches on `runtime.GOOS`: on Linux it
+asserts a `Commander` comes back, off Linux it asserts a refusal. All five CI
+jobs ran on `ubuntu-latest`, so only the Linux branch was ever taken and
+deleting the `runtime.GOOS != "linux"` check would have left every lane green.
+
+**Change made.** A `containment-non-linux` job on `windows-latest` running
+`internal/dast/containment` with `-count=1`, plus a step asserting the named
+test actually ran and passed (a `-run` pattern matching nothing exits 0 and
+prints `no tests to run`, which is how this lane would rot) and a `(cached)`
+check, plus a negative control that deletes the platform check, requires the
+guard to go RED **for the right reason**, restores the file with
+`git checkout --` and requires `git diff --exit-code` to be clean.
+
+No `-race` in this lane: the detector needs a gcc toolchain on Windows and the
+`ubuntu-latest` job already runs the whole tree under it.
+
+**The negative control was exercised on this host before it was committed**,
+from Git Bash, against the real mutation the step applies:
+
+```
+$ sed -i 's/if runtime.GOOS != "linux" {/if false {/' internal/dast/containment/netns.go
+$ go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/
+exit=1
+--- FAIL: TestSystemCommanderRefusesOffLinux (0.00s)
+    netns_test.go:173: on windows SystemCommander returned a Commander. A containment
+    layer that reports success on a platform with no network namespaces is the
+    silent-clean failure this package exists to prevent
+```
+
+which is the string the step greps for. The file was restored and re-hashed to
+confirm a byte-for-byte revert (sha256
+`57725537B7B0FEA878F59B5A29D9F0CBCFA277E3B23EBE90A124408ADC03F726` before and
+after).
+
+**What this lane does NOT do:** it does not prove anything about a kernel. The
+Linux branch of that same test still asserts only that a `Commander` comes
+back. U1 remains open.
+
 ### N1 — no CI job runs the real Trivy scan
 
 After H3, `TestRealTrivyScansAFixtureRepo` skips honestly on any machine that
 did not ask for it. But **no machine asks**: `.github/workflows/ci.yml` neither
 installs Trivy nor sets `ANVIL_TRIVY_E2E`, so the silent-clean control is
 proven nowhere. Closing this needs a workflow step (install the pinned Trivy
-release, warm the DB cache via A.11's accelerator, export `ANVIL_TRIVY_E2E=1`).
+release, warm the DB cache via the accelerator, export `ANVIL_TRIVY_E2E=1`).
 `.github/` is out of scope for this sweep, so it is reported, not changed.
 
 ### N2 — junction resolution in the write-path guard
@@ -267,10 +356,1642 @@ run instead of a skip.
 
 ---
 
+# CONTROLS WITH NOTHING BEHIND THEM
+
+A `t.Skip` is one way a green run gets read as an answer. Here is the other: a
+gate that is fully written, fully tested on its refusal paths, and has **no
+implementation of the thing it is a rule about**. The package prints `ok`, the
+refusals are all real, and the control is still unproven end to end.
+
+These are listed here rather than in a separate file because the failure mode
+is identical to the one this document exists for, and because a reviewer
+looking for "what does the green tick not cover" should find one document.
+
+## G19-1 — gate 19 has no disclosure store
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase4_disclosure.go`, the `DisclosureStore` interface and `persistDisclosureState` |
+| **Trigger** | Not conditional. There is no production implementation of `DisclosureStore` in this repository |
+| **Skipped here?** | No — nothing skips. Every gate-19 test passes |
+| **Skips in CI?** | No |
+| **Property unverified** | That a finding's disclosure state — the 45-day embargo clock — actually survives a process restart, because it was written to the SQLite store of record rather than the tmpfs handoff packet |
+| **Security control?** | **YES.** Gate 19 is what makes gate 18's embargo a durable fact. The spine's corrected-requirements table is explicit that the handoff buffer's "8 hours" is a claim timeout, not a deletion policy, and tmpfs does not survive a reboot at all. An embargo that forgets itself is an embargo that publishes |
+| **Verdict** | **UNPROVEN CONTROL** |
+
+**What is proven.** Every refusal: a nil store, a store declaring
+`tmpfs_handoff_buffer`, `process_memory`, the empty medium or any unrecognised
+one, an unconstructed `DisclosureRecord`, a write that errors, a write that
+returns sequence 0, a store that assigns a row id and then fails to commit, and
+a store that answers the medium question twice with two different answers. Also
+proven structurally: `DisclosureRecord` has no exported field, so
+`json.Marshal` of a fully populated one produces `{}` and a handoff-packet
+builder that embeds one serialises no disclosure state.
+
+**What is not.** The **allow**. `PersistedDisclosure` — the proof gate 18
+demands before it will permit publication — has only ever been minted against a
+test fake. `grep -rn PutDisclosureState` over the repository returns the
+interface declaration, its one call site, and three fakes in
+`phase4_disclosure_test.go`. Nothing writes a disclosure row to SQLite, so
+today disclosure state lives **nowhere**, and the sentence gate 19 enforces —
+"it lives in the DB, not the buffer" — has no positive instance.
+
+**The false attribution that used to stand here.** The doc comment on
+`DisclosureStore` read "The kernel's build-time guard and target provisioning implement it over the SQLite record store".
+That is not what those steps are. `plan/design/dynamic-tier.md:317-348` makes the kernel's build-time guard the
+build-invariant packet — a dependency-graph test and an egress lint — and
+`:349-378` makes target provisioning run containers under gVisor `runsc`. Neither
+writes a disclosure row, and no other step in the plan schedules one. The
+attribution has been deleted and replaced with a plain statement of the gap.
+
+**What would settle it.** A plan step that owns a `disclosure_state` table in
+`internal/record` (the record area owns every shared enum per the shared-vocabulary
+review in `plan/design/first-plan.md`, so the `DisclosureState` literals
+currently declared in `phase4_disclosure.go` should move there and be aliased),
+an implementation of `DisclosureStore` over `internal/store`, and one
+integration test that: opens an embargo, persists it, **closes and reopens the
+database handle**, reads the row back, and asserts the deadline survived. The
+reopen is the whole test — a store that keeps the row in a map passes every
+assertion that does not close the handle.
+
+**Scope note.** Writing that store was outside this packet's write scope
+(`internal/dast/authz/phase4_disclosure.go` and its test). Inventing one would
+have produced exactly the thing this document is against: an implementation
+nobody scheduled, proving a control nobody asked it to prove.
+
+**Update — the interface grew a READ, and this entry grew with it.**
+`DisclosureStore` now also declares
+`DisclosureStateFor(FindingID) (DisclosureState, error)`. It was added because
+a write-only store cannot back a state machine: gate 18's `withheld` check read
+only the `PersistedDisclosure` its caller handed it, so persisting `withheld`
+and then persisting `embargoed` for the same finding produced a second valid
+proof and the publication proceeded. Gate 18 now asks the store, and gate 19
+refuses a write that leaves `withheld` without an allowlisted release reason
+and evidence.
+
+This does not shrink the gap above and in one respect widens it: there is now a
+second method with **no production implementation**, and the integration test
+this entry asks for must now also cover the read — open an embargo, persist
+`withheld`, **close and reopen the database handle**, and assert
+`DisclosureStateFor` still answers `withheld`. A store that answers from an
+in-memory map passes every assertion that does not close the handle, and a
+store that forgets across a restart turns the new refusal into a silent allow.
+Still no store was written here, for the reason above.
+
+## G4-1 — the concurrent-writer harness cannot run in the `-race` lane
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase1_scopebytes_race_test.go` (whole file, `//go:build !race`) |
+| **Trigger** | The `race` build tag. Under `go test -race` the file is not compiled |
+| **Skipped here?** | Not a `t.Skip`. It is a build-tag exclusion, which is why it is listed: the effect on a `-race`-only CI lane is identical |
+| **Skips in CI?** | **No, as of the N3 fix.** `.github/workflows/ci.yml` now runs a second, non-`-race` step, and a third step that fails the job unless this exact test reports `--- PASS:`. It ran in zero CI lanes before that |
+| **Property unverified in the `-race` lane** | That a `Scope` built while a concurrent writer rewrites the caller's buffer carries one document's entries under **that** document's hash |
+| **Security control?** | **YES.** It is gate 5's scope binding: "editing the scope file invalidates the attestation" is only true while the hash is a hash of the entries |
+| **Verdict** | **LEGITIMATE EXCLUSION, CI GAP NOW CLOSED** — see N3 |
+
+**Why it cannot be a `-race` test, measured rather than asserted.** The harness
+works by racing a writer against the caller's buffer. That is not incidental to
+it: a concurrent write is the only thing that can make one read of the buffer
+differ from another, so there is no race-free Go program that can distinguish a
+build which reads the buffer once from a build which reads it twice. The
+harness is therefore a data race **by construction**, and the race detector
+reports it against the *fix* on a correct tree. Measured by deleting the build
+tag on the shipped tree and running
+`go test -race -count=1 -run TestScopeBytesAreReadOnceUnderAConcurrentWriter`:
+
+```
+WARNING: DATA RACE
+Write at 0x00c00020c000 by goroutine 10:
+  runtime.slicecopy()
+      C:/Program Files/Go/src/runtime/slice.go:392 +0x0
+  ...authz.TestScopeBytesAreReadOnceUnderAConcurrentWriter.func1()
+      .../internal/dast/authz/phase1_scopebytes_race_test.go:120 +0x106
+
+Previous read at 0x00c00020c000 by goroutine 9:
+  runtime.slicecopy()
+      C:/Program Files/Go/src/runtime/slice.go:392 +0x0
+  ...authz.CheckGate4ScopeFile()
+      .../internal/dast/authz/phase1_run.go:559 +0x2db
+  ...authz.NewScope()
+      .../internal/dast/authz/types.go:859 +0xd0
+```
+
+`phase1_run.go:559` is `raw = append([]byte(nil), raw...)` — the one-read copy
+that is the fix. The race the detector reports is a write racing THE FIX. A
+test that goes red on a correct tree measures nothing.
+
+**What the exclusion is NOT.** It is not the previous round's claim that
+"`go test -race` cannot build here". That claim was false and has been deleted
+from the tree: `go test -race -count=1 ./...` is green across all 26 test-
+bearing packages on this host. (It fails only inside one sandboxed shell, with
+`ThreadSanitizer failed to allocate ... (error code: 87)`, which is a shadow-
+memory mapping refusal in that shell, not a toolchain fact.)
+
+**What still holds the property in every lane.**
+`TestGate4ReadsTheCallersScopeBytesExactlyOnce` parses `phase1_run.go` and
+asserts the source-level shape — the parameter is rebound to a copy of itself
+before any use other than `len` — with five positive controls and one negative
+control. It starts no goroutines and runs under `-race`.
+
+**Measured numbers for the excluded harness**, 200 constructed `Scope`s per run:
+
+| tree | mismatched |
+|---|---|
+| shipped | **0** of 200 |
+| copy deleted | 89 of 200 |
+| copy replaced by `rawAlias := raw[:]` | 102 of 200 |
+
+The third row is the mutation that defeated the *earlier*, denylist-shaped
+version of the source-level pin while the whole repository suite stayed green.
+Both guards catch it now.
+
+## G18-2 — two run initiations with divergent clocks
+
+| | |
+|---|---|
+| **File** | `internal/dast/authz/phase4_disclosure.go`, the gate 18 embargo comparisons; `internal/dast/authz/types.go`, `RunClock` |
+| **Trigger** | Not conditional. It is a residual of having no trusted time source |
+| **Skipped here?** | No — nothing skips. Every gate-18 test passes |
+| **Skips in CI?** | No |
+| **Property unverified** | That the instant a run says it is happening at is the instant it is actually happening at |
+| **Security control?** | **YES.** The 45-day CERT/CC embargo |
+| **Verdict** | **UNPROVEN RESIDUAL, NOT BOUNDED BY ANYTHING IN THIS REPOSITORY** |
+
+**What is closed.** A run has exactly one clock. `RunClock` is sealed by an
+unexported constructor and the only exported route to one is
+`RunInitiation.RunClock`, so every Phase 4 decision reads the run's instant
+instead of accepting a "now": `PublicationRequest` and `PushRequest` have no
+clock field, and `GateAudit` carries the run's. The consistently-told lie —
+contact dated 3 January against a 3 January "now" (a back-date of zero, so
+`MaxVendorContactBackdate` never engaged), embargo opened at the same January
+clock, publication at the real August present, every gate green — is no longer
+spellable in one run.
+`TestGate18TheConsistentClockLieIsRefusedInBothDirections` runs both halves.
+
+Note what that sentence does and does not say. The caller still CHOOSES the
+run's instant: `RunRequest.Clock` is an exported, settable field and
+`InitiateRun` copies it verbatim into the seal. What the seal removes is the
+ability to supply a DIFFERENT instant to each decision. A previous version of
+this entry, and of the file header, said "a run has exactly one clock, and it
+is not a parameter". The second half was not true and has been deleted rather
+than qualified.
+
+**What is not closed.** A run's clock is still the instant the operator's
+harness handed `InitiateRun`. The spine's safety section makes the kernel a pure
+function of `(target, scope, attestation, clock)`, so this package reads no
+ambient time and cannot. An operator who initiates **two** runs — one claiming
+January, one claiming August — can still assemble the sequence across them.
+
+### THE COST THIS ENTRY USED TO CLAIM, AND WHY IT WAS DELETED
+
+The previous version said the attack costs "two attestations that are live at
+instants seven months apart", implying the attacker must obtain something. It
+implied a price that is not charged, and it was the justification for ACCEPTING
+this residual rather than closing it, so it had to be either true or gone. It
+is gone. Both halves were checked:
+
+**Half one — "two attestations" is not a cost, because an attestation is
+unsigned text the attacker writes.** An attestation reaches this kernel as
+bytes and is parsed; nothing verifies an issuer. Measured, over every non-test
+`.go` file in the repository:
+
+```
+$ grep -rniE "ed25519|ecdsa|crypto/rsa|crypto/x509|\bjws\b|\bjwt\b|cosign|sigstore|minisign|gpg|openpgp" --include=*.go . | grep -v _test.go
+./internal/collector/host/rpm.go:58:            // gpg-pubkey pseudo-packages carry no architecture...
+./internal/dast/authz/phase2_admission.go:1854:            if !securityTxtURIOK(value, []string{"https:", "dns:", "openpgp4fpr:"}) {
+./internal/mirror/accelerator/trivydb.go:102:// ... No cosign/sigstore verification is performed ...
+./internal/mirror/accelerator/trivydb.go:898:  "whoever answered that request chose the digest. No signature (cosign/sigstore) was checked, "
+./internal/record/mask.go:111:// NO SHAPE-BASED BODY SCANNING. There is no "looks like a JWT" ...
+```
+
+Four of the five hits are a Red Hat pseudo-package name, a URI-scheme
+allowlist, and two comments that say in so many words that no signature is
+checked. **There is no cryptographic verification anywhere in this repository.**
+Writing a second attestation file with different dates costs the operator one
+text editor. Gate 5's 30-day ceiling bounds the DISTANCE between an
+attestation's own two dates; it does not make an attestation hard to produce.
+
+**Half two — "the divergence is visible in the audit log" is not true of the
+log this code writes.** The two runs leave one gate-19 allow and one gate-18
+allow. A `GateRecord` carries `Gate`, `Outcome`, `Reason`, `Detail`,
+`AttestationID`, `ScopeHash`, `Mode`, `Target` and `At`, and for an ALLOW the
+`Detail` is the literal string `"<gate> permitted this decision"` — no first
+contact, no deadline, no adjustment count. Two allows against a finding, at two
+attestation IDs, are byte-for-byte what honest coordinated disclosure across a
+long embargo also looks like. Nothing joins the two rows, and nothing compares
+either `At` against anything outside the run that supplied it. A reviewer
+cannot see the lie in that log because the lie is not in it.
+
+There is a further reason not to lean on the log at all: **no production
+`AuditSink` exists in this tree.** `grep -rn WriteGateDecision --include=*.go`
+outside tests returns the interface declaration and its two call sites and
+nothing else, exactly as G19-1 records for `DisclosureStore`. A bound that
+rests on a log nobody writes is not a bound.
+
+### WHAT ACTUALLY REMAINS TRUE
+
+Only this, and it is a property of the kernel rather than a price the attacker
+pays: **within one run the lie cannot be told inconsistently.** The attacker
+must produce two coherent runs, each internally consistent, rather than one run
+with three different answers to "what time is it". That is a real narrowing of
+the attack surface and it is why the seal was worth adding. It is not a bound
+on the attack, and this entry no longer says it is.
+
+**So: the residual is UNBOUNDED by anything in this repository**, and it is
+accepted for one reason — the kernel is a pure function of its inputs by the spine's safety section, so
+the fix cannot live in this package. It has to live in what an attestation IS.
+
+**What would bound it,** each of which is a change to gate 5's file and another
+packet's scope:
+
+1. **A signature on the attestation** over its own `not_before`/`expires`, with
+   the verifying key configured out of band. This is the one that turns "the
+   attacker writes a second attestation" back into a cost. Nothing in this
+   repository verifies a signature today, so it is a new dependency and a new
+   key-management story, not a one-line change.
+2. **A monotonic counter in the SQLite store of record** that run initiation
+   must advance, so two runs cannot both claim to be the earlier one. This
+   catches the January/August ordering without any cryptography, and it is the
+   cheapest of the three — but it needs the store G19-1 says does not exist.
+3. **An RFC 3161 timestamp token** on the attestation, which is (1) with the
+   trust anchor outside the operator entirely.
+
+**What would make the log worth citing,** independent of the above: put the
+first-contact instant, the deadline and the adjustment count on the gate-18
+allow row's `Detail`, so that two allows for one finding at inconsistent
+deadlines are distinguishable from one honest disclosure. That is a change to
+`GateAudit.Record`'s allow-row construction and is worth doing regardless of
+which of the three lands, because it costs nothing and today the allow row
+records only that a gate said yes.
+## U1 — DAST network containment has never run against a kernel
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/netns.go`, `internal/dast/containment/netns_test.go` |
+| **`t.Skip` sites** | **Zero.** Every test in the package runs and asserts on every platform. This entry is here because a green package is still not a proven control |
+| **Skipped here?** | N/A — nothing skips. What is missing is not a test, it is a kernel |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That `nft` installs the generated ruleset; that a Linux kernel actually drops a packet addressed to `169.254.169.254` / `fd00:ec2::254` from inside the namespace; that the `ConnectProbe` implementation (owned by the anvil-dast binary, the nuclei driver and the ZAP driver — it does not exist yet) turns a real dropped connect into the `DialFailure` this package's classifier expects; that `ip netns exec` places the canary where `ReadNetnsInode` stat'd |
+| **Security control?** | **Yes, and it is the one that authorizes probing at all.** "The sandbox is contained" is the claim that lets Anvil fire a DAST probe. A containment layer that reported contained-when-unverified is the failure that gets someone breached |
+| **Verdict** | **OPEN. Not legitimate, not accepted — unexecuted.** |
+
+### What the suite does prove, on Windows and on Linux alike
+
+The package is split so that everything except the `exec` is a pure function,
+and all of it is tested:
+
+- `BuildRuleset` is pure. A golden test pins the entire generated `nft` script,
+  and `TestMetadataDropsPrecedeEveryAcceptRule` pins the *order* — nftables
+  evaluates top to bottom, so a suite that only asserted "the drop is present"
+  and "the accept is present" would pass on a ruleset with them the wrong way
+  round, which is a ruleset where the metadata endpoint is reachable.
+- `TestDenySetIsNeverWeakerThanGateTenAtSixteenBitGranularity` sweeps 393,264
+  addresses (measured, after the containment review fix round) and asserts
+  `authz.AddressIsReserved(a) ⇒ DeniedByRuleset(a)`. 36,112 of them are
+  reserved, so the implication is not vacuous, and the test fails if that count
+  reaches zero. The generator now also emits ZONED and IPv4-MAPPED spellings;
+  before it did, it could not construct the input that broke the relation, and
+  it swept 393,226 addresses green while `DeniedByRuleset` returned false for
+  every zoned address.
+- `EvaluateCanaryReport` is pure, and every branch of it is exercised:
+  reachable, missing probe, duplicate probe, absent outcome, unrecognised
+  outcome, indeterminate outcome, wrong namespace, the *host* namespace,
+  unrequested extras, an empty probe list, an outcome that disagrees with the
+  reported `DialFailure`, and a silent timeout that did not wait out its
+  declared bound.
+- `TestABrokenRulesetFixtureIsCaughtOnEveryOneOfTwentyRuns` is the SECOND HALF
+  of network containment's stop condition and only the second half: 20 runs against a canary
+  reporting `reachable` (the empty-ruleset fixture, research 19 risk #5's
+  shape), 20 aborts; then 20 runs against a correctly blocked report, 20
+  passes, so the first half is not passing because the function refuses
+  everything. **The stop condition's FIRST clause — "Default-deny ruleset
+  installs correctly on a real target fixture" — is NOT met and cannot be met
+  on this host**: nothing here installs a ruleset anywhere, and item (1) below
+  is what would settle it. This entry previously claimed the whole stop
+  condition was met, which is how a gap ships.
+- `SystemCommander` **refuses** on any non-Linux GOOS and
+  `TestSystemCommanderRefusesOffLinux` asserts that refusal on this host. There
+  is no no-op Commander, so there is no path by which Windows returns "contained".
+  **That guard now runs in a CI lane**: `containment-non-linux` in
+  `.github/workflows/ci.yml` runs the package on `windows-latest`, asserts the
+  named test actually executed and passed, then DELETES the
+  `runtime.GOOS != "linux"` check, requires the guard to go red naming the
+  returned Commander, and restores the file. Until that lane existed, all five
+  CI jobs were `ubuntu-latest`, only the Linux branch was ever taken, and
+  deleting the refusal would have left every lane green.
+
+### What it does not prove, and exactly what would settle it
+
+Everything above is a statement about Anvil's decision logic. None of it is a
+statement about a kernel. Windows has no network namespaces and no nftables;
+WSL2 is present on the dev host and is **not** the target runtime, so it does
+not settle this either.
+
+What would settle it, in order of decreasing cost:
+
+1. **A privileged Linux CI lane.** `runs-on: ubuntu-latest` with
+   `nftables` and `iproute2` installed and the job running as root (or with
+   `CAP_NET_ADMIN` + `CAP_SYS_ADMIN`). The lane creates a namespace, calls
+   `SetupNetns`, then calls `AssertContainment` and requires it to pass — and
+   then, as the negative control the house style requires, flushes the table
+   (`ip netns exec <ns> nft flush ruleset`) and requires `AssertContainment` to
+   **fail**. Without that second half the lane proves nothing: a lane where the
+   probe cannot fail is not a check. **This is the one that closes the entry.**
+2. **The errno half alone**, cheaper and partial: on any Linux runner, without
+   privileges, dial a blackholed address and record which errno a real
+   `connect` delivers, to confirm the `ConnectProbe` implementation's errno
+   table maps it to `DialFailureSilentTimeout` / `DialFailureNoRoute` rather
+   than to `DialFailureUnclassified`. **This one cannot run until the
+   implementation exists**: gate 3 forbids a socket inside `internal/dast`, so
+   `internal/dast/containment` ships the interface, the classification rules
+   and the verdict, and nothing that can connect.
+3. **A `docker run --network none` smoke test**, cheapest and weakest: proves a
+   canary in a namespace with no route reports `blocked`, which exercises the
+   plumbing but not the nftables ruleset, because there is nothing to filter.
+
+### The open dependency
+
+`AssertContainment` execs the canary through `Commander` (os/exec, which gate 3
+treats as inert and whose justification line already names network containment). The canary
+itself is `CanaryMain`, which lives here — but the `ConnectProbe` it needs is
+**not implemented anywhere in the tree**, because gate 3 refuses a socket
+inside `internal/dast` and there is no allowlist for it. The implementation
+belongs to the anvil-dast binary and will be flagged by gate 3's tier 2, which
+means it must be added to `nonKernelEgressAllowlist` in `phase0_build.go` with
+a written justification. That edit is the review gate 3 exists to force and it
+is deliberately not made here.
+
+**Until that lands, network containment is a specification plus a verdict, not a running
+probe.** `AssertContainment` fails closed in the meantime — a canary that
+cannot run is refused, not waved through — so the failure direction is safe,
+but no scan can pass the containment gate at all yet.
+
+Until (1) exists, **`internal/dast/containment` is a control that runs in zero
+CI lanes against a kernel**, and this entry is the standing record of that.
+`AssertContainment` must not be wired into a scan path that treats its absence
+as success; it returns an error on every platform where it cannot check.
+
+### U1a — the canary proves the `output` path; the `forward` path is proved only on paper
+
+Opened by the containment review's finding that the generated ruleset hooked `output`
+only, which does not see forwarded traffic. The ruleset now installs the
+identical rule list into an `egress` chain at `output` and an `egress_forward`
+chain at `forward`, because a Compose project on a bridge inside the namespace
+has its egress FORWARDED, not output — and `provision.go`'s own `NetworkMode`
+assertion requires exactly that bridge arrangement.
+
+**The asymmetry that remains, stated because it is easy to miss.** The canary
+runs under `ip netns exec`, so it is a process holding a socket IN the
+namespace and its dials traverse the `output` hook. It therefore exercises the
+`output` chain and **not** the `forward` chain. So even on the privileged Linux
+lane item (1) describes, a passing canary would be evidence about the path the
+TARGET DOES NOT USE.
+
+**What would settle it:** the same privileged lane, with the canary run from
+inside a container attached to a bridge in the namespace rather than by `ip
+netns exec` — so that its packets are forwarded, exactly as the target's are.
+Cheaper and partial: on that lane, `nft list ruleset` inside the namespace,
+asserting both chains are present with the same rules and both at `policy
+drop`. That is a configuration check and marking your own homework, which is
+why it is the partial one.
+
+Today the forward chain is pinned by
+`TestTheRulesetHooksForwardAndNotOnlyOutput` and
+`TestEveryHookedChainCarriesTheIdenticalRuleList`, which parse the emitted
+script back with a reader separate from the writer. Both are statements about
+the text, not about a kernel.
+
+### U1b — the canary's timing evidence is self-reported
+
+The verdict `DialFailureSilentTimeout ⇒ blocked` is only sound if the probe
+waited out `DefaultCanaryDialTimeout`; nothing enforced or observed that, and
+the report carried no timing at all, so a `ConnectProbe` built with a 50ms
+dialer would have turned every silent timeout into "blocked" and the whole
+assertion into a green function that could not fail. `Attempt` now carries
+`elapsed_ms` (measured by `RunCanary` around the call it does not control) and
+the raw `failure`, and `EvaluateCanaryReport` refuses a silent timeout below
+1,900 ms (measured floor: `DefaultCanaryDialTimeout` 2s minus a 100 ms
+tolerance) and any outcome that disagrees with `ClassifyDialFailure` of the
+reported reason.
+
+**What that does NOT buy:** the canary is the untrusted half. A substituted or
+malicious binary can write any number it likes, and this package cannot
+authenticate it. What the check buys is that the ORDINARY way this control
+rots — an honest `ConnectProbe` with a dialer shorter than the declared bound
+— now fails loudly. **What would settle the rest:** the same privileged lane,
+comparing the reported `elapsed_ms` against the lane's own wall clock, plus the
+errno measurement item (2) already names.
+
+### U1c — the two halves of this package do not compose, and nothing calls either
+
+**Recorded here so it cannot be forgotten. It is NOT this package's to fix.**
+
+`Provision` seals a `Target` with `booted_clean` without any network namespace
+being involved: it never calls `SetupNetns` and never calls
+`AssertContainment`. A repository-wide grep finds no caller of `Provision`,
+`SetupNetns` or `AssertContainment` anywhere outside this package's own tests.
+So today a target can be provisioned, sealed and recorded `booted_clean` with
+no egress containment installed and no containment assertion run.
+
+The failure direction is currently safe only because nothing runs any of it.
+The moment a scan path calls `Provision` and fires probes, `booted_clean` would
+mean "the container is contained by gVisor" and would NOT mean "its egress is
+default-deny and the metadata endpoint is unreachable" — which is what a
+reader of that value will assume.
+
+**Whose it is:** the integration packet (the dynamic tier exit gate) plus the scan path, not target provisioning or
+network containment. **What would settle it:** a wiring point that (a) builds the `Netns`,
+(b) calls `SetupNetns`, (c) calls `AssertContainment` and refuses on error,
+BEFORE any probe engine starts, and a test asserting that ordering by call log
+— the containment review's verdict criterion is explicit that `AssertContainment` must run
+before the probe engines fire, and today there is nothing to assert that
+against.
+
+## U2 — DAST target provisioning has never run against a Docker daemon
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/provision.go`, `internal/dast/containment/provision_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestThisPackageSkipsNothing` reads the test file and fails if one appears. This entry is here because a green package is still not a proven control |
+| **Skipped here?** | N/A — nothing skips. What is missing is not a test, it is a container engine |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a real implementation of the `Docker` seam produces the shapes this package decides on. Specifically: that `docker compose up` applies `UpRequest.Runtime` to **every** service; that a real container's `HostConfig.Runtime` reads `runsc`; that a real `docker info` can report the gVisor **platform** at all; that a real runner can tell a build failure from a start failure from a health timeout; and that `ProbeHealth` issues its probe from the probe engine's namespace rather than from inside the target |
+| **Security control?** | **Yes.** "The target ran under gVisor with no host bind mounts" is the claim that makes firing probes at it acceptable, and `booted_clean` is the value that lets the record read as a real scan |
+| **Verdict** | **OPEN. Not legitimate, not accepted — unexecuted.** |
+
+**Docker is not installed on the host this packet was written on.** Measured,
+not assumed: `Get-Command docker` and `Get-Command runsc` both return nothing
+on `go1.26.5 windows/amd64`, Windows 11.
+
+**Nothing in the tree implements the `Docker` interface.** A repository-wide
+grep for `ComposeUp` and `EngineInfo(` finds the interface, its call sites in
+`provision.go`, and the test fake — no production implementation. So the seam's
+contract (written out in the `Docker` doc comment as five numbered obligations)
+is today enforced by nobody.
+
+### What the suite does prove, on Windows and on Linux alike
+
+Everything except the engine call is a pure function of a recorded shape, and
+all of it is tested — 112 passing assertions, 0 skips, clean under `go test
+-race` from PowerShell:
+
+- `Stage.Provenance()` is total over all 14 stages, and
+  `TestStageValuesCoversEveryDeclaredStage` reads `provision.go`'s own source
+  so a stage added to the const block and left out of `StageValues()` is caught.
+- `TestNoStageCanBeReadAsScannedClean` sweeps all 14 stages × all 5
+  `HalfStatus` values through `record.DeriveDastStatus` and asserts none
+  derives a status where `MeansDynamicallyScannedClean()` holds. That pins the
+  *relation* the spine's record section requires, not the literals.
+- Each of the five `record.TargetProvenance` values has its own test, and the
+  two failure families are separated by 6 + 16 recorded-shape cases.
+- `containmentViolations` is pure. 21 cases break one guard each, with an
+  unmutated control asserting the fixture reports zero violations — so a guard
+  that rejected everything would not pass the suite.
+- The gVisor runtime assertion is made against **every** container in the
+  project, including exited ones and dependencies, and a broken-runtime
+  dependency is one of the 16 boot-failure cases.
+
+### What it does not prove, and exactly what would settle it
+
+In order of decreasing cost:
+
+1. **A Linux CI lane with Docker Engine and gVisor.** Install gVisor and
+   register the runtime (`runsc install --runtime=runsc -- --platform=systrap`,
+   then restart the daemon). Check in a throwaway Compose fixture with two
+   services — `web` (with a `healthcheck:`) and `db` (without one) — and a real
+   `Docker` implementation. The lane then asserts, **positively**:
+   - `docker compose -p anvil-<hash> -f fixture.yaml up -d --wait
+     --force-recreate --remove-orphans` succeeds;
+   - `docker inspect --format '{{.HostConfig.Runtime}}' <web>` prints `runsc`,
+     **and the same for `<db>`** — this is obligation 2 of the seam contract
+     and is the one this package cannot check for itself;
+   - `docker inspect --format '{{index .Config.Labels
+     "com.docker.compose.service"}}' <web>` prints `web`;
+   - `Provision` returns a `Target` with `Provenance() == booted_clean` and an
+     `ImageDigest()` matching `^sha256:[0-9a-f]{64}$`.
+
+   And **negatively**, without which the lane proves nothing:
+   - the same fixture with `healthcheck:` deleted from `web` must refuse with
+     `ErrNotHealthy` at `StageHealth` — this is the case where `up --wait`
+     returns success instantly and the whole `HealthNone` zero-value trap
+     exists to catch it;
+   - the same lane with the `runsc` runtime unregistered must refuse with
+     `ErrRunscUnavailable` at `StagePreflightRuntime` **and `docker compose up`
+     must never appear in the daemon log**;
+   - a fixture whose `web` service adds `volumes: ["/var/run/docker.sock:/var/run/docker.sock"]`
+     must refuse at `StageContainment`.
+   **This is the one that closes the entry.**
+2. **The failure-classification half alone**, cheaper and partial: on any host
+   with Docker and no gVisor, run three fixtures — one whose `build:` stage
+   exits non-zero, one whose image is fine and whose `command:` is a nonexistent
+   binary, and one whose healthcheck never passes — and record what a real
+   `docker compose up --wait` returns for each. That is the only evidence that
+   `UpStatusBuildFailed` / `UpStatusStartFailed` / `UpStatusHealthTimeout` are
+   distinguishable in practice, and the build/boot provenance split depends on
+   them being distinguishable.
+3. **The platform half alone**, cheapest: on a host with gVisor, confirm that
+   the engine exposes the configured `--platform` at all (via `docker info` or
+   `/etc/docker/daemon.json` `runtimeArgs`). If it does not, `RuntimeInfo.Platform`
+   can only ever be empty and this package refuses every provision — which is
+   fail-closed and useless, and would need the check moved to `runsc --version`.
+
+### U2a — the build budget and the health budget are two numbers no runner has ever honoured
+
+Opened by the containment review's finding that `health.timeout_seconds` was applied
+as the total budget for build + pull + create + start + health, with the
+DEADLINE checked ahead of the runner's own reported status — so a seam
+answering `UpStatusBuildFailed` after the deadline was recorded `boot_failed`.
+A slow image build is the ordinary case on a cold cache, and the two outcomes
+send the operator to two different files.
+
+Two things changed. `refuseAfterUp` now consults the runner's reported status
+FIRST and lets the clock decide only when the runner named no phase at all (a
+distinct `StageUpBudget` / `ErrUpBudgetExhausted`, whose message states that
+which phase consumed the budget is UNKNOWN rather than guessing). And the
+budgets are split: `UpRequest.BuildTimeout` carries `DefaultBuildBudget` (15
+minutes) for build/pull/create/start, `UpRequest.Timeout` carries the declared
+health timeout for the health wait alone, and the enforced context deadline is
+their sum so a runner that ignores both cannot hang the call.
+
+**Unproven, and this is the honest part.** `DefaultBuildBudget` is a POLICY
+BOUND, chosen and not measured — no cold-cache build has been timed on this
+host, because this host has no Docker. And nothing anywhere applies the two
+budgets to the two phases: this package cannot, because the phase boundary is
+inside `docker compose up`, and no implementation of the seam exists. The split
+is today a contract written in the `Docker` interface doc and enforced by
+nobody.
+
+**What would settle it:** the Linux+Docker lane in item (1), with a fixture
+whose `build:` stage sleeps past `DefaultBuildBudget` and a separate fixture
+whose healthcheck never passes, asserting that the first refuses at
+`StageBuild` and the second at `StageHealth` — and, for the budget split
+specifically, that the first fixture is NOT cut off at
+`health.timeout_seconds`. Item (2) already collects the raw material for the
+first half.
+
+Until (1) exists, **`Provision` is a control that runs in zero CI lanes against
+a container engine**, and this entry is the standing record of that. No caller
+may treat a `*ProvisionError` as advisory: it is the only thing standing
+between an unprovable boot and a record that says `booted_clean`.
+
+---
+
+## U3 — DAST target reset has never destroyed a real container, and cannot replay a seed at all
+
+| | |
+|---|---|
+| **File** | `internal/dast/containment/reset.go`, `internal/dast/containment/reset_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestResetFileSkipsNothing` reads the test file and fails if one appears |
+| **Skipped here?** | N/A — nothing skips. Two separate things are missing: a container engine, and a component that does not exist yet |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | (a) That a real `docker compose down -v` removes what the verification then asserts is gone, and that a real `docker volume ls --filter label=com.docker.compose.project=<p>` can answer the volume question at all. (b) That a manifest declaring `seed:` can be reset — it cannot, and `NewResetter` refuses it |
+| **Security control?** | **Yes, indirectly and strongly.** Reset is what makes probe *k+1* an independent observation of probe *k*'s target. A reset that quietly half-succeeded makes every finding after it a claim about an application nobody can name, and the record still says `booted_clean` |
+| **Verdict** | **OPEN. Not legitimate, not accepted — (a) unexecuted, (b) unimplemented and refused loudly.** |
+
+**Docker is not installed on the host this packet was written on** — the same
+measurement recorded in U2 above. `internal/dast/containment` still implements
+no production `Docker`, and now also no production `VolumeInspector`.
+
+### What the suite does prove, on Windows and on Linux alike
+
+The decision logic is a pure function of recorded shapes, and it is driven by a
+world model that actually destroys and actually recreates, so the failure modes
+are exercised rather than described:
+
+- **The stop condition, directly.** `TestNoStateSurvivesAReset` writes a marker
+  to the authorized service's writable layer and to its volume, resets, and
+  asserts neither is reachable.
+  `TestTheStateSurvivalCheckCanSeeSurvivingState` is its negative control: the
+  same harness, with the `-v` dropped, must still SEE the marker and the reset
+  must refuse. Without that second test the first one asserts nothing.
+- **The order, not only the calls.**
+  `TestResetVerifiesTheDestroyBeforeReProvisioning` pins the exact call
+  sequence — `down`, then both listings, then target provisioning's `Provision` unchanged.
+  Moving the verification after the re-provision was tried, live: it does not
+  merely stop catching the damage, it reports a false positive, because the
+  containers it sees are the ones `up` just made.
+- **Both halves of "indistinguishable from a first provision".** Same project,
+  service, image ref, digest, health URL, runtime, platform and provisioning
+  path; DIFFERENT container id for the authorized service AND for every other
+  container in the project. `TestVerifyFreshChecksEveryDeclaredField` breaks
+  one field per case with an unmutated control, so a verifier that rejected
+  everything would not pass.
+- **`Provenance()` is total over the reset stages, no stage maps to
+  `booted_clean`, and `TestNoResetStageCanBeReadAsScannedClean` sweeps every
+  stage × every `record.HalfStatus` through `record.DeriveDastStatus` asserting
+  none derives a status where `MeansDynamicallyScannedClean()` holds.**
+- **Fifteen guards were broken one at a time, watched go red, and restored
+  byte-for-byte** (SHA-256 `9369CE4D…6EBE` before and after each).
+
+### What it does not prove, and exactly what would settle it
+
+1. **A Linux CI lane with Docker Engine and gVisor** — the same lane U2 needs,
+   extended. On top of U2's assertions it must run, **positively**: provision
+   the two-service fixture, `docker exec` a write into the `web` container's
+   writable layer *and* an `INSERT` into the `db` service's named volume,
+   `Reset`, then assert (i) `docker ps -a --filter
+   label=com.docker.compose.project=anvil-<hash>` is empty *between* the down
+   and the up, (ii) `docker volume ls --filter
+   label=com.docker.compose.project=anvil-<hash>` is empty at the same moment,
+   (iii) the file and the row are both gone from the new containers, and (iv)
+   every container id differs from the pre-reset set while `ImageDigest()` is
+   byte-identical.
+   And **negatively**, without which the lane proves nothing:
+   - the same reset driven with `down` **without** `-v` must refuse at
+     `ResetStageDestroyUnverified` naming the surviving volume — this is the
+     one failure the container listing cannot see and it is the reason
+     `VolumeInspector` exists;
+   - a `docker volume ls` that errors (e.g. the daemon socket closed
+     mid-teardown) must refuse, not read as "there are none".
+   **This is the one that closes half (a).**
+2. **A seed-execution component.** `NewResetter` refuses any manifest with a
+   `seed:` section (`ErrResetSeedNotReplayable`), because a destroy-and-recreate
+   discards the seed's effects and nothing in this tree replays them: the
+   target it would hand back is an *unseeded* one, and calling that "the
+   declared initial state" is precisely the silent substitution target reset exists to
+   prevent. plan/design/dynamic-tier.md declares `seed.command` at line 1106 and assigns no
+   packet to execute it. What settles this: a component that runs
+   `seed.command` in exec form after health passes, plus a seam here that
+   replays it after each re-provision **with evidence that it ran** — the same
+   standard the four observations already meet, not an exit code alone. Until
+   then this is a REFUSAL, not a gap: no seeded manifest can be silently
+   half-reset, it simply cannot be reset.
+3. **`Target` invalidation under concurrency**, cheapest and narrowest.
+   `invalidate` writes `Target.sealed` and `Target` carries no mutex, so a
+   caller resetting one target while another goroutine reads the same handle is
+   a data race. plan/design/dynamic-tier.md places target reset in the **serial** group and nothing
+   in this package resets two targets at once, so no test exercises it and
+   `go test -race` (PowerShell, 26 packages, 0 races) says nothing about it.
+   What would settle it: a mutex on `Target` — an edit to `provision.go`, which
+   is outside target reset's write scope — or a documented single-owner contract
+   enforced at the call site when the probe engines (the nuclei driver onwards) land.
+
+Until (1) exists, **`Reset` is a control that runs in zero CI lanes against a
+container engine**, and this entry is the standing record of that.
+
+---
+
+## U4 — the Nuclei driver has never executed an engine. It CAN now fire a request through the kernel, and does.
+
+| | |
+|---|---|
+| **File** | `internal/dast/engines/nuclei.go`, `internal/dast/engines/nuclei_test.go` |
+| **`t.Skip` sites** | **Zero.** `TestThisFileSkipsNothing` parses the test file and fails if one appears |
+| **Skipped here?** | N/A — nothing skips. **One** thing is missing now: the engine |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no probe engine |
+| **Property unverified** | (a) That a real Nuclei engine, handed a `RunPlan`, honours `TargetSpec.PinnedAddr` instead of re-resolving `TargetSpec.URL`. ~~(b) That `Driver.Fire` admits and issues a request end to end~~ — **(b) IS NOW VERIFIED. See below.** |
+| **Security control?** | **Yes, and it is the whole packet.** The driver exists to make it structurally impossible to point Nuclei anywhere the kernel has not admitted |
+| **Verdict** | **PARTIALLY CLOSED. (a) OPEN — unexecuted and unenforceable from here. (b) CLOSED 2026-08-23: the admit-and-issue path executes end to end against the real kernel.** |
+
+### (a) nuclei is not installed, and no adapter exists
+
+**Measured** on the development host: `Get-Command nuclei` finds nothing, and
+`go list -m all` contains no `projectdiscovery` module. `SystemEngine()`
+therefore returns `*EngineUnavailableError` on **every** host — it never
+returns a no-op engine — and `ScanResult.AssertNotSilentlyEmpty` refuses to let
+an empty finding list be read as clean when nothing was issued.
+
+The unenforceable half is stated in the `Engine` interface's own doc comment
+and repeated here so it is not lost: `TargetSpec` carries both a `URL` (the
+canonical host from gate 8) and a `PinnedAddr` (gate 9's pinned address). An
+implementation **must** dial `PinnedAddr` and must not resolve the URL's host.
+Anvil's own egress path makes that structural — `authz.PinnedDialAddress`
+returns a `netip.AddrPort` with no hostname in it, so a dialer built on it
+*cannot* re-resolve — but an external engine is a process this package does not
+control. **Nothing in `internal/dast/engines` enforces it.**
+
+### (b) CLOSED — the gate-11 blocker is gone, the tripwire fired, and the five tests it named are written
+
+**What this entry used to say**, kept because the correction is the point:
+`authz.Adjudicate` is the only mint for an `authz.Authorization`;
+`authz.admissionChain` contained `Gate11RobotsDeny` with **nothing registered
+for it**; a missing gate is a refusal; therefore `NewTargetSpec`, `NewDriver`,
+`Driver.Fire` and `Driver.Run` **could not be exercised on their success path
+from outside package `authz`**, and every test that needed one asserted a
+refusal instead.
+
+`TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` was the tripwire
+planted against exactly that condition, with the five replacement tests named
+in its failure message.
+
+**MEASURED 2026-08-23, PowerShell, `go1.26.5 windows/amd64`: it fired.**
+
+```
+--- FAIL: TestNoAuthorizationCanBeMintedUntilGate11IsRegistered (0.00s)
+    nuclei_test.go:1416: the kernel ADMITTED a target, so an authz.Authorization can now be minted
+        from outside package authz. [...] Write:
+          1. NewTargetSpec against the real Authorization [...]
+```
+
+Gate 11 is now **a scope narrowing, not an admission predicate**:
+`authz.NarrowScopeToRobots` takes fetched `robots.txt` bytes as inert data and
+returns a **narrower** sealed scope, applied once at run initiation;
+`CheckGate11RobotsDeny` remains in the Governor's per-request chain, where it
+has the request PATH it always needed. `admissionChain` is now `{4,5,6,8,9,10}`
+and every gate in it has an implementation. `registerInto` refuses to put gate
+11 back.
+
+**The tripwire is deleted rather than quietened, and its five tests are
+written** (`internal/dast/engines/nuclei_test.go`, section "THE KERNEL
+ADMITS"):
+
+1. `TestNewTargetSpecCarriesTheCanonicalHostAndThePinnedAddress` — `URL()`
+   carries gate 8's **canonical** host and `PinnedAddr()` carries gate 9's
+   **pinned address**, asserted separately. The fixture's literal
+   (`TARGET.EXAMPLE.COM.`) differs from its canonical form (`target.example.com`)
+   so the distinction is real, and a `t.Fatal` fires if the two constants are
+   ever made equal.
+2. `TestFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate` — **the first proof
+   in this repository that the gate stack PERMITS anything.** proposal →
+   `NewRequestIntent` → `GateAudit.AuditedAdmit` → `Issuer`, with **one audit
+   row per gate in `authz.GovernorGateOrder()`**, asserted by position and
+   identity against the written-down list, and `Coverage.RequestsIssued`
+   moving 0 → 1. `AssertNotSilentlyEmpty` returns nil — also a first.
+3. `TestFireRefusesAnOutOfScopeRedirectAndIssuesNothing` — a **real** kernel
+   refusal. `NarrowScopeToRobots` applies a `Disallow: /` document to the
+   sealed scope, the Governor re-validates against the narrowed one, gate 13
+   refuses the redirect hop at `ReasonHopOutsideScope`, and **the `Issuer` is
+   called zero times**. The chain also stops before gate 14, so no rate budget
+   was spent on a request that never left.
+4. `TestDriverRunRefusesAnUnattributableResultFromARealDriver` — `Run`'s drop,
+   from a driver `NewDriver` actually built, over both an unknown id and an
+   **admitted id carrying a different digest**, with an anti-vacuity row
+   proving an attributable result still reaches the callback.
+5. `TestNewTargetSpecRefusesAnAuthorizationMintedForADifferentTarget` — the
+   cross-target token reuse `RequireAuthorization` exists for, over a different
+   host, a **different pinned address on the same host (DNS rebinding)**, and a
+   different port, plus an anti-vacuity row and the same refusal at `NewDriver`.
+
+**Break-and-restore, PowerShell, `nuclei.go` SHA-256
+`A2A465B896B7393D81EAA853956B9AC9B54C128C103241473432AB53C3798D81` before and
+after every one:**
+
+| break | result |
+|---|---|
+| `URL()` built from `target.Literal()` | RED — `URL() = "https://TARGET.EXAMPLE.COM.:443"` |
+| `pinned` set to `canonical:port` | RED — `PinnedAddr() = "target.example.com:443"` carries a hostname |
+| `Governor.Admit` instead of `Audit.AuditedAdmit` | RED — 0 rows for 6 gates |
+| `Audit.Record` of the LAST result only | RED — `wrote: [gate14] want: [gate16 gate17 gate13 gate11 gate15 gate14]` |
+| refusal reported but request still issued | RED — "the Issuer was called 1 time(s) on a REFUSED request" |
+| `RequestsIssued++` removed | RED — counter never moves |
+| `Run` falls back to `Templates()[0]` | RED — both unattributable rows |
+| `NewTargetSpec` ignores the authz error for a valid token | RED — all four cross-target rows |
+
+**A finding from that sweep, recorded because it is the reason these tests are
+not redundant:** the pre-existing `TestTargetSpecRefusesEveryUnauthorizedRoute`
+stayed **GREEN** through the last break. It only ever tries a **zero**
+`Authorization`, so it cannot see a *real* token being accepted for the wrong
+target — it is a check that cannot see the damage. Test (5) is what sees it.
+
+Making the two fixture constants equal turns test (1) red with the
+anti-vacuity message, so the generator can produce the breaking input.
+
+### What the suite does prove, on any host
+
+- **The `code:` protocol is rejected at load, not skipped at match time**, and
+  the assertion is against `TemplateSet.Lookup` — the function `Fire` actually
+  calls — rather than against a comment.
+- **The protocol list is an ALLOWLIST.** A table drives `javascript`, `flow`,
+  `headless`, `self-contained`, `dns`, `network`, `tcp`, `file`, `ssl`,
+  `websocket`, `whois`, `requests` and an invented `quantumteleport` through
+  it; none of them contains the substring "code", so a denylist of one passes
+  the first row and fails the rest.
+- **The structural analysis is not defeated by syntax**: quoted keys, a wholly
+  indented document, tabs, a flow mapping, a second YAML document, a `code:`
+  inside an indented block scalar, a `code:` in a comment, CRLF, a BOM, a
+  duplicate key, a top-level sequence — sixteen rows, with four admitted
+  controls so a loader that refused everything would fail.
+- **`WithPDCPUpload` appears in no call expression in the package**, proven by
+  reading the package's own syntax tree, with an anti-vacuity check that the
+  identifier is still *declared* somewhere so a rename cannot silently retire
+  the guard. The spy's call count is the second, weaker half.
+- **Interactsh/OAST is off structurally**, not by default value: this driver
+  proposes only three of the kernel's six request origins, and the three it
+  omits are exactly the three whose protocols the template allowlist refuses.
+  There is no argument to any constructor that turns the other three on.
+- **`RequestProposal` holds nothing that could open a socket**, proven by a
+  recursive reflection walk over its fields and its methods' return types
+  (plan/design/dynamic-tier.md exit criterion 19, done early). `net/netip` is the one
+  stop-point, by package path, for the reason `authz` lists it inert.
+- **Twelve guards were broken one at a time, watched go red, and restored
+  byte-for-byte** — `nuclei.go` SHA-256 `31FBF061…232A` before and after every
+  one. Two of them are worth naming: replacing the walk's link check with
+  `d.Type()&os.ModeSymlink != 0` makes the **Windows directory junction** walk
+  straight through (this host reports a junction as `os.ModeIrregular`,
+  `IsDir()==false`, symlink bit **clear** — the H1 primitive again), and adding
+  `net/http` to the package is caught both by the local echo *and* by the build-time guard's
+  authoritative tier-1 scanner over the real tree.
+
+### What it does not prove, and exactly what would settle it
+
+1. ~~**Register gate 11 (or rule it out of the admission chain).**~~ **DONE
+   2026-08-23.** Gate 11 was ruled out of the admission chain and rewritten as
+   `authz.NarrowScopeToRobots`. Half (b) is closed; see above. What remains
+   below is (a), and it **is** a host problem.
+2. **A CI lane with the pinned Nuclei engine, and an `Engine` adapter.** It
+   must run, **positively**: load the pinned `nuclei-templates` snapshot
+   (template pinning), execute against a fixture target, and assert
+   `AssertNotSilentlyEmpty` returns nil *and* at least one known finding
+   appears. And **negatively**, without which it proves nothing:
+   - the same lane with the engine binary removed must exit
+     `ExitCodeArtefactAbsent` (2) and must **not** report a clean target;
+   - the same lane with an empty template directory must fail with
+     `ErrNoTemplates`;
+   - a fixture template pointing at a host **outside** the scope file must
+     produce a kernel refusal and reach the `Issuer` zero times.
+3. **Template provenance.** Upstream templates carry a trailing `# digest:`
+   line signed by projectdiscovery. **Nothing here verifies it**, and no
+   assumption is made that anything did: every template is analysed
+   structurally regardless of source, and a SHA-256 of its exact bytes is
+   recorded so template pinning's pin can be checked against what was actually loaded.
+   What would settle it: projectdiscovery's public key plus their verifier,
+   wired into template pinning's promotion step — and, in the meantime, template pinning's
+   diff-before-promotion is the control, not this package.
+4. **`internal/ingest/sanitize` is out of reach**, so this package carries a
+   deliberately smaller local scrub. **Measured**: `go test -run
+   TestGate2NoDastPackageReachesTheInferenceLayer ./internal/dast/authz/`
+   fails on an import of it, because every package under `internal/dast` may
+   link only the stdlib, the DAST tree and `kernelImportAllowlist` (one entry:
+   `internal/record`). The scrub removes controls, bidi, zero-width, tag
+   characters and invalid UTF-8 and bounds the length; it does **not** do
+   sanitize's hidden-markup analysis. What would settle it: an entry for
+   `internal/ingest/sanitize` in `kernelImportAllowlist` — a `phase0_build.go`
+   edit, which is the build-time guard's write scope — or moving the shared scrub into
+   `internal/record`, which is already on the list.
+
+**The Nuclei driver's admit-and-issue path now runs locally and in every CI
+lane that runs `go test ./...`** — it needs no engine, no network and no
+Docker, because the `Issuer` is the seam and the kernel is real. What still
+runs in zero lanes is the **engine**: (a) above, and item 2 below.
+
+---
+
+## U5 — the ZAP driver has never started a JVM, and ZAP's memory footprint is still unquantified
+
+| | |
+|---|---|
+| **File** | `internal/dast/engines/zap.go`, `internal/dast/engines/zap_test.go` |
+| **`t.Skip` sites** | **Zero.** `nuclei_test.go`'s `TestThisFileSkipsNothing` walks every `.go` file in the package, so it covers `zap_test.go` and would fail if one appeared |
+| **Skipped here?** | N/A — nothing skips. Three separate things are missing: ZAP, a route to an `authz.Authorization`, and any measurement of the JVM |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` installs no ZAP and no ZAP add-ons |
+| **Property unverified** | (a) That the generated `zap.yaml` is one ZAP accepts, and that the four caps and the two report templates are the keys ZAP actually reads. (b) That a ZAP driven through `env.proxy` really has no other egress. ~~(c) `ZapDriver.Fire`'s admit-and-issue path~~ — **(c) IS NOW VERIFIED, closed with U4(b).** (d) **ZAP's JVM memory footprint, which plan/design/dynamic-tier.md:1253 asks for by name and which this packet deliberately did not guess at.** |
+| **Security control?** | **Yes.** The proxy requirement is the only thing that puts Anvil's kernel in front of a request ZAP makes, and the four caps are the only thing between a scheduled scan and ZAP's unlimited defaults |
+| **Verdict** | **PARTIALLY CLOSED. (a) and (b) OPEN, unexecuted on this host; (c) CLOSED 2026-08-23 with U4(b); (d) OPEN, UNMEASURED and recorded as unmeasured.** |
+
+### (d) first, because it is the one the plan asked for
+
+plan/design/dynamic-tier.md:1253 records ZAP's JVM memory footprint as unquantified
+(research 15's own gap) and notes it decides whether tier-M hardware (the spine's hardware-tier table,
+32 GB / 8 core) accommodates a scheduled full scan alongside SAST and the
+coding agent.
+
+**It is still unquantified, and no number appears anywhere in the ZAP driver.** That is a
+decision, not an omission: a figure invented here would become the figure
+tier-M sizing is documented against, and it would be documented against
+nothing. `TestTheJVMFootprintIsNotFabricatedAnywhereInThisPackage` reads
+`zap.go` and fails if one appears, and also fails if the word "unquantified"
+leaves the file — so filling the gap and updating this entry have to happen in
+the same commit.
+
+**What would settle it, and what stops it here.** The plan's own suggestion is
+one `docker stats` run during a representative scheduled scan.
+**MEASURED 2026-08-22, PowerShell, on the development host:**
+
+```
+Get-Command docker  -> NOT FOUND
+Get-Command zap.sh  -> NOT FOUND
+Get-Command zap     -> NOT FOUND
+Get-Command zap.bat -> NOT FOUND
+Get-Command java    -> C:\Program Files\Common Files\Oracle\Java\javapath\java.exe
+java -version       -> 23.0.2 2025-01-21 (HotSpot 23.0.2+7-58)
+```
+
+So **both halves of the suggested measurement are unavailable here**: no ZAP to
+run and no Docker to measure it with. A **JVM is present**, which narrows the
+gap usefully — this host is not disqualified by a missing runtime, only by a
+missing application — but a `java -Xshare` heap figure from a JVM running
+nothing is not a ZAP scan's RSS and would be worse than no number.
+
+The measurement that settles it, stated so it can be executed without
+re-deriving it:
+
+1. On a Linux host with Docker, run the pinned ZAP image against a fixture
+   target using the plan `ZapAutomationPlan.YAML()` produces, with the four
+   caps at `ZapCapsAtKernelCeiling(authz.CodedCaps())` (today: `threadPerHost`
+   4, `delayInMs` 400, `maxScanDurationInMins` 30, `maxRuleDurationInMins` 30).
+2. Sample `docker stats --no-stream` at least once a minute for the whole scan
+   and record **peak** RSS, not mean — tier-M sizing is a peak question.
+3. Record the figure, the ZAP version, the add-on versions and the target in
+   this entry, and only then in any sizing document.
+4. Re-run it with SAST and the coding agent resident, because the plan's
+   question is about **coexistence**, not about ZAP alone.
+
+### (a) ZAP is not here, and the driver says so rather than passing
+
+`SystemZapRunner()` returns `*ZapUnavailableError` on **every** host — it never
+returns a no-op — and that error unwraps to `ErrEngineUnavailable` and reports
+`ExitCodeArtefactAbsent` (2), which is the nuclei driver's constant and not a second one.
+`ZapScanResult.AssertNotSilentlyEmpty` refuses to let an empty finding list be
+read as clean.
+
+**Two strings in `zap.go` are transcribed rather than measured**, and there is
+no ZAP here to check them against: the report template names `sarif-json` and
+`traditional-json-plus`, and the Automation Framework key names in the
+generated plan (`replacer`/`req_header`, `passiveScan-config`,
+`activeScan`'s four cap keys, `env.proxy.hostname`/`port`). What would settle
+it: one `zap.sh -cmd -autorun` against the generated plan on a host with ZAP,
+asserting a zero exit **and** that both report files appear. `Autorun` already
+refuses a zero exit with a missing report, so that lane's negative control is
+built.
+
+### (b) the proxy is required, and nothing here proves ZAP honours it
+
+This is the substantive difference between the nuclei driver and the ZAP driver and the reason U5 is
+not just "U4 with a different binary". Nuclei is driven in-process and gate 3
+tier 1 makes it *structurally* unable to dial from `internal/dast/engines`.
+**ZAP is a JVM with its own HTTP stack**, so the containment argument is:
+
+- `NewZapAutomationPlan` refuses without a `ZapProxy`; `NewZapProxy` refuses
+  any address that is not a loopback literal; `Verify` refuses a rendered
+  document whose proxy block is missing or altered. All three are tested,
+  including by deleting each check and watching the suite go red.
+- Anvil's egress layer assigns `authz.RefuseAllRedirects` to its client's
+  `CheckRedirect`, so Anvil never follows a `Location` automatically. ZAP
+  receives the 3xx; if ZAP follows it, that is a **new request to the proxy**
+  and arrives at gate 13 with `OriginRedirect` and `Hop+1`.
+
+**What none of that proves:** that a ZAP process actually honours `env.proxy`
+for every request, that it has no second egress path (add-on update checks, the
+ZAP API port, an OAST callback from an alpha add-on), and that a runner does
+not leave it able to dial directly. **Nothing in `internal/dast/engines`
+enforces the last one** — it is stated as an obligation on the `ZapRunner`
+implementer in that interface's doc comment. On Linux the enforcement is network containment's
+netns with default-deny egress; on a host without one it is unenforced. **A
+lane that closes this must include the negative control: a fixture target
+reachable ONLY through the proxy, plus a second address reachable only
+directly, and an assertion that the second one was never contacted.**
+
+### (c) CLOSED — the gate-11 blocker was shared with U4, and closing it closed this too
+
+**What this said:** `NewZapDriver` builds its `TargetSpec` through
+`NewTargetSpec`, so it cannot be constructed without an `authz.Authorization` —
+and none could be minted from outside package `authz`. Only the refusal half
+(`TestNewZapDriverRefusesEveryUnauthorizedRoute`) was testable.
+
+**MEASURED 2026-08-23, PowerShell.** Gate 11 is a scope narrowing (see U4(b)),
+the kernel admits, and the ZAP driver's admit-and-issue path is now exercised for real:
+
+- `TestZapFireAdmitsAndIssuesEndToEndWithOneAuditRowPerGate` — `NewZapDriver`
+  against a real `authz.Authorization`, a `TargetSpec` that came from
+  `NewTargetSpec` rather than a composite literal (so `URL()` is the canonical
+  host and `PinnedAddr()` is the pinned address), `Fire` through to the
+  `Issuer`, **one audit row per gate in `authz.GovernorGateOrder()`**, and
+  `ZapCoverage.RequestsIssued` moving 0 → 1.
+- `TestZapFireRefusesAnOutOfScopeRedirectAndIssuesNothing` — the same
+  `NarrowScopeToRobots` refusal as U4(3), asserting the `Issuer` saw **zero**
+  calls and that the chain stopped before gate 14.
+
+**Break-and-restore, PowerShell, `zap.go` SHA-256
+`F17EB4E1FD416865E86B91936B56B784568BA1655EAB18F148252B6CEDB2DD4C` before and
+after:** replacing `Audit.AuditedAdmit` with `Governor.Admit` and issuing on
+the refusal path turned both tests RED — "the admission wrote 0 audit row(s)
+and `authz.GovernorGateOrder()` has 6 gates" and "the Issuer was called 1
+time(s) on a REFUSED request".
+
+The forging helpers `zapSpec` and `zapDriverWithRunner` are **kept**, and their
+comments now say why: everything below the authorization boundary — plan
+rendering, invocation shape, the runner seam, report checking — does not need a
+kernel and should not pay for one.
+
+### The scheduled-only rule is enforced NOWHERE in this package, by instruction
+
+The ZAP driver's forbidden actions require the driver to be
+**trigger-agnostic**: ZAP is gated to scheduled full scans "enforced by the
+caller's trigger-policy check, not by this driver refusing to run". So there is
+no trigger field and no trigger check in `ZapConfig` or `ZapPlanFacts`, and
+`TestThisDriverIsTriggerAgnosticByInstruction` fails if one appears — turning
+the absence into a recorded decision rather than an oversight somebody later
+"fixes" in the wrong layer.
+
+**The consequence is that today nothing anywhere stops ZAP being driven from
+the always-on path**, because the caller that would carry the trigger-policy
+check does not exist yet. That is this entry's, not the ZAP driver's, to keep visible
+until it does.
+
+### What the suite does prove, on any host
+
+- **All four caps are explicit, bare positive integers, appear exactly once,
+  and equal the sealed `ZapCaps` gate 14 checked** — so "unlimited", `0`,
+  `-1`, `0400`, `"400"`, `1_000`, `400ms`, `null`, a duplicate key and a
+  *different but bounded* value are each a separate refusal.
+- **The caps' PRODUCT is checked, not only each cap.** The same
+  `ZapCapFacts` is accepted against `authz.CodedCaps()` and refused against a
+  kernel whose requests-per-target-run was lowered — nothing about the four
+  numbers changed, so only the product check can produce the difference.
+- **`ZapCapsAtKernelCeiling` reads the kernel rather than returning
+  constants**, proved by lowering gate 14's floors and requiring every derived
+  value to move.
+- **The run id is an allowlist**, `[A-Za-z0-9._-]`, because it becomes an HTTP
+  header value: CRLF, LF, CR, quote, backslash, space, colon, NUL, tab, DEL,
+  non-ASCII, zero-width, bidi and tag characters are eighteen separate rows.
+- **The context include pattern is `\Q…\E`-quoted** and the URL is re-checked
+  against gate 8's canonical-host grammar, so a host carrying a `\E` cannot
+  end the quote early.
+- **The argv is a vector of exactly four elements and never a shell string**,
+  and `Argv()` is a real copy.
+- **`Verify` runs inside the constructor**, proved through an unexported
+  renderer seam: a renderer that drops one line yields **no plan**, for each of
+  ten lines in turn. Without the seam that call was untestable and deleting it
+  left the whole suite green.
+- **Sixteen guards were broken one at a time, watched go red, and restored
+  byte-for-byte** — `zap.go` SHA-256 `A456F9A5…0942` before and after every
+  one. Two are worth naming. (i) The plan-digest check in `Fire` **passed while
+  deleted**: the fixture driver holds a zero `Authorization`, so the proposal
+  fell through to `authz.RequireAuthorization` and was refused by a different
+  control. The test now asserts both digests appear in the message. (ii) The
+  first `ZapAutomationPlan` stored `reports []ZapReportTemplate`, and because
+  the type is passed by value a copy shared the backing array — the field is
+  gone and the type now carries no reference field at all.
+
+### What it does not prove, and exactly what would settle it
+
+1. ~~**Register gate 11 (or rule it out of the admission chain).**~~ **DONE
+   2026-08-23**, same item as U4(1), and it unblocked both drivers as predicted.
+2. **A CI lane with ZAP and the pinned add-ons.** Positively: render the plan,
+   run `zap.sh -cmd -autorun`, assert exit 0, both report files non-empty, and
+   `AssertNotSilentlyEmpty` returning nil. Negatively, without which it proves
+   nothing: the same lane with ZAP removed must exit `2` and must not report a
+   clean target; a plan whose report directory is unwritable must fail with
+   `ErrZapReportMissing` rather than clean; and a fixture redirect to a host
+   outside the scope file (ZAP #2546's shape) must be refused at gate 13 and
+   reach the target zero times.
+3. **A containment lane proving `env.proxy` is ZAP's ONLY egress**, with the
+   second-address negative control described in (b).
+4. **The JVM footprint measurement in (d)**, before any tier-M sizing document
+   quotes a number.
+
+Until (1) and (2) exist, **the ZAP driver has never rendered a plan that a ZAP
+process read**, and this entry is the standing record of that.
+
+---
+
 # LEGITIMATE
 
 These stay. Each is a case that genuinely cannot exist where it skips, and each
 is covered elsewhere.
+
+## U6 — Tier 0 of the inventory (the runtime spec probe) has never fetched a spec over a socket, and cannot read a YAML one
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier0_runtime.go`, `internal/dast/inventory/tier0_runtime_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. Four things are absent: any `SpecFetcher` implementation, any running target, a YAML parser, and any route to gRPC server reflection |
+| **Skips in CI?** | N/A — same. `.github/workflows/ci.yml` starts no target application |
+| **Property unverified** | (a) That a spec fetch works against a real HTTP server. (b) That real-world YAML OpenAPI documents parse — they cannot, and are refused by name. (c) That gRPC server reflection contributes anything — it cannot reach this seam at all. (d) That `$ref`-bearing parameters can be resolved — they are refused per-operation. |
+| **Security control?** | **Partly.** Gate 11's asymmetry — a document served by the target may add candidates and may never widen scope, grant authorization, or mark anything confirmed — IS a security control and IS fully exercised by tests. The parsers and the coverage arithmetic are correctness, not containment. |
+| **Verdict** | **OPEN on (a)–(d), each recorded below with what would settle it. The security half is closed.** |
+
+### (a) No `SpecFetcher` exists anywhere in this repository
+
+`inventory.SpecFetcher` is the egress seam. The build-time guard's gate 3 tier 1 fails the build
+if any package under `internal/dast` outside `internal/dast/authz` imports
+something that can construct a connection, so this package cannot dial and the
+implementation has to be handed in from outside that boundary.
+
+**MEASURED 2026-08-22, PowerShell, on the development host.** A scan of every
+`.go` file in the module for `func .*\) FetchSpec\(` and `func .*\) Issue\(`
+returns exactly one file:
+
+```
+internal/dast/inventory/tier0_runtime_test.go     (recordedFetcher, a test double)
+```
+
+There is no production implementation of `inventory.SpecFetcher` and none of
+`engines.Issuer` either. Every spec fetch that has ever happened in this
+repository was driven by recorded response shapes.
+
+That is the correct shape for now — the seam is exercised, the kernel path in
+front of it is exercised, the tool-absent path refuses loudly and is counted —
+but it means one specific claim is untested: **that a real HTTP response,
+with real chunked framing, real headers and a real `Content-Type`, produces
+the same `Result` a recorded one does.**
+
+**What would settle it.** An `httptest.Server` in the package that owns the
+`SpecFetcher` implementation — NOT in this package, which cannot import
+`net/http` without failing gate 3 — serving `/openapi.json` and asserting the
+same route list this file's fixtures produce. The implementing packet is the
+one that writes it.
+
+### (b) A YAML spec cannot be read, and says so
+
+`go.mod`'s only requirement is `modernc.org/sqlite`. There is no YAML parser in
+the module and adding one is a dependency decision, not a local edit.
+
+So `DetectFormat` RECOGNISES YAML — by its top-level `openapi:`, `swagger:` or
+`paths:` key — and `ParseSpec` returns a single `RefusalYAMLUnsupported` row
+naming it. It does not return an empty route list, because "we could not read
+it" and "the target serves no spec" must not produce the same output.
+
+This matters more than it looks: **YAML is the more common on-disk spelling of
+OpenAPI**, and a target that serves `/openapi.yaml` rather than `/openapi.json`
+contributes zero routes to Tier 0 today. `Result.Answered()` still moves, so
+`AssertNotSilentlyEmpty` passes and the refusal row is what tells an operator
+why the inventory is thin.
+
+**What would settle it.** A YAML parser in `go.mod` — an orchestrator licence
+and supply-chain decision, not this packet's — after which `parseOpenAPI` needs
+no change: only `DetectFormat`'s YAML branch and one decode call.
+
+### (c) gRPC server reflection cannot reach this seam at all
+
+plan/design/dynamic-tier.md:598 names gRPC reflection as a Tier 0 source. It is not one,
+and the reason is structural rather than a missing tool: **server reflection is
+a bidirectional HTTP/2 stream (`grpc.reflection.v1.ServerReflection/
+ServerReflectionInfo`), not a document a GET returns.** `SpecFetcher` issues one
+request and reads one body, and no amount of configuration makes that a
+streaming RPC.
+
+It is therefore refused by name — `RefusalGRPCReflectionUnsupported`, keyed off
+an `application/grpc*` content type — rather than absent.
+
+**What would settle it.** A separate seam with its own kernel path, because a
+streaming RPC needs per-message admission rather than per-request admission.
+That is a packet, not a fix, and the plan does not currently have one.
+
+### (d) `$ref` parameters are refused, and stay in the denominator
+
+This tier resolves no JSON references. A parameter that arrives as
+`{"$ref": "#/components/parameters/Page"}` has no name and no type after
+unmarshalling, and inventing either would be worse than refusing.
+
+So the OPERATION is refused — `RefusalParamUnusable` — and, because that reason
+is on `perOperationReasons`, it still counts toward
+`Result.DenominatorFloor()`. That direction is deliberate: dropping a refused
+operation would SHRINK the denominator of `endpoint_coverage`
+(plan/design/dynamic-tier.md:1152) and make coverage look better than it is.
+`TestARefusedOperationStaysInTheCoverageDenominator` is the guard, and it was
+demonstrated red by replacing `DenominatorFloor` with `len(r.routes)`.
+
+**What would settle it.** A `$ref` resolver over `components/parameters` and
+`definitions`, bounded against reference cycles. It is a bounded piece of work
+and it belongs in this package; it was left out of the runtime spec probe to keep the packet's
+surface to the two axes and the kernel path.
+
+### A note on U4, recorded because it changes what U4 says
+
+U4 records that "`authz.Gate11RobotsDeny` has no implementation registered, so
+the admission chain refuses every target there and **no `authz.Authorization`
+can be minted from outside package `authz` at all**."
+
+**MEASURED 2026-08-22, PowerShell, in the working tree the runtime spec probe was written
+against:** that is no longer true. `Gate11RobotsDeny` has been removed from
+`kernel.go`'s `admissionChain` and moved into the Governor's per-request chain
+(`phase3_enforcement.go`'s `governorGateOrder`), where it has the request PATH
+that `CheckGate11RobotsDeny` needs; `registerInto` now refuses to put it back.
+`authz.Adjudicate` admits the fixture target and mints a real
+`authz.Authorization`.
+
+Two consequences, neither of them the runtime spec probe's to act on:
+
+1. **The runtime spec probe's fetch half is fully exercised.** `Probe` is tested end to end
+   against a recorded `SpecFetcher`, including a real kernel refusal (a
+   `robots.txt` disallowing the spec path) with the fetcher asserting it saw
+   zero calls.
+2. **`internal/dast/engines` is RED.** Its
+   `TestNoAuthorizationCanBeMintedUntilGate11IsRegistered` is the tripwire that
+   was supposed to fire on exactly this day, and it has fired. Its message
+   lists the five tests the nuclei driver now owes. That failure predates the runtime spec probe and is
+   untouched by it.
+
+U4's own text is left as written rather than edited here, because the change
+that invalidated it was not this packet's and the packet that made it owns the
+correction.
+
+**FOLLOW-UP, 2026-08-23:** the correction has been made. The tripwire was
+honoured by wiring, not by quietening: the five tests it named are written, it
+is deleted, and **U4(b) and U5(c) above are rewritten and marked CLOSED**. This
+note is left standing because it is the record of the hand-off working as
+intended — the runtime spec probe measured a change it did not own, refused to edit another
+packet's entry, and named who did.
+
+---
+
+## U7 — a rendering Tier 3 spider is REFUSED, because its sub-requests cannot reach the kernel
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier3_crawl.go` (`FetchDiscipline`, `checkFetchDiscipline`, `ClientSpider`), `internal/dast/inventory/tier3_crawl_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. What is absent is a seam through which a headless browser's sub-requests could be admitted |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a rendering crawl's fetch/XHR and subresource requests pass gates 4, 5, 8, 9, 10, 13, 14 and 15, and appear in the gate-21 audit. THEY DO NOT, AND CANNOT, so Anvil refuses to drive a spider that makes them |
+| **Security control?** | **Yes.** research/20:188 names headless-browser fetch/XHR explicitly inside gate 13's scope. An unadmitted sub-request is a request Anvil made that no gate judged, no rate limiter counted and no audit row records |
+| **Verdict** | **OPEN, and refused rather than driven.** The obligation this replaces was one no rendering implementation could keep |
+
+### What was wrong
+
+`ClientSpider` obligation 1 read: *issue exactly one request, to exactly
+`CrawlRequest.Path()`. Not the page's subresources, not its links, not its
+redirect.*
+
+That is not a contract a rendering browser can keep. Issuing the page's
+subresources IS what rendering means. And the crawl loop had no way to learn
+that it had happened: `CrawlRequest` expresses one method and one path, and
+`CrawlPage` has no field in which a seam could report a sub-request. So a
+rendering spider's fetches:
+
+* reach **no gate** — no scope re-check, no attestation liveness check, no
+  cross-host judgment;
+* spend **no gate-14 token** — the rate limiter's count of what Anvil issued
+  is wrong by however many subresources the page pulled;
+* write **no gate-21 row** — the audit log claims Anvil issued fewer requests
+  than it issued.
+
+The crawl's chosen implementation is ZAP's **Client Spider**, which is a rendering
+browser. The obligation and the implementation were incompatible, and the
+obligation existed only in prose.
+
+### What was done instead
+
+`ClientSpider` gained a `Discipline() FetchDiscipline` method, and
+`validateCrawlConfig` refuses anything that is not
+`FetchDisciplineSingleRequest` — **before the first request**, so nothing
+leaves the process. The enum has no permissive zero value:
+`FetchDisciplineUnset` is refused with its own sentence, because "the
+implementer did not say" must never read as "one request per call".
+
+`TestARenderingSpiderIsRefusedRatherThanDriven` asserts, for the rendering
+declaration, the unset one and an unenumerated literal: `ErrRefused`,
+`CrawlConfig.Constructed() == false`, **zero** spider calls, and a result that
+does not claim to have executed. `TestTheDisciplineAllowlistIsAnAllowlist`
+asserts the COUNT of permitted disciplines is exactly one.
+
+### What this does not settle, and what would settle it
+
+**A declaration is still a declaration.** Nothing here observes what the seam
+does on the wire; an implementation that renders and declares
+`FetchDisciplineSingleRequest` has lied, and this file cannot catch it. That is
+the same class of obligation `engines.ZapRunner` states for the ZAP process,
+and it is the integration lane's to prove.
+
+**Tier 3 therefore cannot use a rendering spider at all today**, which is a
+coverage loss: a single-fetch spider sees the links in the served HTML and not
+the ones a SPA builds at runtime. That loss is stated rather than traded away
+silently.
+
+Two things would close it, and both are outside this packet's write scope:
+
+1. **A sub-request reporting seam.** `CrawlPage` gains a field in which the
+   browser reports every request it made — method, path, origin, status — and
+   the loop admits each one through `NewRequestIntent`,
+   `RequireAuthorization` and `AuditedAdmit` before accepting the page. Note
+   that this admits AFTER the fact: it makes the requests visible, countable
+   and auditable, and it does not make them *pre*-authorized. Whether that is
+   acceptable is a kernel ruling, not this file's decision.
+2. **A proxy-side chokepoint.** ZAP already proxies the browser it drives. If
+   the browser is pointed at a proxy Anvil controls, every sub-request passes
+   through Anvil before the socket exists, and gate 3's egress rule decides
+   where that proxy may live. This is the shape that admits rather than
+   records, and it is the one worth building.
+
+Until one of them exists, `SystemClientSpider` returns an error on every host
+anyway (no ZAP is drivable here — see U5), so the refusal costs no coverage
+that is otherwise available.
+
+---
+
+## U8 — gate 13's cross-host branch cannot fire for a Tier 3 walk-off
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/tier3_crawl.go` (`crawlOne`, `resolveLinkPath`), `internal/dast/inventory/tier3_crawl_test.go` |
+| **`t.Skip` sites** | **Zero** |
+| **Skipped here?** | N/A — nothing skips |
+| **Skips in CI?** | N/A |
+| **Property unverified** | That `authz.CheckGate13Revalidate` refuses an off-host destination proposed by a Tier 3 link. It never sees one |
+| **Security control?** | **Yes — and it is enforced, by a different component.** The off-host defence for this loop is `resolveLinkPath`, not gate 13 |
+| **Verdict** | **OPEN as a gate-13 exercise; CLOSED as a control.** Recorded so the tautology is not mistaken for coverage |
+
+`crawlOne` builds every `authz.RequestIntent` with `Next` equal to the ADMITTED
+target. Gate 13's `CrossHost()` branch therefore compares that target with
+itself and **can never fire from this file**. Read quickly, the call site looks
+like the walk-off defence. It is not.
+
+The actual defence is `resolveLinkPath`, which refuses any href proposing a
+different scheme, host or port with `errLinkOffHost` **before an address
+exists**, so nothing reaches the kernel to be judged.
+`TestGate13CannotBeTheOffHostDefenceForThisLoop` pins all of it: the ledger
+count of `CrawlOutcomeOffHost` rows, that the spider was asked for the seed and
+nothing else, that each fixture href fails in `resolveLinkPath` by sentinel,
+and a positive control proving a SAME-origin absolute URL is still resolved.
+
+Gate 13 is not vestigial here. It still decides the origin allowlist, the
+method allowlist, path validity, the redirect hop budget, and `Revalidate` —
+gates 4, 5, 8, 9 and 10, re-run per request, which is what stops a crawl whose
+attestation expires halfway through.
+
+**Why the off-host case is not handed to gate 13 instead.** An `authz.Target`
+carries a PINNED address. Minting one for a host the *target* named would mean
+resolving an attacker-chosen name — the DNS lookup gate 9 exists to bound,
+performed on behalf of the party the crawl is pointed at. Refusing the link
+without resolving it is the cheaper and safer order.
+
+**What would change it:** a kernel-side way to express "this destination was
+proposed and refused without resolution" as a first-class `RequestIntent` — an
+unresolved `Next` that gate 13 can judge on scheme/host/port alone, with no
+pinned address and no lookup. That is an `internal/dast/authz` change and is
+reported to the orchestrator rather than made here.
+
+---
+
+## U9 — every guard in coverage reporting and the confirmation gate runs in zero production lanes
+
+| | |
+|---|---|
+| **File** | `internal/dast/record/coverage.go`, `internal/dast/record/confirm_gate.go` and their tests |
+| **`t.Skip` sites** | **Zero** |
+| **Skipped here?** | N/A — nothing skips |
+| **Skips in CI?** | N/A |
+| **Property unverified** | That any of it ever runs. `Summarize`, `Summary.DeriveDastStatus`, `Summary.AssertDenominatorDecomposes`, `Summary.AssertMixDecomposes`, `NewGate`, `Gate.ConfirmAll`, `Ledger.FindingCountForStatus` and `Ledger.AssertNotSilentlyClean` are called by **tests only** |
+| **Security control?** | **Yes, and it is the last one before the record.** This is the packet that decides what Anvil CLAIMS TO HAVE FOUND and what fraction of the attack surface it claims to have looked at |
+| **Verdict** | **OPEN.** Per house standard these are not yet controls. The dynamic tier exit gate is the settling condition, named below |
+
+Measured on 2026-08-23, from the repository root:
+
+```
+$ grep -rn "dast/record" --include=*.go . | grep -v "internal/dast/record/"
+(no output)
+```
+
+Nothing outside `internal/dast/record` imports the package. `cmd/anvil-dast`
+does not. `internal/scanctl` does not. `internal/record` — which owns
+`DeriveDastStatus`, the function this package's whole output feeds — does not,
+and could not, since the dependency runs the other way.
+
+**What that costs, stated concretely rather than as a category.** Every one of
+the following was written, broken, watched go red, and restored, and every one
+of them holds over inputs a test constructed:
+
+- a re-probe the target answered with 429, 502, 503, 504, no status at all, or
+  a WAF block page at 200 is `unconfirmed`, never `rejected` (the second confirmation-gate review, finding CRITICAL 2);
+- `Ledger.AssertNotSilentlyClean` refuses to let a zero confirmed count read as
+  `completed_clean` while anything undecided or any indecisive rejection is in
+  the ledger;
+- no response body reaches a `Finding`, an `EvidenceRef`, a `Refusal` or a
+  `RefusalError`, by type closure and by value;
+- `FindingCountForStatus()` counts confirmed findings only, so
+  `record.DeriveDastStatus` cannot be handed a provisional one.
+
+None of that has ever been asked a question by a live scan, because no live
+scan reaches it. **The failure mode is not that a guard is wrong; it is that a
+scan path could be built next to it and simply not call it** — and the record
+would then carry a `dast_coverage` nobody decomposed and a finding count
+nobody confirmed, with the whole of this file's evidence sitting green and
+unconsulted beside it. That is the same shape as U1c one layer up: two halves
+of a story that do not compose yet.
+
+**What would settle it: the dynamic tier exit gate.** The dynamic tier exit gate is the step that wires the DAST half
+into a scan, and it is the first caller that would:
+
+1. construct a `Gate` with a real `Reprober` — one that routes through
+   `internal/dast/authz` — and hand it the candidates the nuclei driver and the ZAP driver produced;
+2. call `Ledger.AssertNotSilentlyClean()` and **handle the error**, rather than
+   reading `FindingCountForStatus() == 0` and moving on;
+3. call `Summarize` with real tier results and call
+   `Summary.AssertDenominatorDecomposes()` and `AssertMixDecomposes()` before
+   the numbers reach `internal/record`;
+4. decide `GateConfig.DefenceSignature` for the target it is scanning, or
+   record that it did not — with none wired, a WAF block page returning 200 is
+   indistinguishable from an application response and the 200 branch of the
+   defence check is dead (see `GateConfig.DefenceSignature`, which says so).
+
+Until then the honest statement is: **the arithmetic is verified and the wiring
+does not exist.** A reviewer who reads `go test ./internal/dast/record/` as
+evidence that Anvil will not report a defended target clean is reading a claim
+about a function nobody calls.
+
+**One thing the dynamic tier exit gate will need and does not get for free.** `GateConfig.Attempts`
+now has a floor of `MinAttempts` = 2 as well as a ceiling, because the dynamic tier exit gate under a
+time budget is precisely the caller that would have set it to 1 — which
+removes the flake detection while `reason="reproduced_on_every_attempt"` goes
+on claiming it ran. A caller that must spend less has to re-probe **fewer
+candidates**, not ask each candidate a question it cannot answer.
+
+---
+
+## U10 — the credential sweep cannot decode base64, because gate 3 forbids the import
+
+| | |
+|---|---|
+| **File** | `internal/dast/inventory/auth_helper.go` (`credentialIn`, `sweepForms`, `decodeEntities`), `internal/dast/inventory/auth_helper_test.go` |
+| **`t.Skip` sites** | **Zero.** Neither file contains `t.Skip`, `t.Skipf` or `t.SkipNow` |
+| **Skipped here?** | N/A — nothing skips. What is absent is a decoder |
+| **Skips in CI?** | N/A — same |
+| **Property unverified** | That a credential base64-encoded inside an artifact attached to a step that types no credential is caught by the BACKSTOP SWEEP. It is not. It is caught by nothing |
+| **Security control?** | **Yes**, and it is the second of the two. The first — `Session.credentialWasInFlight`, which refuses every artifact of a step that types a secret without reading its bytes — is unaffected and is what actually holds |
+| **Verdict** | **OPEN, and it needs an edit this worker may not make.** One line in `internal/dast/authz/egress_chokepoint_test.go` |
+
+### What this is, and why it is not just another missing decoder
+
+The sweep expands the haystack into the **set of its candidate readings** —
+percent, backslash and HTML character references decoded **one decoder at a
+time with every intermediate retained**, under both readings of `+`, both
+readings of an unresolvable reference and every reading index of an unterminated
+digit run — and searches for the credential's actual value in every member of
+that set. On 2026-08-23 the
+character-reference half was rebuilt: numeric references have no digit ceiling,
+the semicolon-less form HTML5 permits is handled, and a named reference the
+six-entry table cannot resolve becomes one wildcard rune that matches any one
+character, so **the table's length is no longer the encoder's budget**.
+
+**THE SENTENCE THAT STOOD HERE — "that left base64 as the only spelling with
+nothing behind it" — WAS FALSE WHEN IT WAS WRITTEN, and it is corrected rather
+than softened.** The union over readings of an ambiguous digit run was taken at
+the POINT OF MATCHING, against a form `decodeEntities` had produced by picking
+the greedy reading, so it existed at encoding depth 0 and nowhere else. Measured
+on 2026-08-23: 0 of 450 semicolon-less re-spellings of this file's credential
+missed flat, **135 of 450 missed under one `url.QueryEscape`** — and separately,
+three decoders composed inside one pass with only the composition retained, so
+**six of ten realistic secret shapes whose own bytes are an escape sequence were
+lost under one percent layer**. Both are closed now (see "What is NOT on this
+list any more" below); base64 was not the only demonstrable spelling, it was the
+only one anybody had written down.
+
+base64 itself is still open and is still not a hypothetical:
+`AuthArtifactStorageState` is JSON by definition and base64 is how JSON carries
+bytes.
+
+### What would settle it
+
+```go
+// internal/dast/authz/egress_chokepoint_test.go, in inertImports:
+"encoding/base64":     "byte encoding",
+```
+
+Gate 3 is an **allowlist**: a stdlib import in the DAST tree that is not on
+`inertImports` turns the build red BY DESIGN, and that redness is the review
+this widening is supposed to get. `encoding/hex`, `encoding/csv`,
+`encoding/json`, `encoding/binary` and `encoding/xml` are all already on the
+list with a one-phrase reason, and `encoding/base64` is inert in exactly the
+same way — it has no dialer, no listener and no transport. **This worker's
+write scope did not include that file, so it is reported rather than edited.**
+The decoder that would follow is one more line in `decodeStep`, under the same
+work bound — a step is one decoder, so adding one costs one more reading per
+form and nothing else.
+
+### Why the residual is stated here rather than qualified away in a comment
+
+`TestTheSweepIsABackstopAndTheProvenanceRuleIsTheControl` used to demonstrate
+this limit with a named character reference outside the six (`&AMP;`). That
+spelling is now decoded, so the fixture stopped measuring anything and was
+**replaced with base64** rather than the claim being softened to fit it. The
+test hand-rolls a base64 encoder — for the same reason the sweep cannot decode
+one — and asserts that the artifact reaches the sink, that the sweep refuses
+nothing, and that the run's own report says so instead of reporting clean.
+
+### What is NOT on this list any more
+
+A named character reference outside the six predefined ones. It was on it, and
+the comment that put it there also claimed the numeric forms beside it were
+"decoded generically". Measured against the decoder that stood there: the
+reference body was capped at eight bytes, so with this file's own credential
+four decimal leading zeros decoded and five did not, and no semicolon-less
+spelling decoded at any width. **231 of 246 generated spellings were invisible
+to the sweep**. What that costs at the sink is measured rather than reasoned:
+with the reference decoder disabled,
+`TestAPaddedReferenceOnAnInnocentStepIsRefused` reports `the backstop refused 0
+of 3 artifact(s). Mix: map[stored:3]` — three artifacts carrying the
+credential, attached to a step the provenance rule permits, stored. That is closed, and the same test now refuses all three.
+
+Two more came off the list later the same day, and neither was ever written on
+it — which is the part worth reading.
+
+**A GREEDY READING OF AN UNTERMINATED DIGIT RUN.** `&#115` followed by a literal
+`3` is six bytes with two encoders behind it, and the decoder picked one. Six of
+the twenty-five single-character re-spellings of this file's credential were
+therefore invisible in base 10 alone, and the credential left the package
+through `CoverageInstant.CarriageEvidence()`, rendered as `cookie jar carried
+??1153cr3t ?Pa55w0rd? ??9xQz?`. The union of readings is now taken —
+`containsUnderEveryReading` carries every prefix of the run whose value is a
+Unicode scalar value, a set whose size is bounded by arithmetic (10⁷ and 16⁶ are
+both past U+10FFFF, so at most seven decimal or six hexadecimal prefixes of any
+run however long) rather than by a cap. The test that should have caught this
+**forced a terminating semicolon whenever the next rune was literal** — the
+generator shaped around the input that breaks it — and that forcing is gone.
+
+**A THREE-ROUND CEILING ON ENCODING DEPTH, WHICH NO DOCUMENT NAMED.** The
+canonicalizer re-ran its pipeline exactly three times, so `url.QueryEscape`
+applied one, two or three times was caught and **four, five and six were not**,
+and the residual list in `credentialIn`'s doc read as complete because it said
+nothing. There is no round count now: `sweepForms` spends `codedSweepWorkBytes`
+of *bytes scanned*. Measured, it reaches **2767** layers of repeated
+`QueryEscape`.
+
+**A UNION TAKEN OVER THE OUTPUT OF A DECODER THAT ALREADY CHOSE.** This is the
+2026-08-23 finding and it is the one the two paragraphs above were wrong about.
+`containsUnderEveryReading` reads a digit run every way, but it read the FORM
+`sweepForms` handed it, and `sweepForms` built that form by running
+`decodeEntities`, which picks the greedy reading. At depth 0 the seed is itself
+a form and still carries the ambiguous bytes, so the union had something to work
+on and the guard passed; under one `url.QueryEscape` the only form carrying the
+credential was the output of a pass that decoded the percent layer and the
+reference together. **135 of 450**, first miss `&#1153cr3t "Pa55w0rd" &<9xQz>` —
+the string the previous round's report quoted as closed.
+
+**THREE DECODERS COMPOSED INSIDE ONE PASS WITH ONLY THE COMPOSITION RETAINED.**
+`pa\nssw0rd` under one percent layer is `pa%5Cnssw0rd`: `decodePercent` produced
+the secret exactly and `decodeBackslash` ate it in the same pass, because the
+intermediate that held it was never a member of anything. **Six of ten** shapes
+in `authEscapeShapedSecrets`.
+
+Both are closed by the same change: a decoding pass returns a **set**, one step
+is **one decoder**, every intermediate is retained, and the next step maps over
+all of them. `TestAnAmbiguityIsBranchedWhereItArisesAndNotWhereItIsConsumed` and
+`TestASecretWhoseOwnBytesAreAnEscapeSurvivesAnOuterLayer` are the guards, and
+restoring the composed pass turns both red with the numbers above.
+
+### The residuals that replaced it, which are stated rather than removed
+
+**Work, not depth.** An artifact that does **not shrink as it is decoded** — a
+megabyte of filler with one deeply nested credential in it — costs a full pass
+per form visited, and those visits are shared with whatever branching the
+artifact forces. Measured, with the credential under N layers of repeated
+`QueryEscape` at the end of that much filler: **11 layers at the 4 MiB artifact
+cap, 24 at 2 MiB, 50 at 1 MiB, more than 60 below 256 KiB** — against four at
+the cap when four fixed pipelines stood here. A traversal costs more per level
+than a pipeline does, so `codedSweepWorkBytes` was raised from `4 *` to `64 *`
+`codedMaxArtifactBytes` by measuring that curve rather than by argument.
+**The claim that there was no residual at all below ~2 KiB is DELETED, not
+qualified.** It was derived from `3L` passes on ONE trajectory; `2·len +
+specials` still bounds the traversal's depth at `3L`, but nothing in that
+argument bounds how many forms are reachable, so `3L²` is not an upper bound on
+the work of a set. The size of the set is measured and logged rather than
+capped: over four thousand generated strings built out of nothing but escape
+fragments, the widest set observed is **476 forms totalling 19515 bytes from a
+77-byte seed**.
+
+**The same bound binds MEMORY, and its name does not say so.** `sweepForms`
+RETAINS every candidate, and `credentialIn` holds the whole set while it
+iterates. What stood here and in the code was a bound disclosed on bytes
+SCANNED while it silently set a ceiling on bytes LIVE — the same defect as an
+undisclosed ceiling. Measured, for ONE artifact at the 4 MiB cap: pure filler
+retains 4194304 bytes in 1 form; filler ending in `%2B%25&#0\\&#1114111+`
+retains **209714969 bytes in 50 forms in 0.18 s**; the worst of 120 generated
+tails retains **239072831 bytes in 57 forms**. So a 4 MiB artifact can hold
+**200 MiB live**. The ceiling is arithmetic —
+`codedSweepWorkBytes + L × (codedSweepStepReadings + 1)`, 336 MiB at the
+artifact cap — and BOTH of its premises are now asserted rather than assumed by
+`TestTheCandidateSetIsBoundedInBytesScannedAndInBytesRetained`: that no decoder
+grows a form, and that one step returns at most 19 readings. The old assertion
+in that test — that the returned set fits inside `codedSweepWorkBytes` — was
+**true by construction for every possible input** and is DELETED: with a decoder
+deliberately made to grow forms, the widest set the corpus produced was 19644
+bytes against a 268435456-byte bound, so it reported pass on a live defect. The
+construction argument now lives in `codedSweepWorkBytes`' doc, where it belongs.
+
+**`sweepOnly`'s seed is not capped by anything.** Driver-authored strings —
+`AuthOutcome.Detail`, `LandedPath`, an artifact `Name` — go through the same
+`credentialIn` with no length limit, so `L` is whatever the driver returns.
+Measured: a 64 MiB seed retains **1140850632 bytes (1.06 GiB) in 1.1 s**, four
+times `codedSweepWorkBytes`, because at that length the traversal affords one
+step and the readings of that step are charged after the fact. Not capped on
+purpose: a length past which a string is NOT swept is a credential-shaped hole,
+and the driver is in-process code an operator supplies.
+
+**The diagonal of the reading cross-product.** A step asks
+`decodeEntitiesReading` for the k-th reading of the whole string, so every
+reference site in one candidate takes the SAME index. That is the diagonal, not
+the whole cross-product. It matters only where the chosen readings must be
+decoded a second time, because `containsUnderEveryReading` still takes the full
+per-site cross-product on bytes it can see. **Shown with a fixture rather than
+asserted about**: the secret `"A\t0"` inside `&#3741&#90` needs the first site
+at reading 1 (`%`, leaving `41` for a later percent step) and the second at
+reading 0 (a tab, leaving a literal `0`), and the sweep does not find it.
+`TestTwoSitesNeedingDifferentReadingIndicesAreTheResidual` pins it and fails
+loudly if it ever closes, so this list cannot go stale in the other direction
+either. Closing it costs the full cross-product, exponential in the number of
+ambiguous sites.
+
+**The same diagonal on the `'+'` axis.** `plusToSpace` is a WHOLE-STRING pass,
+so every `'+'` present in one form takes the same reading in the form that pass
+produces. This one was **missing from every residual list** while
+`sweepForms`' doc described the `'+'` branch as expressing what a per-pipeline
+flag could not — true of DEPTH, false of the same-depth cross-product. **Shown
+with a fixture**: the secret `"a b+c"` inside `pw=a+b+c` needs the first `'+'`
+read as a space and the second as a literal plus, and the sweep does not find
+it, while `"a b c"` and `"a+b+c"` in the same bytes are both found and
+`"A B+C"` inside `A+B%2BC` — two `'+'` signs at different DEPTHS — is found
+too. `TestTwoPlusSignsInOneFormNeedingDifferentReadingsAreTheResidual` pins it
+in both directions.
+
+None of these is on the U-list, because none needs an edit anyone is forbidden
+to make — they are a CPU bound, a memory bound and two combinatorial bounds,
+each with a stated consequence, and the provenance rule is what covers the
+consequence.
+
+---
 
 ## L1 — `TestCollectAgainstTheRealHost`
 
@@ -318,7 +2039,7 @@ is covered elsewhere.
 | **Skips in CI?** | **Yes** — see N1 |
 | **Property unverified** | The end-to-end real-scanner claim |
 | **Security control?** | Yes, but this is the deliberate opt-in half |
-| **Verdict** | **LEGITIMATE as a gate.** A real `trivy fs` needs a vulnerability database, which is a network acquisition that belongs to A.11's accelerator, not to a unit test. The *coverage gap* it leaves is tracked as N1 |
+| **Verdict** | **LEGITIMATE as a gate.** A real `trivy fs` needs a vulnerability database, which is a network acquisition that belongs to the accelerator, not to a unit test. The *coverage gap* it leaves is tracked as N1 |
 
 ## L5 — `TestBothConsumersAgree`
 
@@ -381,9 +2102,9 @@ missing artefact and the command that produces it.
 | **Trigger** | `git` not on `PATH` |
 | **Skipped here?** | No — measured. `git` is present |
 | **Skips in CI?** | No. `actions/checkout` requires `git` |
-| **Property unverified** | O.7's tag-ordering behaviour |
+| **Property unverified** | Semver bump classification's tag-ordering behaviour |
 | **Security control?** | No |
-| **Verdict** | **LEGITIMATE.** O.7 is defined only in terms of real `git`; there is nothing to fall back to, and the condition cannot hold in CI |
+| **Verdict** | **LEGITIMATE.** semver bump classification is defined only in terms of real `git`; there is nothing to fall back to, and the condition cannot hold in CI |
 
 ## L9 — `TestExampleEPSSIsUndeclared`
 
@@ -413,7 +2134,7 @@ missing artefact and the command that produces it.
 
 | | |
 |---|---|
-| **File** | `internal/record/critique03_regression_test.go:336` (after the H7 fix) |
+| **File** | `internal/record/readpath_review_test.go:336` (after the H7 fix) |
 | **Trigger** | The projection dropped the result **and** the case declared zero locations **and** the drop was ledgered |
 | **Skipped here?** | **YES — measured**, this subtest only |
 | **Skips in CI?** | Yes, same subtest — the condition is pure logic |
@@ -431,7 +2152,7 @@ missing artefact and the command that produces it.
 | Sites after | 12 |
 | Hazards found | 9 |
 | Hazards closed by a test-only change | 9 (7 sites removed, 2 narrowed) |
-| Hazards needing a non-test change | 2 (N1 open, N2 closed elsewhere) |
+| Hazards needing a non-test change | 4 (N1 closed by CI, N2 closed elsewhere, N3 closed, N4 closed) |
 | Legitimate skips, left in place | 11 |
 | Skips that fire on the Windows dev host | 4 tests / 15 subtest lines |
 | `t.SkipNow` sites | 0 |
@@ -440,3 +2161,65 @@ Skips still firing on this host, all classified LEGITIMATE above:
 `TestCollectAgainstTheRealHost` (L1), `TestRealTrivyScansAFixtureRepo` (L4),
 `TestBothConsumersAgree` (L5), `TestPinnedLicenceBodiesMatchTheirPins` ×11
 (L7), `TestXVM3RelatedLocationsAreCapped/loc0_rel3000` (L11).
+
+Controls with **zero** skips and still nothing behind them: G19-1, G4-1,
+G18-2, U1 (+U1a, U1b, U1c), U2 (+U2a), U3, U4**(a)**, U5**(a)(b)(d)**, U6, U7,
+U8, U9, U10.
+
+U9 is the newest and it is the widest. Every guard in coverage reporting and the confirmation gate
+(the finding confirmation gate) runs in **zero production lanes** — measured,
+not assumed: `grep -rn "dast/record" --include=*.go . | grep -v
+"internal/dast/record/"` returns nothing. Those two packets decide what Anvil
+claims to have found and what fraction of the surface it claims to have looked
+at, and per house standard a check that runs in no production path is not yet a
+control. The dynamic tier exit gate is the wiring that would settle it, and U9 names the four calls
+the dynamic tier exit gate has to make.
+
+U7 and U8 are the two Tier 3 entries added on 2026-08-23. U7 is the one to read
+if you are wiring a browser: a RENDERING spider is now REFUSED by
+`validateCrawlConfig` rather than driven, because its sub-requests reach no
+gate, spend no gate-14 token and write no gate-21 row, and `CrawlPage` has no
+field in which the seam could even report them. That refusal is a coverage
+loss (a single-fetch spider does not see links a SPA builds at runtime) and it
+is stated rather than traded away silently. U8 records a tautology so it is not
+mistaken for coverage: gate 13's cross-host branch cannot fire for a Tier 3
+walk-off, and `resolveLinkPath` is the control that actually holds.
+
+U4(b) and U5(c) — the admit-and-issue paths of both DAST drivers — were closed
+on 2026-08-23 and are no longer on that list.
+
+U5 carries the one open question plan/design/dynamic-tier.md asked a worker to answer and
+that this host cannot: **ZAP's JVM memory footprint (plan/design/dynamic-tier.md:1253),
+which decides tier-M sizing.** No number was invented; the entry states what
+measuring it takes and a test fails if a figure appears in `zap.go`. U5 also
+records the rule that is enforced nowhere today — ZAP is **scheduled-scans
+only**, and the caller that would carry that check does not exist yet.
+
+**U4's blocker is gone.** It used to read: `authz.Gate11RobotsDeny` has no
+implementation registered, so the admission chain refuses every target there
+and no `authz.Authorization` can be minted from outside package `authz` at all
+— which made the nuclei driver, and every later packet that needs to issue a
+request, testable only on its refusal paths.
+
+On 2026-08-23 gate 11 was ruled out of the admission chain and rewritten as
+`authz.NarrowScopeToRobots`, a scope narrowing over inert fetched bytes.
+**The kernel admits, and both DAST drivers now issue an authorized request end
+to end** — with one gate-21 row per gate in `authz.GovernorGateOrder()`, and
+with a real kernel refusal reaching the `Issuer` zero times. The tripwire that
+was planted to fire on that day fired, was honoured by writing the five tests
+it named, and was deleted. See U4(b) and U5(c).
+
+What remains open in U4 and U5 is the **tooling**: no Nuclei engine and no ZAP
+on any host or CI lane here, and ZAP's JVM footprint still unmeasured.
+
+U1 (`internal/dast/containment`, network containment) is the
+highest-stakes of them: the package is green on Windows and has never run
+against a Linux kernel. See its entry for the privileged Linux CI lane that
+would close it, and U1a/U1b for the two things that lane would still not
+settle on its own.
+
+U1c is the one to read first if you are wiring DAST into a scan path.
+`Provision` seals `booted_clean` without any network namespace, nothing in the
+tree calls `Provision`, `SetupNetns` or `AssertContainment`, and the two halves
+of the containment story therefore do not compose yet. That is the dynamic tier exit gate's, not
+target provisioning's or network containment's — it is recorded here so it cannot be forgotten.

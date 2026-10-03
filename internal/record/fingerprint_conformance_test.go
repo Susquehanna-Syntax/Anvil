@@ -1,16 +1,17 @@
 package record
 
-// fingerprint_conformance_test.go — R.16, the spine-mandated conformance gate.
+// fingerprint_conformance_test.go — the fingerprint conformance harness, the
+// spine-mandated conformance gate.
 //
 // ===========================================================================
 // WHAT THIS FILE IS FOR
 // ===========================================================================
 //
-// plan/00-SPINE.md S6: "Ship a conformance test asserting identical digests on
+// The spine's record section: "Ship a conformance test asserting identical digests on
 // a fixed corpus." It exists because research/07-database-design.md and
 // research/18-unified-audit-record.md shipped two DIFFERENT algorithms under
-// the one name `anvil-fp/v1`, and nothing in the tree surfaced it. S6 states
-// the consequence: "two producers emitting different hashes means regression
+// the one name `anvil-fp/v1`, and nothing in the tree surfaced it. The spine's
+// record section states the consequence: "two producers emitting different hashes means regression
 // matching silently fails forever." Every stored finding loses its identity on
 // the next scan, `first_seen_at` resets, every fingerprint-keyed suppression
 // stops applying, every `handoff` row keyed on the old digest is orphaned —
@@ -78,9 +79,9 @@ package record
 // TestConformanceDerivedCorpusClosesAppendixZ4 fails if the Z4 fixture is ever
 // removed or gutted.
 //
-// Sources: plan/00-SPINE.md S6; plan/40-record-and-storage.md R.16;
+// Sources: the spine's record section; the fingerprint conformance harness' design;
 // internal/record/FINGERPRINT-SPEC.md (the algorithm, and Appendix Z);
-// internal/record/CRITIQUE-01.md finding 1 (why the specification had to be
+// internal/record/REVIEW-contract-and-fingerprint.md finding 1 (why the specification had to be
 // written down completely before this test could exist at all).
 
 import (
@@ -100,7 +101,7 @@ const (
 	// derivedCorpusDir is a SUBdirectory of corpusDir on purpose: loadCorpus
 	// globs "*.json" non-recursively, so the derived fixtures — which have a
 	// different shape and are driven by this file alone — cannot be picked up
-	// by R.2's tests and cannot perturb the eight committed tier fixtures.
+	// by the fingerprint's tests and cannot perturb the eight committed tier fixtures.
 	derivedCorpusDir = corpusDir + "/derived"
 
 	// oracleScriptPath is the offline, non-Go oracle. This test reads it only
@@ -232,13 +233,14 @@ func goldenPathFor(fixturePath string) string {
 // The main corpus: eight tier fixtures and every mutation
 // ---------------------------------------------------------------------------
 
-// TestConformanceMainCorpusMatchesIndependentGoldens is R.16's stop condition:
-// every corpus fixture's Go-computed digest equals its independently computed
-// golden, exactly, with no fixture skipped.
+// TestConformanceMainCorpusMatchesIndependentGoldens is the fingerprint
+// conformance harness' stop condition: every corpus fixture's Go-computed
+// digest equals its independently computed golden, exactly, with no fixture
+// skipped.
 func TestConformanceMainCorpusMatchesIndependentGoldens(t *testing.T) {
 	fixtures := loadCorpus(t)
 	if len(fixtures) == 0 {
-		t.Fatal("no fixtures loaded; the fixed corpus is mandatory (plan/00-SPINE.md S6)")
+		t.Fatal("no fixtures loaded; the fixed corpus is mandatory (the spine's record section)")
 	}
 
 	for _, f := range fixtures {
@@ -266,7 +268,7 @@ func TestConformanceMainCorpusMatchesIndependentGoldens(t *testing.T) {
 				t.Errorf("CONFORMANCE FAILURE: Go and the independent oracle disagree.\n"+
 					"  go:     %s\n  oracle: %s\n"+
 					"Two producers emitting different digests breaks regression matching "+
-					"silently and forever (plan/00-SPINE.md S6). Do NOT re-seal the golden: "+
+					"silently and forever (the spine's record section). Do NOT re-seal the golden: "+
 					"a changed digest is an anvil-fp/v2 event with a dual-write migration "+
 					"(FINGERPRINT-SPEC.md section 0).", got, want)
 			}
@@ -640,10 +642,10 @@ func TestConformanceDerivedCorpusClosesAppendixZ4(t *testing.T) {
 }
 
 // TestConformanceOracleIsAnIndependentOfflineImplementation is the structural
-// half of R.16's "demonstrably two independent code paths" requirement. The
-// substantive half is that the oracle is a different LANGUAGE implementing a
-// specification document; what a test can check mechanically is that it has no
-// route back to the Go it gates.
+// half of the fingerprint conformance harness' "demonstrably two independent
+// code paths" requirement. The substantive half is that the oracle is a
+// different LANGUAGE implementing a specification document; what a test can
+// check mechanically is that it has no route back to the Go it gates.
 //
 // The check is deliberately narrow and honest about it: it enumerates the
 // script's imports and requires them to be a subset of an allowlist of pure
@@ -655,7 +657,7 @@ func TestConformanceOracleIsAnIndependentOfflineImplementation(t *testing.T) {
 	b, err := os.ReadFile(oracleScriptPath)
 	if err != nil {
 		t.Fatalf("reading the oracle at %s: %v\n"+
-			"R.16 requires the golden values to come from an offline re-implementation of "+
+			"The fingerprint conformance harness requires the golden values to come from an offline re-implementation of "+
 			"FINGERPRINT-SPEC.md that is not this package. Without it the goldens have no "+
 			"provenance and the conformance gate is circular.", oracleScriptPath, err)
 	}
@@ -666,8 +668,8 @@ func TestConformanceOracleIsAnIndependentOfflineImplementation(t *testing.T) {
 	}
 	if !strings.Contains(src, "FINGERPRINT-SPEC.md") {
 		t.Errorf("%s never mentions FINGERPRINT-SPEC.md; the oracle must implement the "+
-			"specification document, not the summary in plan/40-record-and-storage.md, which "+
-			"CRITIQUE-01 finding 1 proved insufficient to reproduce the SAST goldens",
+			"specification document, not the summary in plan/design/record-and-store.md, which "+
+			"The contract-and-fingerprint review's finding 1 proved insufficient to reproduce the SAST goldens",
 			oracleScriptPath)
 	}
 
@@ -710,7 +712,7 @@ func TestConformanceOracleIsAnIndependentOfflineImplementation(t *testing.T) {
 
 // TestConformanceGoldensAreNotDerivableFromThisPackage records, as an
 // executable note, that nothing in this package can regenerate a golden.
-// R.2's fingerprint_test.go carries the same prohibition in prose; this makes
+// The fingerprint_test.go carries the same prohibition in prose; this makes
 // the absence checkable, because the cheapest way to make a failing digest
 // green is always to re-seal, and the change that was supposed to be caught
 // then ships silently.

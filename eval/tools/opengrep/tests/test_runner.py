@@ -1,8 +1,8 @@
 """Runner behaviour that must hold whether or not the opengrep binary exists.
 
 The single most important property under test: when the engine or the ruleset is
-absent, the runner RAISES. It does not return an empty ScanResult. INSTR-01
-counts candidates, and a silent zero from a missing binary would be recorded as
+absent, the runner RAISES. It does not return an empty ScanResult. The candidates-per-scan
+instrument counts candidates, and a silent zero from a missing binary would be recorded as
 a real measurement.
 """
 

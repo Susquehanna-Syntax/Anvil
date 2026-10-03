@@ -1,4 +1,4 @@
-# Lane A conformance corpus (A.21)
+# Lane A conformance corpus (the Lane A exit gate)
 
 Every file in this directory is **hand-written to the publisher's documented
 shape**. None of it was produced by running any part of Anvil.
@@ -18,7 +18,7 @@ report.
 | `feeds.yaml` | `internal/ingest/config`'s documented schema and `feeds.example.yaml` | The harness's own feed table. Exit criterion 1 forbids feed facts in Go, and a harness that built its rows in Go would be exempting itself from the rule it checks. `${BASE}` is substituted with the in-process test server's origin, because the port is assigned by the kernel. |
 | `cvelistv5/CVE-2026-1001.json` | CVE Record Format 5.1 | The chain's main advisory, and the **injection corpus**: its description carries U+200B, U+202E, U+200D and an HTML comment holding an instruction addressed to a model. `anvilinjectionprobe` is the token the harness searches for to prove the comment did not reach the index. |
 | `cvelistv5/CVE-2026-1002.json` | CVE Record Format, `dataVersion: 5.9` | A record schema the parser has never seen. Exit criterion 23: persisted with `parse_degraded = 1`, never dropped. |
-| `cvelistv5/CVE-2026-1003.json` | CVE Record Format, `state: REJECTED` | Exit criterion 22: tombstoned, kept, and removed from the search index. This is the record that exposed the A.8/A.14 index divergence. |
+| `cvelistv5/CVE-2026-1003.json` | CVE Record Format, `state: REJECTED` | Exit criterion 22: tombstoned, kept, and removed from the search index. This is the record that exposed the bulk bootstrap and delta ingestion index divergence. |
 | `osv/GHSA-deb-2026-0001.json` | OSV schema 1.6, Debian ecosystem | Carries the publisher's own ecosystem spelling, `Debian:11`. It is here to demonstrate a gap — SEAM 1 in `lanea_test.go` — not to pass a check. |
 | `kev/known_exploited_vulnerabilities.json` | CISA KEV catalogue | Two entries, and the feed whose registry metadata says `NOASSERTION` over a CC0 body (exit criterion 10). |
 | `alpine/v3.19-main.json` | Alpine `secdb` branch file | The one publisher in this corpus whose decoder writes the cache's own short ecosystem vocabulary (`apk`), so it is the one that reaches the comparator. Produces the harness's single end-to-end finding. |

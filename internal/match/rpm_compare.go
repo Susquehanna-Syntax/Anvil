@@ -95,7 +95,7 @@ type rpmVersion struct {
 	// predicates are different questions and this field is where they part
 	// company.
 	//
-	// It was dead state until A.18 found what its absence cost: a RHEL
+	// It was dead state until the comparator review found what its absence cost: a RHEL
 	// glibc `2:2.34-60.el9` against an advisory endpoint spelled
 	// `2.34-100.el9` produced zero findings and a clean verdict on a
 	// vulnerable host.

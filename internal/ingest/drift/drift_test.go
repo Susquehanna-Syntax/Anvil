@@ -1,7 +1,7 @@
-// drift_test.go is A.16's evidence.
+// drift_test.go is drift handling's evidence.
 //
-// The two claims A.16's packet asks to be measured are measured END TO END,
-// against a real migrated A.2 cache and through A.14's real write path, not
+// The two claims drift handling's design asks to be measured are measured END TO END,
+// against a real, migrated ingestion cache and through delta ingestion's real write path, not
 // asserted against a struct field this package filled in itself:
 //
 //  1. "A synthetic dataVersion: 5.9 record is PERSISTED with parse_degraded=1,
@@ -20,7 +20,7 @@
 //     differ in exactly one key — so a green result is a difference the guard
 //     produced and not a fixture that could never have failed.
 //   - NO CORPUS COMES FROM THE IMPLEMENTATION. The known-version list is
-//     re-stated here from A.16's packet text ("5.0/5.1/5.2 known") and
+//     re-stated here from drift handling's design text ("5.0/5.1/5.2 known") and
 //     compared against the table; the field fixtures are hand-written CVE
 //     documents; the branch table is checked against internal/ingest/delta's
 //     DECODER BEHAVIOUR rather than against a copy of delta's own list.
@@ -56,7 +56,7 @@ const testFeedID = "cvelistv5"
 
 var fixtureClock = time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 
-// packetKnownVersions is A.16's packet, quoted: "5.0/5.1/5.2 known; anything
+// packetKnownVersions is drift handling's design, quoted: "5.0/5.1/5.2 known; anything
 // else sets degraded=true and stores raw verbatim".
 //
 // It is written out HERE, from the packet, precisely so that the table in
@@ -177,8 +177,8 @@ func openCache(t *testing.T) *sql.DB {
 
 // admittedDecision is a NON-REFUSED licence decision.
 //
-// It is a literal rather than a run of A.4's real gate, and that is a
-// deliberate, narrow choice: this file measures A.16, and the gate has its own
+// It is a literal rather than a run of the real gate, and that is a
+// deliberate, narrow choice: this file measures drift handling, and the gate has its own
 // suite. What matters here is only that the decision is admitted — a refusal
 // writes nothing, and a suite in which every write silently did nothing would
 // look green for the worst possible reason. Decision.Refused() is asserted
@@ -203,7 +203,7 @@ func testFeed() config.FeedConfig {
 	return config.FeedConfig{ID: testFeedID}
 }
 
-// applyOne writes one parsed record through A.14's real write path. There is
+// applyOne writes one parsed record through delta ingestion's real write path. There is
 // deliberately no second write path in this file: a test that inserted rows
 // with its own INSERT would be measuring its own SQL.
 func applyOne(t *testing.T, db *sql.DB, rec Record) delta.BatchStats {
@@ -231,10 +231,10 @@ func parseAndApply(t *testing.T, db *sql.DB, raw []byte) Report {
 // insertFinding seeds a Lane A finding.
 //
 // It uses raw SQL because there is no sanctioned writer for `finding` yet —
-// A.9 and A.10 own that table and neither exports a write path. The column
-// list is copied from internal/ingest/cache's own test so the two cannot
-// disagree about the shape, and `finding.id` is a LANE-LOCAL identifier and
-// never a fingerprint (schema.go says so at the table).
+// the host collector and the repo collector own that table and neither exports
+// a write path. The column list is copied from internal/ingest/cache's own test
+// so the two cannot disagree about the shape, and `finding.id` is a LANE-LOCAL
+// identifier and never a fingerprint (schema.go says so at the table).
 func insertFinding(t *testing.T, db *sql.DB, id, source, sourceID string) {
 	t.Helper()
 	_, err := db.ExecContext(t.Context(), `
@@ -260,7 +260,7 @@ func scalar[T any](t *testing.T, db *sql.DB, query string, args ...any) T {
 }
 
 // ---------------------------------------------------------------------------
-// A.16's first stop condition: an unknown dataVersion round-trips
+// Drift handling's first stop condition: an unknown dataVersion round-trips
 // ---------------------------------------------------------------------------
 
 // TestUnknownDataVersionIsPersistedDegradedAndNotDropped is the packet's
@@ -374,12 +374,12 @@ func TestTheBranchTableAgreesWithTheDeltaDecoder(t *testing.T) {
 	}
 }
 
-// TestKnownVersionsAreExactlyThePacketsThree compares the table against A.16's
+// TestKnownVersionsAreExactlyThePacketsThree compares the table against drift handling's
 // packet rather than against itself.
 func TestKnownVersionsAreExactlyThePacketsThree(t *testing.T) {
 	got := KnownVersions()
 	if !reflect.DeepEqual(got, packetKnownVersions) {
-		t.Fatalf("KnownVersions() = %v; A.16's packet names %v", got, packetKnownVersions)
+		t.Fatalf("KnownVersions() = %v; drift handling's design names %v", got, packetKnownVersions)
 	}
 	for _, v := range packetKnownVersions {
 		if !BranchFor(v).Known() {
@@ -476,7 +476,7 @@ func TestAnUnknownFieldInALoadBearingPathDegradesAKnownVersion(t *testing.T) {
 	}
 	if !rep.Degraded {
 		t.Fatal("an unrecognised key inside affected[].versions[] did not degrade the record. " +
-			"That subtree is the version range Lane A's answer is made of (spine S1); a field " +
+			"That subtree is the version range Lane A's answer is made of (the spine's corrected-requirements table); a field " +
 			"nobody understands there is a range that may not mean what the comparator read.")
 	}
 	if !rep.Has(CodeUnknownFieldLoadBearing) {
@@ -841,7 +841,7 @@ func newTombstoner(t *testing.T, db *sql.DB) *Tombstoner {
 	return ts
 }
 
-// TestTombstoneFlipsDependentFindingVisibility is A.16's second stop
+// TestTombstoneFlipsDependentFindingVisibility is drift handling's second stop
 // condition, and the reason exit criterion 22 exists at all.
 func TestTombstoneFlipsDependentFindingVisibility(t *testing.T) {
 	db := openCache(t)
@@ -1203,7 +1203,7 @@ func TestTheStatementAllowlistCarriesNoRowRemoval(t *testing.T) {
 			continue
 		}
 		t.Errorf("allowlist member %q removes rows. A withdrawn or REJECTED advisory is "+
-			"TOMBSTONED, never deleted (A.2 exit criterion 22).", condense(q))
+			"TOMBSTONED, never deleted (Lane A exit criterion 22).", condense(q))
 	}
 }
 
@@ -1234,7 +1234,7 @@ func TestEveryStatementThisPackageRunsIsOnTheAllowlist(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-cutting: this package writes through A.14 and invents no vocabulary
+// Cross-cutting: this package writes through delta ingestion and invents no vocabulary
 // ---------------------------------------------------------------------------
 
 // TestDriftRecordIsDeltaRecord holds the alias. A parallel record type would

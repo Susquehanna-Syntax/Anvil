@@ -10,7 +10,7 @@
 //	"an unexported provenance field on HalfSeal that only halfSealOfRun and
 //	 the Sealer can set, with HalfReadGate refusing any seal without it"
 //
-// It was not a hypothetical. CRITIQUE O.4 found the shape occurring NATURALLY
+// It was not a hypothetical. The controller-core review found the shape occurring NATURALLY
 // in internal/scanctl: AuditRecord.HalfSeal assembled a record.HalfSeal from
 // caller-held fields, with no refresh path, and handed it to the gate. Nobody
 // was attacking anything; it is simply the natural way to write it.
@@ -180,7 +180,7 @@ func TestGateRefusesTheZeroHalfSeal(t *testing.T) {
 // STALENESS — the fault that actually occurred
 // ---------------------------------------------------------------------------
 
-// TestGateRefusesASealHeldAcrossAStateChange is CRITIQUE O.4's defect in this
+// TestGateRefusesASealHeldAcrossAStateChange is the controller-core review's defect in this
 // package's own shape: a seal a legitimate producer minted, kept while the
 // audit moved, and then used to read.
 //
@@ -215,7 +215,7 @@ func TestGateRefusesASealHeldAcrossAStateChange(t *testing.T) {
 	}
 
 	if err := HalfReadGate("held", held); err == nil {
-		t.Fatal("O.4 REPRODUCED: a seal minted before a state change still opens the gate. " +
+		t.Fatal("The controller-core review REPRODUCED: a seal minted before a state change still opens the gate. " +
 			"The gate answered truthfully about a snapshot nobody refreshed.")
 	} else {
 		var pe *SealProvenanceError
@@ -236,13 +236,13 @@ func TestGateRefusesASealHeldAcrossAStateChange(t *testing.T) {
 		}
 	}
 
-	// POSITIVE CONTROL, and S1's re-entrancy: a FRESHLY obtained seal for the
+	// POSITIVE CONTROL, and the spine's re-entrancy: a FRESHLY obtained seal for the
 	// same consumed audit is still readable. Staleness must not be a one-way
 	// door that consumption closes.
 	fresh, err := s.ReadHalf("held", HalfSast)
 	if err != nil {
 		t.Fatalf("POSITIVE CONTROL FAILED: ReadHalf refused a consumed audit: %v "+
-			"(S1 requires a RE-ENTRANT consumer)", err)
+			"(the spine's corrected-requirements table requires a RE-ENTRANT consumer)", err)
 	}
 	if !fresh.Readable() {
 		t.Error("POSITIVE CONTROL FAILED: a freshly minted seal is not readable")
@@ -516,7 +516,7 @@ func TestOnlyTwoProducersStampProvenance(t *testing.T) {
 // publishes an atomic facts snapshot on every mutation, and a held seal is
 // compared against it.
 //
-// The re-verification of R.6 found two mutations that could skip that publish —
+// The re-verification of the sealer found two mutations that could skip that publish —
 // Sealer.SealHalf's DAST branch and Sealer.SealDastIfDeadlineDue, both of which
 // assigned the half's fields and then returned a derivation error from between
 // the assignment and the publish. It classified them LATENT, NOT REACHABLE
@@ -530,8 +530,8 @@ func TestOnlyTwoProducersStampProvenance(t *testing.T) {
 // those fields may be believed. Take the publish away and a seal minted before
 // an EXPIRY still says `sealed` / `both_sealed`, still matches the published
 // facts, and the gate hands a consumer the results of an audit whose payload the
-// reaper has already dropped. That is CRITIQUE-03 M1's harm arriving through the
-// mechanism built to prevent it.
+// reaper has already dropped. That is the harm of the queue and read-path
+// review's finding M1, arriving through the mechanism built to prevent it.
 
 // provAudit reaches into the Sealer for the live *audit. Every test in this
 // section needs it: the defect is a disagreement between an audit's FIELDS and
@@ -899,11 +899,11 @@ func provFunnelMutators() map[string]string {
 func provNonFactAuditFields() map[string]string {
 	return map[string]string{
 		"id":                  "the audit id, written once at construction and never again",
-		"startedAt":           "scan_run.started_at, fixed at BeginAudit; R.6 forbids recomputing it",
+		"startedAt":           "scan_run.started_at, fixed at BeginAudit; the sealer forbids recomputing it",
 		"deadlineAt":          "clock 2, computed once at BeginAudit and never recomputed",
 		"claimTimeoutSeconds": "an AuditConfig input, fixed at BeginAudit",
 		"dastDeadlineSeconds": "clock 3's input, fixed at BeginAudit",
-		"dastEnabled":         "plan/00-SPINE.md S9-AMENDED's tier bit, fixed at BeginAudit",
+		"dastEnabled":         "The two-artifact split's tier bit, fixed at BeginAudit",
 		"live": "IS the published snapshot. publish() stores it and Forget() clears it, " +
 			"both through atomic.Pointer methods rather than assignment; it is the thing the " +
 			"funnel maintains, not a fact the funnel must maintain it for.",
@@ -1310,7 +1310,7 @@ func TestTheFunnelDetectorCatchesTheDefectItWasWrittenFor(t *testing.T) {
 // CLOCK 3 — the DAST deadline now has an authoritative substrate
 // ---------------------------------------------------------------------------
 
-// TestClockThreeIsDueCheckedAgainstTheSealersOwnCopy is CRITIQUE O.4 blocker
+// TestClockThreeIsDueCheckedAgainstTheSealersOwnCopy is the controller-core review's blocker
 // 2's probe P10, second half, moved to the owner: the due-check is against
 // `startedAt + dastDeadlineSeconds` as BeginAudit fixed them, so nothing a
 // caller holds can move it.
@@ -1367,7 +1367,7 @@ func TestClockThreeIsDueCheckedAgainstTheSealersOwnCopy(t *testing.T) {
 		t.Fatalf("SealDastIfDeadlineDue: %v", err)
 	}
 	if !fired {
-		t.Fatal("O4-B2 REPRODUCED: clock 3 did not fire an hour past the deadline after a " +
+		t.Fatal("controller-core finding B2 REPRODUCED: clock 3 did not fire an hour past the deadline after a " +
 			"caller pushed its own copy of the deadline out. The Sealer must hold its own.")
 	}
 

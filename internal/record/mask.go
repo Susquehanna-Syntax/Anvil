@@ -1,12 +1,12 @@
 package record
 
-// mask.go — R.8, the secrets-masking pipeline.
+// mask.go — secrets masking, the secrets-masking pipeline.
 //
 // ===========================================================================
 // WHAT THIS FILE IS FOR, AND WHY IT RUNS WHERE IT RUNS
 // ===========================================================================
 //
-// plan/00-SPINE.md S7 names one field the highest-risk in the whole system:
+// The spine's safety section names one field the highest-risk in the whole system:
 //
 //	"Prompt injection: sanitize at ingest, not at prompt time. The DAST
 //	 response body is the highest-risk field — up to 32 KB of
@@ -114,12 +114,12 @@ package record
 // deliver exactly the false confidence this file exists to avoid. A secret
 // that appears ONLY in a body, and never in a denylisted header or a
 // secret-named parameter, is NOT removed by this package. That is a known,
-// stated limitation, not an oversight. S7's actual control for body content
+// stated limitation, not an oversight. The spine's actual control for body content
 // is a different mechanism owned by a different step: "hash-and-reference by
 // default; inline only a regex-extracted evidence span".
 //
 // THE DENYLIST IS NOT EXHAUSTIVE, AND IS NOT CLAIMED TO BE.
-// plan/40-record-and-storage.md Open Question 8 records this explicitly: R.8
+// plan/design/record-and-store.md Open Question 8 records this explicitly: secrets masking
 // uses a "documented but not exhaustively researched" denylist, and a
 // dedicated security review of real-world header names is recommended before
 // the masking pipeline ships in a release. Concrete names the list as
@@ -149,7 +149,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // denylistedHeaderNames is the exact-match half of the header denylist from
-// plan/40-record-and-storage.md R.8 ("Authorization, Cookie, Set-Cookie,
+// secrets masking's design ("Authorization, Cookie, Set-Cookie,
 // Proxy-Authorization, X-Api-Key"). Stored ASCII-lowercased; comparison folds
 // the record's name the same way. See Open Question 8 in the file header for
 // what this list does not cover.
@@ -174,9 +174,9 @@ var denylistedHeaderSubstrings = []string{
 // webRequest.parameters keys and for query/fragment pair names.
 //
 // PROVENANCE, STATED PLAINLY: unlike the header denylist, this list is NOT in
-// the plan and NOT in the research corpus. R.8's stop condition requires an
+// the plan and NOT in the research corpus. Secrets masking's stop condition requires an
 // "API key in a query parameter" fixture to come out clean, so a parameter
-// rule is required, and this is R.8's own choice. It belongs to the same
+// rule is required, and this is secrets masking's own choice. It belongs to the same
 // security review as Open Question 8 and carries the same caveat.
 //
 // It is deliberately narrower than the reflex "redact anything suspicious":
@@ -284,7 +284,7 @@ type Anomaly struct {
 // Spill is one body that exceeded its inline cap.
 //
 // research/18's read path says the remainder "spills to a blob", and
-// plan/40-record-and-storage.md's Tier-2 row says those blobs are
+// plan/design/record-and-store.md's Tier-2 row says those blobs are
 // "referenced by sha256: digest". Content is the FULL MASKED body — masking
 // and propagation have already run over it — so it is safe to persist as a
 // Tier-2 blob exactly as given.
@@ -349,7 +349,7 @@ type Masker struct {
 	MinPropagationLen int
 }
 
-// MaskRecord is R.8's entry point: it masks l in place and reports whether
+// MaskRecord is secrets masking's entry point: it masks l in place and reports whether
 // masking could be completed.
 //
 // It MUST be the last step of record assembly, before the record reaches
@@ -429,13 +429,14 @@ func (m *Masker) Mask(l *SARIFLog) (*MaskReport, error) {
 // kind"; the walk itself is unchanged either way.
 //
 // Splitting the enumeration of the sites from what is done to them is the
-// whole point. CRITIQUE-02 F3 and F4 are both the same defect in two places:
-// Mask inspected four sites, AssertMasked checked three of them, and neither
-// looked at `anvil/repro.curl` or `anvil/target.repoUrl` — two fields that
-// carry live credentials by construction (`-H 'Authorization: Bearer …'` and
+// whole point. The sealing, claims and masking review's findings F3 and F4 are
+// both the same defect in two places: Mask inspected four sites, AssertMasked
+// checked three of them, and neither looked at `anvil/repro.curl` or
+// `anvil/target.repoUrl` — two fields that carry live credentials by
+// construction (`-H 'Authorization: Bearer …'` and
 // `https://x-access-token:<token>@github.com/…`, the standard GitHub Actions
-// checkout URL). With one walker, a site added here is masked AND enforced,
-// and TestAssertMaskedCoversEverySiteMaskCovers fails if that stops being true.
+// checkout URL). With one walker, a site added here is masked AND enforced, and
+// TestAssertMaskedCoversEverySiteMaskCovers fails if that stops being true.
 type surface struct {
 	// Headers is an HTTP header map: name-keyed, denylist-classified.
 	Headers func(ptr string, h map[string]string)
@@ -863,8 +864,9 @@ var cmdShortOptions = map[byte]cmdArgKind{
 // WHY THIS FIELD IS NOT OPTIONAL COVER. `anvil/repro.curl` is a full command
 // the record invites a human to replay, and the thing that makes it replayable
 // is precisely the credential: `-H 'Authorization: Bearer …'`, `-b
-// 'session=…'`, `-u user:password`, or an API key in the URL. CRITIQUE-02 F3
-// reproduced a live GitHub token surviving MaskRecord in exactly this field.
+// 'session=…'`, `-u user:password`, or an API key in the URL. The sealing,
+// claims and masking review's finding F3 reproduced a live GitHub token
+// surviving MaskRecord in exactly this field.
 //
 // It is NOT shape-based body scanning (which this file refuses to do, see the
 // header): a curl command line is a STRUCTURED string with known credential
@@ -1203,7 +1205,7 @@ var timeType = reflect.TypeOf(time.Time{})
 // the number of strings it changed.
 //
 // It walks by REFLECTION rather than by an enumerated field list on purpose.
-// An enumerated list is auditable but goes stale the moment R.13 or the DAST
+// An enumerated list is auditable but goes stale the moment the read path or the DAST
 // area adds a string field to the contract, and the failure mode of a stale
 // list is a secret surviving in the new field with nothing to indicate it.
 // Reflection covers new fields the day they are added.
@@ -1378,11 +1380,11 @@ func truncateToRuneBoundary(s string, n int) string {
 // Post-condition
 // ---------------------------------------------------------------------------
 
-// AssertMasked reports whether l satisfies R.8's post-condition: every site
+// AssertMasked reports whether l satisfies secrets masking's post-condition: every site
 // Mask is responsible for has already been masked, and no inline body exceeds
 // its cap.
 //
-// plan/00-SPINE.md S7 is "enforce in code, not documentation". This is the
+// The spine's safety section is "enforce in code, not documentation". This is the
 // enforceable half of it: a sink — the store writer, the prompt builder, the
 // GitHub projection — can call it and refuse the record rather than trusting
 // that some earlier step remembered to mask.
@@ -1392,9 +1394,10 @@ func truncateToRuneBoundary(s string, n int) string {
 // is a pure function of the field (URLs and command lines) it RE-DERIVES the
 // masked form and demands the record already equal it. A gate that checked
 // less than the masker is worse than no gate, because it manufactures the
-// confidence it fails to justify — CRITIQUE-02 F4 found exactly that: Mask
-// masked webRequest.target and AssertMasked did not, so a record whose only
-// credential sat in a URL passed the check that exists to catch it.
+// confidence it fails to justify — the sealing, claims and masking review's
+// finding F4 found exactly that: Mask masked webRequest.target and AssertMasked
+// did not, so a record whose only credential sat in a URL passed the check that
+// exists to catch it.
 //
 // It does NOT prove the absence of secrets. It cannot: it does not know what
 // the secrets were, and value propagation (pass 2) is not re-derivable from
@@ -1438,7 +1441,7 @@ func assertURLMasked(ptr, target string) error {
 	if masked := (&Masker{}).maskURL(ptr, target, newSecretSet(MinPropagatedSecretLen), &MaskReport{}); masked != target {
 		return fmt.Errorf("record: %s still carries an unmasked credential in a URL "+
 			"(userinfo password, sensitive query parameter, or fragment token); "+
-			"R.8 masking must run before the store and before any model context", ptr)
+			"Secrets masking must run before the store and before any model context", ptr)
 	}
 	return nil
 }
@@ -1450,7 +1453,7 @@ func assertCommandLineMasked(ptr, cmd string) error {
 	if masked := (&Masker{}).maskCommandLine(ptr, cmd, newSecretSet(MinPropagatedSecretLen), &MaskReport{}); masked != cmd {
 		return fmt.Errorf("record: %s still carries an unmasked credential in a reproduction "+
 			"command line (a header, cookie, user or data option argument); "+
-			"R.8 masking must run before either sink", ptr)
+			"Secrets masking must run before either sink", ptr)
 	}
 	return nil
 }
@@ -1462,7 +1465,7 @@ func assertHeadersMasked(ptr string, headers map[string]string) error {
 			continue
 		}
 		if value != RedactedPlaceholder {
-			return fmt.Errorf("record: %s/%s is unmasked (%s); R.8 masking must run before the store and before any model context",
+			return fmt.Errorf("record: %s/%s is unmasked (%s); secrets masking must run before the store and before any model context",
 				ptr, jsonPointerEscape(name), headerRedactionReason(name, value))
 		}
 	}
@@ -1476,7 +1479,7 @@ func assertParametersMasked(ptr string, params map[string]string) error {
 			continue
 		}
 		if value != RedactedPlaceholder {
-			return fmt.Errorf("record: %s/%s is an unmasked sensitive parameter; R.8 masking must run before either sink",
+			return fmt.Errorf("record: %s/%s is an unmasked sensitive parameter; secrets masking must run before either sink",
 				ptr, jsonPointerEscape(name))
 		}
 	}

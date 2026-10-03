@@ -1,6 +1,6 @@
-"""Make `anvil_opengrep` importable without depending on M0.2's eval package.
+"""Make `anvil_opengrep` importable without depending on the harness scaffold's package.
 
-This tree is self-contained on purpose: M0.7 must be verifiable on its own,
+This tree is self-contained on purpose: the opengrep acquisition must be verifiable on its own,
 before or after the harness scaffold lands.
 """
 

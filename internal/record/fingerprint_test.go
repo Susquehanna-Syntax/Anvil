@@ -1,8 +1,8 @@
 package record
 
-// fingerprint_test.go — R.2's own tests.
+// fingerprint_test.go — the fingerprint's own tests.
 //
-// These are NOT the conformance test. R.16 owns that
+// These are NOT the conformance test. The fingerprint conformance harness owns that
 // (internal/record/fingerprint_conformance_test.go plus
 // testdata/fingerprint_corpus/*.golden), and its oracle must be an offline
 // re-implementation of internal/record/FINGERPRINT-SPEC.md that never imports
@@ -10,7 +10,7 @@ package record
 //
 //   - a corpus lock: every fixture's committed hashed_fields and
 //     expected_digest must still be what the implementation produces;
-//   - determinism across two consecutive runs (R.2's stop condition) AND
+//   - determinism across two consecutive runs (the fingerprint's stop condition) AND
 //     across two separate OS processes, which is the form that can actually
 //     detect a per-process source of nondeterminism such as map iteration
 //     order;
@@ -23,16 +23,17 @@ package record
 // THE COMMITTED GOLDENS WERE NOT PRODUCED BY THIS PACKAGE. Each fixture's
 // `hashed_fields` list was derived by hand from the algorithm text — now
 // internal/record/FINGERPRINT-SPEC.md, which is the authoritative and COMPLETE
-// definition; plan/40-record-and-storage.md's four-clause summary was proved
-// insufficient by CRITIQUE-01 — and its `expected_digest` was computed from
+// definition; plan/design/record-and-store.md's four-clause summary was proved
+// insufficient by the contract-and-fingerprint review — and its `expected_digest` was computed from
 // that list by an offline script that only joins with U+001F and SHA-256s.
 // The lock below is therefore a genuine two-sided check, and there is
 // deliberately no test here that can regenerate it — see the note further
 // down.
 //
-// TWO DAST GOLDENS WERE RE-DERIVED ON 2026-08-08 under the R.3 blocker-2
-// ruling, when CanonicalRouteTemplate began deriving `route_template` as the
-// specification always said it should:
+// TWO DAST GOLDENS WERE RE-DERIVED ON 2026-08-08 under the
+// contract-and-fingerprint review's blocker-2 ruling, when
+// CanonicalRouteTemplate began deriving `route_template` as the specification
+// always said it should:
 //
 //	dast-01  ca801b8d… → 199c3b5f…   route_template "/api/v1/users/{id}/orders"
 //	                                 → "/api/v1/users/<VAR>/orders"
@@ -46,9 +47,10 @@ package record
 // has not shipped — so this was a correction of an unimplemented spec clause,
 // not an anvil-fp/v2 event.
 //
-// R.16: do NOT derive the .golden files from `expected_digest` either. Even
-// though it is independent of the Go code, copying it would make the
-// conformance gate a transcription check rather than a re-derivation.
+// The fingerprint conformance harness: do NOT derive the .golden files from
+// `expected_digest` either. Even though it is independent of the Go code,
+// copying it would make the conformance gate a transcription check rather than
+// a re-derivation.
 
 import (
 	"bytes"
@@ -213,7 +215,7 @@ func loadCorpus(t *testing.T) []corpusFixture {
 		t.Fatalf("globbing corpus: %v", err)
 	}
 	if len(paths) == 0 {
-		t.Fatalf("no fixtures found in %s; the fixed corpus is mandatory (plan/00-SPINE.md S6)", corpusDir)
+		t.Fatalf("no fixtures found in %s; the fixed corpus is mandatory (the spine's record section)", corpusDir)
 	}
 	sort.Strings(paths)
 
@@ -243,7 +245,7 @@ func loadCorpus(t *testing.T) []corpusFixture {
 // ---------------------------------------------------------------------------
 
 func TestCorpusCoverage(t *testing.T) {
-	// plan/40-record-and-storage.md R.2: "at minimum 2 SAST, 2 DAST, 1 SCA,
+	// the fingerprint's design: "at minimum 2 SAST, 2 DAST, 1 SCA,
 	// 1 host". A tier with no fixture is a tier nothing guards.
 	want := map[string]int{"sast": 2, "dast": 2, "sca": 1, "host": 1}
 	got := map[string]int{}
@@ -295,7 +297,7 @@ func TestCorpusFixturesProduceTheirDocumentedDigest(t *testing.T) {
 	}
 }
 
-// TestCorpusDigestsAreStableAcrossTwoConsecutiveRuns is R.2's stop condition
+// TestCorpusDigestsAreStableAcrossTwoConsecutiveRuns is the fingerprint's stop condition
 // verbatim. It catches map-iteration order or any other nondeterminism
 // leaking into the digest — NormalizeMatch uses a map for metavariable
 // assignment, and if that assignment ever became iteration-ordered this test
@@ -334,7 +336,7 @@ const (
 // seed (re-randomised per process, so an unsorted range over a map returns a
 // stable-but-wrong order within a run and a different one in the next),
 // pointer addresses, and any address-space or locale state. Two producers
-// emitting different digests is exactly the failure 00-SPINE.md S6 says fails
+// emitting different digests is exactly the failure the spine's record section says fails
 // silently forever, and the two producers are two processes.
 //
 // The child is this same test binary re-executed with crossProcessEnv set,
@@ -399,7 +401,7 @@ func TestCorpusDigestsAreStableAcrossProcesses(t *testing.T) {
 	}
 }
 
-// TestCorpusMutationsDoNotChangeTheDigest is the mutation test R.2's
+// TestCorpusMutationsDoNotChangeTheDigest is the mutation test the fingerprint's
 // validation requirement names. Every fixture's `mutations` array holds inputs
 // that differ ONLY in fields the specification forbids hashing — line and
 // column numbers, indentation, comments, the dependency version string, the
@@ -455,7 +457,7 @@ func TestCorpusFixturesHaveDistinctDigests(t *testing.T) {
 // surfaced it, which is why this corpus exists at all.
 //
 // The committed `hashed_fields` lists were derived BY HAND from the algorithm
-// text in plan/40-record-and-storage.md, and each `expected_digest` was then
+// text in plan/design/record-and-store.md, and each `expected_digest` was then
 // computed from that list by an offline script that joins with U+001F and
 // SHA-256s — no Go code involved. To change a fixture, redo that derivation.
 // To change a digest, ship anvil-fp/v2 and follow the dual-write migration
@@ -466,7 +468,7 @@ func TestCorpusFixturesHaveDistinctDigests(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestSastDigestIgnoresPositionAndFormatting is the specific mutation
-// assertion R.2 requires: "a line-number-only change to a SAST fixture leaves
+// assertion the fingerprint requires: "a line-number-only change to a SAST fixture leaves
 // the digest unchanged". SastInput has no line field at all, so the strongest
 // form of the test is to change everything a line-number change implies —
 // leading blank lines, indentation, line breaks, and a comment naming the old
@@ -631,7 +633,7 @@ func TestPackageDigestIgnoresTheVersionString(t *testing.T) {
 // TestScaAndHostTiersDoNotCollide: the two tiers share one formula, so the
 // detector-kind field is the only thing keeping a repo dependency and a host
 // package with the same advisory apart. If it were dropped, a host finding
-// (remediable_by_agent=false, plan/00-SPINE.md S7) could upsert over an
+// (remediable_by_agent=false, the spine's safety section) could upsert over an
 // agent-remediable dependency finding.
 func TestScaAndHostTiersDoNotCollide(t *testing.T) {
 	scaDigest, err := Sca(ScaInput{
@@ -813,7 +815,7 @@ func TestDastInjectionPointAndEvidenceSignalAreIndependent(t *testing.T) {
 // input struct. Adding a field is how a volatile input (a line number, a
 // version, a host) gets reintroduced, and it would silently change every
 // digest that field participates in. If this test fails, the change is an
-// anvil-fp/v2 event and an amendment to plan/40-record-and-storage.md, not a
+// anvil-fp/v2 event and an amendment to plan/design/record-and-store.md, not a
 // local edit.
 func TestInputStructsHaveTheirFrozenShape(t *testing.T) {
 	cases := []struct {

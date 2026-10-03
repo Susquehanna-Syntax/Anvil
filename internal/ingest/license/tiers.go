@@ -1,5 +1,5 @@
 // Package license is Lane A's licence gate and the segregated mirror layout it
-// enforces. This is step A.4 of plan/20-lane-a-ingestion-sca.md.
+// enforces. This is the licence gate (plan node licencegate).
 //
 // # NO FEED IS ADMITTED BY A FRESH CLONE. THAT IS THE DESIGN.
 //
@@ -9,8 +9,8 @@
 // digest, there is no evidence, and with no evidence there is no tier.
 //
 // The previous revision of this package did admit feeds out of a fresh clone,
-// and A.6's critic found out why: every "body" it read was Anvil prose,
-// committed alongside the very claim it was supposed to validate. Spine S8 says
+// and the licence-gate review found out why: every "body" it read was Anvil prose,
+// committed alongside the very claim it was supposed to validate. The spine's licence section says
 // the gate "reads LICENSE file bodies, never API metadata", and the point of
 // that rule is that THE BODY IS THE PUBLISHER'S EVIDENCE. A document Anvil
 // wrote in the same commit as the feed row is not evidence of anything. It is
@@ -28,7 +28,7 @@
 //	                                   licence text, acquired deliberately and
 //	                                   verified against the pin. NOT in git.
 //
-//	<tier>/LICENSE-NOTES.md            Anvil's RECORD: spine S8's manual
+//	<tier>/LICENSE-NOTES.md            Anvil's RECORD: the spine's manual
 //	<tier>/<dir>/LICENSE (tier 2)      override, the quoted operative sentence,
 //	                                   the provenance of the conclusion. In git,
 //	                                   and deliberately NOT trusted to admit.
@@ -95,14 +95,14 @@
 //	body contradicts the row ...... ErrBodyContradictsDeclaration
 //	share-alike outside tier 2 .... ErrShareAlikeQuarantine
 //	restrictive terms ............. ErrRestrictedLicense
-//	spine S5 excluded source ...... ErrExcludedSource
+//	hard-excluded source .......... ErrExcludedSource
 //
 // A gate that refuses every feed until real evidence is present is correct and
 // shippable. A gate that admits feeds on evidence Anvil wrote is not.
 //
 // # Why this is not an SPDX allowlist
 //
-// A.4's Forbidden actions rule out "a pure-SPDX allowlist as the sole gate", and
+// The licence gate's Forbidden actions rule out "a pure-SPDX allowlist as the sole gate", and
 // the enumerated permissive set is not one. An allowlist keys on the DECLARED
 // identifier — the thing a mislabelled artifact gets wrong and a registry
 // reports wrongly, which is the whole of the CISA KEV case. What this gate keys
@@ -118,7 +118,7 @@
 // a Tier 0 route for it is refused with the reason that matters.
 //
 // The marker table matches OPERATIVE WORDING as well as licence names, which was
-// A.6's blocker B1. Those markers stay, and they still classify: they are how a
+// the licence-gate review's blocker B1. Those markers stay, and they still classify: they are how a
 // reciprocal text lands in tier 2 rather than merely failing to be published.
 // The reciprocity markers carry no SPDX id, because "some licence with a
 // share-alike duty" is the honest conclusion and guessing which one would be an
@@ -136,11 +136,11 @@
 //
 //   - It does not fetch. Nothing here imports net/http. Acquisition is an
 //     operator step run deliberately (mirror/README.md), and resolving a licence
-//     against a live API is precisely the failure S8 names.
-//   - It does not redeclare any of area 40's six frozen enums, and it does not
+//     against a live API is precisely the failure the spine's licence section names.
+//   - It does not redeclare any of the record area's six frozen enums, and it does not
 //     redeclare internal/ingest/config's vocabulary either: config.LicenseTier,
 //     config.SPDXResolvable, config.SPDXIsNone, config.ValidFeedID and
-//     config.ValidPathSegment are consumed, never restated. A.6's M4 found two
+//     config.ValidPathSegment are consumed, never restated. The licence-gate review's M4 found two
 //     places where this package answered a question config had already
 //     answered, and the two answers disagreed.
 //   - It does not invent a fingerprint. anvil-fp/v1 lives in internal/record
@@ -148,7 +148,7 @@
 //     digests of licence files, are never presented as a finding identity, and
 //     are never compared against a canonical fingerprint.
 //   - It does not carry CIS Benchmark content, or text derived from reading one
-//     (spine S5 hard exclusion).
+//     (the spine's hard exclusion).
 package license
 
 import (
@@ -185,7 +185,7 @@ const (
 	NotesFileName = "LICENSE-NOTES.md"
 
 	// LicenseFileName is the record each TIER 2 source directory carries on
-	// its own. Tier 2 does NOT share a notes file: S8's words are "segregated
+	// its own. Tier 2 does NOT share a notes file: the spine's words are "segregated
 	// directories with their own LICENSE files", and a shared file would be
 	// one more thing that can be copied into a publishable artifact by
 	// accident.
@@ -229,7 +229,7 @@ func TierDir(t config.LicenseTier) string {
 
 // NoTier is what Gate returns for the tier when it refuses.
 //
-// It is not 0. A.6's minor finding: tier 0 is the MOST permissive tier — always
+// It is not 0. The licence-gate review's minor finding: tier 0 is the MOST permissive tier — always
 // mirrored, publishable, no copyleft — so a caller that ignored the error got
 // the single most dangerous default the type can express. NoTier is outside
 // {0,1,2,3}, so config.LicenseTier(NoTier).Valid() is false and the mistake
@@ -325,10 +325,10 @@ var (
 	// be wrong.
 	ErrBodyContradictsDeclaration = errors.New("license: checked-in body contradicts the declared licence")
 
-	// ErrMissingManualNote reports a row that needs spine S8's manual-override
+	// ErrMissingManualNote reports a row that needs the spine's manual-override
 	// field and does not carry it — a NONE/NOASSERTION/LicenseRef- identifier,
 	// or metadata that disagrees with the declaration (the CISA KEV shape).
-	ErrMissingManualNote = errors.New("license: licence needs the S8 manual note")
+	ErrMissingManualNote = errors.New("license: licence needs the manual licence note")
 
 	// ErrShareAlikeQuarantine reports a share-alike source routed anywhere but
 	// Tier 2, or a Tier 2 route requested for a source that carries no
@@ -349,12 +349,12 @@ var (
 	// can be constructed.
 	ErrUndeclaredLicenseTier = errors.New("license: undeclared licence outside tier 3")
 
-	// ErrExcludedSource reports content spine S5 excludes outright — CIS
+	// ErrExcludedSource reports content the spine's exclusion list excludes outright — CIS
 	// Benchmark material in any form, including text written by reading one.
 	// It is a separate error from ErrRestrictedLicense because it is not a
 	// licence conclusion: it is a hard exclusion that no manual note, tier or
 	// operator flag may override.
-	ErrExcludedSource = errors.New("license: spine S5 excluded source")
+	ErrExcludedSource = errors.New("license: source on the spine's hard-exclusion list")
 
 	// ErrTierRouting reports an output path that does not belong to the tier
 	// that produced it. The case it exists for is the one research/01 Risk #3
@@ -456,25 +456,26 @@ func (o Obligation) String() string {
 func (o Obligation) ShareAlike() bool { return o == ObligationShareAlike }
 
 // ---------------------------------------------------------------------------
-// The classifier — the body read S8 requires
+// The classifier — the body read the spine's licence section requires
 // ---------------------------------------------------------------------------
 
-// excludedMarkers are spine S5's hard exclusions, detected in the licence text
+// excludedMarkers are the spine's hard exclusions, detected in the licence text
 // itself. They are checked BEFORE classification and refuse unconditionally: no
 // tier, note or operator flag admits them.
 //
 // CIS Benchmark content is excluded "in any form, including rules written by
-// reading one" (S5), which is why the publisher's name is a marker as well as
-// the product name. research/12 §5 puts CIS out of Lane A's feed set entirely;
-// this check exists for the day someone adds it back by mistake.
+// reading one" (the spine's exclusion list), which is why the publisher's name
+// is a marker as well as the product name. research/12 §5 puts CIS out of Lane
+// A's feed set entirely; this check exists for the day someone adds it back by
+// mistake.
 var excludedMarkers = []struct {
 	marker string
 	why    string
 }{
-	{"cis benchmark", "CIS Benchmark content — spine S5 hard exclusion, in any form"},
-	{"cis benchmarks", "CIS Benchmark content — spine S5 hard exclusion, in any form"},
-	{"center for internet security", "CIS-published content — spine S5 hard exclusion"},
-	{"cis critical security controls", "CIS-published content — spine S5 hard exclusion"},
+	{"cis benchmark", "CIS Benchmark content — the spine's hard exclusion, in any form"},
+	{"cis benchmarks", "CIS Benchmark content — the spine's hard exclusion, in any form"},
+	{"center for internet security", "CIS-published content — the spine's hard exclusion"},
+	{"cis critical security controls", "CIS-published content — the spine's hard exclusion"},
 }
 
 type classifierRule struct {
@@ -522,7 +523,7 @@ type classifierRule struct {
 //     therefore reports CC0-1.0 rather than nothing.
 //
 //  3. The share-alike class matches OPERATIVE WORDING, not only names. This is
-//     A.6's blocker B1. A licence text that imposes reciprocity without ever
+//     the licence-gate review's blocker B1. A licence text that imposes reciprocity without ever
 //     calling itself share-alike — a bare "under the same license" clause, a
 //     CC deed sentence, a licence URL — was previously classified as notice and
 //     admitted into the publishable tier, and a share-alike obligation that
@@ -637,7 +638,7 @@ var classifierRules = []classifierRule{
 }
 
 // noGrantMarkers are the sentences a document uses to say that NO GRANT OF
-// RIGHTS IS MADE. They exist for A.6's M1.
+// RIGHTS IS MADE. They exist for the licence-gate review's M1.
 //
 // Before them, a row declaring config.LicenseNone at Tier 3 was admitted on a
 // body that matched nothing at all: the NONE branch returned before the
@@ -755,7 +756,7 @@ func StatesNoGrant(body string) bool {
 	return false
 }
 
-// excluded reports the first spine S5 exclusion the text trips, if any.
+// excluded reports the first hard exclusion the text trips, if any.
 func excluded(text string) (string, bool) {
 	hay := NormaliseForMatching(text)
 	for _, e := range excludedMarkers {
@@ -788,7 +789,7 @@ type LicenseInfo struct {
 	// and licence evidence live in, under its tier. Empty means FeedID.
 	//
 	// It comes from config.FeedConfig.MirrorDir, which is where the value is
-	// configured and validated. A.6's blocker B2 was that this field used to
+	// configured and validated. The licence-gate review's blocker B2 was that this field used to
 	// be supplied by the caller with no configured source at all: the three
 	// Tier 2 rows have directories that differ from their ids, so nothing but
 	// a test could reach the quarantine, and the licence evidence a decision
@@ -812,13 +813,13 @@ type LicenseInfo struct {
 	// MetadataSPDX is what a registry or forge API reports, if anything.
 	//
 	// IT IS NEVER TRUSTED AND NEVER CLASSIFIED. It exists for one purpose: a
-	// value that disagrees with DeclaredSPDX makes S8's manual note MANDATORY,
+	// value that disagrees with DeclaredSPDX makes the manual licence note MANDATORY,
 	// so the operator has to write down why the metadata is wrong. That is the
 	// CISA KEV case — the forge says NOASSERTION, the README says CC0 — and
 	// leaving the field empty simply means nobody asked a registry.
 	MetadataSPDX string
 
-	// ManualNote is spine S8's manual-override field: the quoted operative
+	// ManualNote is the spine's manual-override field: the quoted operative
 	// sentence from the publisher's own licence text. Required whenever
 	// DeclaredSPDX is not a resolvable SPDX identifier, and whenever
 	// MetadataSPDX disagrees with DeclaredSPDX.
@@ -856,7 +857,7 @@ func FromFeed(f config.FeedConfig, metadataSPDX string, mirror fs.FS) LicenseInf
 // Decision is a successful gate result. Every field is a conclusion the gate
 // can defend from the bytes it read, which is why the file paths and digests
 // are on it: a licence conclusion whose evidence cannot be re-derived is an
-// assertion, and assertions are what S8 was written against.
+// assertion, and assertions are what the spine's licence section was written against.
 type Decision struct {
 	// FeedID echoes the row the decision is about.
 	FeedID string
@@ -902,8 +903,8 @@ type Decision struct {
 	// text established an obligation without naming an identifier it is
 	// config.LicenseNoAssertion, never the row's declaration.
 	//
-	// A.6's M2: it used to fall back to the unverified YAML assertion and flow
-	// straight into the A.2 cache's license_dir_manifest.spdx_id, so the
+	// The licence-gate review's M2: it used to fall back to the unverified YAML assertion and flow
+	// straight into the ingestion cache's license_dir_manifest.spdx_id, so the
 	// manifest reported a licence nobody had verified as though the gate had
 	// established it. NOASSERTION is SPDX's own word for "no assertion is
 	// made", and it is the truth in that case.
@@ -929,7 +930,7 @@ type Decision struct {
 	// pure-metadata gate would have reached a different answer.
 	MetadataOverridden bool
 
-	// NoteRequired is true when S8's manual override was mandatory for this
+	// NoteRequired is true when the manual licence override was mandatory for this
 	// row. ManualNote is non-empty whenever it is.
 	NoteRequired bool
 
@@ -938,8 +939,8 @@ type Decision struct {
 	ManualNote string
 }
 
-// ManifestRow is a row of the A.2 cache's `license_dir_manifest` table, whose
-// column order is (directory, tier, license_file, spdx_id). A.4's Gate is that
+// ManifestRow is a row of the ingestion cache's `license_dir_manifest` table, whose
+// column order is (directory, tier, license_file, spdx_id). The licence gate is that
 // table's only writer (internal/ingest/cache/schema.go says so at the table's
 // definition), so the row is built here and bound by the caller.
 type ManifestRow struct {
@@ -969,7 +970,7 @@ func (d Decision) Refused() bool { return !d.Tier.Valid() || d.Dir == "" }
 // could not say so. `Decision{}.ManifestRow()` returned Directory "" with Tier
 // 0 — a valid tier, and the most permissive one this system has — without ever
 // consulting Refused. A caller that projected before checking (or instead of
-// checking) wrote tier 0 into `license_dir_manifest`, which is the A.2 cache's
+// checking) wrote tier 0 into `license_dir_manifest`, which is the ingestion cache's
 // record of which directories are safe to merge. The zero Decision is the case
 // that matters: it is what a future code path produces by forgetting to fill a
 // field, and nothing about it looks wrong at the call site.
@@ -1012,8 +1013,8 @@ func (d Decision) CheckWritePath(p string) error {
 // The gate
 // ---------------------------------------------------------------------------
 
-// Gate is the packet-named entry point and the ONLY code path any writer in A.7
-// or A.8 may use to choose an output directory.
+// Gate is the entry point the design names and the ONLY code path any writer in the poller
+// or the bulk bootstrap may use to choose an output directory.
 //
 // It returns the licence tier and the directory the feed's data may be written
 // under, or an error. Every error satisfies errors.Is(err, ErrLicenseRefused);
@@ -1038,7 +1039,7 @@ func Gate(row LicenseInfo) (tier int, dir string, err error) {
 
 // Resolve runs the full gate and returns the decision with its evidence.
 //
-// The order of the checks below is itself a decision. Spine S5's hard exclusions
+// The order of the checks below is itself a decision. The spine's hard exclusions
 // run before any licence reasoning, because CIS Benchmark content is not a
 // licence question and must not be reachable by a manual note. The pin is
 // resolved before anything is read, because a body nobody pinned is not evidence
@@ -1058,7 +1059,7 @@ func Resolve(info LicenseInfo) (Decision, error) {
 	tierDir := TierDir(info.DeclaredTier)
 	outDir := path.Join(tierDir, dirName)
 
-	// Spine S5 first, on the declaration itself. Nothing has been read yet; a
+	// The spine's exclusion list first, on the declaration itself. Nothing has been read yet; a
 	// row that names an excluded source must not even cause a read.
 	if why, bad := excluded(info.FeedID + " " + info.DeclaredSPDX + " " + info.ManualNote); bad {
 		return refusedBy(ErrExcludedSource, "feed %q: %s", info.FeedID, why)
@@ -1156,7 +1157,7 @@ func Resolve(info LicenseInfo) (Decision, error) {
 			info.FeedID, ManifestFileName, verbatimPath, pin.SPDXID, bodySPDX)
 	}
 
-	// S8's manual override is mandatory in two situations, and both are about
+	// The manual licence override is mandatory in two situations, and both are about
 	// the row's identifier being unreliable rather than about the body.
 	metadataOverridden := info.MetadataSPDX != "" &&
 		!strings.EqualFold(strings.TrimSpace(info.MetadataSPDX), strings.TrimSpace(info.DeclaredSPDX))
@@ -1387,10 +1388,11 @@ func CheckWritePath(tier config.LicenseTier, p string) error {
 
 // notesPathFor returns Anvil's own record for a feed at a tier.
 //
-// Tier 2 reads a LICENSE inside the source's OWN directory, because S8 requires
-// segregated directories with their own LICENSE files and a shared file is one
-// more thing that can be copied into a publishable artifact. Every other tier
-// reads its feed's record block out of the tier's shared LICENSE-NOTES.md.
+// Tier 2 reads a LICENSE inside the source's OWN directory, because the spine's
+// licence section requires segregated directories with their own LICENSE files
+// and a shared file is one more thing that can be copied into a publishable
+// artifact. Every other tier reads its feed's record block out of the tier's
+// shared LICENSE-NOTES.md.
 func notesPathFor(tier config.LicenseTier, tierDir, dirName string) string {
 	if tier == config.LicenseTier2 {
 		return path.Join(tierDir, dirName, LicenseFileName)
@@ -1466,7 +1468,7 @@ func extractBlock(text, feedID, notesPath string) (string, error) {
 // validateInfo rejects a structurally unusable row before anything is read.
 //
 // The feed id and directory rules are internal/ingest/config's — ValidFeedID
-// and ValidPathSegment — not this package's own. A.6's M4: these used to be
+// and ValidPathSegment — not this package's own. The licence-gate review's M4: these used to be
 // restated here, more strictly, so a feed id the loader accepted (`osv.dev`)
 // was structurally refused by the gate that had to read its licence, and a feed
 // id of ".." was accepted by the loader and only caught here.

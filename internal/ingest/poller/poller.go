@@ -1,4 +1,4 @@
-// Package poller is Lane A step A.7: the authenticated conditional-GET poller.
+// Package poller is Lane A's authenticated conditional-GET poller.
 //
 // ===========================================================================
 // WHAT THIS PACKAGE IS FOR
@@ -26,7 +26,7 @@
 //     to be free. See authorize and gitHubRateLimited.
 //
 //  2. NEVER FOLLOW A REDIRECT OFF THE CONFIGURED HOST, AND RE-VALIDATE SCOPE
-//     ON EVERY HOP. plan/00-SPINE.md S7: "Re-validate scope on every request
+//     ON EVERY HOP. The spine's safety section: "Re-validate scope on every request
 //     including every redirect hop; never follow cross-host redirects." A feed
 //     that 302s to an attacker's host turns a scheduled background fetch into
 //     an SSRF with the feed's own credential attached, and Go's default client
@@ -38,14 +38,14 @@
 //  3. NEVER WRITE RAW FETCHED TEXT INTO THE CACHE. Two controls, in this
 //     order, and the order is the point:
 //
-//     internal/ingest/license.Resolve (A.4) runs FIRST, BEFORE THE REQUEST IS
+//     internal/ingest/license.Resolve (the licence gate) runs FIRST, BEFORE THE REQUEST IS
 //     MADE. A feed whose licence evidence is absent is not fetched at all:
 //     nothing may be written under mirror/, so spending a request — and a slice
 //     of the rate-limit budget — on bytes that must then be discarded buys
 //     nothing. It also means the poller can never be the component that
 //     acquired data Anvil had no right to hold.
 //
-//     internal/ingest/sanitize (A.3) runs on every externally-sourced string
+//     internal/ingest/sanitize (the sanitizer) runs on every externally-sourced string
 //     this package stores — the ETag, the Last-Modified value and the
 //     watermark. See acceptHeaderValue for what "runs on" means here, which is
 //     stricter than "was passed through": a value the sanitizer MODIFIED is
@@ -56,8 +56,8 @@
 // WHAT THIS PACKAGE DELIBERATELY DOES NOT DO
 // ===========================================================================
 //
-//   - IT DOES NOT PARSE THE BODY AND IT WRITES NO ADVISORY ROW. A.8 (bootstrap)
-//     and A.14 (delta) own that. The body leaves here inside a Payload, which
+//   - IT DOES NOT PARSE THE BODY AND IT WRITES NO ADVISORY ROW. The bulk bootstrap
+//     and delta ingestion own that. The body leaves here inside a Payload, which
 //     cannot be constructed without an admitted licence Decision and which
 //     carries that decision's write-path check. THE OBLIGATION TRANSFERS WITH
 //     IT: every string a consumer extracts from those bytes and binds to an
@@ -67,7 +67,7 @@
 //
 //   - IT DOES NOT RUN GIT. config.SyncGitBloblessFetch is refused with
 //     ErrMechanismNotHTTP. research/06 Risk #7 is about the shallow-clone trap
-//     and A.8 owns the blobless clone; a `git fetch` reached from a poller
+//     and the bulk bootstrap owns the blobless clone; a `git fetch` reached from a poller
 //     would be a second, unreviewed implementation of it.
 //
 //   - IT DOES NOT SCHEDULE. Poll is one poll. NextPollAfter is the answer to
@@ -75,7 +75,7 @@
 //     own scheduler, because a scheduler in here would need a cadence, and
 //     every cadence lives in the feed table (research/06 Recommendation item 4).
 //
-//   - IT DOES NOT LOG. Like A.3, it returns what happened. A poller that wrote
+//   - IT DOES NOT LOG. Like the sanitizer, it returns what happened. A poller that wrote
 //     to a global logger would be a poller that could log a token; see
 //     "CREDENTIALS" below.
 //
@@ -135,11 +135,11 @@ import (
 // ---------------------------------------------------------------------------
 
 // Status is the typed outcome of one poll. It is the "typed 304-vs-200-vs-error
-// result" A.7's expected output schema names.
+// result" the poller's expected output schema names.
 //
 // It is Lane-A-local vocabulary with no counterpart among the record contract's
 // six frozen enums, so declaring it here does not violate the single-owner rule
-// in plan/IMPLEMENTATION-PLAN.md section 6; it exists so that a caller switches
+// in the first plan's shared-vocabulary review; it exists so that a caller switches
 // on a constant rather than on an HTTP status code it re-derives.
 type Status string
 
@@ -192,7 +192,7 @@ const (
 	IntervalFromServer IntervalSource = "x_poll_interval"
 
 	// IntervalFromRetryAfter means a Retry-After header asked for longer than
-	// the configured cadence and was honoured. It is not in A.7's packet text;
+	// the configured cadence and was honoured. It is not in the poller's design text;
 	// it is here because ignoring Retry-After on a 429 is how a client earns a
 	// secondary rate limit, and research/06's rate-limit section is the reason
 	// this package exists at all.
@@ -263,7 +263,7 @@ var (
 	// ErrPollFailed is the umbrella every FETCH FAILURE satisfies.
 	ErrPollFailed = errors.New("poller: fetch failed")
 
-	// ErrNoCache reports a Poller built without the A.2 ingestion cache. There
+	// ErrNoCache reports a Poller built without the ingestion cache. There
 	// is no in-memory fallback: a poll that cannot persist feed_state would
 	// re-fetch the whole feed on every run, which is the cost conditional GET
 	// exists to avoid.
@@ -281,7 +281,7 @@ var (
 
 	// ErrMechanismNotHTTP reports config.SyncGitBloblessFetch. That mechanism
 	// is a git fetch into an existing --filter=blob:none clone and belongs to
-	// A.8; research/06 Risk #7 is explicit that it must never become a shallow
+	// the bulk bootstrap; research/06 Risk #7 is explicit that it must never become a shallow
 	// clone, and re-implementing it here is how a second version acquires a
 	// different opinion about that.
 	ErrMechanismNotHTTP = errors.New("poller: sync mechanism is not an HTTP poll")
@@ -311,11 +311,11 @@ var (
 	// Sending the request without a credential would be the fail-open answer.
 	ErrUnknownAuthMode = errors.New("poller: unknown auth mode")
 
-	// ErrCrossHostRedirect is spine S7 enforced: a redirect pointed at a host
+	// ErrCrossHostRedirect is the spine's safety section enforced: a redirect pointed at a host
 	// other than the configured one and was NOT followed.
 	ErrCrossHostRedirect = errors.New("poller: redirect leaves the configured host")
 
-	// ErrScopeViolation is the rest of S7's per-hop re-validation: a scheme
+	// ErrScopeViolation is the rest of the spine's per-hop re-validation: a scheme
 	// change, a port change, or inline credentials appearing mid-chain.
 	ErrScopeViolation = errors.New("poller: redirect leaves the configured scope")
 
@@ -395,7 +395,7 @@ type Response struct {
 }
 
 // Watermarker is the hook config.SyncWatermarkAPI needs, and the reason it is
-// an injected interface rather than code in this file is A.1's rule: a
+// an injected interface rather than code in this file is the feed table's rule: a
 // watermark is a FEED-SPECIFIC cursor — an NVD lastModStartDate window, a page
 // token, a delta filename — and a poller that knew how to build one would know
 // which feed it was polling. That is a hard-coded feed table wearing a
@@ -421,12 +421,12 @@ type Watermarker interface {
 
 // Options configures a Poller. Every field is optional except DB.
 type Options struct {
-	// DB is the A.2 ingestion cache, already migrated. It is NOT
+	// DB is the ingestion cache, already migrated. It is NOT
 	// internal/store: the two are separate database files opened by separate
 	// packages, and only feed_state is written here.
 	DB *sql.DB
 
-	// Mirror is the filesystem A.4's licence evidence is read from, rooted
+	// Mirror is the filesystem the licence gate's licence evidence is read from, rooted
 	// where mirror/ sits. Nil means os.DirFS("."). Tests pass an fstest.MapFS
 	// and nothing in the licence gate opens a network connection.
 	Mirror fs.FS
@@ -461,8 +461,8 @@ type Options struct {
 	Watermarks Watermarker
 
 	// MetadataSPDX reports what a registry or forge API says about a feed's
-	// licence, or "" if nobody asked one. A.4 never trusts it: a value that
-	// disagrees with the row's declaration makes spine S8's manual note
+	// licence, or "" if nobody asked one. The licence gate never trusts it: a value that
+	// disagrees with the row's declaration makes the manual licence note
 	// mandatory, which is the CISA KEV case. Nil means "nobody asked".
 	MetadataSPDX func(config.FeedConfig) string
 }
@@ -560,10 +560,10 @@ func New(opts Options) (*Poller, error) {
 // Payload is a fetched body bound to the licence Decision that admitted it.
 //
 // It exists so that a body and its licence cannot drift apart between here and
-// A.8/A.14. A consumer that wants the bytes has to hold the decision, and the
-// decision is what answers "where may this be written" — CheckWritePath is the
-// second half of the tier 2 quarantine and it is right here on the value the
-// caller is about to write.
+// the bulk bootstrap and delta ingestion. A consumer that wants the bytes has
+// to hold the decision, and the decision is what answers "where may this be
+// written" — CheckWritePath is the second half of the tier 2 quarantine and it
+// is right here on the value the caller is about to write.
 //
 // The zero Payload yields ErrNoPayload rather than nil bytes and a tier 0
 // decision.
@@ -614,7 +614,7 @@ func (p *Payload) SHA256() string {
 
 // CheckWritePath refuses any path outside the directory this payload's licence
 // decision admits. It delegates to the decision, so there is one definition of
-// the quarantine and it lives in A.4.
+// the quarantine and it lives in the licence gate.
 func (p *Payload) CheckWritePath(path string) error {
 	if p == nil || p.decision.Refused() {
 		return refuse(ErrNoPayload, "no admitted licence decision, so no write path is permitted")
@@ -672,12 +672,12 @@ type PollResult struct {
 	// every outcome except StatusUpdated.
 	Payload *Payload
 
-	// Decision is A.4's licence decision for this feed. It is the gate's
+	// Decision is the licence gate's licence decision for this feed. It is the gate's
 	// conclusion, and feed_state.license_tier is written from it rather than
 	// from the row's own claim.
 	Decision license.Decision
 
-	// Sanitize is the merged A.3 report over every externally-sourced string
+	// Sanitize is the merged sanitizer report over every externally-sourced string
 	// this poll considered storing.
 	Sanitize sanitize.SanitizeStats
 
@@ -701,7 +701,7 @@ type PollResult struct {
 
 // Poll performs one poll of one feed.
 //
-// It is A.7's `Poll(ctx, feed FeedConfig) (PollResult, error)`; the
+// It is the poller's `Poll(ctx, feed FeedConfig) (PollResult, error)`; the
 // dependencies that signature has no room for — the cache, the clock, the
 // transport, the credential source — live on the receiver, so that no call site
 // can supply a different one per call and no default can be reached by
@@ -711,7 +711,7 @@ type PollResult struct {
 //
 //  1. the row is checked for pollability            (no I/O)
 //  2. the URL is checked for scope                  (no I/O)
-//  3. A.4's licence gate runs                       (reads the mirror FS)
+//  3. The licence gate runs                       (reads the mirror FS)
 //  4. feed_state is read                            (reads the cache)
 //  5. the request is built and authorized           (reads the environment)
 //  6. the request is made, every hop scope-checked  (network)
@@ -738,7 +738,7 @@ func (p *Poller) Poll(ctx context.Context, feed config.FeedConfig) (PollResult, 
 		return res, err
 	}
 
-	// A.4 BEFORE THE NETWORK. See the package comment: a feed whose licence
+	// The licence gate BEFORE THE NETWORK. See the package comment: a feed whose licence
 	// evidence is absent is not fetched, because the bytes could not be kept
 	// and the request would still have cost budget.
 	decision, err := p.resolveLicense(feed)
@@ -849,13 +849,13 @@ func checkEndpoint(feedID string, u *url.URL) error {
 	return nil
 }
 
-// resolveLicense runs A.4 and converts its refusal into a poll refusal that
+// resolveLicense runs the licence gate and converts its refusal into a poll refusal that
 // still satisfies license.ErrLicenseRefused, so a caller may switch on either.
 //
 // THE ADMISSION PATH OF THAT GATE IS NOT TRUSTWORTHY AND IT CURRENTLY ADMITS
 // NOTHING: no publisher licence body has been acquired into mirror/, so every
 // pin is empty and every feed is refused. That is not a bug to work around here
-// — it is the fail-closed state A.6 designed, and this poller is inert until an
+// — it is the fail-closed state the licence-gate review designed, and this poller is inert until an
 // operator runs license.AcquireCommand. Nothing below assumes admission.
 func (p *Poller) resolveLicense(feed config.FeedConfig) (license.Decision, error) {
 	metadata := ""
@@ -1020,7 +1020,7 @@ func (p *Poller) credential(feed config.FeedConfig) (string, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Redirects — spine S7
+// Redirects — the spine's safety section
 // ---------------------------------------------------------------------------
 
 // redirectPolicy builds the CheckRedirect closure for one poll.
@@ -1187,7 +1187,7 @@ func (p *Poller) finishUpdated(ctx context.Context, feed config.FeedConfig, d li
 				refuse(ErrWatermark, "feed %q: watermark hook could not advance the cursor: %v", feed.ID, err))
 		}
 		// The cursor is a string the hook derived from bytes a stranger wrote,
-		// so it goes through A.3 like every other externally-sourced string
+		// so it goes through the sanitizer like every other externally-sourced string
 		// this package stores.
 		clean, ok := p.acceptHeaderValue(advanced, anyValue, res)
 		if !ok && advanced != "" {
@@ -1329,13 +1329,13 @@ func parseRetryAfter(v string, now time.Time) (time.Duration, bool) {
 }
 
 // ---------------------------------------------------------------------------
-// A.3 — every externally-sourced string this package stores
+// The sanitizer — every externally-sourced string this package stores
 // ---------------------------------------------------------------------------
 
 // acceptHeaderValue is the ONLY route by which a value from the network reaches
 // feed_state, and it is stricter than "it was passed through the sanitizer".
 //
-// A.3 is a MUTATING, fail-closed sanitizer: it drops unreadable code points and
+// The sanitizer is a MUTATING, fail-closed sanitizer: it drops unreadable code points and
 // truncates at an unterminated hidden-markup opener. For prose that is exactly
 // right. For a VALIDATOR it is not, because a modified ETag is not the server's
 // ETag: storing it would send If-None-Match with a token the server never
@@ -1350,7 +1350,7 @@ func parseRetryAfter(v string, now time.Time) (time.Duration, bool) {
 // costs every future request, silently. The count surfaces in
 // PollResult.HeaderRejected so the cost is visible rather than inferred.
 //
-// The returned value is the Text of a record.TrustedString: A.3's Ingest is
+// The returned value is the Text of a record.TrustedString: the sanitizer's Ingest is
 // what stamps record.TrustUntrusted, and going through it is what stops a
 // caller from sanitising a string and then forgetting to classify it. feed_state
 // has no anvil_trust column — every byte in it that came from the network is
@@ -1424,7 +1424,7 @@ func validHTTPDate(v string) bool {
 // feed_state
 // ---------------------------------------------------------------------------
 
-// feedState is one row of the A.2 cache's feed_state table, in Go.
+// feedState is one row of the ingestion cache's feed_state table, in Go.
 //
 // THE CADENCE IS NOT HERE and must never be added: the schema says so at the
 // table's own definition, and research/06 Recommendation item 4 puts every
@@ -1472,7 +1472,7 @@ func (p *Poller) readState(ctx context.Context, feedID string) (feedState, error
 // writeState persists one feed's polling state.
 //
 // license_tier is written from the GATE'S CONCLUSION, never from the row's own
-// claim: A.4's Decision.Tier is what the pinned evidence supports, and a row
+// claim: the licence gate's Decision.Tier is what the pinned evidence supports, and a row
 // that claims a different tier is a row whose claim the gate already refused to
 // act on.
 func (p *Poller) writeState(ctx context.Context, feedID string, d license.Decision, st feedState) error {

@@ -13,7 +13,7 @@ package record
 // the field set, the separator, the digest length, and the normalization
 // depth.
 //
-// plan/00-SPINE.md S6 states the consequence plainly: "One fingerprint
+// The spine's record section states the consequence plainly: "One fingerprint
 // algorithm, defined once, in the record. Two branches specified different
 // /v1 algorithms under the same name; two producers emitting different hashes
 // means regression matching silently fails forever." Silently is the
@@ -22,7 +22,7 @@ package record
 // `UNIQUE (target_id, fingerprint)` never fires, and "verified fixed" can
 // never be proved, all without a single error being logged.
 //
-// plan/40-record-and-storage.md, "Fingerprint Specification", is the
+// plan/design/record-and-store.md, "Fingerprint Specification", is the
 // orchestrator's resolution. THAT TEXT — not either research branch verbatim
 // — is what this file implements. The seven contested points and the reason
 // each was decided that way:
@@ -68,18 +68,18 @@ package record
 //     See EvidenceSignal and InjectionPoint in contract.go.
 //
 //  7. HOST TIER — neither branch defined a tier for host/package findings,
-//     but plan/00-SPINE.md S1 gives Lane A "dependency and host findings" and
-//     S6 requires `remediable_by_agent=false` on all of them, so they need an
-//     identity. research/07's Tier C is generalised by parameterising the
-//     hashed detector kind over {sca, host} rather than inventing an
-//     unrelated scheme.
+//     but the spine's corrected-requirements table gives Lane A "dependency and host findings" and
+//     the spine's record section requires `remediable_by_agent=false` on all of
+//     them, so they need an identity. research/07's Tier C is generalised by
+//     parameterising the hashed detector kind over {sca, host} rather than
+//     inventing an unrelated scheme.
 //
 // research/18's Tier B (CodeQL's `primaryLocationLineHash`) is deliberately
 // NOT implemented here. It is not an anvil-fp/v1 tier; it is a separate,
 // line-DEPENDENT partial fingerprint whose only purpose is GitHub code
 // scanning de-duplication. It lives under
 // PartialFingerprintPrimaryLocationLineHash and is owned by the GitHub
-// projection (R.14). Computing it here would put a line number one import
+// projection (the GitHub projection). Computing it here would put a line number one import
 // away from this file.
 //
 // ===========================================================================
@@ -143,13 +143,14 @@ package record
 // THE AUTHORITATIVE SPECIFICATION IS internal/record/FINGERPRINT-SPEC.md
 // ===========================================================================
 //
-// R.3's CRITIQUE-01.md proved that the four-clause `normalized_match` text in
-// plan/40-record-and-storage.md is NOT sufficient to reproduce this file's
-// digests: a re-implementation written from that text alone emits
-// 55e27b07... where the committed golden for sast-01 is 13c60ccf... . The
-// orchestrator ruled (2026-08-08) that the implementation is right and the
-// specification was incomplete, and that the fix is to write the
-// specification down completely, IN TREE.
+// The contract-and-fingerprint review (REVIEW-contract-and-fingerprint.md)
+// proved that the four-clause `normalized_match` text in
+// plan/design/record-and-store.md is NOT sufficient to reproduce this file's
+// digests: a re-implementation written from that text alone emits 55e27b07...
+// where the committed golden for sast-01 is 13c60ccf... . The orchestrator
+// ruled (2026-08-08) that the implementation is right and the specification was
+// incomplete, and that the fix is to write the specification down completely,
+// IN TREE.
 //
 // internal/record/FINGERPRINT-SPEC.md is that document. It is the
 // authoritative definition of anvil-fp/v1: every normalization step in
@@ -166,21 +167,22 @@ package record
 // silently is the same defect one level up.
 //
 // ===========================================================================
-// CONFORMANCE (R.16)
+// CONFORMANCE (the fingerprint conformance harness)
 // ===========================================================================
 //
 // testdata/fingerprint_corpus/*.json is the fixed corpus. Every fixture
 // carries its complete ordered `hashed_fields` list and its `expected_digest`,
-// so R.16's offline oracle can re-derive the digest from the fixture alone —
-// join with U+001F, SHA-256, lowercase hex — without importing or reading any
-// Go code. R.16 must NOT copy `expected_digest`; it must recompute it from
-// FINGERPRINT-SPEC.md (NOT from plan/40-record-and-storage.md, whose algorithm
-// text is a summary and was proved insufficient by CRITIQUE-01) and assert
-// equality.
-// That mutual check is the mechanism that would have caught research/07 and
-// research/18 shipping two different /v1 algorithms under one name.
+// so the fingerprint conformance harness' offline oracle can re-derive the
+// digest from the fixture alone — join with U+001F, SHA-256, lowercase hex —
+// without importing or reading any Go code. The fingerprint conformance harness
+// must NOT copy `expected_digest`; it must recompute it from
+// FINGERPRINT-SPEC.md (NOT from plan/design/record-and-store.md, whose
+// algorithm text is a summary and was proved insufficient by the
+// contract-and-fingerprint review) and assert equality. That mutual check is
+// the mechanism that would have caught research/07 and research/18 shipping two
+// different /v1 algorithms under one name.
 //
-// R.16 IS SHIPPED. The three pieces, and what each one is for:
+// The fingerprint conformance harness IS SHIPPED. The three pieces, and what each one is for:
 //
 //	scripts/compute_golden_fingerprints.py
 //	    the oracle. A from-scratch Python implementation of
@@ -203,11 +205,12 @@ package record
 // ordering rule, or the stability of the sort in AssignSastOrdinals now moves a
 // committed digest, which is an anvil-fp/v2 event.
 //
-// Sources: plan/40-record-and-storage.md ("Fingerprint Specification");
-// plan/00-SPINE.md S1, S6, S7; plan/IMPLEMENTATION-PLAN.md §6 (this file
-// declares no shared enum — it consumes contract.go's DetectorKind,
-// InjectionPoint and EvidenceSignal); research/07-database-design.md §3;
-// research/18-unified-audit-record.md ("Stable identity").
+// Sources: plan/design/record-and-store.md ("Fingerprint Specification");
+// the spine's corrected-requirements, record and safety sections; the
+// shared-vocabulary review (this file declares no shared enum — it consumes
+// contract.go's DetectorKind, InjectionPoint and EvidenceSignal);
+// research/07-database-design.md §3; research/18-unified-audit-record.md
+// ("Stable identity").
 
 import (
 	"crypto/sha256"
@@ -220,7 +223,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Algorithm constants that R.16's independent oracle must reproduce
+// Algorithm constants that the fingerprint conformance harness' independent oracle must reproduce
 // ---------------------------------------------------------------------------
 
 // The separator (FingerprintFieldSeparator, U+001F) and the digest length
@@ -269,13 +272,13 @@ const (
 // either one changes every DAST digest whose route carries a segment near the
 // boundary, and is therefore an anvil-fp/v2 event, not a tuning knob.
 //
-// The governing asymmetry, from the R.3 ruling: OVER-templating merges two
-// genuinely distinct routes into one identity and silently loses a finding on
-// upsert against UNIQUE (target_id, fingerprint); UNDER-templating only leaves
-// a volatile route un-merged, which the DAST producer can still fix by
-// emitting "{id}" itself. Under-templating is the recoverable failure, so both
-// thresholds are set high enough that no plausible human-authored path segment
-// reaches them.
+// The governing asymmetry, from the contract-and-fingerprint review's ruling:
+// OVER-templating merges two genuinely distinct routes into one identity and
+// silently loses a finding on upsert against UNIQUE (target_id, fingerprint);
+// UNDER-templating only leaves a volatile route un-merged, which the DAST
+// producer can still fix by emitting "{id}" itself. Under-templating is the
+// recoverable failure, so both thresholds are set high enough that no plausible
+// human-authored path segment reaches them.
 const (
 	// routeHexSegmentMinLen is the length at or above which an all-hex segment
 	// is treated as an opaque identifier. 16 is chosen because the hex
@@ -443,12 +446,12 @@ type SastInput struct {
 }
 
 // SastFields returns the ordered field list the SAST tier hashes, exactly as
-// plan/40-record-and-storage.md specifies:
+// plan/design/record-and-store.md specifies:
 //
 //	target_id ␟ "sast" ␟ rule_id_versioned ␟ repo_relpath
 //	          ␟ enclosing_symbol_path ␟ normalized_match ␟ ordinal
 //
-// Exported so a test or R.16's conformance harness can assert the field list
+// Exported so a test or the conformance harness can assert the field list
 // itself, not merely the digest — a wrong field ORDER produces a perfectly
 // valid-looking 64-hex digest that is silently incompatible.
 func SastFields(in SastInput) ([]string, error) {
@@ -536,7 +539,7 @@ type ScaInput struct {
 // HostInput is the input to the host tier: an operating-system package on the
 // scanned host that matched a vulnerable version range.
 //
-// plan/00-SPINE.md S7 makes the host agent read-only, so every host finding
+// The spine's safety section makes the host agent read-only, so every host finding
 // carries `remediable_by_agent=false` (enforced by the `finding` table's
 // CHECK constraint, not here). It still needs a stable identity so that a
 // host finding can be tracked, suppressed, and reported as resolved.
@@ -702,7 +705,7 @@ type DastInput struct {
 }
 
 // DastFields returns the ordered field list the DAST tier hashes, exactly as
-// plan/40-record-and-storage.md specifies:
+// plan/design/record-and-store.md specifies:
 //
 //	target_id ␟ "dast" ␟ rule_id_versioned ␟ http_method ␟ route_template
 //	          ␟ injection_point ␟ param_name ␟ evidence_class_detail
@@ -796,15 +799,15 @@ func CanonicalRepoRelPath(p string) string {
 // derived value — "numeric/UUID/hash path segments replaced with a placeholder
 // token" — and this function is where that derivation happens.
 //
-// WHY IT HAPPENS HERE AND NOT IN THE PRODUCER (R.3 ruling, 2026-08-08). Area
-// 40 owns the fingerprint, so area 40 canonicalises. A DAST producer emits
-// whatever route it observed; if templating were the producer's job, then two
-// producers seeing one defect at /api/users/12345/orders would emit
-// "/api/users/12345/orders", "/api/users/{id}/orders" and
-// "/api/users/:id/orders" — three digests, one defect, no error, regression
-// matching silently dead. The DAST tier is the one that earns "verified fixed"
-// under plan/00-SPINE.md S7, and a reproduction that cannot be matched to its
-// prior finding cannot prove a fix.
+// WHY IT HAPPENS HERE AND NOT IN THE PRODUCER (the contract-and-fingerprint
+// review's ruling, 2026-08-08). Area 40 owns the fingerprint, so the record
+// area canonicalises. A DAST producer emits whatever route it observed; if
+// templating were the producer's job, then two producers seeing one defect at
+// /api/users/12345/orders would emit "/api/users/12345/orders",
+// "/api/users/{id}/orders" and "/api/users/:id/orders" — three digests, one
+// defect, no error, regression matching silently dead. The DAST tier is the one
+// that earns "verified fixed" under the spine's safety section, and a
+// reproduction that cannot be matched to its prior finding cannot prove a fix.
 //
 // The steps, in order:
 //
@@ -1158,8 +1161,8 @@ func AssignSastOrdinals(cands []SastCandidate) ([]SastInput, error) {
 // (research/07 §3 [S3]), which is the externally-verified mechanism for
 // surviving reindentation and metavariable-only edits.
 //
-// The algorithm, in one pass, left to right. Any re-implementation (R.16)
-// must reproduce it exactly:
+// The algorithm, in one pass, left to right. Any re-implementation (the
+// fingerprint conformance harness) must reproduce it exactly:
 //
 //  1. CRLF and CR are folded to LF.
 //  2. A whitespace run emits a single space.
@@ -1208,7 +1211,7 @@ func AssignSastOrdinals(cands []SastCandidate) ([]SastInput, error) {
 //
 // KNOWN, ACCEPTED LIMITATIONS. This is one language-agnostic lexer, not N
 // parsers, because Anvil's SAST tier is an opengrep subprocess that returns
-// text (plan/00-SPINE.md S12: opengrep "is an OCaml CLI with zero bindings in
+// text (the spine's Go control-plane decision: opengrep "is an OCaml CLI with zero bindings in
 // any language"). Determinism, not semantic perfection, is what identity
 // needs — the same snippet must normalise the same way on every scan, and it
 // does:

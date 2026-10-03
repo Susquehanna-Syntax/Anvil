@@ -1,17 +1,17 @@
 // Package lanea populates the Lane-A-owned fields of Anvil's canonical audit
-// record: step A.19 of plan/20-lane-a-ingestion-sca.md.
+// record: record emission (plan node emission).
 //
 // ===========================================================================
 // WHAT THIS PACKAGE IS, AND THE ONE THING IT IS NOT
 // ===========================================================================
 //
-// It takes one A.17 MatchResult — "this installed version is inside a range
+// It takes one comparator MatchResult — "this installed version is inside a range
 // this advisory calls vulnerable" — plus the `advisory` row that decided it,
 // and produces a record.Result: the SAME struct every other area produces,
 // carrying the frozen `anvil/*` property bag.
 //
 // IT DEFINES NO SECOND FINGERPRINT, NO SECOND FINDING STRUCT AND NO SECOND
-// ENUM. plan/IMPLEMENTATION-PLAN.md §1 names this the cross-area edge in
+// ENUM. The first plan's global sequence names this the cross-area edge in
 // exactly those words: "Lane A must populate the canonical record and MUST NOT
 // INVENT A SECOND FINGERPRINT." So:
 //
@@ -28,11 +28,11 @@
 //     Lane-A-owned facts the frozen contract has no slot for, and carries no
 //     copy of anything the Result already holds. See Emission.
 //
-// A.17 set the precedent this file follows: match.MatchResult carries no
+// The comparator set the precedent this file follows: match.MatchResult carries no
 // fingerprint, and match.Purl.Base delegates to record.PurlBase.
 //
 // ===========================================================================
-// THE SEVEN LANE-A-OWNED FIELDS (plan/20 Dependency Summary)
+// THE SEVEN LANE-A-OWNED FIELDS (plan/design/lane-a.md Dependency Summary)
 // ===========================================================================
 //
 //	remediable_by_agent   -> Result.Properties.RemediableByAgent
@@ -48,10 +48,10 @@
 // 1. remediable_by_agent IS FALSE FOR EVERY HOST FINDING. ALWAYS.
 // ===========================================================================
 //
-// The coding agent's write surface is the git repository (plan/00-SPINE.md
-// S7), so it CANNOT fix a host package: there is no file to edit, and the host
-// agent is read-only "not behind a flag". Handing it a host finding as
-// actionable is an authorization defect, not a cosmetic one.
+// The coding agent's write surface is the git repository (plan/design/spine.md
+// the spine's safety section), so it CANNOT fix a host package: there is no
+// file to edit, and the host agent is read-only "not behind a flag". Handing it
+// a host finding as actionable is an authorization defect, not a cosmetic one.
 //
 // THE GUARD IS AN ALLOWLIST, NOT A HOST CHECK. remediableByAgent below returns
 // false unless EVERY condition for the one remediable shape holds. A denylist
@@ -62,7 +62,7 @@
 // internal/collector/host used when it made RemediableByAgent a method over an
 // untyped constant rather than an assignable field.
 //
-// S7 IS ABOUT THE THING, NOT ABOUT WHO FOUND IT. An OS package is not
+// The spine's safety section IS ABOUT THE THING, NOT ABOUT WHO FOUND IT. An OS package is not
 // agent-fixable however it was noticed, because the agent's write surface is
 // the git repository either way. So the ecosystem is an arm of the allowlist in
 // its own right: a `repo-sca` match whose ecosystem is deb, rpm or apk is NOT
@@ -71,9 +71,9 @@
 // a guard whose correctness lives in another package while this file's doc
 // claims it lives here.
 //
-// THE FLAG TRAVELS IN THE BYTES. A.12's review found this field present on
+// THE FLAG TRAVELS IN THE BYTES. The read-only-boundary review found this field present on
 // internal/collector/host's own Inventory and MISSING from FindingSeed, the
-// artifact that actually crossed to A.17 — the wrong way round. So every shape
+// artifact that actually crossed to the comparator — the wrong way round. So every shape
 // this package emits carries it in its SERIALISED form: record.Result always
 // marshals `anvil/remediableByAgent` (no omitempty), and Emission.MarshalJSON
 // adds a CLAMPED top-level mirror. emit_test.go asserts the bytes, not the
@@ -87,7 +87,7 @@
 // attacker-influenceable text heading for a repo-credentialed agent. Anvil
 // assembling a struct around external bytes does not make the bytes Anvil's:
 // record.Trust's own doc says "the question TrustLevel answers is 'who wrote
-// these bytes', never 'who assigned this field'", and area B was caught
+// these bytes', never 'who assigned this field'", and Lane B was caught
 // stamping anvil_generated on verbatim repo source.
 //
 // So TrustAssertion.Default is record.TrustUntrusted UNCONDITIONALLY on every
@@ -119,11 +119,12 @@
 // SO staleness_seconds IS COMPUTED HERE, NOT COPIED. `advisory.staleness_seconds`
 // in the cache is a THIRD quantity — the publisher lag ingestion measured at
 // write time — and copying it into this field publishes two definitions under
-// one name. The failure it produces is the exact one S6 exists to prevent: a
-// feed outage freezes both cache columns, so a finding resting on three-week-old
-// data reports the hour of publisher lag that was true at the last successful
-// sync, declares itself inside a one-day SLO, and says so in the prose a human
-// reads. An absence of information becomes a false assurance.
+// one name. The failure it produces is the exact one the spine's record section
+// exists to prevent: a feed outage freezes both cache columns, so a finding
+// resting on three-week-old data reports the hour of publisher lag that was
+// true at the last successful sync, declares itself inside a one-day SLO, and
+// says so in the prose a human reads. An absence of information becomes a false
+// assurance.
 //
 // AND THIS PACKAGE STILL READS NO CLOCK. There is no time.Now() in this file
 // and no clock field on Emitter; TestThisPackageReadsNoClock enforces it. The
@@ -131,7 +132,7 @@
 // that owns the scan — and it is REQUIRED, refused when zero rather than
 // defaulted, because a zero default computes an age against the Unix epoch or
 // (worse) silently reproduces the copy-through bug. research/06 Risk #5 and
-// plan/00-SPINE.md S6 both say the same thing: serve stale data with an `as_of`
+// the spine's record section both say the same thing: serve stale data with an `as_of`
 // and a `staleness_seconds`, and say so.
 //
 // KNOWN GAP, STATED RATHER THAN PAPERED OVER: `advisory.as_of` is the cache
@@ -158,7 +159,7 @@
 //
 //  1. license_manual_note HAS NO SLOT IN THE FROZEN RECORD. record's
 //     AdvisoryContext carries LicenseSpdx and nothing else; run-level
-//     AdvisorySnapshot carries no licence field either. plan/00-SPINE.md S8's
+//     AdvisorySnapshot carries no licence field either. The spine's
 //     compliance mechanics require the manual-override field carrying the
 //     quoted operative sentence — precisely for the sources whose SPDX id is
 //     NONE, NOASSERTION or a LicenseRef-, which is where the SPDX id alone
@@ -172,15 +173,15 @@
 //  2. Result.Level IS LEFT UNSET. Severity mapping (advisory severity or CVSS
 //     -> SARIF level) is a vocabulary nobody has been assigned and is not one
 //     of the seven fields this step owns; inventing one here would be the
-//     eleventh defect of the shape plan/IMPLEMENTATION-PLAN.md §6 rules on.
+//     eleventh defect of the shape the shared-vocabulary review rules on.
 //     Risk (CVSS/EPSS/KEV) IS populated, because the record names Lane A
 //     ingestion as its producer in so many words.
 //
-//  3. parse_degraded CLAMPS remediable_by_agent TO FALSE. A.19's sketched
+//  3. parse_degraded CLAMPS remediable_by_agent TO FALSE. Record emission's sketched
 //     expression reads only the collector. The clamp can only ever move the
 //     answer from true to false, and its reason is at remediableByAgent
 //     condition 4: the fixed version an agent would bump to was parsed out of
-//     the same record A.16 says the parser did not fully understand. The
+//     the same record drift handling says the parser did not fully understand. The
 //     finding is still emitted, as report-only.
 //
 //  4. `verified` HAS NO SLOT TO NAME ITS VALIDATION STEP IN. record.Trust
@@ -258,7 +259,7 @@ const (
 
 	// RefusalNoWatermark: the advisory row carries no as_of. Emitting
 	// without one would leave the record's freshness unstated, which is the
-	// state spine S6's as_of/staleness_seconds fields exist to prevent.
+	// state the spine's as_of/staleness_seconds fields exist to prevent.
 	RefusalNoWatermark RefusalReason = "no_watermark"
 
 	// RefusalNoAssemblyTime: the emitter carries no record-assembly instant.
@@ -298,7 +299,7 @@ const (
 	RefusalExcerptTooLong RefusalReason = "excerpt_too_long"
 
 	// RefusalNoLicenceDeclared: the advisory row states neither an SPDX id
-	// nor a manual note. plan/00-SPINE.md S8 and the cache's
+	// nor a manual note. The spine's licence section and the cache's
 	// advisory_license_declared CHECK: a row that records neither is data
 	// Anvil cannot prove it may use, and it must not be re-published into a
 	// record.
@@ -402,7 +403,7 @@ func (r *Refusal) Unwrap() error { return r.Err }
 // Inputs
 // ---------------------------------------------------------------------------
 
-// AdvisoryRow is the `advisory` row A.17's deciding range came from, as this
+// AdvisoryRow is the `advisory` row the comparator's deciding range came from, as this
 // step needs it.
 //
 // It is a READ SHAPE, not a second finding: it holds nothing the comparator
@@ -431,7 +432,7 @@ type AdvisoryRow struct {
 	SnapshotDigest string
 
 	// LicenseSPDX is `advisory.license_spdx`, and LicenseManualNote is
-	// `advisory.license_manual_note` — spine S8's manual-override field
+	// `advisory.license_manual_note` — the spine's manual-override field
 	// carrying the quoted operative sentence. At least one must be
 	// non-blank, mirroring the cache's advisory_license_declared CHECK.
 	LicenseSPDX       string
@@ -472,7 +473,7 @@ type AdvisoryRow struct {
 	// false rather than guessing a default.
 	FreshnessSLOSeconds int
 
-	// ParseDegraded is `advisory.parse_degraded`: A.16 sets it when a record
+	// ParseDegraded is `advisory.parse_degraded`: drift handling sets it when a record
 	// arrived in a dataVersion the parser did not fully understand. See
 	// remediableByAgent for what this package does about it.
 	ParseDegraded bool
@@ -489,7 +490,7 @@ type AdvisoryRow struct {
 	// oversized string would still reach the record and the store.
 	//
 	// SANITISATION IS NOT CHECKED HERE, and this file does not claim it is.
-	// A.3 sanitises at ingest — plan/00-SPINE.md S7, "sanitize at ingest, not
+	// The sanitizer sanitises at ingest — the spine's safety section, "sanitize at ingest, not
 	// at prompt time" — and the vocabulary of invisible and bidi characters
 	// that check is defined against lives in internal/ingest/invisible, which
 	// this package does not import and must not re-spell: a second definition
@@ -526,7 +527,7 @@ type Emitter struct {
 	TargetID string
 
 	// AssembledAt is the record-assembly instant, owned by the caller that
-	// owns the scan (O.2 already holds it). REQUIRED: the zero value is
+	// owns the scan (the controller's state wiring already holds it). REQUIRED: the zero value is
 	// refused rather than treated as "unset", because
 	// AdvisoryContext.StalenessSeconds is DEFINED as this minus
 	// AdvisoryRow.AsOf, and a zero default would either measure the age
@@ -554,7 +555,7 @@ type Emission struct {
 	// Result is the canonical record. Everything about the finding is here.
 	Result record.Result `json:"result"`
 
-	// LicenseManualNote is plan/00-SPINE.md S8's manual-override field: the
+	// LicenseManualNote is the spine's manual-override field: the
 	// quoted operative sentence from the publisher's own licence text,
 	// required whenever the SPDX id is NONE, NOASSERTION or a LicenseRef-.
 	// It is a QUOTATION FROM OUTSIDE ANVIL and carries its own trust inline.
@@ -622,7 +623,7 @@ func (e Emission) BeyondFreshnessSLO() bool {
 //
 // THIS IS THE ARTIFACT THAT CROSSES THE BOUNDARY, so it is the one that most
 // needs both guarantees to travel in the BYTES rather than in a method a
-// consumer has to know to call. A.12 found exactly this omission on the
+// consumer has to know to call. The read-only-boundary review found exactly this omission on the
 // analogous artifact one lane over. BOTH LEVELS carry the clamped value — the
 // mirror and the nested record — so no part of the serialised form can disagree
 // with the method or with any other part.
@@ -669,7 +670,7 @@ func Results(es []Emission) []record.Result {
 // hashes the locator `apt:openssl:amd64` for a Debian host package, and its
 // golden digest was produced by an independent implementation of
 // FINGERPRINT-SPEC.md. Spelling it `dpkg` here would produce a valid-looking
-// digest that disagrees with the corpus — the exact silent fork S6's
+// digest that disagrees with the corpus — the exact silent fork the spine's
 // one-fingerprint rule exists to prevent. emit_test.go pins the emitted digest
 // against that golden file rather than against this map.
 var hostPackageManagers = map[string]string{
@@ -801,7 +802,7 @@ func isBase10Integer(s string) bool {
 //
 // The conditions, and why each is necessary:
 //
-//  1. collector == repo-sca. plan/00-SPINE.md S7: the agent writes to the git
+//  1. collector == repo-sca. The spine's safety section: the agent writes to the git
 //     repository and the host agent is read-only, "not behind a flag". A host
 //     package has no file for the agent to edit.
 //  2. detectorKind == sca AND evidenceClass == sca. These are re-derived from
@@ -810,7 +811,7 @@ func isBase10Integer(s string) bool {
 //     record.IsHostFinding reads BOTH, and internal/record's own validator
 //     rejects a remediable result carrying either host value — a guard that
 //     trusts one field to imply another is a guard with a seam in it.
-//  3. THE ECOSYSTEM IS NOT AN OS PACKAGE MANAGER'S. S7 is about the THING,
+//  3. THE ECOSYSTEM IS NOT AN OS PACKAGE MANAGER'S. The spine's safety section is about the THING,
 //     not about who found it: `openssl` from apt is unfixable by a coding
 //     agent whether a host collector or a repo-SCA collector noticed it,
 //     because the write surface is the git repository either way. Without
@@ -825,13 +826,13 @@ func isBase10Integer(s string) bool {
 //  4. fixedVersion != "". With no fixed version there is no bump to make, and
 //     dispatching an agent after a patch that does not exist wastes the one
 //     tier that costs money.
-//  5. !parseDegraded. A.16 sets parse_degraded when the advisory arrived in a
+//  5. !parseDegraded. Drift handling sets parse_degraded when the advisory arrived in a
 //     dataVersion the parser did not fully understand — and the fixed version
 //     in condition 4 was parsed out of that same record. Handing a
 //     repo-credentialed agent a bump to a version half-parsed from a record
 //     Anvil admits it did not understand is the "partial finding presenting
-//     as whole" defect A.16 exists to prevent. The finding is still EMITTED;
-//     it is emitted as report-only. THIS IS A DEVIATION from A.19's sketched
+//     as whole" defect drift handling exists to prevent. The finding is still EMITTED;
+//     it is emitted as report-only. THIS IS A DEVIATION from record emission's sketched
 //     expression, which reads only the collector, and it is reported: it can
 //     only ever move the answer from true to false.
 //
@@ -893,7 +894,7 @@ func detectorFor(collector string) (record.DetectorKind, record.EvidenceClass, b
 // Emit
 // ---------------------------------------------------------------------------
 
-// Emit produces the canonical record for one A.17 match.
+// Emit produces the canonical record for one comparator match.
 //
 // a must be the `advisory` row the match's deciding range came from; a
 // mismatch on (source, source_id) or on the CVE alias is refused rather than
@@ -1019,7 +1020,7 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 	}
 	if strings.TrimSpace(a.LicenseSPDX) == "" && strings.TrimSpace(a.LicenseManualNote) == "" {
 		return refuse(RefusalNoLicenceDeclared,
-			"the advisory row states neither license_spdx nor license_manual_note; spine S8 makes "+
+			"the advisory row states neither license_spdx nor license_manual_note; the spine's licence section makes "+
 				"that a row Anvil cannot prove it may use, and it must not be re-published into a record", nil)
 	}
 
@@ -1082,7 +1083,7 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 			Half:      record.HalfSast,
 			// Detector certainty, not data freshness. The comparison is
 			// deterministic, so it is 1. Degradation is expressed as a
-			// VERDICT, per plan/00-SPINE.md S6: "INSUFFICIENT_CONTEXT as a
+			// VERDICT, per the spine's record section: "INSUFFICIENT_CONTEXT as a
 			// valid detector verdict, not just a confidence float."
 			Confidence:        1,
 			Verdict:           verdictFor(a.ParseDegraded),
@@ -1091,7 +1092,7 @@ func (e Emitter) Emit(m match.MatchResult, a AdvisoryRow) (Emission, error) {
 			Detector: record.DetectorRef{
 				Kind: kind,
 				// Model and Revision are EMPTY, and that is the honest
-				// statement: plan/00-SPINE.md S1 makes Lane A zero-inference
+				// statement: the spine's corrected-requirements table makes Lane A zero-inference
 				// and internal/match documents that there is no model
 				// anywhere in its call graph. Naming one here would assert
 				// an inference step that does not exist. The build stamp
@@ -1220,7 +1221,7 @@ const reasoningPointer = "/properties/anvil~1reasoning"
 // advisoryIDOf is the advisory identity hashed into the fingerprint and
 // written to `ruleId`.
 //
-// The CVE id when there is one, the source id otherwise. That is A.17's own
+// The CVE id when there is one, the source id otherwise. That is the comparator's own
 // precedence group (AffectedRange.advisoryKey), and it is the right way round:
 // GHSA advisories frequently carry no CVE at all (research/06 Risk #2), and
 // grouping those under one empty key would let unrelated advisories collide.
@@ -1248,12 +1249,12 @@ func cveIDs(m match.MatchResult, a AdvisoryRow) []string {
 	}
 }
 
-// verdictFor maps A.16's parse_degraded flag onto the record's verdict.
+// verdictFor maps drift handling's parse_degraded flag onto the record's verdict.
 //
 // A deterministic version comparison against a fully-understood advisory is a
 // true positive by construction: the installed version IS inside the declared
 // range. When the advisory record parsed with loss, the range itself is
-// partial, and plan/00-SPINE.md S6's insufficient_context is the exact
+// partial, and the spine's insufficient_context is the exact
 // statement — "this may well be a real defect and the detector could not see
 // enough to tell". The consumption pipeline demotes it to report-only and
 // never silently drops it, which is the handling a partial finding needs.
@@ -1348,7 +1349,7 @@ func excerpt(a AdvisoryRow) *record.TrustedString {
 	return &record.TrustedString{Text: a.ExcerptText, Trust: a.Trust}
 }
 
-// manualNote wraps spine S8's manual-override sentence with its trust. It is a
+// manualNote wraps the spine's manual-override sentence with its trust. It is a
 // QUOTATION from a publisher's LICENSE file, so it is external text and takes
 // the row's own trust level — never anvil_generated, however Anvil-shaped the
 // struct around it looks.
@@ -1418,11 +1419,11 @@ func manifestLocation(m match.MatchResult) *record.Location {
 // validator inside a minimal, well-formed envelope.
 //
 // The envelope is scaffolding for the check and is thrown away: this step does
-// not own the audit envelope, and the scan controller (O.2) assembles the real
-// one. What matters is that Result.validate runs — it is where the record
-// refuses a remediable host finding from the other side, and where
-// ValidateResultTrust refuses an anvil_generated classification on an external
-// string.
+// not own the audit envelope, and the scan controller (the controller's state
+// wiring) assembles the real one. What matters is that Result.validate runs —
+// it is where the record refuses a remediable host finding from the other side,
+// and where ValidateResultTrust refuses an anvil_generated classification on an
+// external string.
 func validateEmitted(res *record.Result) error {
 	// THE RECORD'S OWN TRUST VALIDATOR IS VACUOUS FOR A LANE A RESULT, AND
 	// SAYING SO IS THE POINT. record.Result.ExternalStringPointers enumerates
@@ -1430,7 +1431,7 @@ func validateEmitted(res *record.Result) error {
 	// snippets, the DAST response body — and an SCA or host finding carries
 	// none of them. So ValidateResultTrust below iterates an empty list and
 	// would accept ANY Default, including the anvil_generated that record.Trust
-	// documents area B being caught with. Verified empirically: setting Default
+	// documents Lane B being caught with. Verified empirically: setting Default
 	// to anvil_generated in this file passes record's whole-record Validate.
 	//
 	// The untrusted default is therefore not enforced by the contract for this
@@ -1440,7 +1441,7 @@ func validateEmitted(res *record.Result) error {
 		return fmt.Errorf(
 			"anvil/trust.default is %q; every Lane A result is built from package names, "+
 				"versions, purls, manifest paths and advisory text that originated outside "+
-				"Anvil, so the default is %q unconditionally (00-SPINE.md S6)",
+				"Anvil, so the default is %q unconditionally (the spine's record section)",
 			res.Properties.Trust.Default, record.TrustUntrusted)
 	}
 	for ptr, tr := range res.Properties.Trust.Fields {
@@ -1488,7 +1489,7 @@ func validateEmitted(res *record.Result) error {
 		return err
 	}
 	// Belt and braces: ValidateResultTrust is reached through Validate, but
-	// it is the check that would have caught area B's mislabelling and it is
+	// it is the check that would have caught Lane B's mislabelling and it is
 	// cheap enough to state twice rather than to depend on one call chain.
 	return record.ValidateResultTrust(res)
 }

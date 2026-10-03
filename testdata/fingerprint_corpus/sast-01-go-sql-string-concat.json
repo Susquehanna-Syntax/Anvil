@@ -17,7 +17,7 @@
     "advisory_id": "CWE-89",
     "evidence_class": "sast_static_only",
     "scanned_at": "2026-08-08T12:00:00Z",
-    "comment": "Every value in this object was available to the producer and MUST NOT appear in the hash input. plan/40-record-and-storage.md: 'NEVER hashed: line number, column number, the literal (non-normalized) snippet text, advisory_id.'"
+    "comment": "Every value in this object was available to the producer and MUST NOT appear in the hash input. plan/design/record-and-store.md: 'NEVER hashed: line number, column number, the literal (non-normalized) snippet text, advisory_id.'"
   },
   "hashed_fields": [
     "t-0001",
@@ -32,7 +32,7 @@
   "mutations": [
     {
       "name": "shifted_down_three_lines_and_reindented",
-      "description": "The match moved down the file and was reindented. This is the line-number-only mutation R.2's validation requires: SastInput carries no line field, so the strongest available form is to change everything a line move implies.",
+      "description": "The match moved down the file and was reindented. This is the line-number-only mutation the fingerprint's validation requires: SastInput carries no line field, so the strongest available form is to change everything a line move implies.",
       "input": {
         "target_id": "t-0001",
         "rule_id_versioned": "opengrep.go.lang.security.audit.sqli-string-concat@2026.07.1",

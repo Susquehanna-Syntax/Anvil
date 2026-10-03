@@ -10,17 +10,16 @@ to Anvil's own findings database does not.
 ## What this file is, and why the gate reads it
 
 **This file is Anvil's RECORD, not the publisher's evidence.** The distinction
-is the whole of A.6's central finding and it is worth being blunt about: every
+is the whole of the licence-gate review's central finding and it is worth being blunt about: every
 block below was written by Anvil, in the same commit as the feed row it
 describes. A document Anvil wrote is not evidence of a licence, and a gate that
 admitted feeds on one would be validating a claim against a document authored
 by the same commit. That is circular, and it is worse than reading API metadata
 because it looks rigorous.
 
-`plan/00-SPINE.md` S8 requires a licence gate that reads **LICENSE file bodies,
+The spine's licence section requires a licence gate that reads **LICENSE file bodies,
 never API metadata**, with a manual-override field carrying the quoted operative
-sentence. The body S8 means is the PUBLISHER'S. `internal/ingest/license` (step
-A.4) therefore reads three things and refuses unless all three agree:
+sentence. The body the spine's licence section means is the PUBLISHER'S. `internal/ingest/license` (the licence gate) therefore reads three things and refuses unless all three agree:
 
 - `mirror/LICENSE-MANIFEST.toml` — the pin: per feed, the canonical URL of the
   publisher's licence text, the sha256 it must have, and the SPDX id it is
@@ -28,7 +27,7 @@ A.4) therefore reads three things and refuses unless all three agree:
 - `mirror/tier0/<feed>/LICENSE.full.txt` — the evidence: that publisher text,
   acquired deliberately by an operator and verified against the pin. It is not
   in git;
-- this file — the record: provenance, the S8 manual override, the reasoning.
+- this file — the record: provenance, the manual licence override, the reasoning.
 
 **No feed in this tier is admitted by a fresh clone**, because the second item
 is absent until someone runs `sh mirror/acquire-license-bodies.sh`, reads what
@@ -133,7 +132,7 @@ but its licence differs from its carrier's, so it is gated on its own account.
 
 ## CISA KEV — `cisa-kev`
 
-**This is spine S8's worked example.** The GitHub API reports `NOASSERTION`
+**This is the spine's worked example.** The GitHub API reports `NOASSERTION`
 for `cisagov/kev-data`. A gate that trusted that metadata would reject a
 public-domain feed. The body below is what the gate reads instead.
 
@@ -199,7 +198,7 @@ LicenseRef- custom identifier and carries this statement as its manual note.
 
 Source: `research/01-vuln-data-sources-and-licensing.md` **S5** (NVD General
 FAQs, https://nvd.nist.gov/general/FAQ-Sections/General-FAQs);
-`plan/20-lane-a-ingestion-sca.md` Feed Table.
+`plan/design/lane-a.md` Feed Table.
 
 CITATION CORRECTED. This block previously cited `research/01` **S6**. S6 is
 NIST's April 2026 announcement about record CVE growth and enrichment

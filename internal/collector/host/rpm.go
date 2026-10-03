@@ -81,7 +81,7 @@ func parseRPM(out []byte) ([]Package, parseReport) {
 // The ONLY transformation applied is dropping the literal "(none):" prefix rpm
 // prints for a package with no epoch. Nothing else is rewritten: RPM version
 // comparison is rpmvercmp's, it is not lexical, and its subtleties (tilde,
-// caret, alphanumeric segmentation) belong to A.17's comparator. A collector
+// caret, alphanumeric segmentation) belong to the comparator. A collector
 // that "tidies" a version has already decided the comparison, and decided it
 // wrong for the packages where it matters — which are exactly the backported
 // ones this project's CVE-2023-32681/RHSA-2023:4520 regression fixture is

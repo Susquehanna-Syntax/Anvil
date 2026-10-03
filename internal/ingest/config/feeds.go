@@ -1,7 +1,7 @@
 // Package config loads Anvil's advisory-feed table from DATA.
 //
-// This is step A.1 of plan/20-lane-a-ingestion-sca.md. Lane A is the
-// zero-inference half of Anvil (plan/00-SPINE.md S1): a tiered conditional-GET
+// This is the feed table (plan node feeds). Lane A is the
+// zero-inference half of Anvil (the spine's corrected-requirements table): a tiered conditional-GET
 // poller filling one SQLite+FTS5 cache, plus two collectors feeding a version
 // comparator. No model runs in this lane. The one thing that makes the lane
 // operable rather than brittle is that WHICH feeds exist, WHERE they are, HOW
@@ -25,34 +25,34 @@
 //
 // # What this package does NOT decide
 //
-//   - It does not fetch anything. A.7 (poller) and A.8 (bootstrap) do that.
+//   - It does not fetch anything. The poller and the bulk bootstrap do that.
 //     Loading a config performs no network I/O, by construction: nothing here
 //     imports net/http.
 //   - It does not resolve a licence. It RECORDS what each feed declares —
-//     spine S8's licence gate (A.4) is the one code path that resolves a
+//     the licence gate is the one code path that resolves a
 //     declared SPDX id against a checked-in LICENSE file body and decides
 //     which mirror/tier* directory a row may be written to. Duplicating a
 //     share-alike SPDX list here would create exactly the second vocabulary
-//     that plan/IMPLEMENTATION-PLAN.md section 6 closed ten instances of.
-//   - It does not redeclare any of area 40's six frozen enums. None of them
+//     that the first plan's shared-vocabulary review closed ten instances of.
+//   - It does not redeclare any of the record area's six frozen enums. None of them
 //     describes a feed: internal/record owns anvil/state, anvil/status,
 //     anvil/dastStatus, anvil/target.provenance, anvil/target.provisioning,
-//     anvil/verdict and handoff.state, and A.1 emits none of those values.
+//     anvil/verdict and handoff.state, and the feed table emits none of those values.
 //     The four enums below (AuthMode, SyncMechanism, BootstrapMechanism,
 //     OnFailure) plus LicenseTier are Lane-A-local ingestion vocabulary with
 //     no counterpart in the record contract.
 //
 // # Licence is mandatory, not decorative
 //
-// LicenseSPDX has no legal empty value. Spine S8 makes a feed's licence a
-// gating fact, A.4 gates on it, and share-alike sources (Ubuntu OVAL/USN and
+// LicenseSPDX has no legal empty value. The spine's licence section makes a feed's licence a
+// gating fact, the licence gate gates on it, and share-alike sources (Ubuntu OVAL/USN and
 // Alpine secdb, both CC-BY-SA-4.0 per research/01 S7/S29/S31) are quarantined
 // into segregated Tier 2 directories with their own LICENSE files. A feed
 // whose licence cannot be stated is a feed Anvil cannot use, so Parse refuses
 // the row rather than defaulting it. Where no SPDX identifier exists the row
 // says so explicitly — SPDX's own reserved tokens NONE and NOASSERTION, or a
 // LicenseRef- custom id — and must carry the quoted operative sentence in
-// LicenseManualNote (spine S8's manual-override field).
+// LicenseManualNote (the spine's manual-override field).
 //
 // LicenseSPDX = NONE means NO GRANT OF RIGHTS EXISTS. EPSS is the worked
 // example: research/01 rows S18/S19 record that it has no licence document
@@ -87,7 +87,7 @@ const (
 	DefaultFileName = "feeds.yaml"
 
 	// ExampleFileName is the checked-in rendering of the Feed Table in
-	// plan/20-lane-a-ingestion-sca.md. It ships beside this file as
+	// plan/design/lane-a.md. It ships beside this file as
 	// documentation and as the loader's acceptance fixture; it is never a
 	// runtime default, because an operator's credential environment variable
 	// names and enabled/disabled choices are theirs, not ours.
@@ -127,13 +127,13 @@ var (
 	ErrUnknownKey = errors.New("config: unknown key")
 
 	// ErrDuplicateFeedID reports two rows sharing an id. feed_id is the
-	// primary key of the A.2 cache's feed_state table; two rows would race on
+	// primary key of the ingestion cache's feed_state table; two rows would race on
 	// one etag/watermark.
 	ErrDuplicateFeedID = errors.New("config: duplicate feed id")
 
 	// ErrMissingLicenseTier reports a feed that declares no license_tier, or
-	// one outside {0,1,2,3}. Named separately because A.1's stop condition
-	// requires a named error for it and because the A.2 DDL's
+	// one outside {0,1,2,3}. Named separately because the feed table's stop condition
+	// requires a named error for it and because the ingestion cache DDL's
 	// CHECK (license_tier IN (0,1,2,3)) cannot accept anything else.
 	ErrMissingLicenseTier = errors.New("config: missing or out-of-range license_tier")
 
@@ -142,12 +142,13 @@ var (
 	ErrMissingInterval = errors.New("config: missing or zero interval_seconds")
 
 	// ErrMissingLicense reports a feed that states no licence at all. Spine
-	// S8: a feed whose licence cannot be stated is a feed Anvil cannot use.
-	// Say NONE or NOASSERTION with a note; never leave it blank.
+	// the spine's licence section: a feed whose licence cannot be stated is a
+	// feed Anvil cannot use. Say NONE or NOASSERTION with a note; never leave
+	// it blank.
 	ErrMissingLicense = errors.New("config: feed declares no licence")
 
 	// ErrMissingLicenseNote reports NONE, NOASSERTION or a LicenseRef- id
-	// without the quoted operative sentence spine S8 requires in
+	// without the quoted operative sentence the spine's licence section requires in
 	// license_manual_note.
 	ErrMissingLicenseNote = errors.New("config: licence needs a manual note")
 
@@ -208,7 +209,7 @@ const (
 	// Authorization header on EVERY request, including the ones expected to
 	// return 304. research/06 Recommendation item 1: a 304 costs zero
 	// rate-limit budget *because* the request is authorized, while
-	// unauthenticated 304s consume the 60/hour limit. A.7 enforces the
+	// unauthenticated 304s consume the 60/hour limit. The poller enforces the
 	// send-side rule; this value is how a row asks for it.
 	AuthGitHubToken AuthMode = "github_token"
 
@@ -229,7 +230,7 @@ func (m AuthMode) Valid() bool { return inEnum(m, AuthModeValues()) }
 
 // SyncMechanism is how a feed's steady-state changes are detected.
 //
-// A.7's packet requires the poller to run against a fixture for "every sync
+// The poller's packet requires the poller to run against a fixture for "every sync
 // mechanism in the Feed Table" without a hard-coded feed URL or cadence. That
 // is only possible if the mechanism is declared per row: a poller that
 // branches on feed id to decide whether to send If-None-Match has hard-coded
@@ -263,7 +264,7 @@ const (
 
 	// SyncNone means the feed is not polled and not derived: it exists only
 	// as a bulk artifact, refreshed on BaselineIntervalSeconds if at all.
-	// This is A.1's "bulk-only" case, and the one shape where a zero
+	// This is the feed table's "bulk-only" case, and the one shape where a zero
 	// IntervalSeconds is legal alongside SyncDerived.
 	SyncNone SyncMechanism = "none"
 )
@@ -286,7 +287,7 @@ func (s SyncMechanism) Polled() bool { return s != SyncDerived && s != SyncNone 
 
 // BootstrapMechanism is how a feed's cache is first filled.
 //
-// A.8 dispatches on this value. research/06 Recommendation item 2 is the
+// The bulk bootstrap dispatches on this value. research/06 Recommendation item 2 is the
 // reason it is an enum rather than an implicit property of the URL:
 // bootstrapping from bulk archives instead of git history is a deliberate
 // choice per feed, and GHSA is the single documented exception.
@@ -333,7 +334,7 @@ func (b BootstrapMechanism) Valid() bool { return inEnum(b, BootstrapMechanismVa
 // timestamp and a `staleness_seconds` field stamped into the unified audit
 // record. A scan run on 3-day-old KEV data must say so." Offering an option
 // that contradicts that would let an operator configure Anvil into the
-// failure mode spine S6's as_of/staleness_seconds fields exist to prevent.
+// failure mode the spine's as_of/staleness_seconds fields exist to prevent.
 type OnFailure string
 
 const (
@@ -358,7 +359,7 @@ func OnFailureValues() []OnFailure {
 func (o OnFailure) Valid() bool { return inEnum(o, OnFailureValues()) }
 
 // LicenseTier is research/01's four-tier licence stratification, carried per
-// feed and stored as INTEGER in the A.2 cache's
+// feed and stored as INTEGER in the ingestion cache's
 // CHECK (license_tier IN (0,1,2,3)) columns.
 //
 // The tier is a fact about obligations, not about quality:
@@ -366,7 +367,7 @@ func (o OnFailure) Valid() bool { return inEnum(o, OnFailureValues()) }
 //	0  always mirrored, licence-clean, no copyleft
 //	1  mirrored, attribution required — keep a NOTICE file
 //	2  share-alike — SEGREGATED cache dir, own LICENSE, never merged into
-//	   a Tier 0/1 output (research/01 Risk #3, spine S8)
+//	   a Tier 0/1 output (research/01 Risk #3, the spine's licence section)
 //	3  optional, user opt-in at install time
 type LicenseTier int
 
@@ -388,8 +389,8 @@ func (t LicenseTier) Valid() bool {
 	return t >= LicenseTier0 && t <= LicenseTier3
 }
 
-// Int returns the tier as a plain int, for the A.2/A.4 call sites that store
-// or compare it as one.
+// Int returns the tier as a plain int, for the ingestion cache and the licence
+// gate call sites that store or compare it as one.
 func (t LicenseTier) Int() int { return int(t) }
 
 // Reserved SPDX-expression tokens a feed row may declare instead of an
@@ -403,10 +404,10 @@ const (
 
 	// LicenseNoAssertion means the metadata asserts nothing: either the
 	// publisher's terms have no SPDX identifier, or an API reports
-	// NOASSERTION over a real licence. Spine S8 exists because the second
+	// NOASSERTION over a real licence. The spine's licence section exists because the second
 	// case is common — seven artifacts in the corpus return NOASSERTION over
 	// a real licence and one hides a restrictive one — so the row must carry
-	// the quoted operative sentence and A.4 resolves it against a
+	// the quoted operative sentence and the licence gate resolves it against a
 	// checked-in LICENSE file body, never against API metadata.
 	LicenseNoAssertion = "NOASSERTION"
 
@@ -420,15 +421,15 @@ const (
 // The licence-declaration predicates. ONE definition, consumed by two packages.
 // ---------------------------------------------------------------------------
 //
-// A.4's licence gate asks the same three questions this loader asks: is this
-// declaration NONE, does it need spine S8's manual note, does it resolve
+// The licence gate asks the same three questions this loader asks: is this
+// declaration NONE, does it need the manual licence note, does it resolve
 // against the SPDX list. Before these existed each package answered them with
 // its own inline expression, and the two answers disagreed on case: this loader
 // compared with `==` while the gate compared with strings.EqualFold, so a row
 // declaring `license_spdx: none` loaded clean at tier 0 here and was then
 // refused as an undeclared licence there. Two definitions that agree today are
-// exactly the produce/consume break plan/IMPLEMENTATION-PLAN.md section 6
-// closed ten instances of, so there is now one definition and A.4 calls it.
+// exactly the produce/consume break the first plan's shared-vocabulary review
+// closed ten instances of, so there is now one definition and the licence gate calls it.
 //
 // All three fold case and trim space, which is the stricter of the two
 // behaviours that used to exist: `none`, `None` and ` NONE ` are all the NONE
@@ -463,7 +464,7 @@ func SPDXResolvable(spdx string) bool {
 	return !SPDXIsNone(s) && !SPDXIsNoAssertion(s) && !SPDXIsLicenseRef(s)
 }
 
-// SPDXNeedsManualNote reports whether a declaration obliges spine S8's
+// SPDXNeedsManualNote reports whether a declaration obliges the spine's
 // manual-override field. It is the exact negation of SPDXResolvable, named for
 // the rule rather than the mechanism because that is how both call sites read.
 func SPDXNeedsManualNote(spdx string) bool { return !SPDXResolvable(spdx) }
@@ -497,13 +498,14 @@ func literals[T ~string](vals []T) []string {
 // FeedConfig is one row of the feed table.
 //
 // Every consumer in Lane A reads its per-feed behaviour from a value of this
-// type: A.7 polls on Interval with AuthMode/CredentialEnv and SyncMechanism,
-// A.8 dispatches on BootstrapMechanism, A.14/A.15 schedule on
-// ReconcileInterval/BaselineInterval, A.4 gates on LicenseTier +
-// LicenseSPDX + LicenseManualNote, and A.16/A.19 stamp staleness against
-// FreshnessSLO. Nothing in that list is a Go constant anywhere in Lane A.
+// type: the poller polls on Interval with AuthMode/CredentialEnv and SyncMechanism,
+// the bulk bootstrap dispatches on BootstrapMechanism, delta ingestion and the
+// weekly self-heal schedule on ReconcileInterval/BaselineInterval, the licence
+// gate gates on LicenseTier + LicenseSPDX + LicenseManualNote, and drift
+// handling and record emission stamp staleness against FreshnessSLO. Nothing in
+// that list is a Go constant anywhere in Lane A.
 type FeedConfig struct {
-	// ID is the feed's stable identifier and the primary key of the A.2
+	// ID is the feed's stable identifier and the primary key of the ingestion cache
 	// cache's feed_state table. Lower-case, digits and single hyphens.
 	ID string
 
@@ -534,19 +536,19 @@ type FeedConfig struct {
 	// ReconcileIntervalSeconds is the cadence of a periodic reconciliation
 	// pass that re-reads a larger window than the steady-state poll —
 	// cvelistV5's end-of-day delta is the worked example. Zero means the
-	// feed has no such pass. A.14 owns the pass; this is its clock.
+	// feed has no such pass. Delta ingestion owns the pass; this is its clock.
 	ReconcileIntervalSeconds int
 
 	// BaselineIntervalSeconds is the cadence of the full-baseline self-heal
 	// that re-pulls the bulk artifact to catch anything the delta pipeline
-	// dropped. Zero means no self-heal. A.15 owns the pass; this is its
-	// clock, and it is here rather than in A.15 because a weekly duration
+	// dropped. Zero means no self-heal. The weekly self-heal owns the pass; this is its
+	// clock, and it is here rather than in the weekly self-heal because a weekly duration
 	// written as a Go constant is precisely the hard-coded cadence this
 	// package forbids.
 	BaselineIntervalSeconds int
 
 	// FreshnessSLOSeconds is the age past which this feed's data is
-	// reported as stale. It feeds spine S6's staleness_seconds, and it must
+	// reported as stale. It feeds the spine's staleness_seconds, and it must
 	// be at least IntervalSeconds: an SLO shorter than the poll that
 	// refreshes it is unmeetable by construction.
 	FreshnessSLOSeconds int
@@ -562,11 +564,11 @@ type FeedConfig struct {
 	// LicenseNoAssertion / a LicenseRefPrefix custom id. Never empty.
 	//
 	// This package validates the SHAPE of the value, not its membership in
-	// the SPDX list: A.4 owns resolution against checked-in LICENSE file
+	// the SPDX list: the licence gate owns resolution against checked-in LICENSE file
 	// bodies, and a second SPDX list here would go stale independently.
 	LicenseSPDX string
 
-	// LicenseManualNote is spine S8's manual-override field: the quoted
+	// LicenseManualNote is the spine's manual-override field: the quoted
 	// operative sentence from the publisher's own licence text. Required
 	// whenever LicenseSPDX is NONE, NOASSERTION or a LicenseRef- id, and
 	// welcome on any row whose metadata and reality disagree.
@@ -582,7 +584,7 @@ type FeedConfig struct {
 	// and `osv-merged`, and their quarantine directories are
 	// mirror/tier2/{ubuntu,alpine,osv} — the id and the directory differ, so
 	// with no key for it the only way to reach the quarantine was for a
-	// caller to invent the mapping. A.4's own test carried that mapping for a
+	// caller to invent the mapping. The licence gate's own test carried that mapping for a
 	// while, which meant the quarantine was reachable from a test and from
 	// nowhere else, and the licence evidence a decision rested on was chosen
 	// by the caller rather than bound to the feed row. It is configuration
@@ -590,7 +592,7 @@ type FeedConfig struct {
 	// compiled into Go is the hard-coded feed table this package abolishes.
 	MirrorDir string
 
-	// BootstrapMechanism is how A.8 first fills this feed.
+	// BootstrapMechanism is how the bulk bootstrap first fills this feed.
 	BootstrapMechanism BootstrapMechanism
 
 	// BootstrapURL is where the bulk artifact or git remote lives. Parse
@@ -632,7 +634,7 @@ func (f FeedConfig) FreshnessSLO() time.Duration {
 // custom id counts as declared: it names real terms that merely have no entry
 // on the SPDX list.
 //
-// It is a convenience for reporting, NOT a licence gate. A.4 is the gate.
+// It is a convenience for reporting, NOT a licence gate. The licence gate is the gate.
 func (f FeedConfig) LicenseDeclared() bool {
 	return f.LicenseSPDX != LicenseNone && f.LicenseSPDX != LicenseNoAssertion
 }
@@ -681,7 +683,7 @@ func (s FeedSet) EnabledFeeds() []FeedConfig {
 	return out
 }
 
-// ByTier returns the rows at the given licence tier, in document order. A.4
+// ByTier returns the rows at the given licence tier, in document order. The licence gate
 // uses it to enumerate what may be written under each mirror/tier* directory.
 func (s FeedSet) ByTier(t LicenseTier) []FeedConfig {
 	out := make([]FeedConfig, 0, len(s.Feeds))
@@ -699,7 +701,7 @@ func (s FeedSet) ByTier(t LicenseTier) []FeedConfig {
 
 // Load reads and parses a feed table from disk.
 //
-// It performs no network I/O — this package imports no HTTP client, and A.1's
+// It performs no network I/O — this package imports no HTTP client, and the feed table's
 // packet forbids fetching anything from this step. The only side effect is
 // reading the named file.
 func Load(path string) (FeedSet, error) {
@@ -995,7 +997,7 @@ func bindFeed(n *node, index int) (FeedConfig, error) {
 // validateFeed applies every cross-field rule and resolves the one defaulted
 // field (BootstrapURL). It mutates f only to resolve that default.
 func validateFeed(f *FeedConfig, line int, where string) error {
-	// --- Licence. Spine S8: a feed whose licence cannot be stated is a feed
+	// --- Licence. The spine's licence section: a feed whose licence cannot be stated is a feed
 	// Anvil cannot use. ---
 	if f.LicenseSPDX == "" {
 		return fmt.Errorf("%w: %w: line %d: %s states no `license_spdx`; say %s or %s with a `license_manual_note` rather than leaving it blank",
@@ -1006,7 +1008,7 @@ func validateFeed(f *FeedConfig, line int, where string) error {
 			ErrInvalidDocument, ErrMissingLicense, line, where, f.LicenseSPDX,
 			LicenseNone, LicenseNoAssertion, LicenseRefPrefix)
 	}
-	// SPDXNeedsManualNote and SPDXIsNone are the shared definitions A.4's gate
+	// SPDXNeedsManualNote and SPDXIsNone are the shared definitions the licence gate
 	// also calls. They are not inlined here again on purpose — see the note
 	// above them.
 	if SPDXNeedsManualNote(f.LicenseSPDX) && strings.TrimSpace(f.LicenseManualNote) == "" {
@@ -1138,7 +1140,7 @@ func validateFeed(f *FeedConfig, line int, where string) error {
 
 	// --- Schedule coherence. ---
 	if f.FreshnessSLOSeconds <= 0 {
-		return fmt.Errorf("%w: %w: line %d: %s declares no positive `freshness_slo_seconds`; spine S6 stamps staleness against it on every record",
+		return fmt.Errorf("%w: %w: line %d: %s declares no positive `freshness_slo_seconds`; the spine's record section stamps staleness against it on every record",
 			ErrInvalidDocument, ErrInconsistentSchedule, line, where)
 	}
 	if f.FreshnessSLOSeconds < f.IntervalSeconds {
@@ -1191,7 +1193,7 @@ func checkURL(raw string, line int, where, key string) error {
 	return nil
 }
 
-// ValidFeedID is the ONE definition of a legal feed id. A.4's licence gate
+// ValidFeedID is the ONE definition of a legal feed id. The licence gate
 // calls it rather than restating the rule: it used to keep its own, stricter
 // rule that allowed '_' and forbade '.', so a feed id this loader accepted —
 // `osv.dev`, say — was structurally refused by the gate that had to read its
@@ -1256,8 +1258,8 @@ func isIDAlnum(r rune) bool {
 }
 
 // validSPDXShape checks the SHAPE of a licence declaration, not membership in
-// the SPDX licence list. A.4 owns resolution against checked-in LICENSE file
-// bodies (spine S8), and a second, independently-staling SPDX list here would
+// the SPDX licence list. The licence gate owns resolution against checked-in LICENSE file
+// bodies (the spine's licence section), and a second, independently-staling SPDX list here would
 // be exactly the duplicated vocabulary section 6 of the implementation plan
 // closed ten instances of.
 func validSPDXShape(s string) bool {
@@ -1479,7 +1481,7 @@ func scanLines(src string) ([]rawLine, error) {
 // '#' survives.
 //
 // It tracks backslash escapes inside double quotes. A licence note quoting a
-// publisher's operative sentence contains \" pairs by construction — spine S8
+// publisher's operative sentence contains \" pairs by construction — the spine's licence section
 // asks for exactly that — and a scanner that treated \" as a closing quote
 // would mis-track quote state for the rest of the line and could truncate the
 // note at a later '#'.

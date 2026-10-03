@@ -1,7 +1,7 @@
-// Package reconcile owns A.15: the WEEKLY FULL-BASELINE SELF-HEAL.
+// Package reconcile owns the WEEKLY FULL-BASELINE SELF-HEAL.
 //
-// This is step A.15 of plan/20-lane-a-ingestion-sca.md. Lane A is the
-// zero-inference half of Anvil (plan/00-SPINE.md S1): CVE/OSV/GHSA describe
+// This is the weekly self-heal (plan node upkeep). Lane A is the
+// zero-inference half of Anvil (the spine's corrected-requirements table): CVE/OSV/GHSA describe
 // vulnerable PACKAGE VERSIONS and a version comparator answers that exactly
 // and for free. Nothing here infers anything, calls a model, ranks anything,
 // or emits a fingerprint. Every decision below is a documented rule over two
@@ -17,7 +17,7 @@
 // them leaves the cache subtly wrong FOREVER, with nothing anywhere surfacing
 // it. Nothing in the incremental path can detect its own gap: the cursor is
 // derived from the rows, so a row that never arrived has no cursor entry to
-// look wrong. That is the same failure shape as fingerprint drift (spine S6),
+// look wrong. That is the same failure shape as fingerprint drift (the spine's record section),
 // and the answer is the same one: periodically rebuild from ground truth and
 // DIFF, rather than trusting the incremental path to have been complete.
 //
@@ -36,13 +36,13 @@
 //
 // # The baseline is built in a SCRATCH DATABASE, never into the live cache
 //
-// This is the design decision the whole package rests on. A.8's Bootstrap
+// This is the design decision the whole package rests on. The bulk bootstrap
 // writes rows; if it wrote them into the live cache, the repair would BE the
 // import and there would be nothing left to diff — a self-heal that cannot
 // report what it healed, which is precisely the thing this package exists to
 // avoid. So the fresh baseline is imported into a throwaway cache file, the
 // two row sets are merge-joined, and only then are repairs applied to the live
-// cache through A.14's row-scoped write path.
+// cache through delta ingestion's row-scoped write path.
 //
 // # What it will and will not write
 //
@@ -61,16 +61,16 @@
 //     baseline's older bytes would make the self-heal a data-loss event.
 //   - a key only the live cache holds is REPORTED AND NEVER DELETED.
 //     Withdrawn and REJECTED advisories are tombstoned rather than deleted
-//     (A.2 exit criterion 22) and that is A.16's job, not this one. A row that
+//     (Lane A exit criterion 22) and that is drift handling's job, not this one. A row that
 //     ground truth no longer carries may also simply post-date the artifact.
 //
 // # Nothing here composes a write shape
 //
-// Repairs go through delta.Apply — A.14's row-scoped upsert path, behind its
+// Repairs go through delta.Apply — delta ingestion's row-scoped upsert path, behind its
 // own statement allowlist. That is deliberate: a second writer for `advisory`
 // / `affected` / `advisory_fts` is exactly how a schema invariant survives in
 // one writer and not the other, and delta.Record is exported for this reason
-// ("A.15's reconciliation writes the same rows through the same path"). It
+// ("The weekly self-heal's reconciliation writes the same rows through the same path"). It
 // also means the FTS index stays query-consistent after a repair for the same
 // reason it does after a delta batch, rather than for a new reason nobody
 // tested. This package therefore issues NO INSERT, REPLACE or UPDATE against
@@ -79,14 +79,14 @@
 //
 // # The two gates, unchanged
 //
-//   - A.4's licence gate runs FIRST, before a byte is fetched, exactly as it
-//     does in A.8. A refusal ends the pass with no request made and no row
+//   - The licence gate runs FIRST, before a byte is fetched, exactly as it
+//     does in the bulk bootstrap. A refusal ends the pass with no request made and no row
 //     written. The gate is resolved HERE as well as inside Bootstrap because
 //     delta.Apply takes the decision as a parameter rather than looking it up;
 //     the two resolutions are cross-checked against each other afterwards and
 //     a disagreement is a refusal, so "two answers to one question" is a
 //     detected condition rather than a latent one.
-//   - A.3's sanitizer runs inside delta.Decode on every string projected out
+//   - The sanitizer runs inside delta.Decode on every string projected out
 //     of a baseline document, and delta.Apply re-checks the whole bind set
 //     with sanitize.AssertAllSanitized immediately before the parameters reach
 //     the driver. raw_json is the one deliberate exception, as it is
@@ -95,9 +95,9 @@
 //
 // # A failed self-heal is LOUD
 //
-// A.15's packet: "Do not skip reconciliation silently on a bootstrap failure —
+// The weekly self-heal's packet: "Do not skip reconciliation silently on a bootstrap failure —
 // a failed weekly self-heal must increment feed_state.consecutive_failures and
-// surface via A.16's staleness mechanism, not fail closed and disappear." So a
+// surface via drift handling's staleness mechanism, not fail closed and disappear." So a
 // bootstrap that errored, an import that did not complete, and a baseline that
 // imported zero records all increment that counter in the LIVE cache and are
 // named in the report. See recordFailure for the one case that deliberately
@@ -189,7 +189,7 @@ var (
 	ErrIncompleteBaseline = errors.New("reconcile: the fresh baseline did not complete")
 
 	// ErrDecisionMismatch reports that the licence decision this package
-	// resolved and the one A.8 resolved inside the bootstrap disagree about
+	// resolved and the one the bulk bootstrap resolved during its own run disagree about
 	// the tier or the output directory. Both read the same feed row through
 	// the same function, so a disagreement means the two mirrors differ — and
 	// writing rows under whichever answer happened to be in hand is how an
@@ -197,7 +197,7 @@ var (
 	ErrDecisionMismatch = errors.New("reconcile: the licence gate answered differently for the same feed")
 
 	// ErrBaselineFailed reports a bootstrap that returned an error. The wrapped
-	// error is A.8's own.
+	// error is the bulk bootstrap's own.
 	ErrBaselineFailed = errors.New("reconcile: building the fresh baseline failed")
 
 	// ErrStatementNotAllowed reports a statement this package tried to execute
@@ -226,8 +226,8 @@ func refuse(sentinel error, format string, args ...any) error {
 const (
 	// scanAdvisorySQL streams one feed's advisory rows in key order, which is
 	// what makes the diff a MERGE JOIN with bounded memory rather than two
-	// 300,000-entry maps. `source` equals the feed id in both writers (A.8's
-	// and A.14's decoders both bind decodeCtx.feedID), so it is the scope of
+	// 300,000-entry maps. `source` equals the feed id in both writers (the bulk bootstrap's
+	// and delta ingestion's decoders both bind decodeCtx.feedID), so it is the scope of
 	// the comparison: the live cache holds many feeds and the baseline holds
 	// exactly one.
 	scanAdvisorySQL = `SELECT source_id, modified, state, raw_json FROM advisory WHERE source = ? ORDER BY source_id`
@@ -241,9 +241,9 @@ const (
 	// cost is one query per restored row, which is bounded by the number of
 	// records the delta path actually dropped.
 	//
-	// staleness_seconds comes back with it because it is the age A.8 computed
+	// staleness_seconds comes back with it because it is the age the bulk bootstrap computed
 	// from the artifact's own Last-Modified. Re-deriving it here would be a
-	// second answer to "how old is this data", and spine S6 requires the field
+	// second answer to "how old is this data", and the spine's record section requires the field
 	// to mean the age of the DATA rather than the age of the write.
 	selectBaselineRecordSQL = `SELECT staleness_seconds, raw_json FROM advisory WHERE source = ? AND source_id = ?`
 )
@@ -257,7 +257,7 @@ var allowedStatements = map[string]string{
 		"consecutive_failures a failed pass has to increment.",
 	strings.TrimSpace(cache.UpsertFeedStateSQL): "the ONLY write this package issues. It moves " +
 		"consecutive_failures and nothing else: etag, last_modified, watermark and last_ok_at are read back " +
-		"and written unchanged, because they belong to A.7 and A.8 and a self-heal has no business moving them.",
+		"and written unchanged, because they belong to the poller and the bulk bootstrap and a self-heal has no business moving them.",
 }
 
 func checkStatement(q string) error {
@@ -268,7 +268,7 @@ func checkStatement(q string) error {
 		"this package may only execute statements on its allowlist and this one is not on it:\n\t%s\n"+
 			"If it is a legitimate read, add it to allowedStatements with the reason. If it writes "+
 			"advisory, affected or advisory_fts, it does NOT belong here at all: those writes go through "+
-			"delta.Apply so that one write path holds the schema invariants for both A.14 and A.15.",
+			"delta.Apply so that one write path holds the schema invariants for both delta ingestion and the weekly self-heal.",
 		strings.Join(strings.Fields(q), " "))
 }
 
@@ -303,7 +303,7 @@ func execAllowed(ctx context.Context, db *sql.DB, q string, args ...any) error {
 //
 // These are LANE-A-LOCAL vocabulary with no counterpart in the record
 // contract's six frozen enums, so declaring them here does not violate
-// plan/IMPLEMENTATION-PLAN.md §6's single-owner rule — the same reasoning
+// the shared-vocabulary review's single-owner rule — the same reasoning
 // cache.CollectorHost is declared under. They exist so that a caller switches
 // on a Go constant rather than on a string literal.
 type DisagreementKind string
@@ -337,8 +337,8 @@ const (
 
 	// KindOnlyInLive is a key the live cache holds that the fresh baseline
 	// does not. It is REPORTED AND NEVER DELETED — withdrawn and REJECTED
-	// advisories are tombstoned rather than deleted (A.2 exit criterion 22)
-	// and that is A.16's pass, and a row may also simply post-date the
+	// advisories are tombstoned rather than deleted (Lane A exit criterion 22)
+	// and that is drift handling's pass, and a row may also simply post-date the
 	// artifact. A rising count here is a real signal and it is the operator's
 	// to interpret, not this package's to act on.
 	KindOnlyInLive DisagreementKind = "only-in-live"
@@ -410,7 +410,7 @@ type Disagreement struct {
 // failed to build" and "the caches agree" must not look alike to a caller
 // reading a repair count.
 //
-// A.15's packet names the counts as {new, updated, matched,
+// The weekly self-heal's packet names the counts as {new, updated, matched,
 // missing-in-live-cache}. Two of those four are ONE quantity: a key the fresh
 // baseline has and the live cache does not is both "new to the live cache" and
 // "missing in the live cache". This report keeps ONE field for it —
@@ -433,25 +433,25 @@ type ReconcileReport struct {
 	// BaselineInterval are the fields that decided whether this pass ran, and
 	// they come from the feed row's baseline_interval_seconds — there is no
 	// weekly constant in this package, because a cadence written as a Go
-	// constant is exactly what A.1 forbids.
+	// constant is exactly what the feed table forbids.
 	Plan delta.Plan
 
 	// Skipped is true when the baseline window has not turned over and Force
 	// was not set. It is not an error and the returned error is nil.
 	Skipped bool
 
-	// Refused is true when A.4's licence gate declined the feed, and
+	// Refused is true when the licence gate declined the feed, and
 	// RefusedBecause carries the gate's own sentence. No request was made and
 	// no row was written or read.
 	Refused        bool
 	RefusedBecause string
 
-	// Tier and Dir are A.4's decision as this package resolved it, and they
-	// are cross-checked against the one A.8 resolved inside the bootstrap.
+	// Tier and Dir are the licence gate's decision as this package resolved it, and they
+	// are cross-checked against the one the bulk bootstrap resolved during its own run.
 	Tier int
 	Dir  string
 
-	// Bootstrap is A.8's own result for the fresh baseline: what it
+	// Bootstrap is the bulk bootstrap's own result for the fresh baseline: what it
 	// transferred, how many entries it read and how many records it wrote.
 	// It is the cost side of the pass.
 	Bootstrap bootstrap.BootstrapResult
@@ -463,7 +463,7 @@ type ReconcileReport struct {
 	// Failed is true when the baseline could not be built or could not be
 	// trusted, and FailedBecause says which. FailureRecorded is whether
 	// feed_state.consecutive_failures was successfully incremented, and
-	// ConsecutiveFailures is the value after the increment — the number A.16's
+	// ConsecutiveFailures is the value after the increment — the number drift handling's
 	// staleness mechanism reads.
 	Failed              bool
 	FailedBecause       string
@@ -504,7 +504,7 @@ type ReconcileReport struct {
 	// the rest, so it is counted, sampled and carried on.
 	RepairFailures int
 
-	// Sanitize is the merged A.3 report over every baseline document decoded
+	// Sanitize is the merged sanitizer report over every baseline document decoded
 	// during the repair. A non-zero count is not an error; it is the ordinary
 	// state of text written by strangers.
 	Sanitize sanitize.SanitizeStats
@@ -523,9 +523,10 @@ type ReconcileReport struct {
 	Note string
 }
 
-// Updated is A.15's packet's fourth count: keys present on both sides that the
-// self-heal had to rewrite. It is derived rather than stored so that it cannot
-// disagree with the two directional counts it is made of.
+// Updated is the fourth count the weekly self-heal's design names: keys present
+// on both sides that the self-heal had to rewrite. It is derived rather than
+// stored so that it cannot disagree with the two directional counts it is made
+// of.
 func (r ReconcileReport) Updated() int { return r.StaleInLive + r.Divergent }
 
 // Disagreements is every key that was not an exact match, in either direction,
@@ -591,7 +592,7 @@ func (r ReconcileReport) Summary() string {
 }
 
 // ---------------------------------------------------------------------------
-// Baseliner — A.8, as a seam
+// Baseliner — the bulk bootstrap, as a seam
 // ---------------------------------------------------------------------------
 
 // Baseliner builds a full baseline into whatever cache it was constructed
@@ -600,7 +601,7 @@ func (r ReconcileReport) Summary() string {
 // It is an interface for the same reason delta.FeedPoller is one: so that the
 // daemon supplies ONE configured bootstrapper — with its HTTP client, its git
 // runner, its credential lookup and its mirror — rather than this package
-// constructing a second one, which would be a second implementation of A.8's
+// constructing a second one, which would be a second implementation of the bulk bootstrap's
 // size caps, redirect scope and credential rules.
 type Baseliner interface {
 	Bootstrap(ctx context.Context, feed config.FeedConfig) (bootstrap.BootstrapResult, error)
@@ -615,7 +616,7 @@ type Baseliner interface {
 // separate.
 type BaselineFactory func(scratch *sql.DB) (Baseliner, error)
 
-// FromBootstrapper turns a configured A.8 bootstrapper into a BaselineFactory
+// FromBootstrapper turns a configured bulk bootstrapper into a BaselineFactory
 // by copying it and replacing only its DB.
 //
 // tmpl is taken BY VALUE and copied again per call, so the caller's
@@ -638,7 +639,7 @@ func FromBootstrapper(tmpl bootstrap.Bootstrapper) BaselineFactory {
 
 // Options configures a Healer. Live, Feed, WorkDir and Baseline are required.
 type Options struct {
-	// Live is the A.2 ingestion cache the delta pipeline has been writing to.
+	// Live is the ingestion cache the delta pipeline has been writing to.
 	// It is NOT internal/store: that is the audit store of record and nothing
 	// here may touch it.
 	Live *sql.DB
@@ -647,7 +648,7 @@ type Options struct {
 	// (research/06 Recommendation §3) but nothing here is specific to it.
 	Feed config.FeedConfig
 
-	// Mirror is the filesystem A.4 reads pinned licence evidence from. Nil
+	// Mirror is the filesystem the licence gate reads pinned licence evidence from. Nil
 	// means the process working directory, which is what a daemon wants and
 	// what a test must never rely on.
 	//
@@ -657,7 +658,7 @@ type Options struct {
 	Mirror fs.FS
 
 	// WorkDir is where the scratch baseline database is created. It must be a
-	// real directory on disk: the baseline is the same 570 MB import A.8 does,
+	// real directory on disk: the baseline is the same 570 MB import the bulk bootstrap does,
 	// and it is not held in memory.
 	WorkDir string
 
@@ -712,7 +713,7 @@ type Healer struct {
 func New(opts Options) (*Healer, error) {
 	if opts.Live == nil {
 		return nil, refuse(ErrNotConfigured,
-			"a self-heal diffs against the live A.2 ingestion cache and needs its handle")
+			"a self-heal diffs against the live ingestion cache and needs its handle")
 	}
 	if strings.TrimSpace(opts.Feed.ID) == "" {
 		return nil, refuse(ErrNotConfigured, "a self-heal needs the feed row it is healing")
@@ -720,13 +721,13 @@ func New(opts Options) (*Healer, error) {
 	if strings.TrimSpace(opts.WorkDir) == "" {
 		return nil, refuse(ErrNotConfigured,
 			"a self-heal builds the fresh baseline in a scratch database on disk and needs a directory "+
-				"for it; the baseline is the same bulk import A.8 does and is not held in memory")
+				"for it; the baseline is the same bulk import the bulk bootstrap does and is not held in memory")
 	}
 	if opts.Baseline == nil {
 		return nil, refuse(ErrNotConfigured,
-			"a self-heal needs A.8's bootstrap to build ground truth. This package will not construct "+
+			"a self-heal needs the bulk bootstrap to build ground truth. This package will not construct "+
 				"one: an HTTP client, a credential lookup and a mirror built here would be a second "+
-				"implementation of A.8's size caps, redirect scope and licence gate")
+				"implementation of the bulk bootstrap's size caps, redirect scope and licence gate")
 	}
 	h := &Healer{
 		live:         opts.Live,
@@ -761,25 +762,25 @@ func New(opts Options) (*Healer, error) {
 	return h, nil
 }
 
-// WeeklySelfHeal is A.15's entry point: `WeeklySelfHeal(ctx) (ReconcileReport,
+// WeeklySelfHeal is the weekly self-heal's entry point: `WeeklySelfHeal(ctx) (ReconcileReport,
 // error)`.
 //
 // THE ORDER OF WHAT FOLLOWS IS THE CONTRACT:
 //
 //  1. the feed row's baseline cadence is consulted   (no network, pure)
 //  2. the bootstrap mechanism is checked for one that imports a baseline
-//  3. A.4's LICENCE GATE runs — before a byte is fetched, so a feed with no
+//  3. The LICENCE GATE runs — before a byte is fetched, so a feed with no
 //     acquired licence body costs no bytes at all
 //  4. a SCRATCH cache is opened and migrated
-//  5. A.8 imports the full baseline INTO THE SCRATCH CACHE
+//  5. The bulk bootstrap imports the full baseline INTO THE SCRATCH CACHE
 //  6. the baseline is checked for being trustworthy at all: complete, and not
 //     empty. A prefix of ground truth is not ground truth.
 //  7. the two row sets are merge-joined in key order and classified
-//  8. repairable disagreements are written back through A.14's row-scoped
+//  8. repairable disagreements are written back through delta ingestion's row-scoped
 //     upsert path, in batches
 //
 // Steps 1-3 and 6 all end the pass without writing. Step 6's failures — and a
-// failure in step 5 — increment feed_state.consecutive_failures so that A.16's
+// failure in step 5 — increment feed_state.consecutive_failures so that drift handling's
 // staleness mechanism sees them; see recordFailure.
 //
 // A non-nil error is returned WITH a populated ReconcileReport, never instead
@@ -1018,7 +1019,7 @@ func (c *cursor) advance() {
 //
 // IT IS NOT A FINGERPRINT AND MUST NEVER BE PRESENTED AS ONE. anvil-fp/v1 is
 // the one fingerprint algorithm in this system, it is owned by
-// internal/record, and FINGERPRINT-SPEC.md is authoritative for it (spine S6:
+// internal/record, and FINGERPRINT-SPEC.md is authoritative for it (the spine's record section:
 // two producers emitting different digests under one name breaks regression
 // matching forever). This value never leaves this package, is never stored, is
 // never compared against anything a record produced, and would be just as
@@ -1083,7 +1084,7 @@ func (h *Healer) diff(ctx context.Context, scratch *sql.DB, rep *ReconcileReport
 				Kind:         KindOnlyInLive,
 				LiveModified: live.cur.modified,
 				Note: "ground truth does not carry this key; it is reported and never deleted " +
-					"(tombstoning is A.16's pass, and the row may simply post-date the artifact)",
+					"(tombstoning is drift handling's pass, and the row may simply post-date the artifact)",
 			})
 			live.advance()
 
@@ -1233,8 +1234,8 @@ func (h *Healer) repair(
 			return nil
 		}
 		// staleness is passed as zero because every record carries its own,
-		// read from the row A.8 wrote: that is the age of the DATA the
-		// artifact's Last-Modified declared, which is what spine S6's
+		// read from the row the bulk bootstrap wrote: that is the age of the DATA the
+		// artifact's Last-Modified declared, which is what the spine's
 		// staleness_seconds means. delta.Apply's per-record override wins over
 		// the batch value, so the batch value is only ever a fallback nothing
 		// here needs.
@@ -1297,7 +1298,7 @@ func (h *Healer) markRepairs(rep *ReconcileReport, failed map[string]string) {
 }
 
 // readBaselineRecord reads one record's verbatim bytes out of the scratch
-// baseline and decodes them through A.14's decoder — the same decoder the
+// baseline and decodes them through delta ingestion's decoder — the same decoder the
 // delta path uses, so a restored row is byte-for-byte the row a working delta
 // path would have written.
 //
@@ -1391,8 +1392,8 @@ func (h *Healer) readFeedState(ctx context.Context) (feedStateRow, bool, error) 
 
 // fail records a failed self-heal and returns the report and the error.
 //
-// A.15's packet: a failed weekly self-heal must increment
-// feed_state.consecutive_failures and surface via A.16's staleness mechanism,
+// The weekly self-heal's packet: a failed weekly self-heal must increment
+// feed_state.consecutive_failures and surface via drift handling's staleness mechanism,
 // "not fail closed and disappear". So the counter moves before the error is
 // returned, and whether it moved is itself reported.
 func (h *Healer) fail(ctx context.Context, rep *ReconcileReport, cause error) (ReconcileReport, error) {
@@ -1410,15 +1411,15 @@ func (h *Healer) fail(ctx context.Context, rep *ReconcileReport, cause error) (R
 // recordFailure increments feed_state.consecutive_failures in the LIVE cache.
 //
 // It preserves etag, last_modified, watermark and last_ok_at exactly as read.
-// Those are A.7's conditional-GET state and A.8's bootstrap cursor, and a
+// Those are the poller's conditional-GET state and the bulk bootstrap cursor, and a
 // self-heal has no business moving either: clearing an etag would cost a full
-// re-download on the next poll, and clearing a watermark would cost A.8 its
+// re-download on the next poll, and clearing a watermark would cost the bulk bootstrap its
 // resume position.
 //
 // IT DOES NOT RESET THE COUNTER ON SUCCESS, and that is deliberate. The column
-// is shared with A.7, which clears it when a poll succeeds. A self-heal that
-// zeroed it would erase A.7's record of a failing poll, and a security tool
-// that loses its own "this feed is not working" signal is exactly what A.16's
+// is shared with the poller, which clears it when a poll succeeds. A self-heal that
+// zeroed it would erase the poller's record of a failing poll, and a security tool
+// that loses its own "this feed is not working" signal is exactly what drift handling's
 // staleness mechanism exists to prevent.
 //
 // A LICENCE REFUSAL IS NOT A FAILURE AND DOES NOT REACH HERE. A refusal means

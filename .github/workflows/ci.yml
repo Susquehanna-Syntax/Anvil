@@ -54,6 +54,53 @@ jobs:
       - name: go test
         run: go test -race -count=1 ./...
 
+      # THE SECOND LANE, and it is not redundant with the one above.
+      #
+      # internal/dast/authz/phase1_scopebytes_race_test.go carries
+      # `//go:build !race`, so `go test -race` DOES NOT COMPILE IT. That build
+      # tag is legitimate -- the harness works by racing a writer against the
+      # caller's scope buffer, which is a data race by construction, and the
+      # detector reports it against the FIX on a correct tree. What was not
+      # legitimate is that this workflow ran only the -race lane, so
+      # TestScopeBytesAreReadOnceUnderAConcurrentWriter -- the behavioural
+      # control whose measured numbers are in internal/SKIPPED-CONTROLS.md
+      # under G4-1 (0 of 200 constructed Scopes mismatched on the shipped tree,
+      # 89 of 200 with the copy deleted, 102 of 200 with the copy replaced by
+      # `rawAlias := raw[:]`) -- was compiled in ZERO CI lanes. Recorded as N3;
+      # this step is what closes it.
+      #
+      # -count=1 for the reason the artifact-split job spells out at length.
+      - name: go test without -race (the !race lane compiles here and nowhere else)
+        run: go test -count=1 ./...
+
+      # A `go test -run X` that matches NOTHING exits 0 and prints
+      # "no tests to run". That is exactly how this lane would rot: the file is
+      # renamed or the build tag spreads, the step above still passes, and the
+      # control is gone again. So assert the named test actually ran and
+      # actually passed, and fail the job on either.
+      - name: The !race concurrency harness really ran, and passed
+        run: |
+          set +e
+          out=$(go test -count=1 -v -run TestScopeBytesAreReadOnceUnderAConcurrentWriter ./internal/dast/authz/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            echo "::error::the !race concurrency harness FAILED"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q -- '--- PASS: TestScopeBytesAreReadOnceUnderAConcurrentWriter'; then
+            echo "::error::TestScopeBytesAreReadOnceUnderAConcurrentWriter did not run. A -run pattern that matches nothing exits 0; this lane proves nothing until the test is actually compiled and executed."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "confirmed: the !race harness compiled, ran and passed in the non-race lane"
+
       # The Lane A exit gate prints a chain ledger naming which of its twelve
       # links it PROVED and which it could not, and it is the deliverable of
       # that packet -- "an UNPROVEN link is not a passing link". Go only shows
@@ -66,13 +113,124 @@ jobs:
       - name: Lane A chain ledger (printed, not just passed)
         run: go test -count=1 -v -run TestLaneAChain ./test/conformance/lanea/
 
-  # plan/00-SPINE.md S9-AMENDED splits Anvil into two distribution artifacts:
+  # THE NON-LINUX LANE, and it exists because the single most safety-relevant
+  # property in internal/dast/containment ran in ZERO CI lanes.
+  #
+  # SystemCommander refuses on any non-Linux GOOS. That refusal is what stops
+  # Anvil reporting a sandbox as contained on a platform where it cannot check
+  # anything -- the claim that authorizes firing DAST probes at all. Its only
+  # guard, TestSystemCommanderRefusesOffLinux, branches on runtime.GOOS: on
+  # Linux it asserts a Commander comes back, and every job above runs on
+  # ubuntu-latest. So the refusal branch was never executed anywhere, and
+  # deleting the `runtime.GOOS != "linux"` check would have left every lane
+  # green.
+  #
+  # A control that runs in zero CI lanes is not a control. This job runs the
+  # containment package on Windows, where the refusal is the branch taken.
+  #
+  # Scoped to the one package deliberately: the point is the platform branch,
+  # not Windows portability of the whole tree, and a broad Windows lane would
+  # fail for unrelated reasons and get switched off.
+  #
+  # No -race here: the detector needs a gcc toolchain on Windows and the
+  # ubuntu lane above already runs the whole tree under it.
+  containment-non-linux:
+    name: Containment refuses off Linux (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # -count=1 for the reason the artifact-split job spells out: this repo
+      # has been bitten by a replayed cached PASS twice.
+      - name: The whole containment package, on a platform with no netns
+        run: go test -count=1 ./internal/dast/containment/
+
+      # A `go test -run X` that matches NOTHING exits 0 and prints "no tests to
+      # run", which is exactly how this lane would rot. Assert the named test
+      # ran, passed, and was not replayed from cache.
+      - name: The platform refusal really ran, and passed
+        run: |
+          set +e
+          out=$(go test -count=1 -v -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            echo "::error::the platform refusal guard FAILED"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q -- '--- PASS: TestSystemCommanderRefusesOffLinux'; then
+            echo "::error::TestSystemCommanderRefusesOffLinux did not run. A -run pattern that matches nothing exits 0; this lane proves nothing until the test is actually executed."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "confirmed: the non-Linux refusal branch compiled, ran and passed"
+
+      # Negative control. Without it this lane proves only that a green test is
+      # green -- it would still pass if SystemCommander returned a working
+      # Commander on Windows AND the assertion had been softened. Delete the
+      # platform check, require the guard to go RED, and require it to go red
+      # for the RIGHT REASON: naming the platform it was handed a Commander on.
+      - name: Negative control -- the guard must be able to fail
+        run: |
+          set -e
+          f=internal/dast/containment/netns.go
+          grep -q 'if runtime.GOOS != "linux" {' "$f" || {
+            echo "::error::the platform check is not where this control expects it in $f. The negative control cannot inject its mutation, so it is not testing anything."
+            exit 1
+          }
+          sed -i 's/if runtime.GOOS != "linux" {/if false {/' "$f"
+          set +e
+          out=$(go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/ 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          git checkout -- "$f"
+          git diff --exit-code -- "$f" || {
+            echo "::error::the source was not restored byte-for-byte after the mutation"
+            exit 1
+          }
+          if [ $rc -eq 0 ]; then
+            echo "::error::TestSystemCommanderRefusesOffLinux PASSED with the platform refusal deleted. The guard is a no-op and containment could report success on a platform where nothing was checked."
+            exit 1
+          fi
+          if ! echo "$out" | grep -q 'SystemCommander returned a Commander'; then
+            echo "::error::the guard failed, but not by detecting that a Commander came back off Linux. It may be broken rather than working."
+            exit 1
+          fi
+          case "$out" in
+            *"(cached)"*)
+              echo "::error::Go replayed a cached result instead of running the test. -count=1 is not taking effect."
+              exit 1
+              ;;
+          esac
+          echo "guard correctly went red on the injected mutation, naming the returned Commander"
+
+      - name: The tree is clean again, and the guard is green again
+        run: |
+          set -e
+          git diff --exit-code
+          go test -count=1 -run TestSystemCommanderRefusesOffLinux ./internal/dast/containment/
+
+  # The two-artifact split splits Anvil into two distribution artifacts:
   # anvil (core, no network-probing capability compiled in) and anvil-dast.
-  # plan/IMPLEMENTATION-PLAN.md 2.2 rules that a config flag inside a single
+  # The first plan's two-artifact ruling holds that a config flag inside a single
   # binary does not address the concern the split exists for. This job is what
   # makes the split real rather than conventional.
   artifact-split:
-    name: Two-artifact split (S9-AMENDED)
+    name: Two-artifact split
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,10 +303,11 @@ jobs:
               file "/tmp/${target}-linux-${goarch}"
             done
           done
-          # S12 mandates modernc.org/sqlite precisely so no cgo/C toolchain is
-          # needed. mattn/go-sqlite3 would reintroduce both.
+          # the spine's Go control-plane decision mandates modernc.org/sqlite
+          # precisely so no cgo/C toolchain is needed. mattn/go-sqlite3 would
+          # reintroduce both.
           if go list -deps ./... | grep -q 'github.com/mattn/go-sqlite3'; then
-            echo "::error::mattn/go-sqlite3 is in the dependency graph. S12 mandates modernc.org/sqlite."
+            echo "::error::mattn/go-sqlite3 is in the dependency graph. The spine's Go control-plane decision mandates modernc.org/sqlite."
             exit 1
           fi
 
@@ -177,15 +336,16 @@ jobs:
       - name: Install Trivy
         run: |
           set -euo pipefail
-          # Pinned by VERSION AND DIGEST. S8 wants versions pinned; a digest is
-          # what makes the pin mean something, since a tag can be moved.
+          # Pinned by VERSION AND DIGEST. The spine's licence section wants
+          # versions pinned; a digest is what makes the pin mean something,
+          # since a tag can be moved.
           #
           # Both values were read from the GitHub releases API rather than written
           # from memory -- the first version here was invented and 404'd, which is
           # the same assert-from-memory failure this project keeps catching in its
           # own code. The digest is GitHub's, computed over the stored bytes: a
           # primary source, but not an independent re-hash, and that distinction
-          # is the same one M0.7 flagged about its own opengrep pins.
+          # is the same one the opengrep acquisition flagged about its own opengrep pins.
           TRIVY_VERSION=0.73.0
           TRIVY_SHA256=2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b
           curl -sSfL -o trivy.tar.gz \
@@ -196,14 +356,15 @@ jobs:
           trivy --version
 
       # The collector invokes Trivy with --skip-db-update --offline-scan, which
-      # is the correct posture -- S0 says Anvil never browses the live web at
-      # inference time -- but it means Trivy REFUSES TO RUN AT ALL until a
-      # database exists locally. The first run of this job proved that: FATAL
-      # "--skip-db-update cannot be specified on the first run".
+      # is the correct posture -- the spine's definition of Anvil says Anvil
+      # never browses the live web at inference time -- but it means Trivy
+      # REFUSES TO RUN AT ALL until a database exists locally. The first run of
+      # this job proved that: FATAL "--skip-db-update cannot be specified on the
+      # first run".
       #
       # That is a genuine operational dependency, not a CI quirk, and no test
       # against recorded Trivy output could have surfaced it. In production the
-      # database is what A.11's warm-start accelerator supplies; here we seed it
+      # database is what the warm-start accelerator supplies; here we seed it
       # the ordinary way so the E2E control exercises the real invocation.
       - name: Seed the Trivy vulnerability database
         run: trivy image --download-db-only
@@ -227,10 +388,10 @@ jobs:
           sudo mv /usr/local/bin/trivy.hidden /usr/local/bin/trivy
           echo "confirmed: with ANVIL_TRIVY_E2E=1 and no binary, the test fails rather than skipping"
 
-  # plan/00-SPINE.md S12 permits Python in exactly three places, and the
+  # The spine's Go control-plane decision permits Python in exactly three places, and the
   # evaluation harness is one of them. eval/ is a pure-Python tree.
   #
-  # The register this job validates is the artifact plan step M0.18 reads to
+  # The register this job validates is the artifact the gate decision reads to
   # decide whether Anvil's detection-model tier exists at all, so the property
   # that matters is narrow and absolute: a row whose experiment has not run must
   # never be readable as a pass. The schema encodes that; this job is what makes
@@ -250,7 +411,8 @@ jobs:
 
       # [dev] carries pytest/ruff. Core deps are deliberately minimal -- the
       # heavy [stats] and [models] extras are pulled by the packets that need
-      # them (M0.6, M0.10, M0.15), not here.
+      # them (the candidate-model acquisition, the code-metrics baseline, the
+      # encoder round-trip measurement), not here.
       - name: Install
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
 
@@ -260,7 +422,7 @@ jobs:
       - name: Tests, including the register mutation suite
         run: python -m pytest tests/ -q
 
-      # A skipped test is a legitimate outcome here -- M0.7's smoke path is
+      # A skipped test is a legitimate outcome here -- the opengrep acquisition's smoke path is
       # UNVERIFIED by design because nothing downloads the opengrep engine in
       # CI. But a suite that silently degrades to all-skips would still report
       # green, so assert the register suite actually ran.
@@ -272,13 +434,14 @@ jobs:
             echo "::error::register schema suite reported no passing tests"; exit 1; }
 
   # NOTE: there is deliberately no "plan" job here. The planning workspace
-  # (plan/) and its verification tooling (tools/) are local-only and gitignored,
-  # same posture as research/ -- they are how Anvil was designed and verified,
-  # not something a consumer of Anvil receives. The cross-reference invariants
-  # those tools enforce are therefore checked locally by the maintainer before
-  # dispatch, not in CI, because CI cannot see the files. Everything CI *can*
-  # see -- the artifact split, the licence bodies, the build -- is still gated
-  # below.
+  # (plan/, with its build and audit scripts) is local-only and gitignored,
+  # same posture as research/ -- it is how Anvil was designed and verified,
+  # not something a consumer of Anvil receives. The plan's own invariants are
+  # therefore checked locally by the maintainer, not in CI, because CI cannot
+  # see the files. What CI can check about the plan -- that none of the first
+  # plan's step codes leak back into the tree -- is test/hygiene, which runs in
+  # the go test job above. Everything else CI *can* see -- the artifact split,
+  # the licence bodies, the build -- is still gated below.
 
   licence:
     name: Licence hygiene
@@ -286,7 +449,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # plan/00-SPINE.md S8: read LICENSE file bodies, never API metadata.
+      # The spine's licence section: read LICENSE file bodies, never API metadata.
       # Seven audited artifacts return NOASSERTION over a real licence and one
       # hides a restrictive licence behind a permissive tag.
       - name: LICENSE is canonical Apache-2.0
@@ -302,14 +465,14 @@ jobs:
         run: |
           set -e
           for f in LICENSE NOTICE THIRD-PARTY-LICENSES.md; do
-            test -s "$f" || { echo "::error::$f missing or empty (plan step C.1)"; exit 1; }
+            test -s "$f" || { echo "::error::$f missing or empty (the licence files)"; exit 1; }
           done
 
-      # plan/00-SPINE.md S5 is enforced, not advisory. This is a coarse
-      # placeholder for cmd/license-gate (plan steps C.9/C.10), which reads
+      # The spine's exclusion list is enforced, not advisory. This is a coarse
+      # placeholder for cmd/license-gate (plan node spdxgate), which reads
       # licence bodies properly; it exists so the exclusion list is not purely
-      # documentary between now and Phase 6.
-      - name: Hard exclusions (S5) are absent from the dependency graph
+      # documentary until that gate lands.
+      - name: Hard exclusions are absent from the dependency graph
         run: |
           set -e
           fail=0
@@ -323,7 +486,7 @@ jobs:
             "github.com/AFLplusplus/AFLplusplus" \
             "github.com/mattn/go-sqlite3" ; do
             if grep -rn --include=go.mod --include=go.sum "$banned" . ; then
-              echo "::error::$banned is on the S5 hard exclusion list"
+              echo "::error::$banned is on the spine's hard-exclusion list"
               fail=1
             fi
           done

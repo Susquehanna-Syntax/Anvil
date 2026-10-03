@@ -1,15 +1,15 @@
 // Package store owns Anvil's single SQLite store of record.
 //
-// plan/00-SPINE.md S1 collapsed the originally-specified "8-hour buffer file"
+// The spine's corrected-requirements table collapsed the originally-specified "8-hour buffer file"
 // into one SQLite database, a `handoff` table, and a regenerable tmpfs packet
 // that is never a source of truth. This package holds the DDL for that
-// database. plan/IMPLEMENTATION-PLAN.md §6 rulings G9 and G10 make schema.sql
-// the ONLY definition of the `handoff` table anywhere in Anvil: area 70's O.3
-// migration and area 60's rival `anvil_ledger` are both folded into it.
+// database. The handoff-table and one-ledger rulings make schema.sql
+// the ONLY definition of the `handoff` table anywhere in Anvil: the control plane's handoff adapter
+// migration and remediation's rival `anvil_ledger` are both folded into it.
 //
 // This file is a thin, dependency-free wrapper. It embeds the DDL, exposes the
 // connection pragmas the DDL deliberately does not contain, and offers just
-// enough read-only introspection for R.5's migration ledger and for the test
+// enough read-only introspection for the migration runner's migration ledger and for the test
 // that proves the SQL vocabularies and internal/record's Go enums have not
 // drifted apart. It opens no database and executes no statement.
 package store
@@ -44,13 +44,13 @@ const MaxDurableTextBytes = 2048
 // in schema.sql.
 //
 // It contains no PRAGMA statement, by design. `PRAGMA journal_mode = WAL`
-// cannot run inside a transaction and R.5 applies this DDL inside
+// cannot run inside a transaction and the migration runner applies this DDL inside
 // BEGIN...COMMIT. Use ConnectionPragmas for the settings that must be applied
 // per connection instead.
 func Schema() string { return schemaSQL }
 
 // SchemaSHA256 returns the lowercase hex SHA-256 of the embedded DDL, over its
-// exact committed bytes with no normalisation. R.5's migration ledger records
+// exact committed bytes with no normalisation. The migration runner's migration ledger records
 // a checksum; this is the value for the initial migration, and it changes if
 // so much as a comment in schema.sql changes, which is the intended
 // sensitivity for a frozen interface.
@@ -59,12 +59,12 @@ func SchemaSHA256() string {
 	return hex.EncodeToString(sum[:])
 }
 
-// ConnectionPragmas returns the pragmas from plan/40-record-and-storage.md's
+// ConnectionPragmas returns the pragmas from plan/design/record-and-store.md's
 // Store Schema section, in the order they must be applied.
 //
 // Every one of these is per connection, not per database file, so they must be
 // re-applied on every connection the pool opens — `foreign_keys` above all,
-// which SQLite leaves OFF by default and which this schema depends on. R.5
+// which SQLite leaves OFF by default and which this schema depends on. The migration runner
 // applies them before any other store operation, after its network-mount and
 // FTS5 guards.
 //
@@ -143,7 +143,7 @@ var literalRE = regexp.MustCompile(`'((?:[^']|'')*)'`)
 // constraint, in the order they appear.
 //
 // This exists because of a real constraint on how the vocabulary is written
-// down. plan/IMPLEMENTATION-PLAN.md §6 freezes the enums in
+// down. The shared-vocabulary review freezes the enums in
 // internal/record/contract.go and forbids any second declaration; but a SQL
 // CHECK constraint cannot reference a Go constant, and templating the DDL at
 // run time would mean schema.sql was no longer a file that applies to an empty

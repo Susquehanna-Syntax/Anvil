@@ -16,13 +16,13 @@ import (
 // The pin
 // ---------------------------------------------------------------------------
 //
-// This file is the answer to A.6's central finding: that no verbatim publisher
+// This file is the answer to the licence-gate review's central finding: that no verbatim publisher
 // licence text was checked in anywhere, so every body the gate read was Anvil
 // prose committed alongside the claim it was supposed to validate. A document
 // written by the same commit as the claim is not evidence of the claim. It is
 // worse than reading API metadata, because it looks rigorous.
 //
-// The shape is M0.7's, already established in this repository for the opengrep
+// The shape is the opengrep acquisition's, already established in this repository for the opengrep
 // engine (eval/tools/opengrep/MANIFEST.toml, anvil_opengrep/acquire.py):
 //
 //	a pinned manifest records, per artefact, where the bytes come from and

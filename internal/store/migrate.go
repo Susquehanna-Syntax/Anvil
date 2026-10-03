@@ -1,8 +1,8 @@
-// Forward-only numbered migrations with a checksummed ledger (step R.5).
+// Forward-only numbered migrations with a checksummed ledger (the migration runner).
 //
 // research/07-database-design.md §7: "numbered forward-only SQL +
 // `PRAGMA user_version` + a checksummed ledger". No Alembic, no goose, no
-// sqlx-cli, nothing for a self-hoster to install — plan/00-SPINE.md S12 makes
+// sqlx-cli, nothing for a self-hoster to install — the spine's Go control-plane decision makes
 // this Go-only, and the migrations are embedded in the binary.
 //
 // Three properties are load-bearing and each has a test:
@@ -201,7 +201,7 @@ type appliedMigration struct {
 // makes the snapshot the entire replacement for down migrations, so skipping
 // it means the upgrade has no rollback path at all.
 //
-// CheckFTS5 runs first, on the same handle. plan/40-record-and-storage.md
+// CheckFTS5 runs first, on the same handle. plan/design/record-and-store.md
 // requires the guards before any other store operation, and applying
 // schema.sql is a store operation — its advisory_fts table would otherwise
 // fail deep inside the transaction with a driver-level error instead of the

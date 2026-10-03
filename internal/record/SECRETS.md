@@ -6,9 +6,9 @@ sourced it first; every claim about this repository cites the file that makes it
 
 | | |
 |---|---|
-| Owning step | `R.9`, `plan/40-record-and-storage.md` |
+| Owning step | `the retention document`, `plan/design/record-and-store.md` |
 | Source of every security claim | `research/08-buffer-and-handoff.md` (§F "Buffer security", §"Risks, Dissent And Failure Modes") |
-| Binding spine text | `plan/00-SPINE.md` S1 item 5 |
+| Binding spine text | The spine's corrected-requirements table item 5 |
 | Related code | `internal/store/schema.sql`, `internal/store/ddl.go`, `internal/store/migrate.go` |
 
 ---
@@ -31,7 +31,7 @@ If you finish this document feeling reassured, re-read section 2.
 
 ## 1. What exists, and for how long
 
-Three things hold finding detail. `plan/00-SPINE.md` S1 item 5 collapsed the original "8-hour buffer
+Three things hold finding detail. The spine's corrected-requirements table item 5 collapsed the original "8-hour buffer
 file" into exactly these:
 
 | Thing | Where | What happens at the claim timeout |
@@ -81,7 +81,7 @@ SP 800-88 Rev. 2 PDF was not fetched and that the flash-overwrite claim rests on
 
 ## 3. The 8-hour window is a latency bound, not a confidentiality guarantee
 
-`plan/00-SPINE.md` S1 item 5 is binding and unambiguous: *"'8 hours' is a **claim timeout**, not a
+The spine's corrected-requirements table item 5 is binding and unambiguous: *"'8 hours' is a **claim timeout**, not a
 deletion policy and not a confidentiality control."*
 
 research/08 §A reached the same conclusion first: *"Deleting the buffer at 8 hours is **not** a
@@ -158,7 +158,7 @@ Enabling it would not close the gap either. research/08 records both limits:
   the raw device."*
 
 **Related, and separate:** what is allowed *into* durable columns in the first place is governed by
-`schema.sql`'s `trg_occurrence_durable_text_cap_*` triggers and by the masking step `R.8`. Restricting
+`schema.sql`'s `trg_occurrence_durable_text_cap_*` triggers and by the masking step `secrets masking`. Restricting
 what is written is a different question from erasing what was written, and this document only answers the
 second.
 
@@ -210,7 +210,7 @@ consequence attached to each is itself a research/08 claim, listed alongside.
 | 0, 2 | *"shred assumes the file system and hardware overwrite data in place"* | research/08 §F [S12] |
 | 2 | A design doc claiming "we shred the buffer at expiry" is wrong | research/08 Risks, verbatim |
 | 2 | Flash's meaningful erase primitive is key destruction, not overwriting; NIST SP 800-88 Rev. 2 final 2025-09-26 | research/08 §F [S28]; Gaps ("full PDF not fetched") |
-| 0, 3 | The 8-hour window is not a confidentiality control | `plan/00-SPINE.md` S1 item 5; research/08 §A |
+| 0, 3 | The 8-hour window is not a confidentiality control | The spine's corrected-requirements table item 5; research/08 §A |
 | 3 | The TTL creates an *impression* of short exposure while identical content persists indefinitely | research/08 Risks, "Two copies is the real security risk" |
 | 1, 3 | Two clocks: 15–30 min lease vs 8 h eligibility, never conflated | research/08 §4 ("Claim lease" / "Buffer eligibility TTL"); *repo fact*: `internal/store/schema.sql` `handoff` header |
 | 1 | At expiry the row is not deleted; the finding is re-presented; *"Missing the window costs latency, not the finding"* | research/08 §4.3 |

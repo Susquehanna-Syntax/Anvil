@@ -55,7 +55,7 @@ var fixtureHistory = []fixtureStep{
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not on PATH; O.7's behaviour is defined only in terms of real git")
+		t.Skip("git is not on PATH; semver bump classification's behaviour is defined only in terms of real git")
 	}
 }
 
@@ -427,11 +427,11 @@ func TestClassifyCore(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestSemverFileDeclaresNoSecondBumpVocabulary mirrors
-// TestFrozenEnumsAreNotForked for O.7's half of the package.
+// TestFrozenEnumsAreNotForked for semver bump classification's half of the package.
 //
 // schemas/policy.schema.json owns the semverBump enum and engine.go is its one
 // Go image. A bump literal in semver.go's CODE would be a second definition of
-// it -- the defect class plan/IMPLEMENTATION-PLAN.md section 6 closed ten
+// it -- the defect class the first plan's shared-vocabulary review closed ten
 // instances of. Prose may name the tokens, so this walks the AST rather than
 // grepping.
 func TestSemverFileDeclaresNoSecondBumpVocabulary(t *testing.T) {

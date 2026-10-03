@@ -1,4 +1,4 @@
-// Tests for the Lane A ingestion cache (step A.2).
+// Tests for the Lane A ingestion cache.
 //
 // The load-bearing one is TestDeltaBatchIsRowScoped: it drives 200 synthetic
 // advisories through the real upsert statements, updates 5 of them, and proves
@@ -32,7 +32,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/config"
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ func columnDefault(t *testing.T, db *sql.DB, table, column string) string {
 // Schema shape
 // ---------------------------------------------------------------------------
 
-// TestSchemaCreatesTheTablesTheExpectedOutputNames pins the table set A.2's
+// TestSchemaCreatesTheTablesTheExpectedOutputNames pins the table set the ingestion cache's
 // "Expected output schema" enumerates. A table quietly renamed or dropped
 // breaks a sibling step that cannot see this file.
 func TestSchemaCreatesTheTablesTheExpectedOutputNames(t *testing.T) {
@@ -325,7 +325,7 @@ func TestSchemaCreatesTheTablesTheExpectedOutputNames(t *testing.T) {
 	}
 }
 
-// TestFTS5ModuleIsInUse is A.2's stop condition: "sqlite_master shows fts5
+// TestFTS5ModuleIsInUse is the ingestion cache's stop condition: "sqlite_master shows fts5
 // module in use". It reads the committed DDL back out of the file rather than
 // trusting the constant, because a migration that silently degraded the
 // virtual table to something else would still leave the constant intact.
@@ -364,7 +364,7 @@ func TestFTS5ModuleIsInUse(t *testing.T) {
 	}
 }
 
-// TestAdvisoryCarriesEverySpineColumn is A.2's stop condition on columns.
+// TestAdvisoryCarriesEverySpineColumn is the ingestion cache's stop condition on columns.
 //
 // READING RECORDED: the stop condition says "every advisory-carrying table has
 // license_spdx, license_manual_note, license_tier, anvil_trust, as_of,
@@ -373,7 +373,7 @@ func TestFTS5ModuleIsInUse(t *testing.T) {
 // aliases keyed to it by foreign key, and the plan's own DDL gives them none
 // of these columns. Duplicating a licence tier onto every child row would
 // create a second, drifting answer to a question the parent already answers.
-// `finding` is Lane A's own output and carries the S6 subset the plan's DDL
+// `finding` is Lane A's own output and carries the spine's record section subset the plan's DDL
 // specifies for it, which is checked separately below.
 func TestAdvisoryCarriesEverySpineColumn(t *testing.T) {
 	db, _ := openMigrated(t)
@@ -384,14 +384,14 @@ func TestAdvisoryCarriesEverySpineColumn(t *testing.T) {
 		"anvil_trust", "as_of", "staleness_seconds", "parse_degraded",
 	} {
 		if _, ok := cols[want]; !ok {
-			t.Errorf("advisory is missing the required column %q (spine S6/S8)", want)
+			t.Errorf("advisory is missing the required column %q (the spine's record and licence sections)", want)
 		}
 	}
 
 	findingCols := columnsOf(t, db, "finding")
 	for _, want := range []string{"anvil_trust", "as_of", "staleness_seconds", "remediable_by_agent"} {
 		if _, ok := findingCols[want]; !ok {
-			t.Errorf("finding is missing the required column %q (spine S6)", want)
+			t.Errorf("finding is missing the required column %q (the spine's record section)", want)
 		}
 	}
 }
@@ -441,7 +441,7 @@ func TestPrimaryKeyIsSourceAndSourceIDNotCVE(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestTrustVocabularyMatchesRecord is the reconciliation
-// plan/IMPLEMENTATION-PLAN.md §6 says nothing was ever assigned to do: area 40
+// the shared-vocabulary review says nothing was ever assigned to do: the record area
 // owns `anvil/trust` and this schema consumes it. If internal/record adds or
 // renames a value, this test goes red instead of a NOT NULL CHECK rejecting a
 // legal token at 3am during a delta sync.
@@ -499,10 +499,10 @@ func TestTrustVocabularyMatchesRecord(t *testing.T) {
 }
 
 // TestAdvisoryRefusesAnvilGeneratedTrust is the mistake internal/record
-// documents area B committing, applied here: advisory text is verbatim
+// documents Lane B committing, applied here: advisory text is verbatim
 // publisher prose, so stamping it `anvil_generated` would disable the
 // prompt-injection containment check on exactly the strings that most need it
-// (spine S7).
+// (the spine's safety section).
 func TestAdvisoryRefusesAnvilGeneratedTrust(t *testing.T) {
 	db, _ := openMigrated(t)
 
@@ -519,7 +519,7 @@ func TestAdvisoryRefusesAnvilGeneratedTrust(t *testing.T) {
 	}
 }
 
-// TestLicenseTierVocabularyMatchesConfig reconciles the tier domain with A.1,
+// TestLicenseTierVocabularyMatchesConfig reconciles the tier domain with the feed table,
 // which is where a feed's tier is actually declared.
 func TestLicenseTierVocabularyMatchesConfig(t *testing.T) {
 	var want []string
@@ -543,7 +543,7 @@ func TestLicenseTierVocabularyMatchesConfig(t *testing.T) {
 }
 
 // TestCollectorVocabularyIsExhaustive keeps the Go constants and the SQL CHECK
-// from drifting; A.9 and A.10 write these values.
+// from drifting; the host collector and the repo collector write these values.
 func TestCollectorVocabularyIsExhaustive(t *testing.T) {
 	got, err := CheckLiterals("finding_collector")
 	if err != nil {
@@ -558,7 +558,7 @@ func TestCollectorVocabularyIsExhaustive(t *testing.T) {
 }
 
 // TestAdvisoryStateVocabularyIsExhaustive does the same for the tombstone
-// states A.16 writes.
+// states drift handling writes.
 func TestAdvisoryStateVocabularyIsExhaustive(t *testing.T) {
 	got, err := CheckLiterals("advisory_state")
 	if err != nil {
@@ -598,7 +598,7 @@ func TestEveryAdvisoryDeclaresALicence(t *testing.T) {
 		t.Fatal("an advisory row whose license_manual_note is whitespace was accepted")
 	}
 
-	// The CISA KEV shape spine S8 exists for: NOASSERTION at the API layer,
+	// The CISA KEV shape the spine's licence section exists for: NOASSERTION at the API layer,
 	// CC0 per the publisher's README, admitted through the manual note.
 	kev := both
 	kev.licenseSPDX = config.LicenseNoAssertion
@@ -644,7 +644,7 @@ func TestHostFindingsCanNeverBeRemediable(t *testing.T) {
 
 // TestWithdrawnAdvisoriesMustBeTombstoned is exit criterion 22's structural
 // half: a non-published state without a tombstone timestamp loses the "when"
-// A.16 needs to invalidate dependent findings.
+// drift handling needs to invalidate dependent findings.
 func TestWithdrawnAdvisoriesMustBeTombstoned(t *testing.T) {
 	db, _ := openMigrated(t)
 
@@ -695,7 +695,7 @@ func TestForeignKeysAreEnforced(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The delta path — A.2's headline validation
+// The delta path — the ingestion cache's headline validation
 // ---------------------------------------------------------------------------
 
 // TestDeltaBatchIsRowScoped inserts 200 synthetic advisories, updates 5, and
@@ -861,7 +861,7 @@ func TestContentlessDeleteIsWhatMakesUpdatesVisible(t *testing.T) {
 	}
 }
 
-// TestDeleteAdvisoryFTSRemovesOneRow covers A.16's tombstone path: the FTS
+// TestDeleteAdvisoryFTSRemovesOneRow covers drift handling's tombstone path: the FTS
 // entry goes, the advisory row stays.
 func TestDeleteAdvisoryFTSRemovesOneRow(t *testing.T) {
 	db, _ := openMigrated(t)
@@ -891,10 +891,10 @@ func TestDeleteAdvisoryFTSRemovesOneRow(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// feed_state — the table A.7 reads and writes
+// feed_state — the table the poller reads and writes
 // ---------------------------------------------------------------------------
 
-// TestFeedStateRoundTripsForTheConditionalGETPoller exercises the shape A.7
+// TestFeedStateRoundTripsForTheConditionalGETPoller exercises the shape the poller
 // needs: no row means "never polled", a 200 writes an etag and a watermark,
 // and a 304 moves only last_ok_at.
 func TestFeedStateRoundTripsForTheConditionalGETPoller(t *testing.T) {
@@ -905,7 +905,7 @@ func TestFeedStateRoundTripsForTheConditionalGETPoller(t *testing.T) {
 		new(sql.NullString), new(sql.NullString), new(sql.NullString), new(sql.NullString),
 		new(int), new(int))
 	if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("an unpolled feed returned %v, want sql.ErrNoRows so A.7 can treat it as never polled", err)
+		t.Fatalf("an unpolled feed returned %v, want sql.ErrNoRows so the poller can treat it as never polled", err)
 	}
 
 	first := time.Unix(1_700_000_000, 0).UTC().Format(time.RFC3339)
@@ -959,22 +959,22 @@ func TestFeedStateRoundTripsForTheConditionalGETPoller(t *testing.T) {
 }
 
 // TestFeedStateAcceptsEveryFeedIDInTheShippedConfig proves the two halves of
-// A.1 and A.2 agree on the feed_id domain, which is the produce/consume edge
-// between them.
+// the feed table and the ingestion cache agree on the feed_id domain, which is
+// the produce/consume edge between them.
 func TestFeedStateAcceptsEveryFeedIDInTheShippedConfig(t *testing.T) {
 	feeds, err := config.Load(filepath.Join("..", "config", "feeds.example.yaml"))
 	if err != nil {
 		// NOT a skip. feeds.example.yaml is CHECKED IN at a fixed relative
 		// path; it is not an optional artefact and not a platform fact. A
-		// skip here reports "the produce/consume edge between A.1 and A.2 was
-		// verified" whenever the file moves, is renamed, or stops parsing --
-		// which is the exact failure mode internal/SKIPPED-CONTROLS.md is
-		// about.
-		t.Fatalf("A.1's example config could not be loaded, so the feed_id domain shared by A.1 "+
-			"and A.2 was NOT cross-checked: %v", err)
+		// skip here reports "the produce/consume edge between the feed table
+		// and the ingestion cache was verified" whenever the file moves, is
+		// renamed, or stops parsing -- which is the exact failure mode
+		// internal/SKIPPED-CONTROLS.md is about.
+		t.Fatalf("The feed table's example config could not be loaded, so the feed_id domain shared by the feed table "+
+			"and the ingestion cache was NOT cross-checked: %v", err)
 	}
 	if len(feeds.Feeds) == 0 {
-		t.Fatal("A.1's example config declares no feeds, so this test proved nothing about the " +
+		t.Fatal("The feed table's example config declares no feeds, so this test proved nothing about the " +
 			"feed_id domain (internal/ingest/config's own tests also fail on an empty table)")
 	}
 
@@ -999,7 +999,7 @@ func TestFeedStateAcceptsEveryFeedIDInTheShippedConfig(t *testing.T) {
 // Opening and migrating
 // ---------------------------------------------------------------------------
 
-// TestMigrateIsIdempotent is A.2's stop condition: "Schema created
+// TestMigrateIsIdempotent is the ingestion cache's stop condition: "Schema created
 // idempotently on an empty file and on a file already at the latest migration
 // version."
 func TestMigrateIsIdempotent(t *testing.T) {
@@ -1045,7 +1045,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestOpenRefusesNonWALTargets covers A.2's "Do not open the DB outside WAL
+// TestOpenRefusesNonWALTargets covers the ingestion cache's "Do not open the DB outside WAL
 // mode" forbidden action at its two reachable failure points.
 func TestOpenRefusesNonWALTargets(t *testing.T) {
 	for _, path := range []string{":memory:", "file:x?mode=memory", "  "} {
@@ -1088,7 +1088,7 @@ func TestCheckWALRejectsARollbackJournalDatabase(t *testing.T) {
 	}
 }
 
-// TestCheckFTS5RunsOnEveryOpen documents why the guard exists: S12's claim
+// TestCheckFTS5RunsOnEveryOpen documents why the guard exists: the spine's claim
 // that modernc.org/sqlite bundles FTS5 is graded "absence-of-evidence", and a
 // dependency bump can drop a build-time feature with no signal. If this goes
 // red after a bump, the bump is the bug.
@@ -1256,7 +1256,7 @@ func TestSchemaDoesNotDeclareAnythingTheStoreOfRecordOwns(t *testing.T) {
 	// No column anywhere in this cache may be a second fingerprint. anvil-fp/v1
 	// is defined once, in internal/record (FINGERPRINT-SPEC.md); two producers
 	// emitting different digests under one name breaks regression matching
-	// forever with nothing to surface it, which spine S6 names explicitly.
+	// forever with nothing to surface it, which the spine's record section names explicitly.
 	db, _ := openMigrated(t)
 	for _, table := range Tables() {
 		for column := range columnsOf(t, db, table) {

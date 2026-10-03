@@ -2,7 +2,7 @@
 
 Every one of these is a hard stop. Nothing in this package degrades gracefully:
 a missing binary, a missing ruleset, a checksum mismatch, or an unparseable
-result must be loud, because the alternative is INSTR-01 quietly reporting
+result must be loud, because the alternative is the candidates-per-scan instrument quietly reporting
 "0 candidates" for a reason that has nothing to do with the target repo.
 """
 
@@ -45,8 +45,8 @@ class OpengrepOutputError(OpengrepError):
 
 
 class ForbiddenRuleSource(OpengrepError):
-    """An S5 hard-excluded rule source was passed to the runner.
+    """A rule source on the spine's hard-exclusion list was passed to the runner.
 
-    plan/00-SPINE.md S5: never opengrep/opengrep-rules (archived, NOASSERTION,
+    The spine's exclusion list: never opengrep/opengrep-rules (archived, NOASSERTION,
     LGPL-2.1 + Commons Clause), never any Semgrep-maintained ruleset.
     """

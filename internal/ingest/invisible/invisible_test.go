@@ -370,7 +370,7 @@ func TestSpaceSeparatorsAreNotInTheClass(t *testing.T) {
 //
 // Every code point in the class is dropped by internal/ingest/sanitize AND by
 // internal/ingest/license's NormaliseForMatching. Two hand lists that drift
-// apart is the defect class plan/IMPLEMENTATION-PLAN.md §6 closed ten instances
+// apart is the defect class the shared-vocabulary review closed ten instances
 // of, and this is what makes the drift impossible to reintroduce quietly:
 // adding a member to one consumer and not the other is not something a
 // contributor CAN do any more, and if someone reintroduces a private list in
@@ -506,7 +506,7 @@ func TestNoVisibleCodePointIsDroppedByEitherConsumer(t *testing.T) {
 // WHY IT IS NOT CLOSED. The two consumers are answering different questions
 // outside the class and they are supposed to. sanitize.Sanitize decides what may
 // be STORED, and its default arm removes anything it does not recognise —
-// that is A.5's fail-closed hinge and shrinking it would be a regression.
+// that is the sanitizer review's fail-closed hinge and shrinking it would be a regression.
 // NormaliseForMatching decides what a licence marker is MATCHED against, and an
 // unassigned or private-use code point renders as a .notdef box in a
 // conforming renderer, so a reader of "share<box>alike" can SEE that something

@@ -18,15 +18,15 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 	"github.com/Susquehanna-Syntax/Anvil/internal/store"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // ---------------------------------------------------------------------------
 // Fixture. The schema under test is internal/store/schema.sql applied through
-// R.5's real migration path — never a hand-copied DDL, because a second copy
-// of a frozen interface is the defect §6 G9/G10 exist to prevent, and a test
-// that invents its own `handoff` table would prove nothing about the shipped
-// one.
+// the migration runner's real migration path — never a hand-copied DDL, because a second copy
+// of a frozen interface is the defect the handoff-table and one-ledger rulings
+// exist to prevent, and a test that invents its own `handoff` table would prove
+// nothing about the shipped one.
 // ---------------------------------------------------------------------------
 
 // fakeClock drives the two expiry clocks independently of wall time.
@@ -122,7 +122,7 @@ func fp(n int) string { return strings.Repeat(fmt.Sprintf("%02x", n%256), 32) }
 
 // newAudit inserts a scan_run plus its audit_record with the half statuses and
 // the deadline the test needs. deadline_at is supplied, never derived here:
-// R.6 computes it once from scan_run.started_at + claim_timeout_seconds and
+// The sealer computes it once from scan_run.started_at + claim_timeout_seconds and
 // this package only ever reads it.
 func (f *fixture) newAudit(state record.State, sast record.HalfStatus, dast record.DastStatus, deadline time.Time) int64 {
 	f.t.Helper()
@@ -205,7 +205,7 @@ func (f *fixture) newFinding(fingerprint string) int64 {
 // auditUUID is the `anvil/auditId` for an audit_record row. It is a separate
 // identity from the rowid on purpose: IdempotencyKey hashes THIS, because a
 // rowid is not something a coding agent's git trailer can carry meaningfully
-// (CRITIQUE-02 F7).
+// (the sealing, claims and masking review's finding F7).
 func auditUUID(auditRecordID int64) string {
 	return fmt.Sprintf("11111111-2222-4333-8444-%012d", auditRecordID)
 }
@@ -465,7 +465,7 @@ func TestClaimCASAdmitsExactlyOneWinner(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The consumption gate (research/21 §5, carried by O.3's consumption_class).
+// The consumption gate (research/21 §5, carried by the handoff adapter's consumption_class).
 // ---------------------------------------------------------------------------
 
 func TestStaticOnlyWaitsForTheSastSeal(t *testing.T) {
@@ -480,7 +480,7 @@ func TestStaticOnlyWaitsForTheSastSeal(t *testing.T) {
 		t.Fatalf("AcquireLease while collecting: err = %v, want ErrNoWork", err)
 	}
 
-	// R.6 seals the SAST half.
+	// The sealer seals the SAST half.
 	if _, err := f.db.Exec(`UPDATE audit_record SET state = ?, sast_status = ? WHERE audit_record_id = ?`,
 		string(record.StateSastSealed), string(record.HalfStatusSealed), audit); err != nil {
 		t.Fatalf("seal sast half: %v", err)
@@ -510,7 +510,7 @@ func TestRequiresDynamicConfirmationWaitsForTheDastHalf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim after the DAST seal: %v", err)
 	}
-	// S7: the Handle exposes what the dynamic half actually concluded, so a
+	// the spine's safety section: the Handle exposes what the dynamic half actually concluded, so a
 	// consumer can tell "confirmed" from "never ran".
 	if h.DastStatus != record.DastStatusCompletedFindings {
 		t.Errorf("Handle.DastStatus = %q, want %q", h.DastStatus, record.DastStatusCompletedFindings)
@@ -521,8 +521,9 @@ func TestRequiresDynamicConfirmationWaitsForTheDastHalf(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The crash. This is the scenario S7 and O.3 both name: a consumer acquires a
-// lease, is OOM-killed mid-work, the lease expires, another consumer reclaims.
+// The crash. This is the scenario the spine's safety section and the handoff
+// adapter both name: a consumer acquires a lease, is OOM-killed mid-work, the
+// lease expires, another consumer reclaims.
 // ---------------------------------------------------------------------------
 
 func TestOOMKilledConsumerReclaimIsIdempotent(t *testing.T) {
@@ -538,7 +539,7 @@ func TestOOMKilledConsumerReclaimIsIdempotent(t *testing.T) {
 		t.Fatalf("first lease Attempt = %d, want 1", dead.Attempt)
 	}
 	// The packet is materialised by the lease holder: it is a cache of the
-	// half's results, and R.6's read gate governs those bytes wherever they
+	// half's results, and the sealer's read gate governs those bytes wherever they
 	// live, so writing one takes a Handle.
 	if _, err := f.q.WritePacket(dead, []byte(`{"packet":"regenerable"}`)); err != nil {
 		t.Fatalf("WritePacket: %v", err)
@@ -812,8 +813,9 @@ func TestClaimTimeoutNeverExpiresALiveClaimAndKeepsTheRow(t *testing.T) {
 		t.Error("packet survived the claim timeout")
 	}
 
-	// S1: a claim timeout is not a deletion policy. The row, the finding and
-	// the audit record are all still here.
+	// The spine's corrected-requirements table: a claim timeout is not a
+	// deletion policy. The row, the finding and the audit record are all still
+	// here.
 	if n := f.countHandoffRows(); n != 1 {
 		t.Errorf("%d handoff rows after expiry, want 1: the reaper must not delete rows", n)
 	}
@@ -986,7 +988,8 @@ func TestRecordVersionBumpVoidsTheLease(t *testing.T) {
 		t.Fatalf("RecordVersion = %d, want 1", handle.RecordVersion)
 	}
 
-	// S6: a version bump re-cuts the work queue. The leased work unit is gone.
+	// The spine's record section: a version bump re-cuts the work queue. The
+	// leased work unit is gone.
 	if _, err := f.db.Exec(`UPDATE audit_record SET audit_version = 2 WHERE audit_record_id = ?`, audit); err != nil {
 		t.Fatalf("bump audit_version: %v", err)
 	}
@@ -1044,7 +1047,7 @@ func TestDisposeOnlyLeavesReady(t *testing.T) {
 	if got := f.state(row.HandoffID); got != record.HandoffStateSkippedBudget {
 		t.Fatalf("state = %q, want %q", got, record.HandoffStateSkippedBudget)
 	}
-	// G10's failure mode: the disposition and the ready-set index must agree,
+	// The one-ledger ruling's failure mode: the disposition and the ready-set index must agree,
 	// so a skipped finding is not re-leased forever.
 	if _, err := f.q.Claim(fingerprint, "worker-a"); !errors.Is(err, ErrNotEligible) {
 		t.Errorf("a skipped_budget finding was still claimable: err = %v", err)
@@ -1117,12 +1120,13 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestIdempotencyKeyUsesTheDocumentedInputs is CRITIQUE-02 F7. schema.sql and
-// this package's own doc both say sha256(audit_id || finding_fingerprint ||
-// base_commit_sha); the implementation hashed `audit_record_id`, an
-// autoincrement rowid. A rowid is not an audit identity, and the value is
-// EXPORTED for the coding agent to write into a git trailer, where a rowid
-// means nothing to anyone who does not hold that exact database file.
+// TestIdempotencyKeyUsesTheDocumentedInputs is the sealing, claims and masking
+// review's finding F7. schema.sql and this package's own doc both say
+// sha256(audit_id || finding_fingerprint || base_commit_sha); the
+// implementation hashed `audit_record_id`, an autoincrement rowid. A rowid is
+// not an audit identity, and the value is EXPORTED for the coding agent to
+// write into a git trailer, where a rowid means nothing to anyone who does not
+// hold that exact database file.
 func TestIdempotencyKeyUsesTheDocumentedInputs(t *testing.T) {
 	const (
 		auditID = "0f9c2b1e-4a7d-4c33-9f21-6b8a0d5e7c14"
@@ -1486,7 +1490,7 @@ func TestNoBareEnumLiteralsInPackageCode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression guards for CRITIQUE-02 (R.10 critic gate 2).
+// Regression guards for the sealing, claims and masking review.
 // ---------------------------------------------------------------------------
 
 // enqueueInto puts an EXISTING finding into a second audit_record's ready set.
@@ -1508,7 +1512,8 @@ func (f *fixture) enqueueInto(findingID int64, fingerprint string, class record.
 	return row
 }
 
-// TestOneLiveLeasePerFingerprintAndRecordVersion is CRITIQUE-02 F1.
+// TestOneLiveLeasePerFingerprintAndRecordVersion is the sealing, claims and
+// masking review's finding F1.
 //
 // A re-scan makes a NEW audit_record (scan_run_id is UNIQUE, so it must), and
 // audit_version DEFAULTs to 1 on each, so one fingerprint ends up with several
@@ -1662,15 +1667,15 @@ func TestConcurrentClaimsAcrossSiblingRowsGrantOneLease(t *testing.T) {
 	}
 }
 
-// TestConsumedAuditKeepsTheQueueOpen is CRITIQUE-02 F2.
+// TestConsumedAuditKeepsTheQueueOpen is the sealing, claims and masking review's finding F2.
 //
-// 'consumed' is a legal audit_record.state that R.6's Consume sets, and R.6's
-// own ReadHalf keeps a consumed audit READABLE because plan/00-SPINE.md S1
+// 'consumed' is a legal audit_record.state that the sealer's Consume sets, and the sealer's
+// own ReadHalf keeps a consumed audit READABLE because the spine's corrected-requirements table
 // requires a re-entrant consumer. The queue's gate listed only
 // ('sast_sealed','both_sealed'), so the first consumption pass stranded every
 // sibling finding still in 'ready' — unclaimable forever, then swept to
 // 'expired' at the deadline. One audit fans out to many findings, so this was
-// silent work loss on the exact axis S1 names.
+// silent work loss on the exact axis the spine's corrected-requirements table names.
 func TestConsumedAuditKeepsTheQueueOpen(t *testing.T) {
 	for _, class := range record.ConsumptionClassValues() {
 		t.Run(string(class), func(t *testing.T) {
@@ -1726,7 +1731,7 @@ func TestConsumedAuditKeepsTheQueueOpen(t *testing.T) {
 }
 
 // TestExpiredAuditStaysShut is the other side of the same gate: 'consumed' is
-// readable, 'expired' is not, because R.6 refuses a read of an expired audit
+// readable, 'expired' is not, because the sealer refuses a read of an expired audit
 // whose payload the reaper has dropped.
 func TestExpiredAuditStaysShut(t *testing.T) {
 	f := newFixture(t, Options{})
@@ -1743,11 +1748,11 @@ func TestExpiredAuditStaysShut(t *testing.T) {
 	}
 }
 
-// TestPacketReadIsGated is CRITIQUE-02 F5.
+// TestPacketReadIsGated is the sealing, claims and masking review's finding F5.
 //
 // ReadPacket is the only exported function in this package that returns a
 // half's actual results. It verified neither seal state, nor audit state, nor
-// lease ownership — a complete bypass of R.6's read gate, one line after the
+// lease ownership — a complete bypass of the sealer's read gate, one line after the
 // claim gate had correctly refused the same fingerprint. WritePacket likewise
 // materialised a packet for an audit that had sealed nothing.
 func TestPacketReadIsGated(t *testing.T) {
@@ -1842,7 +1847,7 @@ func TestPacketReadIsGated(t *testing.T) {
 		if _, err := f.q.WritePacket(h, []byte("results")); err != nil {
 			t.Fatalf("WritePacket: %v", err)
 		}
-		// R.6 un-seals nothing in practice, but the gate must be re-evaluated
+		// the sealer un-seals nothing in practice, but the gate must be re-evaluated
 		// rather than trusted from claim time.
 		if _, err := f.db.Exec(`UPDATE audit_record SET state = ?, sast_status = ? WHERE audit_record_id = ?`,
 			string(record.StateCollecting), string(record.HalfStatusRunning), audit); err != nil {
@@ -1867,9 +1872,9 @@ func TestPacketReadIsGated(t *testing.T) {
 	})
 }
 
-// TestValidatedRequiresDynamicEvidence is CRITIQUE-02 F9.
+// TestValidatedRequiresDynamicEvidence is the sealing, claims and masking review's finding F9.
 //
-// plan/00-SPINE.md S7: "Only a DAST reproduction that now fails earns 'verified
+// The spine's safety section: "Only a DAST reproduction that now fails earns 'verified
 // fixed'." ReleaseLease accepted 'validated' from any holder regardless of the
 // Handle's ConsumptionClass and DastStatus, so a requires_dynamic_confirmation
 // finding could be recorded verified-fixed on an audit whose DAST half was
@@ -1885,7 +1890,7 @@ func TestValidatedRequiresDynamicEvidence(t *testing.T) {
 				status, f.clock.Now().Add(8*time.Hour))
 			if err != nil {
 				if strings.Contains(err.Error(), "ck_audit_record_dast_status") {
-					// The section 6 amendment added `completed_failed` to
+					// The shared-vocabulary amendment added `completed_failed` to
 					// internal/record; internal/store/schema.sql is a frozen
 					// interface this packet may not edit, so the column cannot
 					// hold the literal yet. The DDL is reported to the
@@ -1937,7 +1942,7 @@ func TestValidatedRequiresDynamicEvidence(t *testing.T) {
 // TestStaticOnlyMayStillValidate scopes the rule above. A static_only finding
 // is by definition one no dynamic evidence was required for; refusing its
 // 'validated' would make the disposition unreachable for most findings, which
-// is not what S7 says.
+// is not what the spine's safety section says.
 func TestStaticOnlyMayStillValidate(t *testing.T) {
 	f := newFixture(t, Options{})
 	audit := f.newAudit(record.StateSastSealed, record.HalfStatusSealed,

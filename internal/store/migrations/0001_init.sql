@@ -1,12 +1,12 @@
 -- 0001_init — the initial Anvil schema.
 --
--- This migration deliberately contains no DDL of its own. Its body is R.4's
+-- This migration deliberately contains no DDL of its own. Its body is the store schema's
 -- internal/store/schema.sql, included verbatim by the directive below and
 -- expanded by migrate.go at load time from the string ddl.go already embeds.
 --
--- WHY AN INCLUDE AND NOT A COPY. plan/40-record-and-storage.md declares
--- schema.sql a frozen interface and R.4 built ddl.go explicitly as the "Go
--- wrapper exposing the DDL as an embedded string for R.5's migrations". A
+-- WHY AN INCLUDE AND NOT A COPY. plan/design/record-and-store.md declares
+-- schema.sql a frozen interface and the store schema built ddl.go explicitly as the "Go
+-- wrapper exposing the DDL as an embedded string for the migration runner's migrations". A
 -- second, byte-identical copy of 26 KB of DDL in this directory would be a
 -- second definition of that interface: the two would drift the first time
 -- someone edited one of them, and the drift would be invisible until a fresh

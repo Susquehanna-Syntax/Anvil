@@ -20,7 +20,7 @@ import (
 // feedFixture describes one feed's presence in a synthetic mirror: its pin, the
 // publisher text that was "acquired" for it, and Anvil's own record.
 //
-// The three are separate fields because the whole point of the A.6 rework is
+// The three are separate fields because the whole point of the licence-gate review rework is
 // that they are separate artefacts with different authors. A test that could
 // not express "the record is perfect and the publisher text is absent" could
 // not express the defect.
@@ -177,11 +177,11 @@ func requireRefused(t *testing.T, err error, want error) {
 }
 
 // ---------------------------------------------------------------------------
-// A.6's CENTRAL FINDING: Anvil's own prose is not evidence
+// The licence-gate review's CENTRAL FINDING: Anvil's own prose is not evidence
 // ---------------------------------------------------------------------------
 
 // TestAnvilProseAloneCannotAdmitAnyFeed is the regression test for the finding
-// that failed A.4: every body the gate read was Anvil prose, committed
+// that failed the licence gate: every body the gate read was Anvil prose, committed
 // alongside the claim it was supposed to validate.
 //
 // Each case below carries a PERFECT Anvil record — the right identifier, the
@@ -301,7 +301,7 @@ func TestAnvilsRecordMayOnlyRaiseTheObligation(t *testing.T) {
 	requireRefused(t, err, ErrShareAlikeQuarantine)
 }
 
-// TestPinIsBoundToTheFeedRow is the other half of A.6's B2: the evidence a
+// TestPinIsBoundToTheFeedRow is the other half of the licence-gate review's B2: the evidence a
 // decision rests on must be chosen by the feed row, never by the caller. A pin
 // that disagrees with the row about tier or directory is a refusal, so a caller
 // who supplies the wrong directory cannot inherit another source's licence
@@ -340,7 +340,7 @@ func TestPinIsBoundToTheFeedRow(t *testing.T) {
 	}
 }
 
-// TestTier2IsReachableFromTheFeedTableAlone is A.6's blocker B2: "TIER 2 — THE
+// TestTier2IsReachableFromTheFeedTableAlone is the licence-gate review's blocker B2: "TIER 2 — THE
 // QUARANTINE — CANNOT BE ENTERED BY ANY PRODUCTION CALLER".
 //
 // The three share-alike rows have ids ubuntu-osv, alpine-secdb and osv-merged
@@ -1158,10 +1158,10 @@ func TestResolveRefusalNeverCarriesAPublishableTier(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.4's first required test: the CISA KEV case
+// The licence gate's first required test: the CISA KEV case
 // ---------------------------------------------------------------------------
 
-// TestGateAdmitsKEVShapeOverNOASSERTIONMetadata is A.4's named validation:
+// TestGateAdmitsKEVShapeOverNOASSERTIONMetadata is the licence gate's named validation:
 // "the CISA KEV case (API NOASSERTION, README CC0-1.0) is correctly admitted
 // via license_manual_note".
 func TestGateAdmitsKEVShapeOverNOASSERTIONMetadata(t *testing.T) {
@@ -1204,7 +1204,7 @@ func TestGateAdmitsKEVShapeOverNOASSERTIONMetadata(t *testing.T) {
 		t.Error("MetadataOverridden = false; the registry reported NOASSERTION over a declared CC0-1.0 and that disagreement must be recorded")
 	}
 	if !d.NoteRequired || d.ManualNote == "" {
-		t.Error("the S8 manual note must be mandatory and carried when metadata contradicts the declaration")
+		t.Error("the manual licence note must be mandatory and carried when metadata contradicts the declaration")
 	}
 }
 
@@ -1217,7 +1217,7 @@ func TestGateRequiresTheManualNoteThatAdmitsKEV(t *testing.T) {
 		DeclaredTier: config.LicenseTier0,
 		DeclaredSPDX: "CC0-1.0",
 		MetadataSPDX: config.LicenseNoAssertion,
-		ManualNote:   "", // the override S8 requires is missing
+		ManualNote:   "", // the override the spine's licence section requires is missing
 		Mirror: buildMirror(t, feedFixture{
 			feedID: "cisa-kev", tier: config.LicenseTier0, pinSPDX: "CC0-1.0",
 			verbatim: kevVerbatim, notes: kevNotes,
@@ -1227,7 +1227,7 @@ func TestGateRequiresTheManualNoteThatAdmitsKEV(t *testing.T) {
 }
 
 // TestGateAdmitsNOASSERTIONOverGenuinelyPermissiveBody is the second direction
-// of the trap S8 names, and the one this project caught on PurpleLlama:
+// of the trap the spine's licence section names, and the one this project caught on PurpleLlama:
 // NOASSERTION metadata sitting over a genuinely MIT subtree. The permissive
 // answer is the correct one here, and the gate has to be able to reach it — a
 // gate that refuses everything is not fail-closed, it is broken.
@@ -1262,14 +1262,14 @@ notice shall be included in all copies.`
 }
 
 // ---------------------------------------------------------------------------
-// A.6 M2: the published identifier is never the unverified declaration
+// The licence-gate review M2: the published identifier is never the unverified declaration
 // ---------------------------------------------------------------------------
 
 // TestEffectiveSPDXNeverFallsBackToTheDeclaration is M2's regression test.
 //
 // The body below establishes an obligation and names no identifier. The old
 // code filled EffectiveSPDX from the feed table's YAML assertion, and that
-// value flowed straight into the A.2 cache's license_dir_manifest.spdx_id — so
+// value flowed straight into the ingestion cache's license_dir_manifest.spdx_id — so
 // the manifest reported a licence nobody had verified, in a column whose only
 // writer is a gate whose whole purpose is verification.
 //
@@ -1316,7 +1316,7 @@ func TestEffectiveSPDXNeverFallsBackToTheDeclaration(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.4's second required test: Tier 2 cannot be written under Tier 0 or Tier 1
+// The licence gate's second required test: Tier 2 cannot be written under Tier 0 or Tier 1
 // ---------------------------------------------------------------------------
 
 func TestSyntheticTier2RowCannotBeRoutedToTier0Or1(t *testing.T) {
@@ -1553,7 +1553,7 @@ func TestGateFailsClosed(t *testing.T) {
 	})
 }
 
-// TestGateReturnsNoTierOnEveryRefusal is A.6's minor finding. Tier 0 is the
+// TestGateReturnsNoTierOnEveryRefusal is the licence-gate review's minor finding. Tier 0 is the
 // MOST permissive tier this system has — always mirrored, publishable, no
 // copyleft — so returning it alongside an error handed the single most
 // dangerous default to a caller who checked the error carelessly.
@@ -1653,7 +1653,7 @@ func TestCISBenchmarkContentIsRefusedUnconditionally(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.6 M1: NONE at tier 3 was admitted on a body matching nothing
+// The licence-gate review M1: NONE at tier 3 was admitted on a body matching nothing
 // ---------------------------------------------------------------------------
 
 // TestNONEIsNotAdmittedOnSilence is M1's regression test.
@@ -1760,7 +1760,7 @@ func TestNONEDeclarationCannotHideAShareAlikeSource(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A.6 M4: one definition of the shared vocabulary, not two
+// The licence-gate review M4: one definition of the shared vocabulary, not two
 // ---------------------------------------------------------------------------
 
 // TestFeedIDRulesComeFromConfigAlone is half of M4's regression test.
@@ -1768,7 +1768,7 @@ func TestNONEDeclarationCannotHideAShareAlikeSource(t *testing.T) {
 // This package used to keep its own, stricter feed-id rule: it allowed '_',
 // forbade '.', and therefore structurally REFUSED a feed id the loader
 // accepts. Two definitions that agree today are the produce/consume break
-// IMPLEMENTATION-PLAN section 6 closed ten instances of.
+// the first plan's shared-vocabulary review closed ten instances of.
 func TestFeedIDRulesComeFromConfigAlone(t *testing.T) {
 	accepted := []string{"osv.dev", "cvelistv5", "cisa-kev", "a1"}
 	for _, id := range accepted {
@@ -2011,7 +2011,7 @@ func TestCheckedInManifestParsesAndPinsEveryMirroredFeed(t *testing.T) {
 	}
 }
 
-// TestFreshCloneAdmitsNoFeed is the headline regression test for A.6's central
+// TestFreshCloneAdmitsNoFeed is the headline regression test for the licence-gate review's central
 // finding, run against the REAL repository tree.
 //
 // Before the rework, every enabled feed in the example table was admitted by a
@@ -2051,7 +2051,7 @@ func TestFreshCloneAdmitsNoFeed(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatalf("feed %q was ADMITTED by a clone that contains no publisher licence "+
-					"text. That is the exact defect A.6 failed A.4 for: the gate validated the "+
+					"text. That is the exact defect the licence-gate review failed the licence gate for: the gate validated the "+
 					"feed row against a document Anvil wrote in the same commit.", f.ID)
 			}
 			if !errors.Is(err, ErrLicenseRefused) {
@@ -2126,7 +2126,7 @@ func TestPinnedLicenceBodiesMatchTheirPins(t *testing.T) {
 	}
 }
 
-// TestTier2DirectoriesCarryTheirOwnNonEmptyLicense is A.4's stop condition:
+// TestTier2DirectoriesCarryTheirOwnNonEmptyLicense is the licence gate's stop condition:
 // "mirror/tier2/{ubuntu,alpine,osv}/LICENSE exist and are non-empty".
 func TestTier2DirectoriesCarryTheirOwnNonEmptyLicense(t *testing.T) {
 	fsys := repoFS(t)
@@ -2144,7 +2144,7 @@ func TestTier2DirectoriesCarryTheirOwnNonEmptyLicense(t *testing.T) {
 		if _, ob := Classify(string(data)); !ob.ShareAlike() {
 			t.Errorf("%s classifies as %v; every tier 2 directory is share-alike by definition", p, ob)
 		}
-		// A.6: the file must not claim a control the code does not implement.
+		// the licence-gate review: the file must not claim a control the code does not implement.
 		text := string(data)
 		if !strings.Contains(text, "NOT ENFORCED IN CODE") {
 			t.Errorf("%s does not separate what the code enforces from what it does not; a "+
@@ -2169,7 +2169,7 @@ func TestTier2DirectoriesCarryTheirOwnNonEmptyLicense(t *testing.T) {
 	}
 }
 
-// TestNVDRecordCitesTheLicenceSource is A.6's M3. The NVD block cited
+// TestNVDRecordCitesTheLicenceSource is the licence-gate review's M3. The NVD block cited
 // research/01 S6, which is NIST's enrichment-volume announcement and says
 // nothing about licensing. A wrong citation is worse than none, because the
 // next reviewer follows it and cannot tell whether the claim or the pointer is
@@ -2216,7 +2216,7 @@ func TestNVDRecordCitesTheLicenceSource(t *testing.T) {
 	}
 }
 
-// TestDecisionManifestRow checks the projection onto the A.2 cache's
+// TestDecisionManifestRow checks the projection onto the ingestion cache's
 // license_dir_manifest table, whose columns are (directory, tier, license_file,
 // spdx_id) and whose only writer is this gate.
 func TestDecisionManifestRow(t *testing.T) {
@@ -2252,7 +2252,7 @@ func TestDecisionManifestRow(t *testing.T) {
 // `Decision{}.ManifestRow()` used to return Directory "" with Tier 0 and no
 // error at all. Tier 0 is a VALID tier and the most permissive one this system
 // has, so a caller that projected before checking — or instead of checking —
-// wrote "tier 0" into `license_dir_manifest`, which is the A.2 cache's record
+// wrote "tier 0" into `license_dir_manifest`, which is the ingestion cache's record
 // of which directories may be merged into a published artifact. The zero
 // Decision is the shape that matters: it is what a future code path produces by
 // forgetting to fill a field, and nothing at the call site looks wrong.

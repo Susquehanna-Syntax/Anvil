@@ -2,13 +2,14 @@ package record
 
 // fingerprint_spec_test.go — the test that keeps FINGERPRINT-SPEC.md honest.
 //
-// R.3's CRITIQUE-01.md, blocker 1: `normalized_match` was defined only in Go.
-// The critic re-implemented plan/40-record-and-storage.md's four-clause spec
-// text in Python and got 55e27b07… where the committed golden for sast-01 is
-// 13c60ccf…. The orchestrator ruled that the implementation is right and the
-// specification incomplete, and that the fix is to write the specification
-// down completely and IN TREE — plan/ is gitignored, and a second producer
-// working from a clone must be able to read it.
+// The contract-and-fingerprint review (REVIEW-contract-and-fingerprint.md),
+// blocker 1: `normalized_match` was defined only in Go. The critic
+// re-implemented plan/design/record-and-store.md's four-clause spec text in
+// Python and got 55e27b07… where the committed golden for sast-01 is 13c60ccf….
+// The orchestrator ruled that the implementation is right and the specification
+// incomplete, and that the fix is to write the specification down completely
+// and IN TREE — plan/ is gitignored, and a second producer working from a clone
+// must be able to read it.
 //
 // internal/record/FINGERPRINT-SPEC.md is that document. This file is the
 // second half of the ruling: "add a test that keeps the spec honest … A spec
@@ -26,7 +27,7 @@ package record
 //
 // What is NOT checkable mechanically — the prose describing the scan order,
 // the identifier-disposition clauses and their reasons — is guarded instead by
-// the corpus lock in fingerprint_test.go and, eventually, by R.16's
+// the corpus lock in fingerprint_test.go and, eventually, by the fingerprint conformance harness'
 // independent oracle re-implemented FROM THIS DOCUMENT.
 
 import (

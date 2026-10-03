@@ -1,7 +1,7 @@
 {
   "id": "host-01-openssl-debian",
   "tier": "host",
-  "description": "An operating-system package on the scanned host that matched a vulnerable version range. Host findings are read-only for the agent (plan/00-SPINE.md S7, remediable_by_agent=false) but still need a stable identity so they can be tracked, suppressed, and reported as resolved.",
+  "description": "An operating-system package on the scanned host that matched a vulnerable version range. Host findings are read-only for the agent (the spine's safety section, remediable_by_agent=false) but still need a stable identity so they can be tracked, suppressed, and reported as resolved.",
   "input": {
     "target_id": "t-0002",
     "advisory_id": "CVE-2022-0778",

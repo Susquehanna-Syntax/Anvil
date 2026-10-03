@@ -1,16 +1,15 @@
-// The scan controller's state machine (step O.2): the wiring that turns
-// worker events into plan/00-SPINE.md S10's "one state machine with one
-// owner", and the version-bump watermarks that make research/21
-// Recommendation §5's incremental publication happen without a per-finding
-// write storm.
+// The scan controller's state machine: the wiring that turns worker events
+// into the spine's "one state machine with one owner", and the version-bump
+// watermarks that make research/21 Recommendation §5's incremental publication
+// happen without a per-finding write storm.
 //
 // # THIS FILE IMPLEMENTS NO STATE MACHINE OF ITS OWN
 //
-// plan/IMPLEMENTATION-PLAN.md §6 ruling G2 struck O.2's original
+// The audit-state ruling struck the state wiring's original
 // `open | sast_sealed | sealed | expired` machine outright, on two grounds
 // that are worth restating because both are easy to re-derive by accident:
 //
-//   - It could not express a DAST-FIRST seal at all. plan/00-SPINE.md S1
+//   - It could not express a DAST-FIRST seal at all. The spine's corrected-requirements table
 //     requires "two INDEPENDENTLY-sealed halves", and the SAST half can be
 //     slow, or can fail, while the DAST half finishes first.
 //   - It made `sealed` terminal, which makes `consumed` unreachable, which
@@ -32,7 +31,7 @@
 //	record.Sealer.ReadHalf                THE read gate, over a seal it mints
 //
 // Every one of those is called from here and none of them is re-derived here.
-// A second DeriveState in this package would be ruling G2 being broken a
+// A second DeriveState in this package would be the audit-state ruling being broken a
 // second time; a locally re-derived read gate would be the defect
 // internal/record/sealing.go's header records FIVE authors making.
 //
@@ -41,7 +40,7 @@
 //  1. AuditRecord — research/21 §5's `audit_record` shape as a Go value, with
 //     the four fields the Sealer does not carry: the monotonic `version`, the
 //     per-half `findings[]`, the `correlation` clusters, and the two deadline
-//     instants from deadlines.go (O.1). It is a SNAPSHOT; see below.
+//     instants from deadlines.go (the deadline design). It is a SNAPSHOT; see below.
 //  2. Event — the vocabulary of things that happen TO an audit. It is
 //     deliberately NOT a state vocabulary; the states are record's.
 //  3. Transition — apply one event, then re-project from the Sealer, so the
@@ -52,7 +51,7 @@
 //
 // # THE CONTROLLER OWNS THE MUTABLE STATE; AN AuditRecord IS A SNAPSHOT OF IT
 //
-// This is the shape CRITIQUE O.4 forced, and three of its findings are one
+// This is the shape the controller-core review forced, and three of its findings are one
 // mistake seen from three sides. The buffers, the version counter and the
 // watermark bookkeeping used to live on the AuditRecord value the CALLER held,
 // with the Sealer holding only the lifecycle. That had two consequences:
@@ -60,21 +59,21 @@
 //   - Fan-in lost RESULTS. Eight workers each cloning their own copy of one
 //     record and each returning a new one meant the last writer won: the critic
 //     measured 21 of 24 DAST findings silently dropped, on a security scanner
-//     (O4-M3). The doc called that "a skipped version bump, not a corrupt
+//     (controller-core finding M3). The doc called that "a skipped version bump, not a corrupt
 //     lifecycle" — true of the lifecycle, and wrong about the findings, which
 //     is the half an implementer would have acted on.
 //   - Every guard read a value the caller owned. The read gate and the two
 //     write guards were asked about `rec.State`, which stops tracking the
 //     Sealer the moment the caller stops calling Transition, so an EXPIRED
 //     audit was both readable and writable through a record taken before it
-//     expired (O4-B1, O4-M2).
+//     expired (controller-core findings B1 and M2).
 //
 // So Controller holds one `auditState` per audit under one mutex, and an
 // AuditRecord is a value PROJECTED from (that state, the Sealer's AuditSeal) at
 // the instant it was produced. Transition reads the audit id off the record it
 // is handed and NOTHING ELSE: two goroutines passing in the same stale snapshot
 // both append, and neither can overwrite the other. Controller.Record is the
-// refresh path whose absence O4-B1 turned into a readable expired audit.
+// refresh path whose absence controller-core finding B1 turned into a readable expired audit.
 //
 // A snapshot is still a snapshot: it can be stale, and it carries no gate. That
 // is why Findings and Readable are METHODS ON THE CONTROLLER, which re-Inspect
@@ -83,12 +82,12 @@
 //
 // # PER-HALF TRANSITIONS KEY ON `sealed`, NEVER ON `complete`
 //
-// Ruling G5. `complete` is struck from the vocabulary; record.HalfStatusSealed
-// is the token, and R.6 makes it the hard consumer read gate. A controller
+// The half-status ruling. `complete` is struck from the vocabulary; record.HalfStatusSealed
+// is the token, and the sealer makes it the hard consumer read gate. A controller
 // keying its transition on any other token is a controller whose read gate
 // never opens. There is no `complete` anywhere in this package, and no bare
 // string literal for any enum value — a second copy of a literal is a second
-// definition, which is how nine of §6's ten defects happened.
+// definition, which is how nine of the shared-vocabulary review's ten defects happened.
 //
 // # WHERE `created_at` WENT
 //
@@ -100,8 +99,8 @@
 // `CreatedAt`; the scan-start instant research/21 meant is
 // AuditRecord.Deadlines.StartedAt(), in one place, spelled the schema's way.
 // Carrying a second copy under research/21's name is exactly the
-// "two areas meaning different things by the same field name" class §6 was
-// convened over.
+// "two areas meaning different things by the same field name" class the
+// shared-vocabulary review was convened over.
 //
 // (Free-floating file comment: deadlines.go carries the package doc.)
 
@@ -135,7 +134,7 @@ var (
 	ErrUnknownEvent = errors.New("scanctl: unknown event kind")
 
 	// ErrEmptyEvent: the event carries no payload and would therefore be a
-	// silent no-op. O.2's validation requirement is that an illegal
+	// silent no-op. The state wiring's validation requirement is that an illegal
 	// transition "returns an error, not a panic or a silent no-op"; an
 	// event that changes nothing is the no-op case.
 	ErrEmptyEvent = errors.New("scanctl: event carries no payload")
@@ -191,15 +190,15 @@ func (e *TransitionError) Unwrap() error { return e.Err }
 //
 // (a) and (c) need no configuration — they are events, and this file bumps on
 // ANY terminal seal of EITHER half. The generalisation is deliberate:
-// plan/00-SPINE.md S6 requires the work queue to be re-cut on every version
+// The spine's record section requires the work queue to be re-cut on every version
 // bump, and a SAST half that reached record.HalfStatusFailed has changed the
 // record just as materially as one that reached record.HalfStatusSealed — the
 // queue must learn that no more SAST findings are coming. (research/21 wrote
-// (a) as `complete`, which ruling G5 struck; record.HalfStatusSealed is the
+// (a) as `complete`, which the half-status ruling struck; record.HalfStatusSealed is the
 // token, and "terminal" is the classification record.IsTerminalHalfStatus
 // owns.)
 //
-// N and M are (b), and they are DATA, never constants: plan/00-SPINE.md S1
+// N and M are (b), and they are DATA, never constants: the spine's corrected-requirements table
 // makes "no hard-coded triggers" a hard constraint and research/21 §5 extends
 // it to the companion controls explicitly. The zero WatermarkPolicy is
 // meaningful and resolves to the derived defaults below; it is not an error.
@@ -309,12 +308,12 @@ func (w WatermarkPolicy) Resolve(budget time.Duration) (WatermarkPolicy, error) 
 // EventKind names a thing that HAPPENS TO an audit.
 //
 // IT IS NOT A STATE VOCABULARY, and none of its literals is a record enum
-// token. That separation is load-bearing: plan/IMPLEMENTATION-PLAN.md §6's
-// through-line ruling is that area 40 owns every shared enum "because it owns
+// token. That separation is load-bearing: the shared-vocabulary review's
+// through-line ruling is that the record area owns every shared enum "because it owns
 // the record contract, and no other area may declare one". An event kind is
 // not a record field, is never serialised onto a record, and is never written
 // to a column — it is this package's internal dispatch tag, and it is spelled
-// so that it cannot be mistaken for one of R.1's six frozen enums.
+// so that it cannot be mistaken for one of the record contract's six frozen enums.
 type EventKind string
 
 // The six event kinds. Each maps onto exactly one record.Sealer entry point,
@@ -325,7 +324,7 @@ const (
 	// publishes only on watermark (b). Refused once the half is terminal.
 	EventKindFindings EventKind = "findings"
 
-	// EventKindDastOutcome: the target lifecycle harness (area D) reported
+	// EventKindDastOutcome: the target lifecycle harness (the dynamic tier) reported
 	// provenance and coverage facts. Forwarded to
 	// record.Sealer.RecordDastOutcome, which is where anvil/dastStatus is
 	// derived from. Never a publication on its own.
@@ -342,7 +341,7 @@ const (
 	// Idempotent: ticking an expired audit is not an error.
 	EventKindTick EventKind = "tick"
 
-	// EventKindCorrelate: R.12's correlator produced clusters. Stored on the
+	// EventKindCorrelate: the correlator produced clusters. Stored on the
 	// record; NOT a publication watermark, because research/21 §5 lists
 	// three and this is not one of them — the clusters land with the DAST
 	// terminal bump that follows.
@@ -424,7 +423,7 @@ func DastOutcomeEvent(o record.DastOutcome) Event {
 // TickEvent reports that the daemon woke and the clocks should be evaluated.
 func TickEvent() Event { return Event{Kind: EventKindTick} }
 
-// CorrelateEvent reports correlation clusters from R.12's correlator.
+// CorrelateEvent reports correlation clusters from the correlator.
 //
 // EACH BATCH IS THE COMPLETE SET. It REPLACES whatever clusters the audit was
 // carrying; it does not accumulate. A correlator that emits partial batches
@@ -453,7 +452,7 @@ type HalfRecord struct {
 	// Half is record.HalfSast or record.HalfDast.
 	Half record.Half
 
-	// Status is the per-half `anvil/status` — R.1's frozen five-value enum,
+	// Status is the per-half `anvil/status` — the record contract's frozen five-value enum,
 	// in which record.HalfStatusSealed and nothing else is the read gate.
 	Status record.HalfStatus
 
@@ -479,7 +478,7 @@ type HalfRecord struct {
 func (h HalfRecord) FindingCount() int { return len(h.findings) }
 
 // AuditRecord is one audit as the scan controller holds it: research/21 §5's
-// `audit_record` shape, re-cut by plan/IMPLEMENTATION-PLAN.md §6's rulings.
+// `audit_record` shape, re-cut by the shared-vocabulary review's rulings.
 //
 // It is a VALUE. Transition takes one and returns a new one; the input is
 // never mutated, so a caller may keep the previous version to diff against
@@ -497,11 +496,11 @@ type AuditRecord struct {
 	// monotonic integer research/21 §5 requires. It starts at 1 (the
 	// schema's ck_audit_record_audit_version_positive requires >= 1) and is
 	// bumped by the three watermarks WatermarkPolicy documents. Every bump
-	// obliges plan/00-SPINE.md S6's queue re-cut (R.11), "otherwise
+	// obliges the spine's queue re-cut, "otherwise
 	// incremental publication silently inverts the priority scheme".
 	Version int
 
-	// State is `anvil/state`: R.1's frozen six-value enum, as derived by
+	// State is `anvil/state`: the record contract's frozen six-value enum, as derived by
 	// record.DeriveState and advanced by record.Sealer. Never assigned here.
 	State record.State
 
@@ -524,12 +523,12 @@ type AuditRecord struct {
 	// move an instant on it, and nothing reads this copy to decide anything:
 	// scheduling reads the Controller's own copy and both due-checks are the
 	// Sealer's. Assigning a whole different Deadlines here therefore changes
-	// what a caller sees and nothing else, which is what CRITIQUE O.4 blocker 2
+	// what a caller sees and nothing else, which is what the controller-core review's blocker 2
 	// asked for.
 	Deadlines Deadlines
 
 	// Correlation is research/21 §5's `correlation { ... }`, "populated as
-	// both sides land". Produced by R.12's correlator and delivered by
+	// both sides land". Produced by the correlator and delivered by
 	// EventKindCorrelate; nothing here computes a cluster.
 	//
 	// Each EventKindCorrelate REPLACES this whole slice — see CorrelateEvent.
@@ -554,7 +553,7 @@ type AuditRecord struct {
 
 // THERE IS NO AuditRecord.HalfSeal, AuditRecord.Readable OR AuditRecord.Findings.
 //
-// There were, and CRITIQUE O.4 blocker 1 is what they cost. `HalfSeal` built the
+// There were, and the controller-core review's blocker 1 is what they cost. `HalfSeal` built the
 // record.HalfSeal the gate takes out of TWO FIELDS OF THE CALLER'S OWN VALUE —
 // `Status` from the record's half and `AuditState` from the record's `State` —
 // and `Findings` then handed that to record.HalfReadGate. The gate was called
@@ -601,17 +600,17 @@ func copyTime(t *time.Time) *time.Time {
 // ---------------------------------------------------------------------------
 
 // VersionBumped reports whether the transition from before to after published
-// a new version, and therefore whether plan/00-SPINE.md S6's queue re-cut is
+// a new version, and therefore whether the spine's queue re-cut is
 // owed: "re-cut the work queue on every version bump and reserve a
 // configurable fraction (default 50%) of remaining budget for late
-// DAST-confirmed arrivals". The reservation fraction is R.11's; the trigger is
+// DAST-confirmed arrivals". The reservation fraction is the queue re-cut's; the trigger is
 // this.
 func VersionBumped(before, after AuditRecord) bool { return after.Version > before.Version }
 
 // DurableWriteDue reports whether this transition is the ONE at which the
 // audit should be written to the store.
 //
-// O.2's forbidden actions: "Do not write the DB record more than once (only at
+// The state wiring's forbidden actions: "Do not write the DB record more than once (only at
 // final seal — the buffer carries incremental versions)." research/21 §5 says
 // the same from the other side: "The DB write happens once, at seal, with the
 // final version — the buffer carries the incremental versions, the knowledge
@@ -629,7 +628,7 @@ func VersionBumped(before, after AuditRecord) bool { return after.Version > befo
 //
 // WHY EXPIRY ALSO SETTLES. An audit whose claim window closes before both
 // halves sealed never reaches record.StateBothSealed, and a rule keyed only on
-// that state would leave it with no row at all. plan/40-record-and-storage.md
+// that state would leave it with no row at all. plan/design/record-and-store.md
 // is explicit that the reaper "drops the payload and never the row", which
 // presupposes a row exists; record.StateExpired is a legal
 // `ck_audit_record_state` value for the same reason. This is one write or the
@@ -675,7 +674,7 @@ func settled(s record.State) bool {
 // asserts this function's answer matches whether SealHalf returns
 // record.ErrAuditTerminal, so the mirror cannot drift from the original.
 //
-// THE MIRROR WAS NEVER THE PROBLEM; THE INPUT WAS. CRITIQUE O.4 finding O4-M2:
+// THE MIRROR WAS NEVER THE PROBLEM; THE INPUT WAS. The controller-core review's finding M2:
 // this function was called with the CALLER's `rec.State`, so an audit record had
 // already expired kept accepting findings — the exact outcome the paragraph
 // above says this exists to prevent. Its callers now pass the state projected
@@ -715,7 +714,7 @@ type auditState struct {
 // clone is the working copy Transition mutates. Committing it is one
 // assignment at the very end of Transition, AFTER every path that can return an
 // error — which is what makes "a refused transition changes nothing" total
-// rather than nearly total (CRITIQUE O.4 finding O4-m1: applyTick used to seal
+// rather than nearly total (the controller-core review's finding m1: applyTick used to seal
 // the DAST half, bump the version and only then hit an error return, losing the
 // bump and leaving the caller's record permanently disagreeing with the Sealer).
 func (s *auditState) clone() auditState {
@@ -727,7 +726,7 @@ func (s *auditState) clone() auditState {
 	return out
 }
 
-// Controller is `anvil-scanctl`'s state machine owner: plan/00-SPINE.md S10's
+// Controller is `anvil-scanctl`'s state machine owner: the spine's
 // "one named scan controller with one state machine and one owner, or it will
 // be re-implemented inconsistently in four places."
 //
@@ -749,7 +748,7 @@ func (s *auditState) clone() auditState {
 //     every publication rather than the last writer's;
 //   - a refused transition leaves the controller byte-identical;
 //   - SetClock is safe against a concurrent Transition, which it was not
-//     (O4-m4: it wrote `c.now` with no lock while four readers read it).
+//     (controller-core finding m4: it wrote `c.now` with no lock while four readers read it).
 //
 // The previous doc said "the failure mode is a skipped version bump, not a
 // corrupt lifecycle" and told callers to serialise per audit. The lifecycle
@@ -819,7 +818,7 @@ func NewController(policy DeadlinePolicy, marks WatermarkPolicy) (*Controller, e
 // Deadlines, which are a function of scan start alone.
 //
 // IT TAKES THE MUTEX, for the same reason record.Sealer.SetClock takes its own
-// (O4-m4). Construction-time use was always safe; a daemon that re-clocks at
+// (controller-core finding m4). Construction-time use was always safe; a daemon that re-clocks at
 // runtime raced four readers — Transition, applyTick, publish and NextWake —
 // and the race detector cannot run on the Windows dev host, so only CI would
 // ever have seen it.
@@ -837,13 +836,13 @@ func (c *Controller) SetClock(now func() time.Time) {
 }
 
 // Policy and Watermarks return the resolved configuration, for diagnostics and
-// for O.3's adapter.
+// for the handoff adapter.
 func (c *Controller) Policy() DeadlinePolicy      { return c.policy }
 func (c *Controller) Watermarks() WatermarkPolicy { return c.marks }
 
 // Sealer exposes the ONE record.Sealer this controller owns.
 //
-// It is exported so that internal/scanctl/handoff.go (O.3) can ask
+// It is exported so that internal/scanctl/handoff.go (the handoff adapter) can ask
 // record.Sealer.ReadyForConsumption which halves a `handoff` row's
 // consumption class may key on, WITHOUT constructing a second Sealer. Two
 // Sealers over one audit would be two answers to the read gate, which is the
@@ -887,7 +886,7 @@ func (c *Controller) Begin(auditID string, startedAt time.Time) (AuditRecord, er
 // Record re-projects an audit the controller already knows: the CURRENT
 // lifecycle from record.Sealer, the current buffers and version from here.
 //
-// It is the refresh path, and its absence is half of CRITIQUE O.4 blocker 1.
+// It is the refresh path, and its absence is half of the controller-core review's blocker 1.
 // The Controller exposed Policy, Watermarks, Sealer, Begin, Transition and
 // NextWake, and nothing that would re-project a record a caller was already
 // holding — so a caller that wanted a current answer had no way to ask for one
@@ -948,7 +947,7 @@ func (c *Controller) Transition(rec AuditRecord, ev Event) (AuditRecord, error) 
 
 	// THE LIVE PROJECTION, taken BEFORE the switch. Every guard below reads its
 	// State and its per-half statuses from this value and never from `rec`.
-	// CRITIQUE O.4 finding O4-M2: applyFindings and applyCorrelation guarded on
+	// The controller-core review's finding M2: applyFindings and applyCorrelation guarded on
 	// the caller's `rec.State`, so findings and correlation landed on an audit
 	// record had already expired — with acceptsWrites' own doc naming that as
 	// the thing it existed to prevent.
@@ -976,9 +975,9 @@ func (c *Controller) Transition(rec AuditRecord, ev Event) (AuditRecord, error) 
 		// ONLY IF IT ACTUALLY CHANGED. record.Sealer.SealHalf is documented
 		// idempotent — "Re-sealing a half with the IDENTICAL status is a no-op
 		// and preserves the original SealedAt" — and returns nil for that case,
-		// which this code could not previously tell from a real seal. CRITIQUE
-		// O.4 finding O4-M1: a redelivered seal event bumped `audit_version`,
-		// and a bump is not cosmetic. It obliges S6's queue re-cut (R.11) and
+		// which this code could not previously tell from a real seal. The
+		// controller-core review's finding M1: a redelivered seal event bumped `audit_version`,
+		// and a bump is not cosmetic. It obliges the spine's queue re-cut and
 		// internal/handoff re-checks `audit_record.audit_version` on EVERY
 		// mutation (claim.go:641), answering handoff.ErrRecordVersionChanged —
 		// so one duplicated worker message, the ordinary consequence of
@@ -1042,7 +1041,7 @@ func (c *Controller) Transition(rec AuditRecord, ev Event) (AuditRecord, error) 
 // record.HalfSeal carries an unexported provenance pointer that is freshly
 // allocated on every mint, so `before.Sast == after.Sast` is false for two
 // snapshots of an audit that did not move. Comparing the whole struct would
-// have made the O4-M1 fix silently no-op.
+// have made the fix for controller-core finding M1 silently no-op.
 func sealChanged(before, after record.AuditSeal) bool {
 	return before.State != after.State ||
 		before.DastStatus != after.DastStatus ||
@@ -1069,7 +1068,7 @@ func halfSealChanged(before, after record.HalfSeal) bool {
 //
 // EVERY GUARD READS `live`, WHICH IS THE SEALER'S ANSWER, and never the caller's
 // snapshot. `live` was projected from a record.AuditSeal taken moments earlier
-// under the same lock. That is finding O4-M2's fix: the mirror (acceptsWrites)
+// under the same lock. That is controller-core finding M2's fix: the mirror (acceptsWrites)
 // was always faithful — TestAcceptsWritesAgreesWithTheSealer proves it against
 // record.ErrAuditTerminal — and the INPUT was not.
 func (c *Controller) applyFindings(w *auditState, live AuditRecord, ev Event) error {
@@ -1135,13 +1134,13 @@ func (c *Controller) applyFindings(w *auditState, live AuditRecord, ev Event) er
 //	record.Sealer.ExpireIfDue; clock 3's is record.Sealer.SealDastIfDeadlineDue,
 //	which internal/record added for exactly this reason. Both compare against
 //	the audit's own `startedAt` plus the offsets record.Sealer.BeginAudit fixed,
-//	so neither can be moved by anything a caller holds. CRITIQUE O.4 blocker 2:
+//	so neither can be moved by anything a caller holds. The controller-core review's blocker 2:
 //	this function used to read clock 3 out of `AuditRecord.Deadlines`, an
 //	exported field on the caller's value, and probe P10 moved the DAST deadline
 //	by assigning to it — the forced seal never fired and the half stayed
 //	`running` past its budget.
 //
-//	THE BOOKKEEPING RUNS AFTER EVERY ERROR RETURN. Finding O4-m1: the old
+//	THE BOOKKEEPING RUNS AFTER EVERY ERROR RETURN. Controller-core finding m1: the old
 //	order sealed the DAST half, bumped the version, and only then called a
 //	function that could return an error — on which path the bump was discarded
 //	while the Sealer kept the seal. Publication is pure local arithmetic and
@@ -1183,11 +1182,11 @@ func (c *Controller) applyTick(auditID string, w *auditState) error {
 	return nil
 }
 
-// applyCorrelation stores R.12's clusters. It is not a watermark.
+// applyCorrelation stores correlation's clusters. It is not a watermark.
 //
 // # A BATCH REPLACES; IT DOES NOT ACCUMULATE
 //
-// This is the contract, stated because CRITIQUE O.4 finding O4-m3 observed that
+// This is the contract, stated because the controller-core review's finding m3 observed that
 // nothing stated it. research/21 §5 describes correlation as "populated as both
 // sides land", which reads incremental, and this function assigns rather than
 // appends — so a correlator emitting a SAST-side batch and then a DAST-side
@@ -1197,7 +1196,7 @@ func (c *Controller) applyTick(auditID string, w *auditState) error {
 // made correct here. A cluster is a statement about which SAST and DAST findings
 // are the same issue; appending two batches would produce duplicate cluster ids
 // and no rule for reconciling a cluster whose membership grew, and this package
-// has no correlation vocabulary with which to write that rule (R.12 owns it).
+// has no correlation vocabulary with which to write that rule (correlation owns it).
 // Replacement makes the correlator's own latest answer the answer, which is a
 // contract it can honour by emitting the complete set each time — and one whose
 // violation is visible (clusters disappear) rather than silent (clusters
@@ -1213,7 +1212,7 @@ func (c *Controller) applyCorrelation(w *auditState, live AuditRecord, ev Event)
 			Err:    ErrEmptyEvent,
 		}
 	}
-	// The Sealer's answer, not the caller's; see applyFindings (O4-M2).
+	// The Sealer's answer, not the caller's; see applyFindings (controller-core finding M2).
 	if !acceptsWrites(live.State) {
 		return &TransitionError{
 			Kind: ev.Kind, AuditID: live.AuditID, State: live.State,
@@ -1272,7 +1271,7 @@ func project(seal record.AuditSeal, out AuditRecord) AuditRecord {
 }
 
 // ---------------------------------------------------------------------------
-// The result surface — CRITIQUE O.4 blocker 1
+// The result surface — the controller-core review's blocker 1
 // ---------------------------------------------------------------------------
 
 // Findings returns a copy of one half's `findings[]`, gated by the ONE read

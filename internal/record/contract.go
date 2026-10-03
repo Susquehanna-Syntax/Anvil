@@ -6,25 +6,25 @@
 // # Authority
 //
 // This file is the single point where shared cross-area vocabulary is fixed.
-// plan/IMPLEMENTATION-PLAN.md §6 (rulings G2–G10) found ten confirmed
+// The first plan's shared-vocabulary review found ten confirmed
 // produce/consume defects whose common cause was that eight agents who could
 // not see each other each declared the shared vocabulary from their own side:
 // one area wrote literals another area's NOT NULL column could not accept.
-// The ruling: "area 40 owns every shared enum, because it owns the record
+// The ruling: "The record area owns every shared enum, because it owns the record
 // contract, and no other area may declare one."
 //
 // So: every enum below is declared here ONCE and consumed everywhere else.
 // An area that produces a value emits these literals directly, or applies an
 // explicitly named and tested mapping at a named step (see AreaMappingOwners).
 // Adding a value to any enum here is an amendment to
-// plan/40-record-and-storage.md and plan/IMPLEMENTATION-PLAN.md §6, not a
+// plan/design/record-and-store.md and the shared-vocabulary review, not a
 // local edit.
 //
 // # Conventions
 //
 //   - Lowercase snake_case is the record's literal convention throughout.
 //     Any area whose in-process vocabulary is SCREAMING_CASE maps at its own
-//     boundary (plan/IMPLEMENTATION-PLAN.md §6; e.g. B.12 owns the mapping
+//     boundary (the shared-vocabulary review; e.g. the Lane B pipeline owns the mapping
 //     from Lane B's `Verdict.Result` onto Verdict below).
 //   - `anvil/*` keys are hierarchical camelCase, per SARIF §3.8's
 //     recommendation for property names (research/18-unified-audit-record.md,
@@ -38,19 +38,19 @@
 // # Scope of the Go types here
 //
 // These types cover the SARIF 2.1.0 subset Anvil produces and consumes, not
-// all of SARIF. plan/40-record-and-storage.md's Pinned Versions table names
+// all of SARIF. plan/design/record-and-store.md's Pinned Versions table names
 // `owenrumney/go-sarif` as the intended SARIF library, but that module is not
 // in go.mod and adding a dependency is the orchestrator's licence decision,
 // so the subset below is stdlib-only. A full third-party SARIF reader should
 // still be used for INGESTING foreign SARIF; these types are for Anvil's own
 // records.
 //
-// Sources: plan/00-SPINE.md S1, S6, S7, S10, S12;
-// plan/IMPLEMENTATION-PLAN.md §6; plan/40-record-and-storage.md ("Record
-// Field Contract", "Fingerprint Specification", "Store Schema");
-// research/18-unified-audit-record.md ("Recommendation For Anvil", the
-// annotated record, Risks); research/24-coding-agent-consumption.md ("What
-// the audit record must carry").
+// Sources: the spine's corrected-requirements, record, safety, one-controller
+// and Go control-plane sections; the shared-vocabulary review;
+// plan/design/record-and-store.md ("Record Field Contract", "Fingerprint
+// Specification", "Store Schema"); research/18-unified-audit-record.md
+// ("Recommendation For Anvil", the annotated record, Risks);
+// research/24-coding-agent-consumption.md ("What the audit record must carry").
 package record
 
 import (
@@ -84,12 +84,12 @@ const (
 	SchemaVersion = "1.0.0"
 )
 
-// Fingerprint identifiers. R.2 owns the algorithm; this file owns the key
-// names it writes into, so that R.2, the store, and the GitHub projection
+// Fingerprint identifiers. The fingerprint owns the algorithm; this file owns the key
+// names it writes into, so that the fingerprint, the store, and the GitHub projection
 // cannot disagree about where a digest lives.
 const (
 	// FingerprintAlgV1 is the name of the one and only Anvil fingerprint
-	// algorithm. plan/00-SPINE.md S6: "One fingerprint algorithm, defined
+	// algorithm. The spine's record section: "One fingerprint algorithm, defined
 	// once, in the record. Two branches specified different /v1 algorithms
 	// under the same name; two producers emitting different hashes means
 	// regression matching silently fails forever."
@@ -103,27 +103,27 @@ const (
 	// PartialFingerprintPrimaryLocationLineHash is the ONLY partial
 	// fingerprint GitHub code scanning reads (research/18, "What GitHub
 	// actually accepts"). Required on every result that has a physical
-	// location; consumed only by the GitHub projection (R.14).
+	// location; consumed only by the GitHub projection.
 	PartialFingerprintPrimaryLocationLineHash = "primaryLocationLineHash"
 
 	// PartialFingerprintRegionSHA256 carries research/24's
 	// `fingerprint.region_sha256`. DEVIATION: this key has no row in
-	// plan/40-record-and-storage.md's Record Field Contract table, but
+	// plan/design/record-and-store.md's Record Field Contract table, but
 	// research/24 lists region_sha256 among its non-negotiable handoff
-	// fields. Reserved here, optional on the wire; R.2 decides whether to
+	// fields. Reserved here, optional on the wire; the fingerprint decides whether to
 	// populate it. See CONTRACT.md "Logged deviations", item 2.
 	PartialFingerprintRegionSHA256 = "regionSha256"
 )
 
 // Byte-level constants of the anvil-fp/v1 algorithm that other areas must not
-// re-derive. The algorithm itself is R.2's (internal/record/fingerprint.go);
+// re-derive. The algorithm itself is the fingerprint's (internal/record/fingerprint.go);
 // these are the parts that are contract, not implementation.
 const (
 	// FingerprintFieldSeparator joins every hashed field. U+001F (ASCII Unit
 	// Separator) is chosen over any printable glyph because a printable
 	// separator can appear inside a snippet or symbol name and create a
 	// field-boundary collision; U+001F cannot appear in normalized source
-	// text. plan/40-record-and-storage.md, Fingerprint Specification.
+	// text. plan/design/record-and-store.md, Fingerprint Specification.
 	FingerprintFieldSeparator = "\x1f"
 
 	// FingerprintDigestHexLen is the length of a full SHA-256 digest in
@@ -134,7 +134,7 @@ const (
 )
 
 // Body caps, matching OWASP ZAP's SARIF reporter (research/18 [S8]). Enforced
-// by the masking pipeline (R.8) and the read path (R.13); the remainder
+// by the masking pipeline (secrets masking) and the read path; the remainder
 // spills to a content-addressed Tier-2 blob rather than being dropped.
 const (
 	MaxInlineRequestBodyBytes  = 8 * 1024
@@ -193,9 +193,9 @@ func validateEnum[T ~string](field string, v T, allowed []T) error {
 // State is the audit-level lifecycle state, `sarifLog.properties["anvil/state"]`
 // and `audit_record.state`.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 ruling G2. Area O previously
+// FROZEN by the audit-state ruling. The control plane previously
 // declared a four-state machine (`open → sast_sealed → sealed → expired`);
-// that is struck. O.2 emits these literals.
+// that is struck. The controller's state wiring emits these literals.
 type State string
 
 // The six legal anvil/state literals.
@@ -203,18 +203,18 @@ type State string
 // WHY StateDastSealed AND StateBothSealed EXIST — do not "simplify" this to a
 // single `sealed`:
 //
-// plan/00-SPINE.md S1 requires "One audit identity, two INDEPENDENTLY-sealed
+// The spine's corrected-requirements table requires "One audit identity, two INDEPENDENTLY-sealed
 // halves, a re-entrant consumer." A state machine whose only sealing path is
 // SAST-then-DAST cannot express a DAST-first seal at all — and a DAST-first
 // seal is reachable in practice, because the SAST half can be slow or can
 // fail while the DAST half completes. Collapsing dast_sealed and both_sealed
 // into one `sealed` value also makes `sealed` terminal, which makes
 // StateConsumed unreachable, which silently disables the re-entrant consumer
-// read gate (R.6). Each of the six is reachable and each means something a
+// read gate (the sealer). Each of the six is reachable and each means something a
 // consumer branches on.
 const (
 	// StateCollecting: neither half has sealed. No consumer may read either
-	// half's results (R.6's read gate).
+	// half's results (the sealer's read gate).
 	StateCollecting State = "collecting"
 	// StateSastSealed: the SAST half has sealed; the DAST half has not.
 	StateSastSealed State = "sast_sealed"
@@ -222,7 +222,7 @@ const (
 	// Reachable, and not a typo for sast_sealed — see the note above.
 	StateDastSealed State = "dast_sealed"
 	// StateBothSealed: both halves have sealed. A DAST-disabled audit
-	// reaches this state with DastStatusNotRun (R.6), never with a NULL or
+	// reaches this state with DastStatusNotRun (the sealer), never with a NULL or
 	// an invented "n/a" status.
 	StateBothSealed State = "both_sealed"
 	// StateConsumed: the coding-agent consumption pipeline has taken the
@@ -230,7 +230,7 @@ const (
 	StateConsumed State = "consumed"
 	// StateExpired: the claim timeout elapsed. The tmpfs packet and
 	// `audit_record.payload` are dropped; the DB row and the finding history
-	// are NOT deleted (plan/40-record-and-storage.md, "Two independent
+	// are NOT deleted (plan/design/record-and-store.md, "Two independent
 	// clocks").
 	StateExpired State = "expired"
 )
@@ -259,14 +259,14 @@ func ValidateState(v string) error {
 // HalfStatus is the per-half run status, `run.properties["anvil/status"]` and
 // `audit_record.sast_status` / `.dast_status`'s sealing counterpart.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 ruling G5. Area O previously
+// FROZEN by the half-status ruling. The control plane previously
 // declared `complete|failed|timed_out`; `complete` is struck in favour of
 // HalfStatusSealed, and `timed_out` is adopted from O.
 type HalfStatus string
 
 // The five legal per-half anvil/status literals.
 //
-// HalfStatusSealed is load-bearing, not cosmetic: R.6 makes `sealed` the hard
+// HalfStatusSealed is load-bearing, not cosmetic: the sealer makes `sealed` the hard
 // consumer read gate ("do not allow a consumer to read a half's results
 // before that half's status equals sealed"). An area keying its transition on
 // any other token means the gate never opens and the consumer never runs.
@@ -274,7 +274,7 @@ const (
 	// HalfStatusRunning: the half is still producing results.
 	HalfStatusRunning HalfStatus = "running"
 	// HalfStatusSealed: the half is complete and readable. This exact token
-	// is R.6's read gate.
+	// is the sealer's read gate.
 	HalfStatusSealed HalfStatus = "sealed"
 	// HalfStatusFailed: the half terminated abnormally. Results, if any, are
 	// not readable — a failed half is not a clean half.
@@ -285,7 +285,7 @@ const (
 	// of clock".
 	HalfStatusTimedOut HalfStatus = "timed_out"
 	// HalfStatusSkipped: the half was not run at all (e.g. the DAST tier is
-	// not installed — plan/00-SPINE.md S9-AMENDED ships DAST as a separate
+	// not installed — the two-artifact split ships DAST as a separate
 	// distribution artifact, so most halves will be skipped).
 	HalfStatusSkipped HalfStatus = "skipped"
 )
@@ -315,18 +315,19 @@ func ValidateHalfStatus(v string) error {
 // `sarifLog.properties["anvil/dastStatus"]` and `audit_record.dast_status`.
 // It is NEVER null and never absent.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 rulings G3+G6, found independently
-// by two critics. Area 40 declared seven values and area D declared five with
-// ZERO literal overlap — D could not have written a single row into 40's NOT
-// NULL column. The frozen set is the union of both plus D's `partial`
-// (renamed `completed_partial`), which was nine values. D.26 emits these.
+// FROZEN by the shared-vocabulary review's dastStatus ruling, found independently
+// by two critics. The record area declared seven values and the dynamic tier declared five with
+// ZERO literal overlap — the dynamic tier could not have written a single row into the
+// record area's NOT NULL column. The frozen set is the union of both plus the
+// dynamic tier's `partial` (renamed `completed_partial`), which was nine
+// values. Coverage reporting emits these.
 //
 // AMENDED — a TENTH value, `completed_failed`, was added to
-// plan/IMPLEMENTATION-PLAN.md §6 after the R.10 critic (CRITIQUE-02 F8/rule 8)
+// the shared-vocabulary review after the sealing, claims and masking review (its finding F8/rule 8)
 // showed the nine-value set had no image for "the DAST half itself broke".
 // DeriveDastStatus was mapping a HalfStatusFailed half against a target that
 // booted cleanly onto `completed_partial`, which is the same category error
-// plan/00-SPINE.md S6 forbids one level down: a half that CRASHED is not a
+// the spine's record section forbids one level down: a half that CRASHED is not a
 // half that COVERED PART of the surface, and collapsing them makes
 // `dast_coverage` uninterpretable — the reader cannot tell a 31-of-50 scan
 // from a scan that died at endpoint 1. See DastStatusCompletedFailed.
@@ -342,14 +343,14 @@ type DastStatus string
 // merge them:
 //
 //   - DastStatusNotRun means the DAST tier is not installed at all. Under
-//     plan/00-SPINE.md S9-AMENDED, DAST ships as a separate distribution
+//     the two-artifact split, DAST ships as a separate distribution
 //     artifact, so this is the common case and it says nothing about the
 //     target.
 //   - DastStatusSkippedNoManifest means the DAST tier IS installed and ran,
 //     and no target manifest was declared, so there was nothing to scan.
 //     That is a configuration gap in the target, and it is actionable.
 //
-// plan/00-SPINE.md S6 requires that "a target that failed to boot must be
+// The spine's record section requires that "a target that failed to boot must be
 // distinguishable from 'scanned clean'"; the same argument applies one level
 // up. research/23-dast-signal-sources.md Risk #1: "Anvil must never report
 // '0 DAST findings' as 'no dynamic vulnerabilities'." Merging these two makes
@@ -369,7 +370,7 @@ const (
 	// DastStatusCompletedFindings: the DAST half completed with findings.
 	DastStatusCompletedFindings DastStatus = "completed_findings"
 	// DastStatusCompletedPartial: the DAST half completed against only part
-	// of the discovered attack surface. Adopted from area D's `partial`;
+	// of the discovered attack surface. Adopted from the dynamic tier's `partial`;
 	// coverage detail lives in DastCoverage, which is what makes this value
 	// interpretable rather than merely worrying.
 	DastStatusCompletedPartial DastStatus = "completed_partial"
@@ -426,7 +427,7 @@ func ValidateDastStatus(v string) error {
 // recorded" — must not be read that way.
 //
 // Provided so consumers do not write `if s != "completed_findings"`, which is
-// the naive equality check D.26's own validation forbids.
+// the naive equality check coverage reporting's own validation forbids.
 func (s DastStatus) MeansDynamicallyScannedClean() bool {
 	return s == DastStatusCompletedClean
 }
@@ -439,8 +440,8 @@ func (s DastStatus) MeansDynamicallyScannedClean() bool {
 // `sarifLog.properties["anvil/target"].provenance` and
 // `audit_record.target_provenance`.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 rulings G4+G7, found independently
-// by two critics. Produced by the target lifecycle harness (area D); this
+// FROZEN by the shared-vocabulary review's target-provenance split, found independently
+// by two critics. Produced by the target lifecycle harness (the dynamic tier); this
 // area only reserves the field and owns the vocabulary.
 //
 // WHY THIS IS SEPARATE FROM TargetProvisioning — do not merge them back into
@@ -452,7 +453,7 @@ func (s DastStatus) MeansDynamicallyScannedClean() bool {
 // path did we take to get one". DastStatus is derived from the FORMER
 // (booted_clean → the DAST half's own outcome; boot_failed/build_failed →
 // target_boot_failed; unreachable_at_scan_time → target_unreachable). A merged
-// field cannot support that derivation, and plan/00-SPINE.md S6 requires that
+// field cannot support that derivation, and the spine's record section requires that
 // "a target that failed to boot must be distinguishable from scanned clean" —
 // which is information a merged field loses.
 type TargetProvenance string
@@ -501,15 +502,15 @@ func ValidateTargetProvenance(v string) error {
 // TargetProvisioning is WHICH PROVISIONING PATH produced the runtime target,
 // `sarifLog.properties["anvil/target"].provisioning`.
 //
-// NEW REQUIRED FIELD, created by plan/IMPLEMENTATION-PLAN.md §6 rulings
-// G4+G7. Area D previously wrote these two literals into a field it called
-// `target_provenance`, which collided with area 40's boot-outcome field of
+// NEW REQUIRED FIELD, created by the first plan's target-provenance split.
+// The dynamic tier previously wrote these two literals into a field it called
+// `target_provenance`, which collided with the record area's boot-outcome field of
 // the same name; the ruling split them rather than picking one, because they
-// are genuinely different measurements and both are required. D.26 writes
+// are genuinely different measurements and both are required. Coverage reporting writes
 // this field.
 //
 // The authorization consequence is why this cannot be folded into a comment:
-// plan/00-SPINE.md S7 makes the authorization kernel a pure function of
+// The spine's safety section makes the authorization kernel a pure function of
 // (target, scope, attestation, clock). A live, third-party-owned URL and a
 // throwaway container Anvil built itself are not the same authorization
 // question, and the record must state which one was scanned.
@@ -522,7 +523,7 @@ const (
 	TargetProvisioningEphemeralManifest TargetProvisioning = "ephemeral_manifest"
 	// TargetProvisioningLiveURLAuthorized: an already-running URL was
 	// scanned under an explicit authorization record. Never inferred from
-	// reachability, and never from security.txt — plan/00-SPINE.md S7:
+	// reachability, and never from security.txt — the spine's safety section:
 	// "security.txt resolves a reporting channel and never grants
 	// permission."
 	TargetProvisioningLiveURLAuthorized TargetProvisioning = "live_url_authorized"
@@ -553,9 +554,9 @@ func ValidateTargetProvisioning(v string) error {
 // Verdict is the triage judgment about a FINDING,
 // `result.properties["anvil/verdict"]` and `finding.verdict`.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 ruling G8. Lane B keeps its own
+// FROZEN by the verdict-mapping ruling. Lane B keeps its own
 // in-process `Verdict.Result` vocabulary (`EXHIBITS|…`), which is a judgment
-// about the CODE; B.12 owns the explicit, tested mapping onto these literals,
+// about the CODE; the Lane B pipeline owns the explicit, tested mapping onto these literals,
 // including the case normalisation, at the point it places findings on the
 // record. A mapping with an owner and a test is not the same thing as two
 // vocabularies drifting.
@@ -566,7 +567,7 @@ type Verdict string
 // WHY VerdictInsufficientContext IS A VERDICT AND NOT A LOW CONFIDENCE SCORE —
 // do not replace it with a threshold on Confidence:
 //
-// plan/00-SPINE.md S6 is explicit: "INSUFFICIENT_CONTEXT as a valid detector
+// The spine's record section is explicit: "INSUFFICIENT_CONTEXT as a valid detector
 // verdict, not just a confidence float." A low confidence score means "this
 // is probably not a real defect". `insufficient_context` means "this may well
 // be a real defect and the detector could not see enough to tell" — usually
@@ -603,12 +604,12 @@ func ValidateVerdict(v string) error {
 }
 
 // ---------------------------------------------------------------------------
-// anvil/trust — required by plan/00-SPINE.md S6 on EVERY string originating
+// anvil/trust — required by the spine's record section on EVERY string originating
 // outside Anvil. Frozen here for the same reason as the six above.
 // ---------------------------------------------------------------------------
 
-// Trust classifies where a string came from. plan/00-SPINE.md S6 requires it
-// "on every string originating outside Anvil"; plan/00-SPINE.md S7 makes it
+// Trust classifies where a string came from. The spine's record section requires it
+// "on every string originating outside Anvil"; the spine's safety section makes it
 // enforceable: the prompt builder must never treat untrusted text as
 // instructions, and "the DAST response body is the highest-risk field — up to
 // 32 KB of attacker-controlled bytes fed to a repo-credentialed agent."
@@ -622,7 +623,7 @@ const (
 	//
 	// THE MISTAKE THIS EXISTS TO PREVENT: a repo source snippet is
 	// `untrusted` even though Anvil is the component that put it in the
-	// struct. Area B was found stamping TrustAnvilGenerated on a struct
+	// struct. Lane B was found stamping TrustAnvilGenerated on a struct
 	// whose Snippet field is verbatim target-repo source. That would have
 	// disabled the prompt-injection containment check on the exact string
 	// that most needs it — an attacker who can commit to the scanned repo
@@ -660,26 +661,27 @@ func (t Trust) LegalForExternalString() bool {
 }
 
 // ---------------------------------------------------------------------------
-// handoff.state — frozen alongside the six, per plan/IMPLEMENTATION-PLAN.md
-// §6's enum block. The TABLE is R.4's; the VOCABULARY is this file's.
+// handoff.state — frozen alongside the six, per plan/design/first-plan.md
+// the shared-vocabulary review's enum block. The TABLE is the store schema's;
+// the VOCABULARY is this file's.
 // ---------------------------------------------------------------------------
 
 // HandoffState is the disposition of one finding in the handoff queue,
 // `handoff.state`.
 //
-// FROZEN by plan/IMPLEMENTATION-PLAN.md §6 rulings G9+G10. Area X was
+// FROZEN by the shared-vocabulary review the handoff-table and one-ledger rulings. Remediation was
 // building a second table (`anvil_ledger`) carrying the same dispositions;
-// that is collapsed into `handoff`, because R.4's own Forbidden actions
-// already say a second durable copy is a direct plan/00-SPINE.md S1
-// violation. The concrete failure the critic traced: X.9 wrote
-// `SKIPPED_BUDGET` to `anvil_ledger` while 40's ready-set index still saw the
+// that is collapsed into `handoff`, because the store schema's own Forbidden actions
+// already say a second durable copy directly violates the spine's corrected-requirements
+// table. The concrete failure the critic traced: the queue cut wrote
+// `SKIPPED_BUDGET` to `anvil_ledger` while the record area's ready-set index still saw the
 // finding as `ready`, so it was re-leased forever.
 //
-// R.4 owns the DDL; every area emits these literals.
+// The store schema owns the DDL; every area emits these literals.
 type HandoffState string
 
-// The thirteen legal handoff.state literals: area 40's original nine plus the
-// four dispositions only area X had.
+// The thirteen legal handoff.state literals: the record area's original nine plus the
+// four dispositions only remediation had.
 const (
 	HandoffStateReady                HandoffState = "ready"
 	HandoffStateLeased               HandoffState = "leased"
@@ -689,7 +691,7 @@ const (
 	HandoffStateSkippedBudget        HandoffState = "skipped_budget"
 	HandoffStateFalsePositive        HandoffState = "false_positive"
 	HandoffStateRegressionIntroduced HandoffState = "regression_introduced"
-	// The four from area X:
+	// The four from remediation:
 	HandoffStateFixedIncidentally HandoffState = "fixed_incidentally"
 	HandoffStateSplitRequired     HandoffState = "split_required"
 	HandoffStateWithdrawn         HandoffState = "withdrawn"
@@ -721,7 +723,7 @@ func ValidateHandoffState(v string) error {
 
 // ConsumptionClass gates whether a finding may be acted on from static
 // evidence alone, `handoff.consumption_class`. Merged into the handoff table
-// by plan/IMPLEMENTATION-PLAN.md §6 ruling G9 (it came from area O.3, and
+// by the handoff-table ruling (it came from the control plane's handoff adapter, and
 // nothing else in the schema can express the gate).
 type ConsumptionClass string
 
@@ -730,7 +732,7 @@ const (
 	// patch.
 	ConsumptionClassStaticOnly ConsumptionClass = "static_only"
 	// ConsumptionClassRequiresDynamicConfirmation: a DAST reproduction must
-	// exist before the coding agent acts. plan/00-SPINE.md S7: "Only a DAST
+	// exist before the coding agent acts. The spine's safety section: "Only a DAST
 	// reproduction that now fails earns 'verified fixed.'"
 	ConsumptionClassRequiresDynamicConfirmation ConsumptionClass = "requires_dynamic_confirmation"
 )
@@ -754,8 +756,9 @@ func ValidateConsumptionClass(v string) error {
 }
 
 // ---------------------------------------------------------------------------
-// Area-40-owned supporting vocabularies. Not among the six §6 named, but
-// shared across areas and therefore declared here for the same reason.
+// Record-area-owned supporting vocabularies. Not among the six the
+// shared-vocabulary review names, but shared across areas and therefore
+// declared here for the same reason.
 // ---------------------------------------------------------------------------
 
 // Half names which of the two independently-sealed halves produced a run or a
@@ -779,13 +782,13 @@ func ValidateHalf(v string) error { return validateEnum("anvil/half", Half(v), H
 // EvidenceClass says HOW STRONG the evidence for a finding is,
 // `result.properties["anvil/evidenceClass"]` and `finding.evidence_class`.
 // research/24-coding-agent-consumption.md: "this is the field that makes
-// tier-0 ordering possible". Consumed by the queue re-cut (R.11) and the read
-// path (R.13).
+// tier-0 ordering possible". Consumed by the queue re-cut and the read
+// path (the read path).
 type EvidenceClass string
 
 const (
 	// EvidenceClassDastConfirmed: a runtime reproduction exists. The class
-	// R.11 reserves budget for.
+	// the queue re-cut reserves budget for.
 	EvidenceClassDastConfirmed EvidenceClass = "dast_confirmed"
 	// EvidenceClassSastReachable: static analysis proved a path from an
 	// untrusted source to the sink.
@@ -797,7 +800,7 @@ const (
 	// (Lane A, zero inference).
 	EvidenceClassSCA EvidenceClass = "sca"
 	// EvidenceClassHost: a host package matched. Always
-	// RemediableByAgent=false — plan/00-SPINE.md S7 makes the host agent
+	// RemediableByAgent=false — the spine's safety section makes the host agent
 	// read-only, "no package manager in a mutating mode, not behind a flag."
 	EvidenceClassHost EvidenceClass = "host"
 )
@@ -820,7 +823,7 @@ func ValidateEvidenceClass(v string) error {
 	return validateEnum("anvil/evidenceClass", EvidenceClass(v), EvidenceClassValues())
 }
 
-// DetectorKind selects the fingerprint tier (R.2) and populates
+// DetectorKind selects the fingerprint tier and populates
 // `finding.detector`. It is deliberately NOT the same enum as EvidenceClass:
 // `sast_reachable` and `sast_static_only` are both produced by the `sast`
 // detector and must hash identically per tier.
@@ -847,7 +850,7 @@ func ValidateDetectorKind(v string) error {
 }
 
 // InjectionPoint is WHERE a DAST payload was injected. Hashed by the DAST
-// fingerprint tier (R.2), so the vocabulary is contract, not implementation.
+// fingerprint tier (the fingerprint), so the vocabulary is contract, not implementation.
 type InjectionPoint string
 
 const (
@@ -877,7 +880,7 @@ func ValidateInjectionPoint(v string) error {
 // EvidenceSignal is HOW a DAST vulnerability was observed. Independent of
 // InjectionPoint — where the payload went in and how the defect showed up are
 // two different facts — and hashed as a separate field by the DAST
-// fingerprint tier (plan/40-record-and-storage.md, Fingerprint Specification).
+// fingerprint tier (plan/design/record-and-store.md, Fingerprint Specification).
 type EvidenceSignal string
 
 const (
@@ -940,7 +943,7 @@ func ValidateCorrelationSignal(v string) error {
 }
 
 // SufficientForVerified reports whether s is one of the two signals that may
-// set Correlation.Verified. plan/00-SPINE.md S7: "Only a DAST reproduction
+// set Correlation.Verified. The spine's safety section: "Only a DAST reproduction
 // that now fails earns 'verified fixed.' A clean SAST rescan does not."
 // Confidence alone never qualifies.
 func (s CorrelationSignal) SufficientForVerified() bool {
@@ -974,7 +977,7 @@ func ValidateFindingState(v string) error {
 }
 
 // ScanRunStatus is the whole-scan status, `scan_run.status`. Written by the
-// scan controller (area O), read by area 40's store.
+// scan controller (the control plane), read by the record area's store.
 type ScanRunStatus string
 
 const (
@@ -1002,12 +1005,13 @@ func ValidateScanRunStatus(v string) error {
 
 // InventoryProvenance says how an endpoint entered the DAST inventory.
 //
-// NOT one of the six frozen enums. Area D (D.18–D.25) produces it per route
-// and aggregates it into DastCoverage.InventoryProvenanceMix. It is mirrored
-// here so the record's shape is knowable and so a naming drift is caught at
-// this file rather than at integration; if area D needs to change the
-// vocabulary, it amends this file rather than diverging from it. Flagged to
-// the orchestrator as a candidate seventh frozen enum.
+// NOT one of the six frozen enums. The dynamic tier (the inventory, crawl and
+// authentication) produces it per route and aggregates it into
+// DastCoverage.InventoryProvenanceMix. It is mirrored here so the record's
+// shape is knowable and so a naming drift is caught at this file rather than at
+// integration; if the dynamic tier needs to change the vocabulary, it amends
+// this file rather than diverging from it. Flagged to the orchestrator as a
+// candidate seventh frozen enum.
 type InventoryProvenance string
 
 const (
@@ -1039,6 +1043,80 @@ func (p InventoryProvenance) Valid() bool { return inEnum(p, InventoryProvenance
 func ValidateInventoryProvenance(v string) error {
 	return validateEnum("anvil/dastCoverage.inventoryProvenanceMix", InventoryProvenance(v), InventoryProvenanceValues())
 }
+
+// SpecHarvestOutcome says WHAT THE SAST SPEC-HARVEST PASS DID, and it is the
+// only thing that can tell a repository which ships no API spec files apart
+// from a harvest handoff that never ran.
+//
+// NOT one of the six frozen enums. The record area owns the vocabulary; the SAST half
+// produces it and the dynamic tier consumes it (the repo spec reader, Tier 1 of attack-surface
+// discovery). The literals are IDENTICAL to the ones the repo spec reader built locally while
+// this slot did not exist, so the handoff needs no mapping and cannot drift
+// into one: see AreaMappingOwners.
+//
+// WHY THIS EXISTS AT ALL — the failing case, in full:
+//
+// plan/design/dynamic-tier.md:628-630 forbids the DAST tier from harvesting spec files
+// itself ("that is explicitly the SAST tier's job"), so Tier 1 can only ever
+// see a slice somebody handed it. An EMPTY slice has three meanings:
+//
+//	the repository ships no spec files            -- a fact about the repo
+//	the harvest pass never ran                    -- a fact about Anvil
+//	files arrived and none of them could be read  -- a fact about Anvil
+//
+// All three produce a byte-identical empty route list, and that list flows
+// into the DENOMINATOR of DastCoverage.EndpointCoverage, where a vanished
+// denominator is the shape every "100% covered" report is made of. Only the
+// first is a reportable fact about the target;
+// research/23-dast-signal-sources.md Risk #1 — "Anvil must never report
+// '0 DAST findings' as 'no dynamic vulnerabilities'" — is the same mistake one
+// level down.
+//
+// The third meaning is NOT a fourth literal. It is not a fact about the
+// harvest at all: the harvest ran and delivered files, and what happened next
+// is the DAST tier's own per-file accounting. A literal for it here would let
+// two areas disagree about which of them observed the failure.
+//
+// The zero value is not a member. A Go zero value must never mean "permitted",
+// and here the permissive reading — an empty list read as a fact about the
+// repository — is exactly the one that shrinks the denominator.
+type SpecHarvestOutcome string
+
+// The two legal anvil/specHarvest.outcome literals.
+const (
+	// SpecHarvestRan: the SAST pass walked the repository and SpecHarvest.Files
+	// is its complete output, modulo SpecHarvest.OmittedFileCount. An empty
+	// Files under this outcome is a reportable fact about the repository.
+	SpecHarvestRan SpecHarvestOutcome = "harvest_ran"
+	// SpecHarvestSkipped: the SAST pass did not run, or its output never
+	// reached the record. An empty Files under this outcome is a fact about
+	// Anvil and must never become a coverage denominator.
+	SpecHarvestSkipped SpecHarvestOutcome = "harvest_skipped"
+)
+
+// SpecHarvestOutcomeValues returns every legal anvil/specHarvest.outcome
+// literal.
+func SpecHarvestOutcomeValues() []SpecHarvestOutcome {
+	return []SpecHarvestOutcome{SpecHarvestRan, SpecHarvestSkipped}
+}
+
+// Valid reports whether o is a legal anvil/specHarvest.outcome literal. The
+// zero value is not.
+func (o SpecHarvestOutcome) Valid() bool { return inEnum(o, SpecHarvestOutcomeValues()) }
+
+// ValidateSpecHarvestOutcome reports whether v is a legal
+// anvil/specHarvest.outcome literal.
+func ValidateSpecHarvestOutcome(v string) error {
+	return validateEnum("anvil/specHarvest.outcome", SpecHarvestOutcome(v), SpecHarvestOutcomeValues())
+}
+
+// DescribesTheRepository reports whether an EMPTY SpecHarvest.Files under this
+// outcome may be read as a statement about the target repository rather than
+// about Anvil's own reach.
+//
+// Provided so no consumer writes `if len(files) == 0`, which is the check that
+// cannot tell the three meanings apart.
+func (o SpecHarvestOutcome) DescribesTheRepository() bool { return o == SpecHarvestRan }
 
 // SARIF-native enums. Listed for completeness and constant-safety; these are
 // OASIS's vocabulary, not Anvil's, and must not be extended.
@@ -1108,6 +1186,7 @@ const (
 	PropRunRouteTableDigest = "anvil/routeTableDigest"
 	PropRunAdvisorySnapshot = "anvil/advisorySnapshot"
 	PropRunRuntimeTarget    = "anvil/runtimeTarget"
+	PropRunSpecHarvest      = "anvil/specHarvest"
 )
 
 // Keys in `result.properties`.
@@ -1143,7 +1222,7 @@ const (
 
 // SARIFLog is the top-level SARIF 2.1.0 object Anvil produces: one audit
 // identity carrying two independently-sealed halves as two runs
-// (plan/00-SPINE.md S1).
+// (the spine's corrected-requirements table).
 type SARIFLog struct {
 	Schema     string          `json:"$schema"`
 	Version    string          `json:"version"`
@@ -1163,13 +1242,13 @@ type AuditProperties struct {
 	// BOTH runs — the SARIF-native "these runs are one audit" mechanism.
 	AuditID string `json:"anvil/auditId"`
 
-	// State is the audit lifecycle state. Producer: scan controller (O.2).
-	// Consumer: handoff consumer, store, report.
+	// State is the audit lifecycle state. Producer: scan controller (the
+	// controller's state wiring). Consumer: handoff consumer, store, report.
 	State State `json:"anvil/state"`
 
 	// Version is a monotonic integer, bumped on every re-scan of the same
-	// audit. Producer: scan controller. Consumer: the queue re-cut (R.11) —
-	// plan/00-SPINE.md S6 requires re-cutting the work queue on every bump,
+	// audit. Producer: scan controller. Consumer: the queue re-cut —
+	// the spine's record section requires re-cutting the work queue on every bump,
 	// "otherwise incremental publication silently inverts the priority
 	// scheme."
 	Version int `json:"anvil/version"`
@@ -1189,10 +1268,11 @@ type AuditProperties struct {
 	// Consumer: report, audit trail.
 	Trigger Trigger `json:"anvil/trigger"`
 
-	// Deadline replaces branch 18's `anvil/buffer`, per the plan/00-SPINE.md
-	// S1 correction: the 8 hours is a CLAIM TIMEOUT, not a deletion policy
-	// and not a confidentiality control. Producer: scan controller and the
-	// config loader. Consumer: reaper, handoff, coding agent.
+	// Deadline replaces branch 18's `anvil/buffer`, per the plan/design/spine.md
+	// the spine's corrected-requirements table correction: the 8 hours is a
+	// CLAIM TIMEOUT, not a deletion policy and not a confidentiality control.
+	// Producer: scan controller and the config loader. Consumer: reaper,
+	// handoff, coding agent.
 	Deadline Deadline `json:"anvil/deadline"`
 
 	// DB is populated after the store commits. Producer: store writer.
@@ -1222,13 +1302,13 @@ type Target struct {
 	RuntimeBaseURL string `json:"runtimeBaseUrl,omitempty"`
 
 	// Provenance is the BOOT/REACHABILITY OUTCOME. DastStatus is derived
-	// from this field. Producer: target lifecycle harness (area D).
+	// from this field. Producer: target lifecycle harness (the dynamic tier).
 	Provenance TargetProvenance `json:"provenance"`
 
 	// Provisioning is WHICH PROVISIONING PATH was taken. A different
 	// measurement from Provenance; see TargetProvisioning's doc comment for
-	// why merging them loses information plan/00-SPINE.md S6 requires.
-	// Producer: target lifecycle harness (D.26).
+	// why merging them loses information the spine's record section requires.
+	// Producer: target lifecycle harness (coverage reporting).
 	Provisioning TargetProvisioning `json:"provisioning"`
 }
 
@@ -1245,7 +1325,7 @@ type Trigger struct {
 // Deadline carries the claim clock. `anvil/deadline`.
 //
 // DeadlineAt and the per-half SealedAt are INDEPENDENT CLOCKS with
-// independent semantics and must never be conflated (R.6's forbidden
+// independent semantics and must never be conflated (the sealer's forbidden
 // actions): SealedAt records per-half completion, DeadlineAt records when an
 // unclaimed finding stops being eligible.
 type Deadline struct {
@@ -1266,7 +1346,7 @@ type Deadline struct {
 
 // DefaultClaimTimeoutSeconds is 8 hours. It is a claim timeout, not a
 // retention or confidentiality guarantee — see internal/record/SECRETS.md
-// (R.9). Config-driven; this is only the documented default.
+// (the retention document). Config-driven; this is only the documented default.
 const DefaultClaimTimeoutSeconds = 28800
 
 // DBRef records where the audit landed in the store. `anvil/db`.
@@ -1303,7 +1383,7 @@ type IndexCounts struct {
 	Unclustered int `json:"unclustered"`
 }
 
-// DefaultReadOrder is the deterministic Tier-0 read order. R.13 must not
+// DefaultReadOrder is the deterministic Tier-0 read order. The read path must not
 // emit any other order without an explicit, logged override.
 func DefaultReadOrder() []string { return []string{"clusters", "sastByRank", "dastByRank"} }
 
@@ -1342,12 +1422,12 @@ type RunProperties struct {
 	// Consumer: routing.
 	Half Half `json:"anvil/half"`
 
-	// Status is the per-half seal status. HalfStatusSealed is R.6's hard
+	// Status is the per-half seal status. HalfStatusSealed is the sealer's hard
 	// consumer read gate. Producer: SAST/DAST worker at seal time.
 	// Consumer: the re-entrant consumer, report.
 	Status HalfStatus `json:"anvil/status"`
 
-	// SealedAt is plan/00-SPINE.md S6's per-half `sealedAt`, stored as
+	// SealedAt is the spine's per-half `sealedAt`, stored as
 	// `audit_record.sast_sealed_at` / `.dast_sealed_at`. It is required once
 	// Status == HalfStatusSealed, and is
 	// explicitly null otherwise (not omitted — a missing key and an
@@ -1356,7 +1436,7 @@ type RunProperties struct {
 	SealedAt *time.Time `json:"anvil/sealedAt"`
 
 	// DastCoverage is required on the DAST run. Producer: attack-surface
-	// discovery (area D, D.26). Consumer: coding agent (confidence
+	// discovery (the dynamic tier, coverage reporting). Consumer: coding agent (confidence
 	// weighting), report.
 	DastCoverage *DastCoverage `json:"anvil/dastCoverage,omitempty"`
 
@@ -1365,12 +1445,34 @@ type RunProperties struct {
 	RouteTableDigest string `json:"anvil/routeTableDigest,omitempty"`
 
 	// AdvisorySnapshot is required on the SAST run. Producer: ingestion
-	// subsystem (area A). Consumer: coding agent (staleness), report.
+	// subsystem (Lane A). Consumer: coding agent (staleness), report.
 	AdvisorySnapshot *AdvisorySnapshot `json:"anvil/advisorySnapshot,omitempty"`
 
 	// RuntimeTarget is required on the DAST run. Producer: DAST worker.
 	// Consumer: correlation, reproduction replay.
 	RuntimeTarget *RuntimeTarget `json:"anvil/runtimeTarget,omitempty"`
+
+	// SpecHarvest is the SAST half's statement of which API spec files it
+	// harvested from the target repository, and — the load-bearing half —
+	// WHETHER IT RAN AT ALL. Producer: the SAST spec-harvest pass. Consumer:
+	// attack-surface discovery Tier 1 (the repo spec reader), coverage reporting.
+	//
+	// LEGAL ONLY ON THE SAST RUN. plan/design/dynamic-tier.md:628-630 assigns harvesting
+	// to the SAST tier and forbids the DAST tier from re-deriving it, so a
+	// copy on the DAST run would be a second durable statement of one fact
+	// that can disagree with the first — the shape the spine's corrected-requirements table and
+	// the one-ledger ruling both refuse. (*Run).validate rejects it there.
+	//
+	// NIL MEANS THE RECORD MAKES NO STATEMENT, which is not the same as
+	// SpecHarvestSkipped and not the same as an empty Files: nil is a record
+	// assembled before this slot was wired, and a consumer must treat it as
+	// "unknown", never as "the repository ships no specs". A non-nil
+	// SpecHarvest with a zero Outcome is REFUSED by ValidateSpecHarvest, so
+	// `&SpecHarvest{}` cannot become the permissive reading by default.
+	//
+	// Optional on every run so that records assembled before the slot existed
+	// still validate; the SAST half is expected to populate it.
+	SpecHarvest *SpecHarvest `json:"anvil/specHarvest,omitempty"`
 }
 
 // DastCoverage reports what fraction of the discovered attack surface was
@@ -1378,13 +1480,13 @@ type RunProperties struct {
 //
 // It carries a NUMERATOR AND A DENOMINATOR AND A PROVENANCE MIX, never a bare
 // ratio (research/14 critique m6, carried into
-// plan/40-record-and-storage.md's contract table). A bare "62% covered" is
+// plan/design/record-and-store.md's contract table). A bare "62% covered" is
 // unfalsifiable; ProbedCount=31 of InventoryUnionCount=50, of which 40 came
 // from a runtime spec and 10 from a crawl, is not.
 //
-// This struct consolidates plan/00-SPINE.md S6's `dast_coverage`,
+// This struct consolidates the spine's `dast_coverage`,
 // `endpoint_coverage` and `inventory_provenance` into one field. Open
-// Question 5 in plan/40-record-and-storage.md asks the attack-surface area to
+// Question 5 in plan/design/record-and-store.md asks the attack-surface area to
 // confirm no information is lost by that consolidation; nothing here forbids
 // splitting it later.
 type DastCoverage struct {
@@ -1392,10 +1494,10 @@ type DastCoverage struct {
 	ProbedCount int `json:"probedCount"`
 
 	// InventoryUnionCount is the union of the Tier 0-2 inventory — the
-	// denominator D.26 is required to use.
+	// denominator coverage reporting is required to use.
 	InventoryUnionCount int `json:"inventoryUnionCount"`
 
-	// EndpointCoverage is plan/00-SPINE.md S6's `endpoint_coverage`:
+	// EndpointCoverage is the spine's `endpoint_coverage`:
 	// ProbedCount / InventoryUnionCount, in [0,1]. Carried explicitly so a
 	// consumer never has to guess the denominator, and validated against the
 	// two counts by ValidateDastCoverage.
@@ -1406,7 +1508,7 @@ type DastCoverage struct {
 	// incremental scans — zero would read as "we ran and covered nothing."
 	ServerLineCoverage *float64 `json:"serverLineCoverage"`
 
-	// InventoryProvenanceMix is plan/00-SPINE.md S6's `inventory_provenance`
+	// InventoryProvenanceMix is the spine's `inventory_provenance`
 	// aggregated to the record level: endpoint count per InventoryProvenance
 	// literal. This is what makes the SAST->DAST handoff auditable.
 	InventoryProvenanceMix map[InventoryProvenance]int `json:"inventoryProvenanceMix"`
@@ -1436,6 +1538,115 @@ type RuntimeTarget struct {
 	Excluded       []string `json:"excluded"`
 }
 
+// SpecHarvest is what the SAST spec-harvest pass did and what it found.
+// `anvil/specHarvest`.
+//
+// It carries an OUTCOME AND A FILE LIST AND AN OMISSION COUNT, never a bare
+// file list, for the reason DastCoverage carries a numerator and a denominator
+// rather than a percentage: the interesting cases are all the ones where the
+// list is short, and a short list with no accompanying statement is
+// indistinguishable from a complete one. See SpecHarvestOutcome for the three
+// meanings of an empty list and why only one of them describes the repository.
+type SpecHarvest struct {
+	// Outcome says whether the harvest pass ran. Required; the zero value is
+	// refused, because the zero value would read as the permissive answer.
+	Outcome SpecHarvestOutcome `json:"outcome"`
+
+	// Files is every harvested spec file this record carries, in the order the
+	// harvest produced them.
+	//
+	// Required as an ARRAY under SpecHarvestRan — an empty array, never null.
+	// A null list and an empty list must not be the same observation, which is
+	// the same rule Repro.Env.Sanitizers already states ("use an empty array
+	// for a stock build, not null"). Under SpecHarvestSkipped it must be
+	// empty: a pass that did not run cannot have delivered files, and a record
+	// that says both is a record no consumer can act on.
+	Files []SpecHarvestFile `json:"files"`
+
+	// OmittedFileCount is how many spec files the harvest SAW and did NOT
+	// carry into Files — dropped by a size bound, a count bound, or a filter.
+	//
+	// Required under SpecHarvestRan and A POINTER ON PURPOSE. An int here
+	// would default to 0, and 0 means "Files is complete" — the permissive
+	// reading, handed out free to any producer that forgot to set it. Null is
+	// refused instead, so forgetting fails closed. Null under
+	// SpecHarvestSkipped, where there is nothing to have omitted.
+	//
+	// Files plus OmittedFileCount is the total the pass saw, which is the
+	// number a coverage denominator may be reasoned about from.
+	OmittedFileCount *int `json:"omittedFileCount"`
+}
+
+// SpecHarvestFile is one spec file the SAST pass harvested.
+// `anvil/specHarvest.files[]`.
+//
+// THE BYTES ARE ATTACKER-AUTHORED. A committed openapi.yaml, WSDL or Postman
+// collection is written by whoever can commit to the scanned repository, and
+// every network destination inside one (`servers[].url`, a WSDL
+// `soap:address location`, a Postman host) is a repository-supplied address.
+// Nothing here grants scope or authorization; this struct records WHICH FILE
+// and WHICH BYTES, and the authorization kernel remains a pure function of
+// (target, scope, attestation, clock) per the spine's safety section.
+type SpecHarvestFile struct {
+	// Location names the file in the target repository, in SARIF's own
+	// vocabulary for naming a file (§3.4). URI is required: a file nobody can
+	// name is a file no operator can go look at when its routes turn out to be
+	// wrong.
+	Location ArtifactLocation `json:"location"`
+
+	// SizeBytes is the file's exact length in bytes as harvested. Zero is
+	// legal — a repository may commit a zero-byte openapi.yaml, and refusing
+	// to record that would delete the file from the harvest list, which is the
+	// silent loss this whole struct exists to prevent.
+	SizeBytes int `json:"sizeBytes"`
+
+	// ContentSHA256 is the lowercase-hex SHA-256 of the file's exact bytes AS
+	// HARVESTED, before any normalisation, re-encoding or YAML-to-JSON
+	// conversion. Required, and validated by ValidateDigest — the package's
+	// one digest-shape check, not a second one.
+	//
+	// It is what makes the harvest auditable when Content is not carried: it
+	// states WHICH bytes the DAST tier parsed, so a later re-run that produces
+	// a different route list can be told apart from a repository that changed.
+	ContentSHA256 string `json:"contentSha256"`
+
+	// Content is the file's bytes, inline and COMPLETE, when the record
+	// carries them (SARIF §3.3). Optional: a record that elides them still
+	// names the file and pins its digest.
+	//
+	// When present it must be the WHOLE file — len(Content.Text) must equal
+	// SizeBytes — because a silently truncated spec yields a short route list,
+	// a short route list is a smaller coverage denominator, and a smaller
+	// denominator makes endpoint_coverage look better than it is. There is no
+	// truncation flag here on purpose: truncate out of band and elide Content.
+	Content *ArtifactContent `json:"content,omitempty"`
+
+	// DeclaredFormat is what the HARVESTER CLAIMED this file is. It is
+	// recorded and it is never believed — the repo spec reader classifies from the bytes and
+	// nothing else, because the harvester classifies on a path and the path is
+	// in the repository.
+	//
+	// DELIBERATELY NOT AN ENUM THIS FILE FREEZES. The parser vocabulary is
+	// the dynamic tier's SpecFormat (inventory.RepoSpecFormatValues), an ALLOWLIST that
+	// grows as the dynamic tier ships parsers; freezing a snapshot of it here would make
+	// every new parser a produce/consume break of exactly the kind the
+	// shared-vocabulary review rules on, in the opposite direction. It is a
+	// free string, and a divergence between it and the bytes is a finding about
+	// the harvest side, not about this record.
+	DeclaredFormat string `json:"declaredFormat,omitempty"`
+
+	// Trust labels the strings this file contributes — its URI, its declared
+	// format and its content. The spine's record section requires it on every string
+	// originating outside Anvil, and a repository wrote all of these.
+	//
+	// TrustAnvilGenerated is REFUSED, not merely discouraged: assembling the
+	// struct is not authoring the bytes, and mislabelling here would disable
+	// the prompt-injection containment check on repository-authored text
+	// heading for a repo-credentialed agent. See Trust.TrustUntrusted's own
+	// note about the same mistake found in Lane B.
+	Trust Trust `json:"trust"`
+}
+
 // RunAutomationDetails is SARIF §3.17. CorrelationGuid must be identical in
 // both runs and equal to AuditProperties.AuditID.
 type RunAutomationDetails struct {
@@ -1462,7 +1673,7 @@ type Result struct {
 	// CorrelationGUID is assigned per CLUSTER, not per finding (SARIF
 	// §3.27.4): every finding asserted to be the same underlying defect
 	// shares it. Present only on clustered findings. Producer: the
-	// correlation engine (R.12).
+	// correlation engine.
 	CorrelationGUID string `json:"correlationGuid,omitempty"`
 
 	Message Message `json:"message"`
@@ -1476,7 +1687,7 @@ type Result struct {
 	Taxa []ReportingDescriptorReference `json:"taxa,omitempty"`
 
 	// WebRequest and WebResponse are the SARIF-native DAST evidence slots
-	// (§3.27.14/15). MASKED BY R.8 BEFORE STORAGE — research/18 Risk #10:
+	// (§3.27.14/15). MASKED BY secrets masking BEFORE STORAGE — research/18 Risk #10:
 	// "an 8-hour TTL is not a security control for a token that is still
 	// valid."
 	WebRequest  *WebRequest  `json:"webRequest,omitempty"`
@@ -1490,7 +1701,7 @@ type Result struct {
 	Provenance *ResultProvenance `json:"provenance,omitempty"`
 
 	// Fixes is written only after a coding-agent proposal (SARIF §3.27.30).
-	// plan/00-SPINE.md S7: "Never auto-merge. Propose only."
+	// The spine's safety section: "Never auto-merge. Propose only."
 	Fixes []Fix `json:"fixes,omitempty"`
 
 	Properties ResultProperties `json:"properties"`
@@ -1514,14 +1725,14 @@ type ResultProperties struct {
 	Confidence float64 `json:"anvil/confidence"`
 
 	// Verdict is the triage judgment. Producer: detector model / triage
-	// gate, via B.12's mapping. Consumer: the consumption pipeline, which
+	// gate, via the Lane B pipeline's mapping. Consumer: the consumption pipeline, which
 	// drops VerdictFalsePositive and demotes VerdictInsufficientContext to
 	// report-only.
 	Verdict Verdict `json:"anvil/verdict"`
 
-	// RemediableByAgent is plan/00-SPINE.md S6's `remediable_by_agent`, and
+	// RemediableByAgent is the spine's `remediable_by_agent`, and
 	// is stored as `finding.remediable_by_agent`. It is false for every host
-	// finding, always (plan/00-SPINE.md S7 read-only host agent), and the
+	// finding, always (the spine's safety section read-only host agent), and the
 	// store enforces that with a CHECK constraint. Producer: record
 	// assembler, derived from Detector. Consumer: coding agent.
 	RemediableByAgent bool `json:"anvil/remediableByAgent"`
@@ -1545,7 +1756,7 @@ type ResultProperties struct {
 	Advisory *AdvisoryContext `json:"anvil/advisory,omitempty"`
 
 	// Risk carries research/24's non-negotiable ranking inputs.
-	// DEVIATION: no row for it exists in plan/40-record-and-storage.md's
+	// DEVIATION: no row for it exists in plan/design/record-and-store.md's
 	// Record Field Contract table; research/24 lists it as non-negotiable
 	// "because there is no orchestrator to compute them later". See
 	// CONTRACT.md "Logged deviations", item 1.
@@ -1555,19 +1766,19 @@ type ResultProperties struct {
 	// further lookups.
 	PatchContext *PatchContext `json:"anvil/patchContext,omitempty"`
 
-	// Correlation is present only on clustered findings. Producer: R.12.
+	// Correlation is present only on clustered findings. Producer: the correlation engine.
 	Correlation *Correlation `json:"anvil/correlation,omitempty"`
 
 	// Repro is required on any reproducer. Producer: DAST worker or the
 	// dynamic-analysis harness. Consumer: the verification pipeline —
-	// plan/00-SPINE.md S7 lets only a DAST reproduction that now fails earn
+	// the spine's safety section lets only a DAST reproduction that now fails earn
 	// "verified fixed", and the sanitizer/ASLR state qualifies that claim.
 	Repro *Repro `json:"anvil/repro,omitempty"`
 
 	// Locus.ProximityClass drives fix-grouping.
 	Locus *Locus `json:"anvil/locus,omitempty"`
 
-	// ChunkRef is the Tier-1 task-card pointer. Producer: R.13.
+	// ChunkRef is the Tier-1 task-card pointer. Producer: the read path.
 	ChunkRef string `json:"anvil/chunkRef,omitempty"`
 
 	// GroupID is RESERVED here and ASSIGNED BY THE CODING-AGENT CONSUMPTION
@@ -1579,7 +1790,7 @@ type ResultProperties struct {
 // originated outside Anvil. `anvil/trust`.
 //
 // DEVIATION FROM THE PLAN'S CONTRACT TABLE, deliberate: the table types
-// `anvil/trust` as a bare enum, but plan/00-SPINE.md S6 requires trust "on
+// `anvil/trust` as a bare enum, but the spine's record section requires trust "on
 // EVERY string originating outside Anvil" and one result carries several
 // strings of different provenance at once — a repo snippet, a
 // model-generated explanation, an attacker-controlled response body. A single
@@ -1588,7 +1799,7 @@ type ResultProperties struct {
 // "Logged deviations", item 3.
 type TrustAssertion struct {
 	// Default applies to any string not named in Fields. A result carrying a
-	// WebResponse must set Default to TrustUntrusted: plan/00-SPINE.md S7
+	// WebResponse must set Default to TrustUntrusted: the spine's safety section
 	// names the DAST response body the highest-risk field in the system.
 	Default Trust `json:"default"`
 
@@ -1602,7 +1813,7 @@ type TrustAssertion struct {
 // DetectorRef identifies the model and prompt behind a finding.
 // `anvil/detector`.
 type DetectorRef struct {
-	// Kind selects the fingerprint tier (R.2) and populates
+	// Kind selects the fingerprint tier and populates
 	// `finding.detector`.
 	Kind DetectorKind `json:"kind"`
 
@@ -1622,17 +1833,17 @@ type AdvisoryContext struct {
 	SourceFeed     string   `json:"sourceFeed"`
 	SnapshotDigest string   `json:"snapshotDigest"`
 	// LicenseSpdx is carried per finding because the feed licence attaches
-	// to the text, not to Anvil (plan/00-SPINE.md S8, plan/80-compliance.md).
+	// to the text, not to Anvil (the spine's licence section, plan/design/licences.md).
 	LicenseSpdx string `json:"licenseSpdx,omitempty"`
 
-	// AsOf is plan/00-SPINE.md S6's `as_of`: when this advisory data was
+	// AsOf is the spine's `as_of`: when this advisory data was
 	// current.
 	AsOf time.Time `json:"asOf"`
-	// StalenessSeconds is S6's `staleness_seconds`: record-assembly time
+	// StalenessSeconds is the spine's `staleness_seconds`: record-assembly time
 	// minus AsOf. Carried explicitly so a consumer never has to know the
 	// assembly clock.
 	StalenessSeconds int `json:"stalenessSeconds"`
-	// ParseDegraded is S6's `parse_degraded`: the feed parsed with loss.
+	// ParseDegraded is the spine's `parse_degraded`: the feed parsed with loss.
 	// A consumer must down-weight, not silently trust, degraded context.
 	ParseDegraded bool `json:"parseDegraded"`
 
@@ -1640,6 +1851,45 @@ type AdvisoryContext struct {
 	// never a whole advisory (research/24). It is EXTERNAL TEXT and
 	// therefore carries its own trust inline.
 	Excerpt *TrustedString `json:"excerpt,omitempty"`
+
+	// LicenseManualNote is the QUOTED OPERATIVE SENTENCE from the publisher's
+	// own licence text — the manual override Lane A's licence gate requires
+	// whenever LicenseSpdx is NONE, NOASSERTION or a LicenseRef- id, which is
+	// exactly the population where the SPDX identifier establishes nothing.
+	// `advisory.license_manual_note` in the ingestion cache.
+	//
+	// IT SITS BESIDE THE EXCERPT BECAUSE IT LICENSES THE EXCERPT. The feed
+	// licence attaches to the TEXT, not to Anvil (the spine's licence section,
+	// plan/design/licences.md), which is why LicenseSpdx is already carried per
+	// finding rather than per run. A note that stayed behind in the ingestion
+	// database while the text it licenses travelled into the record would put
+	// the redistribution terms and the redistributed bytes in two different
+	// places — and the Lane A chain ledger records the licence gate admitting
+	// the KEV metadata override ON THE STRENGTH OF THIS NOTE. It travels with
+	// what it licenses or it does not travel.
+	//
+	// IT IS A TrustedString, NOT A BARE STRING, AND NOT LicenseSpdx. The note
+	// is a QUOTATION from a publisher's LICENSE file: the bytes originated
+	// outside Anvil, so the spine's record section requires a trust label, and
+	// TrustAnvilGenerated is refused for it exactly as it is for Excerpt. It
+	// cannot be folded into LicenseSpdx, which is an identifier field that
+	// prose corrupts, and it cannot be folded into Reasoning, which is
+	// anvil_generated.
+	//
+	// A NON-NIL NOTE WHOSE TEXT IS BLANK IS REFUSED. Nil means no note was
+	// recorded; a present note carrying whitespace would satisfy "a note
+	// exists" while carrying no operative sentence, which is the absent value
+	// wearing the legitimate one's clothes. The ingestion cache enforces the
+	// same shape in SQL (`length(trim(license_manual_note)) > 0`).
+	//
+	// SCOPE, STATED: this slot does NOT make the record the enforcement point
+	// for the spine's licence section. The standing ruling that the grammatical
+	// subject of the spine's licence section is the CI GATE, not the record, is
+	// unchanged, and (*Result).validate deliberately does not require a note
+	// when LicenseSpdx is absent — that gate is the ingestion cache's
+	// advisory_license_declared CHECK. This field only ensures the note
+	// SURVIVES into the record.
+	LicenseManualNote *TrustedString `json:"licenseManualNote,omitempty"`
 }
 
 // TrustedString is a string that originated outside Anvil, carrying its own
@@ -1652,7 +1902,7 @@ type TrustedString struct {
 }
 
 // Risk carries the ranking inputs research/24 names non-negotiable.
-// `anvil/risk`. Producer: Lane A ingestion. Consumer: ranking (R.11, R.13).
+// `anvil/risk`. Producer: Lane A ingestion. Consumer: ranking (the queue re-cut, the read path).
 type Risk struct {
 	CvssV4Base       *float64   `json:"cvssV4Base,omitempty"`
 	EpssScore        *float64   `json:"epssScore,omitempty"`
@@ -1736,11 +1986,11 @@ type Repro struct {
 
 // ReproEnv records the dynamic-analysis environment.
 //
-// Sanitizers and AslrEnabled are plan/00-SPINE.md S6's required
+// Sanitizers and AslrEnabled are the spine's required
 // "sanitizer + ASLR state on any reproducer", and they are not bookkeeping:
 // a crash that reproduces only under ASan is a different claim from one that
 // reproduces on a stock build, and a use-after-free that reproduces only with
-// ASLR disabled may not be exploitable as shipped. plan/00-SPINE.md S7 lets
+// ASLR disabled may not be exploitable as shipped. The spine's safety section lets
 // only a reproduction that now FAILS earn "verified fixed" — a verification
 // re-run under a different sanitizer or ASLR setting than the original is not
 // the same experiment, and without these fields nothing can detect that.
@@ -1772,7 +2022,7 @@ type ReproBaseline struct {
 type ReproSignal struct {
 	Kind EvidenceSignal `json:"kind"`
 	// Match is a regex-extracted evidence SPAN, never the raw body
-	// (plan/00-SPINE.md S7: "Hash-and-reference by default; inline only a
+	// (the spine's safety section: "Hash-and-reference by default; inline only a
 	// regex-extracted evidence span"). It is attacker-controlled text and
 	// carries its own trust inline.
 	Match *TrustedString `json:"match,omitempty"`
@@ -1954,7 +2204,7 @@ type WebRequest struct {
 //
 // Its Body is the highest-risk field in the entire record: up to 32 KB of
 // attacker-controlled bytes headed for a repo-credentialed agent
-// (plan/00-SPINE.md S7). It is masked by R.8 before storage, capped at
+// (the spine's safety section). It is masked by secrets masking before storage, capped at
 // MaxInlineResponseBodyBytes, and always TrustUntrusted.
 type WebResponse struct {
 	Index              *int              `json:"index,omitempty"`
@@ -2023,7 +2273,7 @@ type ExternalPropertyFileReference struct {
 // ExternalStringPointers returns the RFC 6901 JSON Pointers, relative to this
 // result object, of every string it carries that originated OUTSIDE Anvil.
 //
-// This is the list plan/00-SPINE.md S6's "on every string originating outside
+// This is the list the spine's "on every string originating outside
 // Anvil" resolves to in practice. It deliberately includes region snippets:
 // a repo source snippet is external even though Anvil assembled the struct,
 // and treating it as Anvil-generated is what disables the containment check
@@ -2079,7 +2329,7 @@ func (r *Result) ExternalStringPointers() []string {
 // A pointer may be classified TrustUntrusted or TrustVerified. It may NOT be
 // classified TrustAnvilGenerated, and if it is not named in Fields then
 // Default must itself be legal for external strings. This is the check that
-// would have caught area B stamping anvil_generated on a verbatim
+// would have caught Lane B stamping anvil_generated on a verbatim
 // target-repo snippet.
 func ValidateResultTrust(r *Result) error {
 	if err := ValidateTrust(string(r.Properties.Trust.Default)); err != nil {
@@ -2105,7 +2355,7 @@ func ValidateResultTrust(r *Result) error {
 	if r.WebResponse != nil && r.Properties.Trust.Default != TrustUntrusted {
 		return fmt.Errorf(
 			"record: a result carrying a webResponse must set anvil/trust.default to %q, got %q "+
-				"(00-SPINE.md S7: the DAST response body is the highest-risk field)",
+				"(the spine's safety section: the DAST response body is the highest-risk field)",
 			TrustUntrusted, r.Properties.Trust.Default)
 	}
 	return nil
@@ -2194,7 +2444,7 @@ func (l *SARIFLog) Validate() error {
 // validateStateAgainstHalves enforces that anvil/state agrees with the two
 // halves' seal status. This is where a DAST-first seal has to be expressible:
 // if it were not, the only reachable states would be collecting and
-// sast_sealed, and plan/00-SPINE.md S1's "two INDEPENDENTLY-sealed halves"
+// sast_sealed, and the spine's "two INDEPENDENTLY-sealed halves"
 // would be false in the implementation while true in the document.
 func (l *SARIFLog) validateStateAgainstHalves(seen map[Half]bool) error {
 	sastSealed, dastSealed := false, false
@@ -2210,7 +2460,7 @@ func (l *SARIFLog) validateStateAgainstHalves(seen map[Half]bool) error {
 			dastSealed = true
 		}
 	}
-	// A DAST-disabled audit reaches both_sealed with DastStatusNotRun (R.6),
+	// A DAST-disabled audit reaches both_sealed with DastStatusNotRun (the sealer),
 	// so an absent DAST run counts as sealed for state purposes only when
 	// the audit-level DastStatus says the half was never going to run.
 	if !seen[HalfDast] {
@@ -2270,6 +2520,15 @@ func (r *Run) validate(auditID string) error {
 		if err := ValidateDastCoverage(r.Properties.DastCoverage); err != nil {
 			return err
 		}
+		if r.Properties.SpecHarvest != nil {
+			return fmt.Errorf("%s is on the DAST run, and it belongs to the SAST half: "+
+				"plan/design/dynamic-tier.md:628-630 assigns spec harvesting to the SAST tier and forbids "+
+				"the DAST tier from re-deriving it, so a copy here is a second durable "+
+				"statement of one fact that can disagree with the first", PropRunSpecHarvest)
+		}
+	}
+	if err := ValidateSpecHarvest(r.Properties.SpecHarvest); err != nil {
+		return err
 	}
 	for i := range r.Results {
 		if err := r.Results[i].validate(r.Properties.Half); err != nil {
@@ -2311,6 +2570,92 @@ func ValidateDastCoverage(c *DastCoverage) error {
 	return nil
 }
 
+// ValidateSpecHarvest checks that a spec-harvest statement says which of the
+// three empty-list meanings applies, and that its file list cannot be read as
+// complete when it is not.
+//
+// A nil h is legal and means the record makes no statement — a record
+// assembled before this slot was wired. Every other absence is refused: a
+// non-nil SpecHarvest whose Outcome is the zero value, or whose
+// OmittedFileCount is null under SpecHarvestRan, fails here rather than
+// defaulting to the permissive reading.
+func ValidateSpecHarvest(h *SpecHarvest) error {
+	if h == nil {
+		return nil
+	}
+	if err := ValidateSpecHarvestOutcome(string(h.Outcome)); err != nil {
+		return fmt.Errorf("%s: %w (there is no default: an empty file list means one thing "+
+			"under %q and the opposite thing under %q, and the difference is the denominator "+
+			"of %s)", PropRunSpecHarvest, err, SpecHarvestRan, SpecHarvestSkipped,
+			PropRunDastCoverage)
+	}
+	switch h.Outcome {
+	case SpecHarvestRan:
+		if h.Files == nil {
+			return fmt.Errorf("%s.files is null under %q; use an empty array. A null list and "+
+				"an empty list must not be the same observation — one says the harvest found "+
+				"nothing, the other says nobody wrote the list down",
+				PropRunSpecHarvest, SpecHarvestRan)
+		}
+		if h.OmittedFileCount == nil {
+			return fmt.Errorf("%s.omittedFileCount is null under %q and is required there. "+
+				"It is a pointer precisely so that forgetting it fails closed: an int would "+
+				"default to 0, and 0 asserts that files is COMPLETE",
+				PropRunSpecHarvest, SpecHarvestRan)
+		}
+		if *h.OmittedFileCount < 0 {
+			return fmt.Errorf("%s.omittedFileCount is %d; a count of files not carried cannot "+
+				"be negative", PropRunSpecHarvest, *h.OmittedFileCount)
+		}
+	case SpecHarvestSkipped:
+		if len(h.Files) > 0 {
+			return fmt.Errorf("%s reports %q and carries %d files. A pass that did not run "+
+				"cannot have delivered files, and a record asserting both is one no consumer "+
+				"can act on", PropRunSpecHarvest, SpecHarvestSkipped, len(h.Files))
+		}
+		if h.OmittedFileCount != nil {
+			return fmt.Errorf("%s.omittedFileCount must be null under %q: a pass that did not "+
+				"run saw nothing and therefore omitted nothing",
+				PropRunSpecHarvest, SpecHarvestSkipped)
+		}
+	}
+	for i := range h.Files {
+		if err := validateSpecHarvestFile(&h.Files[i]); err != nil {
+			return fmt.Errorf("%s.files[%d]: %w", PropRunSpecHarvest, i, err)
+		}
+	}
+	return nil
+}
+
+func validateSpecHarvestFile(f *SpecHarvestFile) error {
+	if f.Location.URI == "" {
+		return fmt.Errorf("location.uri is required; a harvested file nobody can name is a " +
+			"file no operator can go look at when its routes turn out to be wrong")
+	}
+	if f.SizeBytes < 0 {
+		return fmt.Errorf("sizeBytes is %d; a file's length cannot be negative", f.SizeBytes)
+	}
+	if err := ValidateDigest(f.ContentSHA256); err != nil {
+		return fmt.Errorf("contentSha256 must be the lowercase-hex SHA-256 of the file's exact "+
+			"harvested bytes: %w", err)
+	}
+	if f.Content != nil && len(f.Content.Text) != f.SizeBytes {
+		return fmt.Errorf("content is carried inline and is %d bytes while sizeBytes is %d. "+
+			"Inline content is the WHOLE file: a silently truncated spec yields a short route "+
+			"list, and a short route list is a smaller coverage denominator, which makes "+
+			"endpoint_coverage look better than it is", len(f.Content.Text), f.SizeBytes)
+	}
+	if err := ValidateTrust(string(f.Trust)); err != nil {
+		return err
+	}
+	if !f.Trust.LegalForExternalString() {
+		return fmt.Errorf("trust is %q, and a spec file committed to the target repository is "+
+			"external text whatever Anvil did to assemble the struct around it",
+			TrustAnvilGenerated)
+	}
+	return nil
+}
+
 func (r *Result) validate(runHalf Half) error {
 	p := &r.Properties
 	if p.FindingID == "" {
@@ -2335,11 +2680,11 @@ func (r *Result) validate(runHalf Half) error {
 	if err := ValidateDetectorKind(string(p.Detector.Kind)); err != nil {
 		return err
 	}
-	// plan/00-SPINE.md S7: the host agent is read-only, "not behind a flag."
+	// the spine's safety section: the host agent is read-only, "not behind a flag."
 	// The store enforces the same rule with a CHECK constraint; enforcing it
 	// here too means a producer fails before it reaches the store.
 	if p.Detector.Kind == DetectorKindHost && p.RemediableByAgent {
-		return fmt.Errorf("%s must be false for a host finding (00-SPINE.md S7: the host agent is read-only)",
+		return fmt.Errorf("%s must be false for a host finding (the spine's safety section: the host agent is read-only)",
 			PropResultRemediableByAgent)
 	}
 	if p.EvidenceClass == EvidenceClassHost && p.RemediableByAgent {
@@ -2367,6 +2712,21 @@ func (r *Result) validate(runHalf Half) error {
 		if p.Advisory.Excerpt != nil && !p.Advisory.Excerpt.Trust.LegalForExternalString() {
 			return fmt.Errorf("%s.excerpt is external text and cannot be %q",
 				PropResultAdvisory, TrustAnvilGenerated)
+		}
+		if n := p.Advisory.LicenseManualNote; n != nil {
+			if strings.TrimSpace(n.Text) == "" {
+				return fmt.Errorf("%s.licenseManualNote is present and carries no text. It is "+
+					"the QUOTED OPERATIVE SENTENCE from the publisher's licence; a blank one "+
+					"satisfies \"a note exists\" while establishing nothing, which is the "+
+					"absent value wearing the legitimate one's clothes (the spine's licence section)",
+					PropResultAdvisory)
+			}
+			if !n.Trust.LegalForExternalString() {
+				return fmt.Errorf("%s.licenseManualNote is %q; it is a QUOTATION from a "+
+					"publisher's LICENSE file, so the bytes originated outside Anvil and "+
+					"transcribing them is not authoring them",
+					PropResultAdvisory, TrustAnvilGenerated)
+			}
 		}
 	}
 	if p.Repro != nil {
@@ -2428,7 +2788,7 @@ func validateCorrelation(c *Correlation) error {
 		return fmt.Errorf("%s: a CWE-only match is banned as a sole signal", PropResultCorrelation)
 	}
 	if c.Verified && !verifiable {
-		return fmt.Errorf("%s.verified is true but no %q or %q signal is present; confidence alone never qualifies (00-SPINE.md S7)",
+		return fmt.Errorf("%s.verified is true but no %q or %q signal is present; confidence alone never qualifies (the spine's safety section)",
 			PropResultCorrelation, CorrelationSignalResponseStackTrace, CorrelationSignalRerunFlip)
 	}
 	if c.Confidence < 0 || c.Confidence > 1 {
@@ -2443,16 +2803,21 @@ func validateCorrelation(c *Correlation) error {
 
 // AreaMappingOwners names the boundary steps that are permitted to translate
 // a foreign vocabulary onto this file's literals, per
-// plan/IMPLEMENTATION-PLAN.md §6. Anything not listed here must emit these
+// the shared-vocabulary review. Anything not listed here must emit these
 // literals directly. "A mapping with an owner and a test is not the same
 // thing as two vocabularies drifting."
 var AreaMappingOwners = map[string]string{
-	"anvil/verdict": "B.12 — maps Lane B's in-process Verdict.Result (EXHIBITS|...) onto Verdict, " +
-		"including case normalisation, at the point it places findings on the record (ruling G8).",
-	"anvil/state":  "O.2 — emits State directly; its former open|sast_sealed|sealed|expired machine is struck (ruling G2).",
-	"anvil/status": "O.2 — keys per-half transitions on HalfStatusSealed, not on a `complete` token (ruling G5).",
-	"anvil/dastStatus": "D.26 — emits DastStatus directly; its former five-value set shared zero literals " +
-		"with the record's column and could not be stored (rulings G3+G6).",
-	"anvil/target.provisioning": "D.26 — writes the provisioning path here, NOT into target.provenance (rulings G4+G7).",
-	"handoff.state":             "R.4 owns the DDL; X.8/X.9 read and write it. Area X's anvil_ledger is deleted (rulings G9+G10).",
+	"anvil/verdict": "The Lane B pipeline — maps Lane B's in-process Verdict.Result (EXHIBITS|...) onto Verdict, " +
+		"including case normalisation, at the point it places findings on the record (the verdict-mapping ruling).",
+	"anvil/state":  "The controller's state wiring — emits State directly; its former open|sast_sealed|sealed|expired machine is struck (the audit-state ruling).",
+	"anvil/status": "The controller's state wiring — keys per-half transitions on HalfStatusSealed, not on a `complete` token (the half-status ruling).",
+	"anvil/dastStatus": "Coverage reporting — emits DastStatus directly; its former five-value set shared zero literals " +
+		"with the record's column and could not be stored (the dastStatus ruling).",
+	"anvil/target.provisioning": "Coverage reporting — writes the provisioning path here, NOT into target.provenance (the target-provenance split).",
+	"handoff.state":             "The store schema owns the DDL; the consumption controller and the queue cut read and write it. Remediation's anvil_ledger is deleted (the handoff-table and one-ledger rulings).",
+	"anvil/specHarvest.outcome": "NO MAPPING, and none may be added. The SAST spec-harvest pass emits " +
+		"SpecHarvestOutcome directly, and the repo spec reader's inventory.HarvestOutcome already uses the same two " +
+		"literals (harvest_ran|harvest_skipped), so the handoff is identity. A translating step here " +
+		"would be the produce/consume shape the shared-vocabulary review exists to close, re-introduced at the one seam where " +
+		"the two vocabularies currently cannot disagree.",
 }

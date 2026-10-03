@@ -1,5 +1,5 @@
-### Anvil host package collector — systemd unit (step A.9 of
-### plan/20-lane-a-ingestion-sca.md).
+### Anvil host package collector — systemd unit (the host collector of
+### plan/design/lane-a.md).
 ###
 ### THIS IS NOT A DAEMON. research/12-linux-host-scanning.md's recommendation
 ### is explicit — "Host agent: don't build a daemon — build a collector, and
@@ -9,12 +9,12 @@
 ### that decision expressed in the unit; Lane A exit criterion 14 requires it,
 ### and internal/collector/host/collect_test.go asserts it against this file.
 ###
-### The cadence is NOT here. A .timer (or plan/00-SPINE.md S4's
+### The cadence is NOT here. A .timer (or the
 ### `.anvil/policy.yml` trigger policy) supplies it, because research/12 hard
 ### boundary #5 puts scan cadence in config with a documented default and none
 ### compiled in.
 ###
-### THE COLLECTOR IS READ-ONLY (plan/00-SPINE.md S7, research/12 hard boundary
+### THE COLLECTOR IS READ-ONLY (the spine's safety section, research/12 hard boundary
 ### #1). That is enforced first in the Go source — the set of executable
 ### command lines is a compile-time constant containing only `dpkg-query -W`,
 ### `rpm -qa`, `apk list --installed` and `apk info -v`, with no argv
@@ -40,7 +40,7 @@ Type=oneshot
 # DIRECTIVE THIS UNIT MAY HAVE. systemd runs ExecStartPre=, ExecStartPost=,
 # ExecCondition=, ExecReload=, ExecStop= and ExecStopPost= with the same
 # identity and privileges as ExecStart=, so a package-manager call in any of
-# them is plan/00-SPINE.md S7 violated at the deployment layer rather than in
+# them is the spine's safety section violated at the deployment layer rather than in
 # the code — and a review that reads only ExecStart= will not see it. The
 # earlier version of collect_test.go checked exactly that one directive;
 # TestTheUnitGuardScansEveryExecDirective now checks every key beginning with

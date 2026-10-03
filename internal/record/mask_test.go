@@ -14,7 +14,7 @@ import (
 // ---------------------------------------------------------------------------
 // Planted secrets
 //
-// These are the fixtures R.8's stop condition names — "a bearer token, a
+// These are the fixtures secrets masking's stop condition names — "a bearer token, a
 // session cookie, an API key in a query parameter" — plus three more that
 // cover the ways a secret reaches the record WITHOUT sitting in a header the
 // denylist knows by name.
@@ -45,13 +45,14 @@ const (
 	// never reaches the server and which a query-only masker ignores.
 	plantedFragmentToken = "ya29.A0ARrdaM-IMPLICIT-FLOW-ACCESS-TOKEN-9f8e7d"
 	// plantedCurlOnly appears in ONE place in the whole fixture: a header
-	// option of anvil/repro.curl. CRITIQUE-02 F11: before this constant
-	// existed the fixture put plantedBearer in both the Authorization header
-	// and the curl string, so the stop-condition test passed by PROPAGATION
-	// from the header and read as proof that repro.curl was masked. It was
-	// not -- F3 reproduced a live token surviving there. A secret with no
-	// other route into the record is the only fixture that can prove the
-	// command line is masked in its own right.
+	// option of anvil/repro.curl. The sealing, claims and masking review's
+	// finding F11: before this constant existed the fixture put plantedBearer
+	// in both the Authorization header and the curl string, so the
+	// stop-condition test passed by PROPAGATION from the header and read as
+	// proof that repro.curl was masked. It was not -- F3 reproduced a live
+	// token surviving there. A secret with no other route into the record is
+	// the only fixture that can prove the command line is masked in its own
+	// right.
 	plantedCurlOnly = "ghp-CURL-ONLY-0000000000000000000000000000"
 	// plantedCheckoutToken sits in the userinfo of anvil/target.repoUrl and
 	// nowhere else. `https://x-access-token:<token>@github.com/...` is the
@@ -233,7 +234,8 @@ func dastFixture() *SARIFLog {
 					Repro: &Repro{
 						// plantedCurlOnly appears nowhere else in the record,
 						// so its absence after masking cannot be explained by
-						// propagation from a header (CRITIQUE-02 F11).
+						// propagation from a header (the sealing, claims and
+						// masking review's finding F11).
 						Curl: "curl -X POST -H 'Authorization: Bearer " + plantedBearer +
 							"' -H 'X-Session-Token: " + plantedCurlOnly +
 							"' https://staging.payments.internal/api/login",
@@ -264,7 +266,7 @@ func mustMarshal(t *testing.T, v any) string {
 // The stop-condition test
 // ---------------------------------------------------------------------------
 
-// TestMaskRecordLeavesNoPlantedSecretAnywhere is R.8's stop condition: after
+// TestMaskRecordLeavesNoPlantedSecretAnywhere is secrets masking's stop condition: after
 // masking, the SERIALIZED record contains zero occurrences of any planted
 // value, anywhere in the output.
 //
@@ -479,7 +481,7 @@ func hasAnomaly(rep *MaskReport, rule string) bool {
 // ---------------------------------------------------------------------------
 
 // TestDenylistMatchesThePlan pins the five names and two patterns
-// plan/40-record-and-storage.md R.8 specifies. If a future edit drops one,
+// secrets masking's design specifies. If a future edit drops one,
 // this fails rather than the masker silently narrowing.
 func TestDenylistMatchesThePlan(t *testing.T) {
 	want := []string{"authorization", "cookie", "set-cookie", "proxy-authorization", "x-api-key"}
@@ -547,7 +549,7 @@ func TestDenylistIsCaseInsensitiveAndPatternMatched(t *testing.T) {
 // TestKnownDenylistGaps documents, executably, what the denylist as specified
 // does NOT catch.
 //
-// plan/40-record-and-storage.md Open Question 8 records that this list is
+// plan/design/record-and-store.md Open Question 8 records that this list is
 // "documented but not exhaustively researched" and asks for a dedicated
 // security review before the masking pipeline ships. This test is that
 // admission in a form that cannot rot: it asserts the CURRENT behaviour, so
@@ -791,7 +793,7 @@ func TestMaskRecordIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestAssertMaskedIsTheSinkGate. plan/00-SPINE.md S7 is "enforce in code, not
+// TestAssertMaskedIsTheSinkGate. The spine's safety section is "enforce in code, not
 // documentation": a sink can refuse an unmasked record instead of trusting
 // that some earlier step remembered.
 func TestAssertMaskedIsTheSinkGate(t *testing.T) {
@@ -1004,7 +1006,7 @@ func TestJSONPointerEscape(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression guards for CRITIQUE-02 (R.10 critic gate 2).
+// Regression guards for the sealing, claims and masking review.
 // ---------------------------------------------------------------------------
 
 // probeSecret is a credential planted by the tests below into ONE field at a
@@ -1028,8 +1030,8 @@ func minimalLog() *SARIFLog {
 	return l
 }
 
-// TestReproCurlIsMaskedFromItsOwnEvidence is CRITIQUE-02 F3(i), reproduced and
-// then closed.
+// TestReproCurlIsMaskedFromItsOwnEvidence is the sealing, claims and masking
+// review's finding F3(i), reproduced and then closed.
 //
 // The credential is planted ONLY in anvil/repro.curl. There is no
 // Authorization header anywhere in this record, so pass 2 propagation has
@@ -1159,10 +1161,10 @@ func TestReproCurlLeavesBenignCommandsAlone(t *testing.T) {
 	}
 }
 
-// TestTargetURLCredentialsAreMasked is CRITIQUE-02 F3(ii). The credential is
-// planted only in anvil/target.repoUrl and anvil/target.runtimeBaseUrl, on a
-// record with no HTTP evidence at all, so nothing else can account for its
-// disappearance.
+// TestTargetURLCredentialsAreMasked is the sealing, claims and masking review's
+// finding F3(ii). The credential is planted only in anvil/target.repoUrl and
+// anvil/target.runtimeBaseUrl, on a record with no HTTP evidence at all, so
+// nothing else can account for its disappearance.
 func TestTargetURLCredentialsAreMasked(t *testing.T) {
 	log := minimalLog()
 	log.Properties.Target.RepoURL = "https://x-access-token:" + probeSecret + "@github.com/org/repo.git"
@@ -1192,11 +1194,11 @@ func TestTargetURLCredentialsAreMasked(t *testing.T) {
 	}
 }
 
-// TestAssertMaskedRejectsAnUnmaskedTargetURL is CRITIQUE-02 F4, stated as the
-// sub-case TestAssertMaskedIsTheSinkGate was missing. Mask masks
-// webRequest.target; before this fix AssertMasked did not look at it at all,
-// so a record whose only credential was in a URL passed the gate that exists
-// to catch precisely that.
+// TestAssertMaskedRejectsAnUnmaskedTargetURL is the sealing, claims and masking
+// review's finding F4, stated as the sub-case TestAssertMaskedIsTheSinkGate was
+// missing. Mask masks webRequest.target; before this fix AssertMasked did not
+// look at it at all, so a record whose only credential was in a URL passed the
+// gate that exists to catch precisely that.
 func TestAssertMaskedRejectsAnUnmaskedTargetURL(t *testing.T) {
 	for _, where := range []struct{ name, target string }{
 		{"query", "https://app.invalid/v1/orders?api_key=" + probeSecret},
@@ -1313,8 +1315,8 @@ func collectMaskSites(l *SARIFLog) []maskSite {
 // fields precisely so it cannot go stale. A future step that teaches Mask
 // about a new field adds it to walkMaskSurface; this test then demands the
 // sink gate cover it too, and fails if it does not. That is the property
-// CRITIQUE-02 F4 found missing — "a gate weaker than the thing it guards is
-// worse than none".
+// the sealing, claims and masking review's finding F4 found missing — "a gate
+// weaker than the thing it guards is worse than none".
 func TestAssertMaskedCoversEverySiteMaskCovers(t *testing.T) {
 	reference := dastFixture()
 	if err := MaskRecord(reference); err != nil {
@@ -1368,8 +1370,9 @@ func TestAssertMaskedCoversEverySiteMaskCovers(t *testing.T) {
 }
 
 // TestMaskSurfaceCoversTheNamedCredentialCarriers pins the specific fields
-// CRITIQUE-02 named, by POINTER, so that deleting one from walkMaskSurface is
-// a test failure rather than a silent regression to F3.
+// the sealing, claims and masking review named, by POINTER, so that deleting
+// one from walkMaskSurface is a test failure rather than a silent regression to
+// F3.
 func TestMaskSurfaceCoversTheNamedCredentialCarriers(t *testing.T) {
 	seen := map[string]bool{}
 	walkMaskSurface(dastFixture(), surface{
@@ -1392,7 +1395,7 @@ func TestMaskSurfaceCoversTheNamedCredentialCarriers(t *testing.T) {
 		"/runs/0/results/0/properties/anvil~1repro/curl",
 	} {
 		if !seen[ptr] {
-			t.Errorf("%s is not on the mask surface; CRITIQUE-02 F3 named it as a live-credential carrier", ptr)
+			t.Errorf("%s is not on the mask surface; the sealing, claims and masking review's finding F3 named it as a live-credential carrier", ptr)
 		}
 	}
 }

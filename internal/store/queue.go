@@ -1,6 +1,6 @@
-// The queue re-cut rule (step R.11).
+// The queue re-cut rule.
 //
-// plan/00-SPINE.md S6, in full, because the second half is the part that gets
+// The spine's record section, in full, because the second half is the part that gets
 // lost: "re-cut the work queue on every version bump and **reserve a
 // configurable fraction (default 50%) of remaining budget for late
 // DAST-confirmed arrivals** — otherwise incremental publication silently
@@ -29,8 +29,8 @@
 // budget after. Nothing is capped, and nothing is spent on a class that does
 // not exist yet.
 //
-// WHAT THIS FILE DOES NOT DO — the CRITIQUE-02 §7 open question, decided.
-// §7 records as unresolved "whether R.11's queue re-cut is intended to
+// WHAT THIS FILE DOES NOT DO — the sealing, claims and masking review §7 open question, decided.
+// §7 records as unresolved "whether the queue re-cut is intended to
 // Dispose(..., superseded) every stale row of a bumped audit". IT IS NOT.
 // A re-cut never touches a `leased` row, and never writes `superseded`.
 // Reasons, in the order they are load-bearing:
@@ -49,24 +49,25 @@
 //  2. Doing otherwise would expire a live claim. research/08 §4 point 2:
 //     "Never expire a live claim. A finding at expires_at whose lease is still
 //     alive must be allowed to finish. Expiring it would let a second agent
-//     write a competing fix for the same defect." CRITIQUE-02 verdict (e)
-//     ("reaper never drops a live claim") is a PASS that a re-cut yanking
-//     leased rows would turn into a FAIL, and R.7's noSiblingLease invariant —
-//     one live lease per (fingerprint, audit_version) — is defended by
-//     refusing a SECOND grant, not by cancelling the first.
+//     write a competing fix for the same defect." the sealing, claims and
+//     masking review's verdict (e) ("reaper never drops a live claim") is a
+//     PASS that a re-cut yanking leased rows would turn into a FAIL, and the
+//     claim protocol's noSiblingLease invariant — one live lease per
+//     (fingerprint, audit_version) — is defended by refusing a SECOND grant,
+//     not by cancelling the first.
 //  3. It is not expressible without fighting the owner. handoff.Dispose
 //     refuses a leased row on purpose ("only the lease holder may decide the
 //     outcome of its own attempt"), and internal/store cannot call into
 //     internal/handoff at all: handoff imports store, so the edge only runs
 //     one way. A raw-SQL back door here would make internal/store a second
 //     writer to the lease protocol, which is the defect class
-//     plan/IMPLEMENTATION-PLAN.md §6 G9 and G10 exist to prevent.
+//     the handoff-table and one-ledger rulings exist to prevent.
 //  4. `superseded` is the wrong verb for this actor. A re-cut is a BUDGET
 //     decision and its only disposition is `skipped_budget` (research/24 step
 //     9: "everything past the cut is marked SKIPPED_BUDGET and goes into the
 //     report as *found, not fixed* — never silently dropped"). Deciding that a
 //     version bump made a finding obsolete is a correlation judgement about
-//     identity, which belongs to R.12, not to the component that divides
+//     identity, which belongs to correlation, not to the component that divides
 //     tokens.
 //
 // A row this file defers is 'ready' -> 'skipped_budget', which is a legal edge
@@ -94,7 +95,7 @@ import (
 )
 
 // DefaultDastReserveFraction is the documented default for
-// RecutConfig.DastReserveFraction: plan/00-SPINE.md S6's "configurable
+// RecutConfig.DastReserveFraction: the spine's "configurable
 // fraction (default 50%)".
 //
 // It is a DEFAULT, not the value. RecutConfig carries the configured fraction
@@ -140,14 +141,14 @@ var (
 // The field is a pointer precisely so that 0 is expressible. A plain float64
 // with "zero means default" would make "reserve nothing" unreachable through
 // configuration, and "reserve nothing" is the control arm that demonstrates the
-// inversion S6 describes — the one setting a test must be able to select.
+// inversion the spine's record section describes — the one setting a test must be able to select.
 func ReserveFraction(f float64) *float64 { return &f }
 
 // RecutConfig is the queue re-cut's configuration. The zero value is usable
 // and means: default reserve fraction, default per-candidate cost, no severity
 // ordering, wall clock.
 type RecutConfig struct {
-	// DastReserveFraction is S6's "configurable fraction (default 50%) of
+	// DastReserveFraction is the spine's "configurable fraction (default 50%) of
 	// remaining budget" held for late dast_confirmed arrivals. nil selects
 	// DefaultDastReserveFraction. Use ReserveFraction to set it.
 	DastReserveFraction *float64
@@ -166,9 +167,9 @@ type RecutConfig struct {
 	// SeverityRank orders findings within one evidence class, lower first.
 	// It is a map and not a Go enum ON PURPOSE: `finding.severity` is one of
 	// the vocabularies schema.sql deliberately leaves unconstrained because
-	// internal/record does not own it, and freezing it here would be area 40
+	// internal/record does not own it, and freezing it here would be the record area
 	// inventing another area's vocabulary — the exact defect
-	// plan/IMPLEMENTATION-PLAN.md §6 exists to stop. A severity absent from
+	// the shared-vocabulary review exists to stop. A severity absent from
 	// the map ranks last among its class; nil ranks every severity equally and
 	// the cut falls through to finding_id.
 	SeverityRank map[string]int
@@ -243,7 +244,7 @@ type Candidate struct {
 	CostTokens int
 }
 
-// DastConfirmed reports whether this candidate is in the class S6 reserves
+// DastConfirmed reports whether this candidate is in the class the spine's record section reserves
 // budget for. It reads the frozen enum constant, never the literal.
 func (c Candidate) DastConfirmed() bool {
 	return c.EvidenceClass == record.EvidenceClassDastConfirmed
@@ -256,9 +257,10 @@ type Cut struct {
 	AuditVersion  int64
 	DastStatus    record.DastStatus
 
-	// Performed is false when the version guard declined to re-cut. S6 and the
-	// R.11 packet both say a re-cut is triggered by an audit_version bump and
-	// by nothing else; NotCutReason says which guard declined.
+	// Performed is false when the version guard declined to re-cut. The spine's
+	// record section and the queue re-cut's packet both say a re-cut is
+	// triggered by an audit_version bump and by nothing else; NotCutReason says
+	// which guard declined.
 	Performed    bool
 	NotCutReason string
 
@@ -297,8 +299,8 @@ type Cut struct {
 func (c Cut) AdmittedTokens() int { return sumCost(c.Admitted) }
 
 // AdmittedDastConfirmedTokens is the total charged to admitted candidates in
-// the class S6 reserves for. It is the number the reservation exists to keep
-// above ReservedTokens once such candidates exist.
+// the class the spine's record section reserves for. It is the number the
+// reservation exists to keep above ReservedTokens once such candidates exist.
 func (c Cut) AdmittedDastConfirmedTokens() int {
 	total := 0
 	for _, cand := range c.Admitted {
@@ -311,7 +313,7 @@ func (c Cut) AdmittedDastConfirmedTokens() int {
 
 // DeferredDastConfirmed counts admitted-nothing in the highest-value class.
 // A cut where this is non-zero while a lower class was admitted is the
-// inversion S6 forbids.
+// inversion the spine's record section forbids.
 func (c Cut) DeferredDastConfirmed() int {
 	n := 0
 	for _, cand := range c.Deferred {
@@ -322,10 +324,11 @@ func (c Cut) DeferredDastConfirmed() int {
 	return n
 }
 
-// InvertedPriority reports the failure mode S6 names: at least one
+// InvertedPriority reports the failure mode the spine's record section names: at least one
 // dast_confirmed candidate was pushed past the cut while at least one weaker
-// evidence class was admitted. It is a property of ONE cut; the inversion S6
-// describes is produced across cuts, and queue_test.go drives both.
+// evidence class was admitted. It is a property of ONE cut; the inversion the
+// spine's record section describes is produced across cuts, and queue_test.go
+// drives both.
 func (c Cut) InvertedPriority() bool {
 	if c.DeferredDastConfirmed() == 0 {
 		return false
@@ -377,11 +380,11 @@ func NewRecutter(db *sql.DB, cfg RecutConfig) (*Recutter, error) {
 // ReserveFraction reports the configured fraction, after defaulting.
 func (r *Recutter) ReserveFraction() float64 { return r.cfg.reserveFraction() }
 
-// RecutQueue is the R.11 packet's entry point: re-cut the work queue for one
+// RecutQueue is the queue re-cut's entry point: re-cut the work queue for one
 // audit against the budget remaining at this moment.
 //
 // It re-cuts only when the audit's `audit_version` has moved since the last cut
-// this Recutter performed, which is the S6 trigger and the only one — a write
+// this Recutter performed, which is the spine's record section trigger and the only one — a write
 // to `handoff` is not a trigger, and the packet forbids making it one. Use
 // RecutQueueContext when the arithmetic matters to the caller.
 func (r *Recutter) RecutQueue(auditID string, remainingBudgetTokens int) error {
@@ -443,7 +446,7 @@ func (r *Recutter) RecutQueueContext(ctx context.Context, auditID string, remain
 	if previous, seen := r.lastCut[auditRecordID]; seen && previous == version {
 		cut.NotCutReason = fmt.Sprintf(
 			"audit_record %d is still at audit_version %d, already cut at that version; "+
-				"S6 re-cuts on a version bump, not on a handoff write",
+				"The spine's record section re-cuts on a version bump, not on a handoff write",
 			auditRecordID, version)
 		return cut, nil
 	}
@@ -708,7 +711,7 @@ func severityOrder(severityRank map[string]int, severity string) int {
 // literal, in descending evidence strength — which is also the default rank
 // order". Deriving it means this file holds no second copy of that ordering and
 // no bare evidence-class literal: adding a class to the frozen enum ranks it
-// here automatically, in the position R.1 put it.
+// here automatically, in the position the record contract put it.
 var evidenceClassRanks = func() map[record.EvidenceClass]int {
 	values := record.EvidenceClassValues()
 	ranks := make(map[record.EvidenceClass]int, len(values))
@@ -745,20 +748,20 @@ func EvidenceClassRank(e record.EvidenceClass) int {
 //
 //   - running: no reproduction has been sealed yet (HasDynamicEvidence false),
 //     but the half is still working and arrivals are exactly what is expected
-//     (true here). This is S6's central case.
+//     (true here). This is the spine's central case.
 //   - completed_failed, timed_out: the half did not finish, so it has produced
 //     no verdict about any particular finding (HasDynamicEvidence false) — but
 //     findings it confirmed before it crashed or ran out of clock are real and
 //     still get enqueued (true here). Reserving for them is right even though
 //     they cannot reach `validated` on this audit: a proof-carrying finding is
-//     still the highest-value patch Anvil can propose, and S7 withholds the
+//     still the highest-value patch Anvil can propose, and the spine's safety section withholds the
 //     "verified fixed" verdict, not the fix.
 //
 // False for exactly the five states in which no dynamic evidence exists or can:
 // not_run (the DAST tier is not installed at all), skipped_no_manifest (it ran
 // and there was nothing to scan), completed_clean (it scanned and found
 // nothing), target_boot_failed and target_unreachable (there was never a live
-// target — the distinction plan/00-SPINE.md S6 exists to preserve).
+// target — the distinction the spine's record section exists to preserve).
 func LateDastArrivalsPossible(s record.DastStatus) bool {
 	switch s {
 	case record.DastStatusRunning,
@@ -776,27 +779,27 @@ func LateDastArrivalsPossible(s record.DastStatus) bool {
 	default:
 		// Unreachable through RecutQueueContext, which validates against the
 		// frozen enum first. Conservative if it is ever reached another way:
-		// reserving for an unknown state protects the class S6 protects.
+		// reserving for an unknown state protects the class the spine's record section protects.
 		return true
 	}
 }
 
-// ResolveAuditRecordID turns the R.11 packet's `auditID string` into the store's
+// ResolveAuditRecordID turns the queue re-cut's `auditID string` into the store's
 // audit_record primary key.
 //
 // THE PACKET NAMES A STRING AND THE SCHEMA HAS NO STRING KEY. `anvil/auditId`
-// is a required record field (plan/40-record-and-storage.md's Record Field
+// is a required record field (plan/design/record-and-store.md's Record Field
 // Contract) but schema.sql carries NO `audit_id` column — it is a frozen
-// interface and R.11 may not add one. So this resolver accepts the decimal
+// interface and the queue re-cut may not add one. So this resolver accepts the decimal
 // `audit_record_id` and says exactly that when it cannot.
 //
-// It is deliberately NOT the CRITIQUE-02 F7 mistake. F7 was about EXPORTING a
-// rowid as a portable identity — hashing it into a git trailer where it means
-// nothing outside one copy of one database file. This is the opposite
-// direction: a local lookup key, never emitted, never hashed, never handed to
-// another process. When a later step adds the `anvil/auditId` column, this
-// function is the single place that changes and every caller keeps its
-// signature.
+// It is deliberately NOT the sealing, claims and masking review's finding F7
+// mistake. F7 was about EXPORTING a rowid as a portable identity — hashing it
+// into a git trailer where it means nothing outside one copy of one database
+// file. This is the opposite direction: a local lookup key, never emitted,
+// never hashed, never handed to another process. When a later step adds the
+// `anvil/auditId` column, this function is the single place that changes and
+// every caller keeps its signature.
 func ResolveAuditRecordID(ctx context.Context, db *sql.DB, auditID string) (int64, error) {
 	trimmed := strings.TrimSpace(auditID)
 	if trimmed == "" {

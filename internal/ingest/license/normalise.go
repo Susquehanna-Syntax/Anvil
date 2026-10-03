@@ -62,7 +62,7 @@ import (
 //
 // internal/ingest/sanitize had the same problem, a separate hand list, and four
 // defeats of its own. Two lists solving one problem is the defect class
-// plan/IMPLEMENTATION-PLAN.md §6 closed ten instances of, so the definition now
+// the shared-vocabulary review closed ten instances of, so the definition now
 // lives once, in internal/ingest/invisible, and both packages consume it. That
 // package's TestBothConsumersDropEveryMemberOfTheClass sweeps the whole code
 // space, with no exclusions, and fails if this file or the sanitizer ever stops

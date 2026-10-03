@@ -1,4 +1,4 @@
-// comparator_test.go is A.17's validation.
+// comparator_test.go is the comparator's validation.
 //
 // ===========================================================================
 // WHERE THE CORPUS COMES FROM, AND WHY THAT IS THE FIRST THING IN THIS FILE
@@ -70,7 +70,7 @@
 //	G5 dependency-graph allowlist     -> TestDependencyGraphGuardFiresOnAPackageThatViolatesIt
 //	G6 determinism corpus             -> TestCorpusDigestIsSensitiveToItsInput
 //
-// The guards A.18 forced, each of which was verified RED against the
+// The guards the comparator review forced, each of which was verified RED against the
 // PRE-FIX code before the fix landed — not merely green after it:
 //
 //	G7  empty advisory cache is not clean
@@ -379,7 +379,7 @@ var rpmAuthored = []vector{
 //
 // The TRANSCRIBED apk corpus is apkTranscribed in corpus_transcribed_test.go:
 // all 738 ordering rows of apk-tools' test/unit/version.data. That is a change
-// of kind, not of degree — A.18's standing complaint was that not one apk
+// of kind, not of degree — the comparator review's standing complaint was that not one apk
 // vector had ever been diffed against apk's own fixture, and the answer used
 // to be a set of rows citing a file nobody had opened.
 //
@@ -1188,7 +1188,7 @@ func TestParsePurl(t *testing.T) {
 }
 
 // The purl's version-free base must come from record.PurlBase and nowhere
-// else. plan/00-SPINE.md S6: one fingerprint algorithm, defined once.
+// else. The spine's record section: one fingerprint algorithm, defined once.
 func TestPurlBaseDelegatesToTheRecordContract(t *testing.T) {
 	raw := "pkg:deb/debian/openssl@1.1.1n-0+deb11u5?arch=amd64#sub"
 	p, err := ParsePurl(raw)
@@ -1303,7 +1303,7 @@ func TestRangeBoundariesAreExplicitAtEveryEdge(t *testing.T) {
 		// installed "1:0.1", want false}. An installed version carrying an
 		// epoch against a range carrying none, asserted NOT AFFECTED. It was
 		// the implementation's behaviour written down as the expectation, and
-		// it is the single line that made A.18's blocker §3.2 look intended.
+		// it is the single line that made the comparator review's blocker §3.2 look intended.
 		{"an epoch on both sides orders normally", base(AffectedRange{Introduced: "1:1.0", Fixed: "1:2.0"}), "1:0.1", false},
 		{"an epoch on both sides, inside the range", base(AffectedRange{Introduced: "1:1.0", Fixed: "1:2.0"}), "1:1.5", true},
 	}
@@ -1439,7 +1439,7 @@ func TestAnEmptyRangeRowDoesNotMatchEverything(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The backport regression — A.17's named validation requirement
+// The backport regression — the comparator's named validation requirement
 // ---------------------------------------------------------------------------
 
 // backportFixture is the CVE-2023-32681 / RHSA-2023:4520 scenario from
@@ -1600,7 +1600,7 @@ func TestVendorRangeCanStillProduceAFinding(t *testing.T) {
 		t.Errorf("FixedVersion = %q", r.FixedVersion)
 	}
 	if r.RemediableByAgent {
-		t.Error("a HOST finding reported RemediableByAgent; plan/00-SPINE.md S6/S7 and the cache's " +
+		t.Error("a HOST finding reported RemediableByAgent; the spine's record and safety sections and the cache's " +
 			"finding_host_not_remediable CHECK both forbid it")
 	}
 	if r.Detector != record.DetectorKindHost || r.EvidenceClass != record.EvidenceClassHost {
@@ -1700,7 +1700,7 @@ func TestSilentCleanGuardFiresOnEveryEmptyShape(t *testing.T) {
 			Refusals: []Refusal{{Reason: RefusalUnboundedRange}}, Complete: false,
 		}, true},
 
-		// THE ROW A.18 SHOWED WAS MISSING, AND IT IS THE ONE THIS PACKAGE
+		// THE ROW the comparator review SHOWED WAS MISSING, AND IT IS THE ONE THIS PACKAGE
 		// MOST NEEDED. An empty advisory cache over a full, well-formed
 		// inventory: nothing refused, nothing errored, every package
 		// evaluated — and not one of them compared against anything. Note
@@ -1736,7 +1736,7 @@ func TestSilentCleanGuardFiresOnEveryEmptyShape(t *testing.T) {
 	}
 }
 
-// TestCoverageCountsTheFalseNegativeRiskClass: A.17's Expected output schema
+// TestCoverageCountsTheFalseNegativeRiskClass: the comparator's Expected output schema
 // requires CoverageReport to report "counts of packages with no matchable
 // identity (the false-negative-risk class from research/12)".
 func TestCoverageCountsTheFalseNegativeRiskClass(t *testing.T) {
@@ -1781,7 +1781,7 @@ func TestCoverageCountsTheFalseNegativeRiskClass(t *testing.T) {
 		t.Errorf("PackagesWithNoAdvisoryData = %d, want 1", cov.PackagesWithNoAdvisoryData)
 	}
 	// BOTH refused packages appear: "npm" arrived on the ecosystem column and
-	// "pypi" on the purl type. Before A.21 this was []string{"npm"} alone,
+	// "pypi" on the purl type. Before the Lane A exit gate this was []string{"npm"} alone,
 	// and the entry that went missing was the one whose record was BETTER
 	// formed. See TestBothRefusalRoutesReachEcosystemsRefused.
 	want := []string{"npm", "pypi"}
@@ -1850,7 +1850,7 @@ func TestCancelledContextIsAnErrorNotAPartialAnswer(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The A.18 findings, each with the guard that would have caught it
+// The comparator review's findings, each with the guard that would have caught it
 // ---------------------------------------------------------------------------
 //
 // Every test in this section was written against the PRE-FIX code first and
@@ -1858,7 +1858,7 @@ func TestCancelledContextIsAnErrorNotAPartialAnswer(t *testing.T) {
 // nobody has tested, and each of these covers a defect that was live in a
 // package whose whole suite was passing.
 
-// G7 (A.18 §3.1, blocker). An empty advisory cache over a full inventory of
+// G7 (the comparator review §3.1, blocker). An empty advisory cache over a full inventory of
 // well-formed packages is an ABSENCE OF DATA, not a clean host.
 //
 // RED against the pre-fix code: AssertNotSilentlyClean branched on
@@ -1875,7 +1875,7 @@ func TestAFullInventoryAgainstAnEmptyAdvisoryCacheIsNotClean(t *testing.T) {
 	}
 
 	// An advisory source that is perfectly healthy and simply holds nothing:
-	// A.5's bootstrap not yet run, or run and produced nothing, or ingestion
+	// The sanitizer review's bootstrap not yet run, or run and produced nothing, or ingestion
 	// having normalised ecosystems into a vocabulary the `affected` rows do
 	// not use. No error, no refusal, no malformed input anywhere.
 	m, err := NewMatcher(NewStaticSource(nil))
@@ -1913,7 +1913,7 @@ func TestAFullInventoryAgainstAnEmptyAdvisoryCacheIsNotClean(t *testing.T) {
 	}
 }
 
-// G8 (A.18 §3.2, blocker). An epoch spelled on one side only must never
+// G8 (the comparator review §3.2, blocker). An epoch spelled on one side only must never
 // produce a silent not-affected.
 //
 // RED against the pre-fix code: every one of the refusal cases below returned
@@ -1950,7 +1950,7 @@ func TestAnEpochOnOneSideOnlyIsRefusedAndNeverASilentClean(t *testing.T) {
 	}
 
 	cases := []tc{
-		// A.18's probe P5, verbatim. Every RHEL 9 host carries epoch 2 on
+		// the comparator review's probe P5, verbatim. Every RHEL 9 host carries epoch 2 on
 		// glibc; advisory endpoints routinely omit it. 2 > 0, so the
 		// installed version sorted ABOVE the fixed endpoint and the range
 		// did not contain it.
@@ -2098,7 +2098,7 @@ func (r *recordingSource) AffectedRanges(ctx context.Context, ecosystem, pkg str
 	return r.inner.AffectedRanges(ctx, ecosystem, pkg)
 }
 
-// G9 (A.18 §3.3, blocker). A name spelling the identity check ACCEPTS must be
+// G9 (the comparator review §3.3, blocker). A name spelling the identity check ACCEPTS must be
 // the spelling the advisory lookup uses.
 //
 // RED against the pre-fix code: identify() accepted a case-differing Name
@@ -2548,7 +2548,7 @@ func TestAssertNotSilentlyCleanEstablishesExactlyWhatItsDocClaims(t *testing.T) 
 	}
 }
 
-// G10 (A.18 §4.1, major). A refused range must not decide anything, IN EITHER
+// G10 (the comparator review §4.1, major). A refused range must not decide anything, IN EITHER
 // DIRECTION — and the direction that matters is by absence.
 //
 // RED against the pre-fix code: a refused range was skipped and the rest of
@@ -2625,7 +2625,7 @@ func TestARefusedVendorRangeDoesNotHandItsGroupToUpstream(t *testing.T) {
 	}
 }
 
-// G11 (A.18 §4.3, major). Two feeds carrying the same CVE must not have the
+// G11 (the comparator review §4.3, major). Two feeds carrying the same CVE must not have the
 // remediation target chosen for them by alphabetical order of source name.
 //
 // RED against the pre-fix code: the survivor was the first containing range in
@@ -2700,7 +2700,7 @@ func TestTheRemediationTargetIsTheTightestBoundNotTheFirstSourceName(t *testing.
 	}
 }
 
-// G12 (A.18 §4.4, major). A purl version that disagrees with the version
+// G12 (the comparator review §4.4, major). A purl version that disagrees with the version
 // column is an identity conflict, like the other two disagreements.
 //
 // RED against the pre-fix code: the purl's version was parsed and dropped on
@@ -2771,7 +2771,7 @@ func TestAPurlVersionThatDisagreesWithTheVersionColumnIsAConflict(t *testing.T) 
 	}
 }
 
-// A.18 §4.2, major. The vendor-first defence needs the CVE alias on BOTH rows.
+// The comparator review §4.2, major. The vendor-first defence needs the CVE alias on BOTH rows.
 // This package cannot supply the alias — internal/ingest/cache owns that
 // column, and grouping a vendor row with an upstream row that shares no
 // identifier would be guessing they are about the same flaw. What it can do is
@@ -2842,7 +2842,7 @@ func TestAVendorRangeWithNoCVEAliasIsReportedAsUngroupable(t *testing.T) {
 	}
 }
 
-// A.18 §5.1, minor. UpstreamOnlyAdvisories is the packet-scoped residue an
+// The comparator review §5.1, minor. UpstreamOnlyAdvisories is the packet-scoped residue an
 // operator reviews. A range that decided NOT AFFECTED decided the advisory
 // just as much as one that matched, and listing only the half that produced
 // findings gives them half a picture.
@@ -2893,7 +2893,7 @@ func TestTheUpstreamOnlyResidueIncludesAdvisoriesDecidedNotAffected(t *testing.T
 	}
 }
 
-// A.18 §5.2, minor. With more than one vendor range in a group, the Defence
+// The comparator review §5.2, minor. With more than one vendor range in a group, the Defence
 // must cite the one that actually governed — not vendor[0], which is the
 // alphabetically first source for the same reason G11 existed to fix.
 func TestADefenceCitesTheVendorRangeThatGoverned(t *testing.T) {
@@ -2933,7 +2933,7 @@ func TestADefenceCitesTheVendorRangeThatGoverned(t *testing.T) {
 	}
 }
 
-// A.18 §5.3, minor. A source failure must not throw away the findings already
+// The comparator review §5.3, minor. A source failure must not throw away the findings already
 // computed. Complete is false and AssertNotSilentlyClean refuses, so neither
 // the caller nor the report can read the set as exhaustive.
 func TestASourceFailureKeepsTheFindingsAlreadyComputed(t *testing.T) {
@@ -2985,7 +2985,7 @@ func (f failOnPackage) AffectedRanges(ctx context.Context, ecosystem, pkg string
 	return f.inner.AffectedRanges(ctx, ecosystem, pkg)
 }
 
-// A.18 §4.5, major. apk refused `1.00` as unknowable while asserting the same
+// The comparator review §4.5, major. apk refused `1.00` as unknowable while asserting the same
 // mechanism as fact for `1.0` == `1`. R8 resolves the contradiction in the
 // direction that keeps the file's promise — and this test pins BOTH halves, so
 // that the refusal cannot quietly widen into "apk does not work".
@@ -3065,7 +3065,7 @@ func TestAPKRefusesOnlyTheUndecidablePositionsAndStillOrdersTheRest(t *testing.T
 	}
 }
 
-// A.18 §5.5, minor. Purl.String() wrote the subpath un-encoded while every
+// The comparator review §5.5, minor. Purl.String() wrote the subpath un-encoded while every
 // other component went through purlEncode. identity.Purl is this re-rendered
 // form and it lands in MatchResult.Purl, so a subpath carrying a reserved byte
 // has to round-trip.
@@ -3219,7 +3219,7 @@ func corpusDigest(t *testing.T, inv []PackageRecord) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// TestMatchResultsAreIdenticalAcrossThreeRuns is A.17's stop condition,
+// TestMatchResultsAreIdenticalAcrossThreeRuns is the comparator's stop condition,
 // stated literally: "Comparator produces identical MatchResult sets across 3
 // repeated runs on a fixed fixture".
 func TestMatchResultsAreIdenticalAcrossThreeRuns(t *testing.T) {
@@ -3372,7 +3372,7 @@ func TestCorpusIsStableAcrossProcesses(t *testing.T) {
 		}
 		if got != want {
 			t.Fatalf("child process %d computed a different corpus digest.\n parent: %s\n child:  %s\n"+
-				"Lane A's verdict must be a pure function of its inputs (plan/00-SPINE.md S6). "+
+				"Lane A's verdict must be a pure function of its inputs (the spine's record section). "+
 				"A per-process difference is almost always an unsorted map range reaching an output.",
 				child, want, got)
 		}
@@ -3500,7 +3500,7 @@ func TestHostFindingsAreNeverRemediableByAgent(t *testing.T) {
 	}
 }
 
-// A MatchResult must not carry a fingerprint. plan/00-SPINE.md S6: one
+// A MatchResult must not carry a fingerprint. The spine's record section: one
 // fingerprint algorithm, defined once, in internal/record.
 func TestMatchResultCarriesNoFingerprint(t *testing.T) {
 	rt := reflect.TypeOf(MatchResult{})
@@ -3510,7 +3510,7 @@ func TestMatchResultCarriesNoFingerprint(t *testing.T) {
 			if strings.Contains(name, banned) {
 				t.Errorf("MatchResult has a field %q; anvil-fp/v1 is defined once, in "+
 					"internal/record, and a second digest under any name is the cross-area failure "+
-					"plan/00-SPINE.md S6 forbids", rt.Field(i).Name)
+					"The spine's record section forbids", rt.Field(i).Name)
 			}
 		}
 	}
@@ -3655,7 +3655,7 @@ func TestNoSourceFileReachesForAClockOrARandomSource(t *testing.T) {
 			continue
 		}
 		if !expected[e.Name()] {
-			t.Errorf("unexpected source file %q in internal/match; A.17's scope names exactly %v",
+			t.Errorf("unexpected source file %q in internal/match; the comparator's scope names exactly %v",
 				e.Name(), sortedNames(expected))
 		}
 		if strings.HasSuffix(e.Name(), "_test.go") {
@@ -3723,7 +3723,7 @@ func TestNoNonStdlibDependenciesBeyondRecord(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("internal/match's non-stdlib dependency set is\n  %v\nwant\n  %v\n"+
-			"Lane A is deterministic and zero-inference (plan/00-SPINE.md S1); no module dependency "+
+			"Lane A is deterministic and zero-inference (the spine's corrected-requirements table); no module dependency "+
 			"belongs below the comparator.", got, want)
 	}
 }
@@ -3778,7 +3778,7 @@ func TestDependencyGraphGuardFiresOnAPackageThatViolatesIt(t *testing.T) {
 	}
 }
 
-// TestBothRefusalRoutesReachEcosystemsRefused is A.21's finding, asserted.
+// TestBothRefusalRoutesReachEcosystemsRefused is the Lane A exit gate's finding, asserted.
 //
 // EcosystemsRefused answers ONE question — "what must Anvil implement next?" —
 // and the answer cannot depend on which of the two identity routes a record

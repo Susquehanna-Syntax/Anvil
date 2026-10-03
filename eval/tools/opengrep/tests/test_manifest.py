@@ -64,7 +64,7 @@ def test_measured_coverage_is_recorded_honestly():
     ],
 )
 def test_s5_hard_exclusions_are_refused(source):
-    """plan/00-SPINE.md S5. Enforced in code, not in a comment."""
+    """the spine's exclusion list. Enforced in code, not in a comment."""
     with pytest.raises(ForbiddenRuleSource):
         assert_rule_source_permitted(source)
 

@@ -22,15 +22,15 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
 	"github.com/Susquehanna-Syntax/Anvil/internal/store"
 
-	_ "modernc.org/sqlite" // cgo-free driver, plan/00-SPINE.md S12
+	_ "modernc.org/sqlite" // cgo-free driver, the spine's Go control-plane decision
 )
 
 // ---------------------------------------------------------------------------
 // Fixture
 //
-// The table under test is internal/store/schema.sql, applied through R.5's
+// The table under test is internal/store/schema.sql, applied through the migration runner's
 // real migration path. Never a hand-copied DDL: a second copy of a frozen
-// interface is the defect §6 G9 exists to prevent, and this step in particular
+// interface is the defect the handoff-table ruling exists to prevent, and this step in particular
 // was ruled out of writing its own migration. A fixture that invented a
 // `handoff` table would prove nothing about the shipped one, and would prove
 // it while demonstrating the exact sin.
@@ -124,7 +124,7 @@ func newHFFixture(t *testing.T, opts handoff.Options) *hfFixture {
 func hfFingerprint(n int) string { return strings.Repeat(fmt.Sprintf("%02x", n%256), 32) }
 
 // newAudit inserts a scan_run and its audit_record with the lifecycle values
-// the test needs. deadline_at is supplied rather than derived: R.6 computes it
+// the test needs. deadline_at is supplied rather than derived: the sealer computes it
 // once and this package only reads it.
 func (f *hfFixture) newAudit(state record.State, sast record.HalfStatus, dast record.DastStatus) int64 {
 	f.t.Helper()
@@ -204,7 +204,7 @@ func (f *hfFixture) newFinding(fingerprint string) int64 {
 }
 
 // hfAuditUUID is `anvil/auditId` — a separate identity from the rowid, because
-// handoff.IdempotencyKey hashes THIS (CRITIQUE-02 F7).
+// handoff.IdempotencyKey hashes THIS (the sealing, claims and masking review's finding F7).
 func hfAuditUUID(auditRecordID int64) string {
 	return fmt.Sprintf("11111111-2222-4333-8444-%012d", auditRecordID)
 }
@@ -747,7 +747,7 @@ func TestFailedApplierRequeuesThenExhausts(t *testing.T) {
 func TestConsumeOneLeavesTheLeaseHeldWhenTheDispositionIsRefused(t *testing.T) {
 	f := newHFFixture(t, handoff.Options{})
 	// A DAST half that came back CLEAN: it ran, and it produced no
-	// reproduction of this finding. plan/00-SPINE.md S7 says that cannot earn
+	// reproduction of this finding. The spine's safety section says that cannot earn
 	// 'validated' for a requires_dynamic_confirmation finding.
 	audit := f.newAudit(record.StateBothSealed, record.HalfStatusSealed, record.DastStatusCompletedClean)
 	_, row := f.enqueue(60, record.ConsumptionClassRequiresDynamicConfirmation, audit, 2)
@@ -911,13 +911,13 @@ func TestFailureDispositionMirrorsTheReaper(t *testing.T) {
 // ---------------------------------------------------------------------------
 // SOURCE GUARDS — the whole package, not one file of it
 //
-// §6 G9 was "the handoff table defined and created twice, in two migrations,
+// The handoff-table ruling was "the handoff table defined and created twice, in two migrations,
 // with two Go APIs". The ruling made handoff.go a thin adapter; nothing about a
 // ruling stops a later author adding one convenient query. These guards fail the
 // build when it happens.
 //
-// THEY COVER EVERY NON-TEST FILE IN THE PACKAGE, and that widening is CRITIQUE
-// O.4 finding O4-m2. They used to parse `handoff.go` alone while being named for
+// THEY COVER EVERY NON-TEST FILE IN THE PACKAGE, and that widening is the
+// controller-core review's finding m2. They used to parse `handoff.go` alone while being named for
 // "the adapter", so statemachine.go and deadlines.go — two thirds of the package
 // and the two files the blockers were found in — were unguarded. A guard that
 // covers one file of three while appearing to cover the package is worse than no
@@ -977,7 +977,7 @@ func TestThePackageOpensNoDatabaseAndWritesNoSQL(t *testing.T) {
 	//    package touches is touched through internal/handoff.
 	forbidden := map[string]string{
 		`"database/sql"`: "no file here may hold a *sql.DB; internal/handoff owns the connection",
-		`"github.com/Susquehanna-Syntax/Anvil/internal/store"`: "no file here may reach the schema directly; §6 G9",
+		`"github.com/Susquehanna-Syntax/Anvil/internal/store"`: "no file here may reach the schema directly; the handoff-table ruling",
 	}
 	// 2. No string literal anywhere looks like SQL. A second query is a
 	//    second definition of whatever it queries.
@@ -1024,8 +1024,8 @@ func TestThePackageOpensNoDatabaseAndWritesNoSQL(t *testing.T) {
 
 // frozenEnumLiterals is every value of every enum internal/record freezes.
 // A bare string literal equal to one of them, anywhere in this package's
-// adapter, is a second definition of that value — which is how nine of §6's
-// ten defects happened.
+// adapter, is a second definition of that value — which is how nine of the
+// shared-vocabulary review's ten defects happened.
 func strs[T ~string](vs []T) []string {
 	s := make([]string, len(vs))
 	for i, v := range vs {
@@ -1082,11 +1082,11 @@ func TestThePackageUsesNoBareEnumLiteral(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The read-gate guard — CRITIQUE O.4 finding O4-m2, second half
+// The read-gate guard — the controller-core review's finding m2, second half
 //
 // internal/record has TestReadGateArmsAppearOnlyInsideTheGate, which parses "."
 // and therefore watches internal/record and nothing else. The critic's point
-// was that nothing watched THIS package, and O4-B1 is what walked through that
+// was that nothing watched THIS package, and controller-core finding B1 is what walked through that
 // gap: a readability decision assembled here out of the two arms of a gate that
 // lives there.
 //

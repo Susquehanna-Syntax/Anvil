@@ -25,10 +25,10 @@ import (
 //
 // One realistic record: a correlated cluster (one SAST + one DAST finding),
 // several SAST-only findings including an SCA finding and a HOST finding, and
-// one DAST-only finding. That is exactly R.13's stop condition.
+// one DAST-only finding. That is exactly the read path's stop condition.
 //
 // The fixture is built, then VALIDATED against contract.go, then MASKED by
-// R.8. Both steps are deliberate: a fixture that could not survive the
+// secrets masking. Both steps are deliberate: a fixture that could not survive the
 // producer's own gates would prove nothing about the read path, and the read
 // path refuses an unmasked record by design.
 // ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ func rpFixtureLog() *SARIFLog {
 	}
 
 	// The HOST finding. remediable_by_agent is false and must stay false:
-	// 00-SPINE.md S7 makes the host agent read-only.
+	// The spine's safety section makes the host agent read-only.
 	host := rpSastResult("host:0006", 30.0, EvidenceClassHost, VerdictTruePositive, false, "", 6)
 	host.RuleID = "anvil.host-package"
 	host.Locations = nil
@@ -341,7 +341,7 @@ func rpMarshal(t *testing.T, v any) []byte {
 
 // The bucket names are declared in this package but the ORDER is contract.go's
 // DefaultReadOrder(). If the two ever disagree, the read path silently stops
-// being the order R.13 mandates, so the disagreement is a test failure.
+// being the order the read path mandates, so the disagreement is a test failure.
 func TestReadOrderBucketsMatchTheContract(t *testing.T) {
 	want := []string{BucketClusters, BucketSastByRank, BucketDastByRank}
 	got := DefaultReadOrder()
@@ -583,8 +583,8 @@ func TestLargeRecordManifestStaysUnderBudgetBySpilling(t *testing.T) {
 	}
 	// The read order survives in full, as an inline PREFIX plus a spilled
 	// TAIL: `m.Cards` then the blob is the whole order, once, in order.
-	// CRITIQUE-03 M3: this step used to be all-or-nothing, which spent the
-	// budget it had just freed on nothing.
+	// The queue and read-path review's finding M3: this step used to be
+	// all-or-nothing, which spent the budget it had just freed on nothing.
 	for _, s := range m.Spills {
 		if s.Field != "anvil/cards" {
 			continue
@@ -662,7 +662,7 @@ func TestOversizeTier0NeedsAnExplicitLoggedOverride(t *testing.T) {
 		}
 	}
 
-	rd.AllowOversizeTier0 = "R.13 evidence test: envelope alone exceeds the budget"
+	rd.AllowOversizeTier0 = "The read path evidence test: envelope alone exceeds the budget"
 	m, err := rd.BuildManifest(rpAuditID)
 	if err != nil {
 		t.Fatalf("with an explicit override, BuildManifest must succeed: %v", err)
@@ -678,10 +678,11 @@ func TestOversizeTier0NeedsAnExplicitLoggedOverride(t *testing.T) {
 	}
 }
 
-// TestTier0PartialSpillUsesTheBudget is CRITIQUE-03 M3 part 1's regression
-// test, and it asserts the thing the previous shrink policy got wrong: not
-// that the budget is RESPECTED — the all-or-nothing version respected it while
-// throwing away 78% of it — but that the budget is USED.
+// TestTier0PartialSpillUsesTheBudget is the queue and read-path review's
+// finding M3 part 1's regression test, and it asserts the thing the previous
+// shrink policy got wrong: not that the budget is RESPECTED — the
+// all-or-nothing version respected it while throwing away 78% of it — but that
+// the budget is USED.
 //
 // The measurement that motivated the fix, at nine sizes: below the crossover
 // nothing spills and utilisation climbs to 98%; at the crossover the whole
@@ -866,7 +867,7 @@ func TestOversizedEvidenceSpillsInsteadOfBlowingTheCardBudget(t *testing.T) {
 	}
 }
 
-// Bodies never exceed R.8's inline caps on a card either. The card budget is
+// Bodies never exceed secrets masking's inline caps on a card either. The card budget is
 // smaller than both caps, so this holds a fortiori — which is the point: prove
 // it rather than assume the arithmetic.
 func TestCardsNeverInlineABodyPastR8sCaps(t *testing.T) {
@@ -936,7 +937,7 @@ func TestInlineCapKeepsAPrefixAndSpillsTheRemainder(t *testing.T) {
 // The host gate
 // ---------------------------------------------------------------------------
 
-// 00-SPINE.md S7: the host agent is read-only. The record's validator already
+// The spine's safety section: the host agent is read-only. The record's validator already
 // rejects a host finding marked remediable; this proves the READ PATH does not
 // hand one out as actionable even when the record is wrong.
 func TestHostFindingIsNeverHandedOutAsActionable(t *testing.T) {
@@ -1161,7 +1162,7 @@ func TestClusterMembersAreLinkedNeverMerged(t *testing.T) {
 // Gates the read path will not open
 // ---------------------------------------------------------------------------
 
-// R.6's read gate: only HalfStatusSealed opens a half. An unsealed half yields
+// The sealer's read gate: only HalfStatusSealed opens a half. An unsealed half yields
 // no cards, and the manifest still SAYS the half exists — otherwise "no DAST
 // cards" and "no dynamic vulnerabilities" become the same observation, which
 // is research/23 Risk #1.
@@ -1475,15 +1476,16 @@ func TestReadPathEmitsOnlyFrozenEnumLiterals(t *testing.T) {
 }
 
 // ===========================================================================
-// THE READ GATE — CRITIQUE-03 B1/M1, and the test that is supposed to stop
-// bypass number five
+// THE READ GATE — the queue and read-path review's findings B1/M1, and the test
+// that is supposed to stop bypass number five
 // ===========================================================================
 //
 // FOUR separate authors have now written their own answer to "may a consumer
 // read this half's results?" and four got it wrong in four different ways
-// (sealing.go's read-gate section lists them: CRITIQUE-02 M2 and M3,
-// CRITIQUE-03 B1 and M1). Patching each bypass as it is found is a losing
-// game, so the countermeasure is this section rather than any one fix:
+// (sealing.go's read-gate section lists them: the sealing, claims and masking
+// review's findings M2 and M3, the queue and read-path review's findings B1 and
+// M1). Patching each bypass as it is found is a losing game, so the
+// countermeasure is this section rather than any one fix:
 //
 //   - sealing.go answers the question in ONE function body, halfReadRefusal,
 //     reached through HalfReadGate / HalfSeal.Readable;
@@ -1602,7 +1604,7 @@ func gateAuditedEntryPoints() []gateEntry {
 					n += len(run.Results)
 				}
 			}
-			// The loss must also be COUNTABLE, not merely absent: CRITIQUE-03
+			// The loss must also be COUNTABLE, not merely absent: the queue and read-path review
 			// B1's probe found zero drops recorded in every unsealed case, so
 			// the leak was invisible as well as permitted.
 			loss := GitHubLossOf(files)
@@ -1771,8 +1773,8 @@ func gateManifestExposure(t *testing.T, m Manifest) int {
 func gateScenarios(t *testing.T) []gateScenario {
 	t.Helper()
 
-	// (1) Neither half has sealed. This is the arm CRITIQUE-03 B1 found the
-	// GitHub projection ignoring entirely.
+	// (1) Neither half has sealed. This is the arm the queue and read-path
+	// review's finding B1 found the GitHub projection ignoring entirely.
 	unsealed := gateScenario{name: "no half has sealed", auditID: rpAuditID + "-unsealed"}
 	unsealed.log = rpFixture(t, func(l *SARIFLog) {
 		l.Properties.AuditID = unsealed.auditID
@@ -1787,7 +1789,7 @@ func gateScenarios(t *testing.T) []gateScenario {
 	unsealed.sealer = gateSealer(t, unsealed.auditID, false)
 
 	// (2) Both halves are TERMINAL but neither is READABLE. A failed half is
-	// not a clean half; §6 keeps completed_failed distinct from
+	// not a clean half; the shared-vocabulary review keeps completed_failed distinct from
 	// completed_partial precisely because a half that CRASHED is not a half
 	// that covered part of the surface.
 	failed := gateScenario{name: "both halves failed", auditID: rpAuditID + "-failed"}
@@ -1804,10 +1806,10 @@ func gateScenarios(t *testing.T) []gateScenario {
 	failed.sealer = gateSealer(t, failed.auditID, false)
 
 	// (3) Both halves sealed cleanly and the audit then EXPIRED. This is the
-	// arm CRITIQUE-03 M1 found readpath.go ignoring: the claim window has
-	// closed, the reaper drops the payload, and the handoff rows behind any
-	// card are subject to ReclaimExpired — so an agent handed an actionable
-	// card here has nowhere legal to land its work.
+	// arm the queue and read-path review's finding M1 found readpath.go
+	// ignoring: the claim window has closed, the reaper drops the payload, and
+	// the handoff rows behind any card are subject to ReclaimExpired — so an
+	// agent handed an actionable card here has nowhere legal to land its work.
 	expired := gateScenario{name: "the audit expired holding two sealed halves", auditID: rpAuditID + "-expired"}
 	expired.log = rpFixture(t, func(l *SARIFLog) {
 		l.Properties.AuditID = expired.auditID
@@ -2031,12 +2033,12 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 //     producer minted — and attack 15 is still OPEN. Read the KNOWN LIMITS
 //     section before you trust a green run.
 //   - `readOrder` counts as reaching the gate, so if readOrder ITSELF were
-//     rewritten to ask one arm — which is precisely what CRITIQUE-03 M1 was —
-//     this test would still pass. MEASURED, by putting that defect back: this
-//     guard stayed green and three others went red, including
-//     TestReadGateArmsAppearOnlyInsideTheGate, which is the test that owns
-//     that hazard. The three guards are a set, and none of them is the
-//     whole answer.
+//     rewritten to ask one arm — which is precisely what the queue and
+//     read-path review's finding M1 was — this test would still pass. MEASURED,
+//     by putting that defect back: this guard stayed green and three others
+//     went red, including TestReadGateArmsAppearOnlyInsideTheGate, which is the
+//     test that owns that hazard. The three guards are a set, and none of them
+//     is the whole answer.
 //
 // Its value is not completeness. Its value is that the OBVIOUS bypass — the
 // one someone actually writes, which is a new exported function that walks
@@ -2068,11 +2070,11 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // WHAT THIS GUARD IS FOR, stated plainly so it is not over-trusted:
 // it catches ACCIDENTAL bypass. That is not a small thing — FIVE independent
 // authors re-derived the read gate locally and all five got it wrong, none of
-// them adversarially, and CRITIQUE-02 and CRITIQUE-03 caught four of those in
-// shipped code. Every shape someone writes by mistake is caught: the
-// unexported-helper walk, the callback form, the struct-containing-results,
-// the count-only projection, and marshalling the record you were handed
-// without ever naming a field.
+// them adversarially, and the sealing, claims and masking review and the queue
+// and read-path review caught four of those in shipped code. Every shape
+// someone writes by mistake is caught: the unexported-helper walk, the callback
+// form, the struct-containing-results, the count-only projection, and
+// marshalling the record you were handed without ever naming a field.
 //
 // WHAT THIS GUARD IS NOT: a security boundary. Obedience is matched BY NAME,
 // so a caller can mint its own — see NEW C. Static reachability cannot
@@ -2170,7 +2172,7 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // HalfReadGate, the returned error consumed by an `if`, an early return on
 // refusal. Every structural property it checks is satisfied.
 //
-// IT WAS NOT HYPOTHETICAL, AND IT DID NOT TAKE AN ADVERSARY. CRITIQUE O.4
+// IT WAS NOT HYPOTHETICAL, AND IT DID NOT TAKE AN ADVERSARY. The controller-core review
 // found this exact shape occurring NATURALLY in internal/scanctl within hours:
 // AuditRecord.HalfSeal assembled a record.HalfSeal out of caller-held fields
 // (the half's status, the record's state) with no refresh path and handed it
@@ -2193,15 +2195,15 @@ func TestReadGateOpensOnASealedAudit(t *testing.T) {
 // TestOnlyTwoProducersStampProvenance fails if a third producer appears.
 //
 // PROVENANCE ALSO CARRIES STALENESS, WHICH IS THE PART THAT MATTERED. Marking
-// a seal "a producer made this" would not have caught O.4: scanctl's seal was
-// made by a legitimate-looking projection and then held across a state change.
-// So prov holds a LIVE HANDLE on what the seal was minted from — the
-// (*SARIFLog, *Run) for the record side, the *audit plus a published revision
-// for the Sealer — together with the facts as they read at minting, and the
-// gate RE-READS the origin on every call. Four faults come out of it: absent
-// (nobody minted it), tampered (minted, then an exported field was assigned
-// to), origin_gone (Sealer.Forget dropped the audit), and stale (the origin
-// moved on). All but the first match errors.Is(err, ErrSealStale).
+// a seal "a producer made this" would not have caught the controller-core
+// review: scanctl's seal was made by a legitimate-looking projection and then
+// held across a state change. So prov holds a LIVE HANDLE on what the seal was
+// minted from — the (*SARIFLog, *Run) for the record side, the *audit plus a
+// published revision for the Sealer — together with the facts as they read at
+// minting, and the gate RE-READS the origin on every call. Four faults come out
+// of it: absent (nobody minted it), tampered (minted, then an exported field
+// was assigned to), origin_gone (Sealer.Forget dropped the audit), and stale
+// (the origin moved on). All but the first match errors.Is(err, ErrSealStale).
 //
 // PROVEN, NOT ASSERTED. provenance_test.go's TestGateRefusesAHandBuiltHalfSeal
 // rebuilds scanctl's literal field for field and requires the gate to refuse
@@ -2902,29 +2904,31 @@ func gateUngatedAllowlist() map[string]gateExemption {
 			"the record is well-formed and returns only an error; validation must work on a " +
 			"record NO half of which has sealed yet, so gating it would make an unsealed " +
 			"record unvalidatable."},
-		"MaskRecord": {body: "1d1496b8964a1f30", reason: "R.8's masker, which runs BEFORE the read path and is the precondition " +
+		"MaskRecord": {body: "1d1496b8964a1f30", reason: "Secrets masking's masker, which runs BEFORE the read path and is the precondition " +
 			"Reader.load asserts. It mutates the record in place and returns only an error. " +
 			"Masking an unsealed half is exactly what it is for."},
 		"Masker.Mask": {body: "3b1f1725f1f6decc", reason: "the same masker with a report. The report counts what was masked; it " +
 			"carries no finding content out of a half."},
 		"AssertMasked": {body: "930534f795ec1a22", reason: "the masking precondition itself, called by Reader.load before anything " +
-			"is projected. It answers 'has R.8 run', not 'may this half be read'."},
+			"is projected. It answers 'has secrets masking run', not 'may this half be read'."},
 
 		// ---- pure functions over data the caller ALREADY holds ------------
 		"Result.ExternalStringPointers": {body: "b598635db55a205e", reason: "a pure accessor on a Result the caller already holds. " +
 			"It cannot obtain one: whoever calls it got the Result from somewhere, and that " +
 			"somewhere is what the gate covers."},
-		"ValidateResultTrust": {body: "df1846aeedb2981a", reason: "a validator over one caller-held Result, returning only an error."},
+		"ValidateResultTrust": {body: "45d470da65ff8018", reason: "a validator over one caller-held Result, returning only an error. " +
+			"Re-read 2026-09-29: the body changed only in the wording of one error message."},
 		"IsHostFinding": {body: "eaf63949394f43ee", reason: "a pure predicate over one caller-held Result. It reads two enum fields " +
 			"and returns a bool."},
-		"Correlate": {body: "2f5772b9f31ae65b", reason: "the correlation engine (R.12). It is handed two []Result by the PRODUCER, " +
+		"Correlate": {body: "2f5772b9f31ae65b", reason: "the correlation engine. It is handed two []Result by the PRODUCER, " +
 			"before either half is consumable, and returns clusters rather than results. " +
 			"Gating it would mean no audit could ever be correlated."},
 		"CorrelateWithEvidence": {body: "58f2c8a2f9b29cc0", reason: "the same engine with the evidence bundle; same direction and " +
 			"same reason as Correlate."},
-		"TaskCard.CheckAgainstRecord": {body: "3dcdcd66f256a036", reason: "the card's own agreement check against the Result it was " +
+		"TaskCard.CheckAgainstRecord": {body: "98276c0b07ff6ace", reason: "the card's own agreement check against the Result it was " +
 			"built from — a card the gate already emitted, compared with a result the caller " +
-			"already holds. It returns only an error."},
+			"already holds. It returns only an error. Re-read 2026-09-29: the body changed only in " +
+			"the wording of two note messages."},
 
 		// ---- already-projected output ------------------------------------
 		"GitHubSarifFile.WithinCaps": {body: "cd3276a9b07eb740", reason: "a cap check over an ALREADY-PROJECTED GitHub file. " +
@@ -3519,7 +3523,8 @@ func gateBaseTypeName(e ast.Expr) string {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 M1 — an expired audit is not readable, and says so distinctly
+// The queue and read-path review's finding M1 — an expired audit is not
+// readable, and says so distinctly
 // ---------------------------------------------------------------------------
 
 // readOrder and ManifestFromLog computed readability as
@@ -3602,7 +3607,8 @@ func TestExpiredAuditYieldsNoCardsAndSaysWhy(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 M3 (consequence 2) — a spill is never a dangling reference
+// The queue and read-path review's finding M3 (consequence 2) — a spill is
+// never a dangling reference
 // ---------------------------------------------------------------------------
 
 // NewReader left Reader.Blobs nil, so the spilled bytes existed only in
@@ -3696,7 +3702,8 @@ func TestSpilledBlobsSurviveDroppingTheManifest(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 m1 — a borrowed locus is labelled, and does not carry the action
+// The queue and read-path review's finding m1 — a borrowed locus is labelled,
+// and does not carry the action
 // ---------------------------------------------------------------------------
 
 // Both members of one cluster were independently actionable and pointed at the
@@ -3740,7 +3747,7 @@ func TestBorrowedLocusIsLabelledAndWithholdsTheAction(t *testing.T) {
 	}
 	if dast.Actionable {
 		t.Error("both cluster members are actionable: one defect, two patch tasks, two handoff " +
-			"rows charged against the budget R.11's reservation is dividing")
+			"rows charged against the budget the queue re-cut's reservation is dividing")
 	}
 	if len(dast.ActionBlockers) == 0 {
 		t.Fatal("the withheld card gives no reason; 'not actionable' is never unexplained")
@@ -3769,10 +3776,10 @@ func TestBorrowedLocusIsLabelledAndWithholdsTheAction(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 m2 — the card does not take `verified` on trust
+// The queue and read-path review's finding m2 — the card does not take `verified` on trust
 // ---------------------------------------------------------------------------
 
-// `verified` is an S7 gate of the same class as the host gate, and the host
+// `verified` is a safety-section gate of the same class as the host gate, and the host
 // gate is enforced a third time on the card precisely because the card is what
 // the agent receives. `verified` was copied across without re-checking the
 // signals, so a malformed record put an unearned verification in front of the
@@ -3810,7 +3817,7 @@ func TestCardDoesNotTakeCorrelationVerifiedOnTrust(t *testing.T) {
 	}
 	if card.Correlation.Verified {
 		t.Errorf("the card asserts verified=true off signals %v; only %q or %q earns it, and "+
-			"confidence alone never qualifies (00-SPINE.md S7)",
+			"confidence alone never qualifies (the spine's safety section)",
 			card.Correlation.Signals, CorrelationSignalResponseStackTrace, CorrelationSignalRerunFlip)
 	}
 
@@ -3839,7 +3846,7 @@ func TestCardDoesNotTakeCorrelationVerifiedOnTrust(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// CRITIQUE-03 m3 — a card names peers the reader cannot fetch
+// The queue and read-path review's finding m3 — a card names peers the reader cannot fetch
 // ---------------------------------------------------------------------------
 
 // When one half has not sealed its results correctly produce no cards, but the

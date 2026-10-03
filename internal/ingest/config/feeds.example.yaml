@@ -1,6 +1,6 @@
 # Anvil advisory feed table — EXAMPLE.
 #
-# This file renders the Feed Table of plan/20-lane-a-ingestion-sca.md as the
+# This file renders the Feed Table of plan/design/lane-a.md as the
 # document internal/ingest/config parses. It is documentation and the loader's
 # acceptance fixture; it is never a runtime default. Copy it to feeds.yaml,
 # set your own credential_env names, and decide your own enabled flags.
@@ -16,30 +16,31 @@
 # ---------------------------------------------------------------------------
 # LICENCE IS A REQUIRED FIELD, NOT AN ANNOTATION
 # ---------------------------------------------------------------------------
-# Spine S8 makes a feed's licence a gating fact and A.4 gates on it. Every row
-# states a licence: an SPDX identifier, a LicenseRef- custom id, NOASSERTION
-# (nothing asserted) or NONE (no grant of rights exists). The last three must
-# carry the operative sentence in license_manual_note — spine S8's
-# manual-override field — because seven artifacts in the corpus report
-# NOASSERTION over a real licence and one hides a restrictive one. A feed
-# whose licence cannot be stated is a feed Anvil cannot use; the loader
-# refuses the row rather than defaulting it.
+# The spine's licence section makes a feed's licence a gating fact and the
+# licence gate gates on it. Every row states a licence: an SPDX identifier, a
+# LicenseRef- custom id, NOASSERTION (nothing asserted) or NONE (no grant of
+# rights exists). The last three must carry the operative sentence in
+# license_manual_note — the spine's manual-override field — because seven
+# artifacts in the corpus report NOASSERTION over a real licence and one hides a
+# restrictive one. A feed whose licence cannot be stated is a feed Anvil cannot
+# use; the loader refuses the row rather than defaulting it.
 #
 # Tier 2 is share-alike (CC-BY-SA-4.0). Those rows live in segregated
 # mirror/tier2/<source>/ directories with their own LICENSE files and are
-# never merged into a Tier 0/1 output (research/01 Risk #3, spine S8). A.4
-# owns that gate; this file only records what each source is.
+# never merged into a Tier 0/1 output (research/01 Risk #3, the spine's licence
+# section). The licence gate owns that gate; this file only records what each
+# source is.
 #
 # mirror_dir NAMES THAT DIRECTORY, and it is why the three Tier 2 rows carry
 # the key: their ids are ubuntu-osv, alpine-secdb and osv-merged while their
 # quarantine directories are mirror/tier2/{ubuntu,alpine,osv}. Absent, the key
 # defaults to the feed id, which is right for every other row here. It is a
-# configured fact rather than a mapping compiled into A.4 for the usual
+# configured fact rather than a mapping compiled into the licence gate for the usual
 # reason, and for one more: the licence evidence a gate decision rests on is
 # the file in this directory, so a caller who could choose the directory could
 # choose the evidence.
 #
-# NO FEED IS ADMITTED BY A FRESH CLONE. A.4 refuses every row until the
+# NO FEED IS ADMITTED BY A FRESH CLONE. The licence gate refuses every row until the
 # publisher's own verbatim licence text has been acquired into mirror/ and its
 # sha256 pinned in mirror/LICENSE-MANIFEST.toml. Nothing in this file, and no
 # prose Anvil wrote, is evidence of a licence. See mirror/README.md.
@@ -51,8 +52,8 @@
 #
 # GREENBONE / OPENVAS IS DELIBERATELY ABSENT. Its community feed is ODbL-1.0
 # (share-alike, quarantined) but it belongs to the dynamic/host tier, not to
-# Lane A's advisory feed table — plan/IMPLEMENTATION-PLAN.md section 2.3 and
-# spine S8 both say so explicitly.
+# Lane A's advisory feed table — the first plan's Greenbone ruling and
+# the spine's licence section both say so explicitly.
 #
 # ---------------------------------------------------------------------------
 # CREDENTIALS
@@ -73,7 +74,7 @@
 # come from the Feed Table's Cadence column (research/06 Recommendation item
 # 3). freshness_slo_seconds is OPERATOR POLICY, not a research finding: it is
 # the age past which this feed's data is reported stale, and it is stamped
-# into every record as spine S6's staleness_seconds. The values below are a
+# into every record as the spine's staleness_seconds. The values below are a
 # starting point of a few missed polls; tune them. on_failure has no
 # fail-the-scan option by design (research/06 Risk #5: "never fail the scan —
 # serve stale data with an as_of timestamp and a staleness_seconds field").
@@ -92,7 +93,7 @@ feeds:
   # measured 570,845,537 B, research/06 S8 — NEVER a git clone: cvelistV5
   # commits every ~7 minutes, ~75,000 commits/year, and tree objects dominate
   # any partial clone (research/06 Risk #7).
-  # A.8 resolves the *_all_CVEs_at_midnight.zip asset from this same releases
+  # The bulk bootstrap resolves the *_all_CVEs_at_midnight.zip asset from this same releases
   # endpoint, which is why bootstrap_url is left to default to url.
   - id: cvelistv5
     url: https://api.github.com/repos/CVEProject/cvelistV5/releases/latest
@@ -113,7 +114,7 @@ feeds:
   # CISA Vulnrichment. Not a feed you poll: it is delivered inside cvelistV5's
   # ADP container, so a separate fetch would be a second copy of the same
   # bytes (research/01 S14/S15). It is a row anyway because its LICENCE is
-  # different from its carrier's — CC0-1.0, zero obligations — and A.4 gates
+  # different from its carrier's — CC0-1.0, zero obligations — and the licence gate gates
   # on per-source licence, not per-fetch.
   - id: cisa-vulnrichment
     enabled: true
@@ -130,7 +131,7 @@ feeds:
   # CISA KEV, via the cisagov/kev-data mirror, which research/06 S16 records
   # as the better ingestion target than the cisa.gov endpoint (that one
   # returned 403 to the corpus's fetcher, research/01 S29).
-  # THE WORKED EXAMPLE FOR SPINE S8: the GitHub API reports NOASSERTION for
+  # THE WORKED EXAMPLE FOR THE SPINE'S LICENCE SECTION: the GitHub API reports NOASSERTION for
   # this repository. The LICENSE/README body says CC0. Trust the body, not the
   # metadata — a pure-SPDX-metadata gate would wrongly reject this feed.
   - id: cisa-kev
@@ -148,8 +149,8 @@ feeds:
     bootstrap_mechanism: bulk_archive
 
   # CWE 4.20 — 944 classes, a few MB, no delta mechanism, quarterly-ish
-  # (research/01 S20/S21). It is Lane B's label space (spine S1 requirement
-  # 8), mirrored here because it is an advisory-side bulk artifact like the
+  # (research/01 S20/S21). It is Lane B's label space (the spine's corrected
+  # requirement 8), mirrored here because it is an advisory-side bulk artifact like the
   # rest. MITRE's Terms of Use have no SPDX identifier, so the row declares a
   # LicenseRef- custom id and carries the note.
   - id: cwe
@@ -185,7 +186,7 @@ feeds:
     on_failure: serve_stale
     license_tier: 0
     license_spdx: LicenseRef-US-Gov-Public-Domain
-    license_manual_note: "Public domain as a US Government work (plan/20-lane-a-ingestion-sca.md Feed Table, research/01 S6). No SPDX identifier applies to that status; re-verify against NIST's own terms before redistributing."
+    license_manual_note: "Public domain as a US Government work (plan/design/lane-a.md Feed Table, research/01 S6). No SPDX identifier applies to that status; re-verify against NIST's own terms before redistributing."
     bootstrap_mechanism: incremental_api
 
   # -------------------------------------------------------------------------

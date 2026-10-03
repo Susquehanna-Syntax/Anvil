@@ -6,14 +6,14 @@ This document is the single definition of Anvil's finding-identity algorithm. It
 **in-tree**: `plan/` is gitignored, so a second producer working from a clone of this repository must
 be able to read the complete algorithm here and nowhere else, and emit byte-identical digests.
 
-`plan/40-record-and-storage.md`'s "Fingerprint Specification" section remains the record of *why* the
+`plan/design/record-and-store.md`'s "Fingerprint Specification" section remains the record of *why* the
 research-branch conflict was resolved the way it was. It is a **summary**, not the definition.
-`internal/record/CRITIQUE-01.md` (finding 1) proved the summary insufficient by re-implementing its
+`internal/record/REVIEW-contract-and-fingerprint.md` (finding 1) proved the summary insufficient by re-implementing its
 four-clause `normalized_match` text in Python and obtaining `55e27b07…` where the committed golden for
 `sast-01-go-sql-string-concat` is `13c60ccf…`. The orchestrator ruled on 2026-08-08 that the
 implementation was right and the specification incomplete, and that the fix was to write the
 specification down completely. This file is that ruling discharged. **Where this document and
-`plan/40-record-and-storage.md` disagree, this document governs.**
+`plan/design/record-and-store.md` disagree, this document governs.**
 
 `internal/record/fingerprint.go` implements it. `internal/record/fingerprint_spec_test.go` asserts that
 the machine-checkable parts of this document — the reserved-word list and the algorithm constants —
@@ -28,7 +28,7 @@ adding one reserved word, moving one threshold by one, reordering two normalizat
 token's spelling — changes digests that are already stored, and a changed digest means a finding is
 reported resolved and re-opened as new: `first_seen_at` resets, age-based ranking resets, every
 fingerprint-keyed suppression silently stops applying, and every `handoff` row keyed on the old digest
-is orphaned. Nothing logs an error when this happens. That is the exact failure `plan/00-SPINE.md` S6
+is orphaned. Nothing logs an error when this happens. That is the exact failure the spine's record section
 exists to prevent: *"two producers emitting different hashes means regression matching silently fails
 forever."*
 
@@ -163,7 +163,7 @@ timestamp.
 
 ## 3. `normalized_match` — the complete algorithm
 
-This section is the one CRITIQUE-01 proved was under-specified. It is stated here in full. A
+This section is the one the contract-and-fingerprint review proved was under-specified. It is stated here in full. A
 re-implementation that follows §3.1–§3.6 and the word list in §3.5 reproduces the committed SAST
 goldens exactly.
 
@@ -401,7 +401,7 @@ The sort must be stable.
 identical call site above two existing ones shifts their ordinals and therefore their digests. The
 alternative — dropping the ordinal — silently loses one of two findings on upsert, which is worse.
 research/07 §3's matching cascade (exact hit, then rule+path+line_hash, then rule+symbol_hash) is what
-recovers identity in that case; the fingerprint alone cannot. CRITIQUE-01 findings 4 and 5 raise two
+recovers identity in that case; the fingerprint alone cannot. The contract-and-fingerprint review's findings 4 and 5 raise two
 sharper forms of this and are **not ruled on** — see §10.
 
 ---
@@ -420,16 +420,16 @@ sharper forms of this and are **not ruled on** — see §10.
 ## 6. `route_template` — a DERIVED value
 
 The specification has always defined this field as derived: *"numeric/UUID/hash path segments replaced
-with a placeholder token."* CRITIQUE-01 finding 2 proved the derivation was not implemented, and that
+with a placeholder token."* the contract-and-fingerprint review's finding 2 proved the derivation was not implemented, and that
 no fixture could detect it because all three DAST fixtures arrived pre-templated.
 
-**Ruling (2026-08-08): area 40 owns the fingerprint, so area 40 canonicalises.** A DAST producer emits
+**Ruling (2026-08-08): the record area owns the fingerprint, so the record area canonicalises.** A DAST producer emits
 whatever route it observed — concrete or already templated in its own syntax. `CanonicalRouteTemplate`
 derives the hashed template. This keeps **one owner**. If templating were the producer's job, two
 producers seeing one defect at `/api/users/12345/orders` would emit `/api/users/12345/orders`,
 `/api/users/{id}/orders` and `/api/users/:id/orders` — three digests, one defect, no error, regression
 matching silently dead. This matters more than the SAST case because the DAST tier is what earns
-"verified fixed" under `plan/00-SPINE.md` S7, and a reproduction that cannot be matched to its prior
+"verified fixed" under the spine's safety section, and a reproduction that cannot be matched to its prior
 finding cannot prove a fix.
 
 ### 6.1 The placeholder token
@@ -558,7 +558,7 @@ proves the derivation happens, with twelve mutations that must all produce one d
 
 ## 7. The remaining canonicalisations
 
-Each of these was applied by the implementation but absent from the summary text (CRITIQUE-01 finding
+Each of these was applied by the implementation but absent from the summary text (the contract-and-fingerprint review's finding
 9). They are normative.
 
 ### 7.1 `CanonicalRepoRelPath`
@@ -651,7 +651,7 @@ routeOpaqueSegmentMinLen    = 20
 Stated so the gaps are visible rather than assumed covered.
 
 - **No Unicode normalization.** A path or symbol containing a precomposed versus decomposed accented
-  character hashes differently. This is the macOS-checkout case (CRITIQUE-01 finding 8c).
+  character hashes differently. This is the macOS-checkout case (the contract-and-fingerprint review's finding 8c).
 - **No case folding of repo paths.** A Windows producer may legitimately report `Internal/API/Store.go`
   where a Linux producer reports `internal/api/store.go`. Different digests (finding 8a).
 - **Backslash rewriting is lossy on POSIX.** A real Linux file named `a\b.go` canonicalises onto
@@ -677,10 +677,10 @@ None of these is ruled on by this document. See §10.
 
 | Date | Change |
 |---|---|
-| 2026-08-08 | Document created. Discharges the R.3 blocker-1 ruling: `normalized_match` was defined only in Go, so R.16's mandated independent oracle could not reproduce the SAST goldens and a second producer implementing from the written text would diverge silently. §3 is the algorithm written down completely; §5 and §7 close CRITIQUE-01 finding 9. |
-| 2026-08-08 | §6 added. Discharges the R.3 blocker-2 ruling: `route_template` was specified as derived and derived by nobody. Templating is implemented in `CanonicalRouteTemplate` and owned by area 40. Two DAST goldens moved as a result — `dast-01` `ca801b8d…` → `199c3b5f…` and `dast-03` `84fe311d…` → `5fc15c55…`; `dast-02` and every SAST, SCA and host golden are unchanged. Nothing had been stored under the old digests, so this is a correction of an unimplemented clause, not a `v2` event. |
+| 2026-08-08 | Document created. Discharges the contract-and-fingerprint review's blocker-1 ruling: `normalized_match` was defined only in Go, so the fingerprint conformance harness' mandated independent oracle could not reproduce the SAST goldens and a second producer implementing from the written text would diverge silently. §3 is the algorithm written down completely; §5 and §7 close the contract-and-fingerprint review's finding 9. |
+| 2026-08-08 | §6 added. Discharges the contract-and-fingerprint review's blocker-2 ruling: `route_template` was specified as derived and derived by nobody. Templating is implemented in `CanonicalRouteTemplate` and owned by the record area. Two DAST goldens moved as a result — `dast-01` `ca801b8d…` → `199c3b5f…` and `dast-03` `84fe311d…` → `5fc15c55…`; `dast-02` and every SAST, SCA and host golden are unchanged. Nothing had been stored under the old digests, so this is a correction of an unimplemented clause, not a `v2` event. |
 
-**Open, not ruled on.** CRITIQUE-01 findings 3, 4, 5, 6, 7, 8, 10 and 11 remain open. They are listed
+**Open, not ruled on.** The contract-and-fingerprint review's findings 3, 4, 5, 6, 7, 8, 10 and 11 remain open. They are listed
 in §9 so no downstream area assumes they are handled. Findings 4, 5 and 6 in particular each require an
 orchestrator ruling before `anvil-fp/v1` is treated as final, and findings 4 and 6 would be `v2` events
 if ruled in favour of the critic.
@@ -697,7 +697,7 @@ not yet triggered.
 The verification that closed blocker 1 was real: an implementer working from this document alone,
 forbidden from reading `fingerprint.go`, reproduced all 8 committed digests and 42/42 mutations on the
 first run with no iteration. But **MATCH means this document is sufficient for what the corpus
-exercises**, and the corpus exercises a narrow slice. Anyone extending the corpus, and `R.16` in
+exercises**, and the corpus exercises a narrow slice. Anyone extending the corpus, and `the fingerprint conformance harness` in
 particular, should resolve these first — each one is cheap to settle now and expensive to discover as a
 digest divergence later.
 
@@ -712,7 +712,7 @@ digest divergence later.
 
 **Z4 is the one that matters most.** The ordinal grouping key is what keeps a finding's identity stable
 when an unrelated edit moves it, and it is the single least-tested part of the algorithm. It also
-already carries an unresolved `CRITIQUE-01` finding (the key omits `enclosing_symbol_path`, so an edit
+already carries an unresolved `the contract-and-fingerprint review` finding (the key omits `enclosing_symbol_path`, so an edit
 elsewhere in the same file can churn a live finding's identity). Settling Z4 and that finding together
 is the obvious next move on this algorithm.
 
