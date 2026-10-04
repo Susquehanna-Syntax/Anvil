@@ -5,14 +5,14 @@
   "unit": "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)",
   "command": "python -m anvil_eval.experiments.candidates report",
   "git": {
-    "commit": "861f8c1603edf1e07c3393eb58f8642caa947ce6",
+    "commit": "4a64288c4ee0fa692b6b600418a674cfcc5a4280",
     "dirty": false
   },
   "pins": {
     "measured_through": "anvil recall, built from the commit in git",
-    "selection_sha256": "d347c4fa04d10d3c88083fd60cb98a402a45d11a733d6787dd0e69b3491cb810",
+    "selection_sha256": "c1fa9b5077ec4f93c776c162a944eb94019b425d8585aa0f6fc4f5b74d4c2df1",
     "selection_decided": "the owner, 2026-10-03",
-    "rule_files": 308,
+    "rule_files": 177,
     "corpora": {
       "gitlab-sast-rules": {
         "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
@@ -226,6 +226,7 @@
         "files_scanned": 495,
         "files_excluded": 606,
         "coverage_problems": [
+          "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/openssl.c: Timeout when running raptor-use-after-free on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/openssl.c:",
           "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c:",
           "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-integer-wraparound on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:",
           "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:"
@@ -744,14 +745,14 @@
     "expected": "every planted file flagged; nothing under tests/; no candidate in the clean file",
     "observed": {
       "planted_files": [
-        "BadExec.java",
+        "BadCipher.java",
         "bad_eval.js",
         "bad_eval.py",
         "bad_exec.go",
         "bad_strcpy.c"
       ],
       "planted_flagged": [
-        "BadExec.java",
+        "BadCipher.java",
         "bad_eval.js",
         "bad_eval.py",
         "bad_exec.go",
@@ -769,7 +770,7 @@
         ],
         [
           "opengrep",
-          "BadExec.java"
+          "BadCipher.java"
         ],
         [
           "opengrep",
