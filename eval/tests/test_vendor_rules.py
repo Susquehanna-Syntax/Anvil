@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import tarfile
 
 import pytest
 
@@ -13,6 +15,24 @@ MIT = "MIT License\n\nCopyright (c) 2022 raptor\n\nPermission is hereby granted.
 
 
 GITLAB_MIT = "# License: MIT (c) GitLab Inc.\n"
+
+
+APACHE = b"Apache License\nVersion 2.0, January 2004\n"
+
+
+@pytest.fixture(autouse=True)
+def licence_bodies(tmp_path, monkeypatch):
+    """The gosec release archive and bandit's licence are local acquisitions, absent in CI; each
+    test gets stand-ins holding an Apache-2.0 opening, which is all plan() checks."""
+    tarball = tmp_path / "gosec.tar.gz"
+    with tarfile.open(tarball, "w:gz") as t:
+        info = tarfile.TarInfo("LICENSE.txt")
+        info.size = len(APACHE)
+        t.addfile(info, io.BytesIO(APACHE))
+    bandit = tmp_path / "bandit-LICENSE"
+    bandit.write_bytes(APACHE)
+    monkeypatch.setattr(vr, "GOSEC_TARBALL", tarball)
+    monkeypatch.setattr(vr, "BANDIT_LICENCE", bandit)
 
 
 def rule(header: str, rid: str = "r-1", cwe: str = "CWE-78") -> str:
