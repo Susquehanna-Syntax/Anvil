@@ -119,7 +119,7 @@ pack that does not match.
 
 | Corpus | Pin | Rule files | SPDX | Licence body archived |
 |---|---|---|---|---|
-| GitLab `sast-rules` | `53bf5cf6` | 59 (6 of them derived from JS Foundation code) | MIT | `data/rules/gitlab-sast-rules/LICENSE` |
+| GitLab `sast-rules` | `53bf5cf6` | 58 (6 of them derived from JS Foundation code) | MIT | `data/rules/gitlab-sast-rules/LICENSE` |
 | GitLab `sast-rules`, `go/` (derived from gosec) | `53bf5cf6` | 27 | Apache-2.0 | `data/rules/gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt` |
 | GitLab `sast-rules`, `python/` (derived from bandit) | `53bf5cf6` | 52 | Apache-2.0 | `data/rules/gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt` |
 | `0xdea/semgrep-rules`, `rules/c` | `dae50da6` | 39 | MIT | `data/rules/0xdea-semgrep-rules/LICENSE` |
@@ -136,8 +136,8 @@ language (the spine's Go control-plane decision), so subprocess invocation is th
 also the option that keeps the LGPL boundary clean. Baking the binary into the container image is the
 event that triggers source obligations (LGPL-2.1 §4), and the release binary is a PyInstaller bundle that also
 carries GNU Readline, OpenSSL and Python packages under their own licences. `data/LICENSES/opengrep-binary-distribution.md`
-sets out what it contains and the choice, which is the owner's and
-is still open.
+sets out what it contains and the owner's decision of 2026-10-04: opengrep is an operator-installed
+prerequisite, so no Anvil artifact includes it.
 
 ## sqlmap — a separate GPL-3.0 artifact, deliberately not a dependency
 

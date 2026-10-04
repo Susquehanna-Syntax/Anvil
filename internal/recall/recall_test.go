@@ -32,8 +32,8 @@ func pack(t *testing.T) *recall.Pack {
 // rule's provenance is complete.
 func TestTheVendoredPackVerifies(t *testing.T) {
 	p := pack(t)
-	if n := len(p.Rules()); n != 177 {
-		t.Errorf("the pack holds %d rule files; the owner's selection of 2026-10-03 vendors 177", n)
+	if n := len(p.Rules()); n != 176 {
+		t.Errorf("the pack holds %d rule files; the owner's selection of 2026-10-03 vendors 176", n)
 	}
 	if n := len(p.Manifest.ExcludedByLicence); n != 131 {
 		t.Errorf("the manifest lists %d rules excluded for an LGPL-3.0 upstream; the generator left out 131", n)

@@ -75,7 +75,7 @@ whose bodies or rules do not match.
       analyser GitLab ported it from. Rules whose companion names an LGPL-3.0
       analyser (find-sec-bugs, security-code-scan: 131 rules) are not vendored;
       MANIFEST.json lists each.
-      53 rule files -- MIT, Copyright (c) 2011-present GitLab Inc. The MIT
+      52 rule files -- MIT, Copyright (c) 2011-present GitLab Inc. The MIT
       notice is in data/rules/gitlab-sast-rules/LICENSE.
       6 rule files (javascript/) whose companions read "MIT (c) JS Foundation
       and other contributors, https://js.foundation" -- MIT, Copyright JS

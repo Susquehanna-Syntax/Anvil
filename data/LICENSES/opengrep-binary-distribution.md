@@ -31,7 +31,13 @@ chardet as LGPL-2.1, from memory, and those are the claims to verify first. If R
 expected, conveying the bundle conveys a GPL-3.0 library with GPL-3.0's source duties, which is a heavier
 obligation than opengrep's own and must be settled before any artifact ships the binary.
 
-## The choice, which is the owner's and is open as of 2026-10-03
+## The decision
+
+**The owner decided on 2026-10-04: opengrep is an operator-installed prerequisite, as Trivy is.** No Anvil
+release artifact includes the opengrep binary, so Anvil conveys none of the components above and no LGPL or GPL
+duty attaches to Anvil. Anvil checks the installed version against the pin on every scan
+(`internal/recall`, `checkVersion`) and refuses a missing or unpinned one as a missing tool. The options weighed
+were:
 
 | Option | What it costs | What it buys |
 |---|---|---|
@@ -40,5 +46,5 @@ obligation than opengrep's own and must be settled before any artifact ships the
 | Fetch on first run from opengrep's release, verified by the SHA-256 in `eval/tools/opengrep/MANIFEST.toml` | A network fetch at install, an install step that can fail, and the fetch must happen before any scan, never at scan time | Anvil conveys nothing |
 | An operator-installed prerequisite, like Trivy today | An extra install step for every operator | No duty, no fetch logic |
 
-Until it is decided, no release artifact may include the opengrep binary. Phase 9 (plan node packaging) owns the
-packaging and must cite this file.
+Phase 9 (plan node packaging) owns the install documentation and must cite this file; changing the decision
+(shipping the binary in an image, say) means reading every bundled component's licence from its body first.

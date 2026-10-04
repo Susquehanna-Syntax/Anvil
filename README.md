@@ -63,14 +63,14 @@ Two detection lanes, one audit record, and a remediation tier that proposes and 
 
 Lane B runs only the rules in `data/rules`, the owner's selection of 2026-10-03, pinned by commit and hashed
 file by file, plus gosec and bandit. **No permissive rule corpus gives broad multi-language taint (dataflow)
-recall**: 16 of the 177 rule files are taint rules, and Java, Scala and C# are thin:
+recall**: 16 of the 176 rule files are taint rules, and Java, Scala and C# are thin:
 
 | Language | Rule files | Of them taint rules | Native analyser |
 |---|---|---|---|
 | C and C++ | 39 (0xdea, MIT) | 0 | none |
 | Go | 27 (GitLab, Apache-2.0, derived from gosec) | 5 | gosec 2.29.0 (SSA, type-checked) |
 | Python | 67 (GitLab: 52 Apache-2.0, derived from bandit; 15 MIT) | 1 | bandit 1.9.4 (AST) |
-| Java | 13 (GitLab, MIT) | 4 | none |
+| Java | 12 (GitLab, MIT) | 4 | none |
 | Scala | 19 (GitLab, MIT) | 6 | none |
 | C# | 1 (GitLab, MIT) | 0 | none |
 | JavaScript and TypeScript | 11 (GitLab, MIT) | 0 | none |
@@ -79,7 +79,7 @@ Anything else (Ruby, PHP, Kotlin, Rust, Swift, shell, …) is not covered at all
 excluded for their licences: the C rules, each headed "License: GPL 2.0" because it is generated from flawfinder,
 and 131 Java, Scala and C# rules whose GitLab companion test files name find-sec-bugs or security-code-scan,
 both LGPL-3.0, as their source (a rule's licence is read from the stricter of its own header and its
-companion's). Test, test-data,
+companion's), plus one Java rule whose companion states no licence at all. Test, test-data,
 documentation and example trees are not reported on. **Those exclusions match by name, so a repository can place
 first-party code under `spec/`, `docs/` or `fixtures/` and Lane B will not see it**; every scan reports how many
 source files they kept out. Otherwise the scanned repository cannot switch a rule off: its `nosemgrep`, `#nosec`
@@ -100,7 +100,7 @@ timeout) is recorded as incomplete coverage. Measured on
 
 | Artifact | Contains |
 |---|---|
-| `anvil` | Lane A, Lane B, record, store, remediation. **No network-probing capability compiled in.** Lane B's tools run as separate processes and are installed beside it. |
+| `anvil` | Lane A, Lane B, record, store, remediation. **No network-probing capability compiled in.** Lane B's tools run as separate processes; the operator installs them (opengrep 1.26.0, gosec 2.29.0, bandit 1.9.4), and Anvil checks their versions. |
 | `anvil-dast` | The dynamic tier. Separate release, separate install, explicit attestation. |
 
 This is a split in the build, not a configuration flag, because a boolean inside a single shipped

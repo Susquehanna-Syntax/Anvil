@@ -123,6 +123,11 @@
       "corpus": "0xdea-semgrep-rules",
       "path": "rules/c/high-entropy-assignment.yaml",
       "reason": "A code-review heuristic for high-entropy string literals (CWE-540)."
+    },
+    {
+      "corpus": "gitlab-sast-rules",
+      "path": "java/endpoint/rule-UnvalidatedRedirect.yml",
+      "reason": "Its companion test file states no licence, and GitLab's mappings tie it to a find-sec-bugs rule id (an LGPL-3.0 analyser), so nothing but its own MIT header speaks for it. Dropped by the owner on 2026-10-04, after the same-family review."
     }
   ],
   "exclude_by_derived_licence": {

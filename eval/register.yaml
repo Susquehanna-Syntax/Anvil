@@ -61,8 +61,8 @@
 #
 # PHASE 6 (2026-10-03): candidates-per-scan was re-run through Lane B itself (anvil recall) on the
 # owner's selection of that day (data/rules/selection.json): largest full scan 225 (curl, was
-# 10,714), largest push 27 (Anvil, was 88), under both bars. The row's decision is still the one
-# the owner set on the old number; only the owner changes it.
+# 10,714), largest push 27 (Anvil, was 88), under both bars. The owner set the row's decision to
+# PASS on 2026-10-04.
 
 version: 1
 
@@ -502,7 +502,9 @@ experiments:
       unit: "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)"
       measured_at: "2026-10-04"
       artifact_path: "eval/results/candidates-per-scan.json"
-    decision: FAIL
+    # Set to PASS by the owner on 2026-10-04: under both bars on the owner's selection (largest full
+    # scan 225, largest push 27, control passed). It replaces the FAIL set on the first count, 10,714.
+    decision: PASS
     depends_on: []
     deferred_reason: null
     owning_future_phase: null

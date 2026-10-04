@@ -1,7 +1,7 @@
 {
  "version": 1,
  "generated_by": "python -m anvil_eval.vendor_rules",
- "selection_sha256": "c1fa9b5077ec4f93c776c162a944eb94019b425d8585aa0f6fc4f5b74d4c2df1",
+ "selection_sha256": "7b86bf58da7eaca7d0a19ec9a96fef3fe2b8ace672c4a8b7647e3ff5c236e729",
  "licences": [
   {
    "path": "0xdea-semgrep-rules/LICENSE",
@@ -739,26 +739,6 @@
    ],
    "licence": "MIT",
    "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-WeakTLSProtocolVersion.java: License: MIT (c) GitLab Inc.",
-   "licence_file": "gitlab-sast-rules/LICENSE"
-  },
-  {
-   "corpus": "gitlab-sast-rules",
-   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
-   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
-   "path": "gitlab-sast-rules/java/endpoint/rule-UnvalidatedRedirect.yml",
-   "blob_sha1": "9825fe85873502b9b23a06552d9e505276e4326d",
-   "sha256": "d715a7551b3e263d712f192f6698e7a072b73d59364fd4824f9db39193f25e7e",
-   "ids": [
-    "java_endpoint_rule-UnvalidatedRedirect"
-   ],
-   "cwes": [
-    "CWE-601"
-   ],
-   "languages": [
-    "java"
-   ],
-   "licence": "MIT",
-   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-UnvalidatedRedirect.java states no licence",
    "licence_file": "gitlab-sast-rules/LICENSE"
   },
   {
