@@ -1,0 +1,310 @@
+{
+  "gate": "Remediation exit gate (plan node fixgate), and Phase 7's exit gate (plan node p7)",
+  "written_on": "2026-10-04",
+  "written_by": "the Phase 7 agent; every PROVEN row names what showed it, and nothing passes by assertion",
+  "scope": "Structural criteria that hold whatever the model's quality. No model ran in Phase 7: the owner deferred every GPU run to after Phase 9 (2026-10-04), so every test here drives the controller with a scripted model, an in-process forge and local git repositories. Nothing was pushed, opened or merged anywhere.",
+  "rows": [
+    {
+      "criterion": "No skipped security test",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestNoGateTestCanSkip",
+          "path": "internal/remediation/gate_test.go",
+          "note": "no test this file cites, and no test in internal/remediation, contains a Skip, Skipf or SkipNow call; the scan's own negative control finds a planted one. Two stale conditional skips in internal/handoff (a schema gap closed on 2026-08-07) were turned into failures on 2026-10-04"
+        }
+      ]
+    },
+    {
+      "criterion": "The fingerprint corpus passes",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestConformanceMainCorpusMatchesIndependentGoldens",
+          "path": "internal/record/fingerprint_conformance_test.go"
+        },
+        {
+          "test": "TestConformanceDerivedCorpusMatchesIndependentGoldens",
+          "path": "internal/record/fingerprint_conformance_test.go"
+        },
+        {
+          "test": "TestAFindingThatVanishedWithoutItsCodeChangingIsNotFixed",
+          "path": "internal/remediation/consume_test.go",
+          "note": "re-anchoring uses the one fingerprint: the diff-aware rescan is Lane B itself (LaneBRescan), and a finding whose rule stopped matching while its code did not change stays in the queue"
+        }
+      ]
+    },
+    {
+      "criterion": "--reject never appears",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestNoCodePathAsksGitApplyToReject",
+          "path": "internal/remediation/forge_test.go"
+        },
+        {
+          "test": "TestTheDiffCarriesTheScannedBlob",
+          "path": "internal/remediation/ladder_test.go",
+          "note": "a refused three-way apply leaves the tree exactly as it was"
+        }
+      ]
+    },
+    {
+      "criterion": "No path reaches a merge API",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheForgeCannotReachAMergeEndpoint",
+          "path": "internal/remediation/forge_test.go",
+          "note": "the client's six-route allowlist (five, and since the review a read-only list of open pull requests from one head) holds no merge route; eight merge and write routes are refused before a socket opens; seen failing on 2026-10-04 with a merge route added"
+        },
+        {
+          "test": "TestNoCodePathNamesAMergeAPI",
+          "path": "internal/remediation/forge_test.go",
+          "note": "no string literal in any non-test Go file of the module has a merge call's shape; the pattern's own negative control matches four"
+        }
+      ]
+    },
+    {
+      "criterion": "Generation has no credentials or stray sockets",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestGenerationHasNoCredentialsOrStraySockets",
+          "path": "internal/remediation/isolate_test.go",
+          "note": "a real child process: the parent holds GITHUB_TOKEN, AWS_SECRET_ACCESS_KEY, ANVIL_PUSH_TOKEN and HTTPS_PROXY and the child sees only its marker; the endpoint's key arrives in the Authorization header without passing through any environment; seen failing on 2026-10-04 with the parent's environment passed through"
+        },
+        {
+          "test": "TestCheckIsolationRefusesALeak",
+          "path": "internal/remediation/isolate_test.go"
+        }
+      ],
+      "limit": "The socket check is what the child holds when it answers, read from /proc: a socket opened and closed during the call would not show. The child is Anvil's own code and executes nothing the model writes, so a stray socket would be a defect in it, not an injection; no network namespace confines it."
+    },
+    {
+      "criterion": "The push token's scope excludes merge",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestThePushTokensScopeExcludesMerge",
+          "path": "internal/remediation/forge_test.go",
+          "note": "a token with push, maintain or admin on the upstream is refused before anything is pushed (Anvil pushes to a fork), and so is one whose permissions the forge does not report; seen failing on 2026-10-04 under both mutations"
+        },
+        {
+          "test": "TestThePushCredentialAnswersOnlyTheForksHost",
+          "path": "internal/remediation/forge_test.go",
+          "note": "the push process's credential helper gives the token to the fork's host and to no other"
+        }
+      ],
+      "limit": "The check reads GitHub's permissions object, the token holder's role on the upstream, which decides whether it could merge there; token scopes are not read. Against a test server: no live GitHub call was made (the owner chose the fake forge only for Phase 7)."
+    },
+    {
+      "criterion": "Re-runs are idempotent",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestReRunsAreIdempotent",
+          "path": "internal/remediation/consume_test.go",
+          "note": "a second enqueue and cycle adds no row, commit, prompt or pull request; a crash between commit and disposition is recovered from the trailers without generating again; seen failing on 2026-10-04 with the trailer lookup disabled"
+        },
+        {
+          "test": "TestALostLeaseWritesNothing",
+          "path": "internal/remediation/consume_test.go",
+          "note": "a lease lost during generation or during the last rung before the commit writes no commit and no attempt; seen failing on 2026-10-04 with the renew before the commit removed"
+        },
+        {
+          "test": "TestACrashBeforeThePullRequestIsRecovered",
+          "path": "internal/remediation/consume_test.go",
+          "note": "a crash between the commit and the pull request is recovered from the trailers and the attempt recorded before the commit; a draft already open from the branch is adopted, never doubled"
+        },
+        {
+          "test": "TestTwoWorkersNeverShareAClone",
+          "path": "internal/remediation/consume_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "The CVE-less case is fully ordered",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheCVELessCaseIsFullyOrdered",
+          "path": "internal/remediation/rank_test.go",
+          "note": "seen failing on 2026-10-04 with the fingerprint tie-break removed"
+        },
+        {
+          "test": "TestBonusTermsOnlyBreakTies",
+          "path": "internal/remediation/rank_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "A late DAST finding only spends the reserve",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestRecutGivesDastConfirmedAtLeastTheReservation",
+          "path": "internal/store/queue_test.go"
+        },
+        {
+          "test": "TestRecutInvertsPriorityWithoutReservationAndDoesNotWithIt",
+          "path": "internal/store/queue_test.go"
+        },
+        {
+          "test": "TestEveryDispositionIsReachable",
+          "path": "internal/remediation/consume_test.go",
+          "note": "the controller runs the queue cut against its budget before each audit (Controller.BudgetTokens), and what does not fit is skipped_budget"
+        }
+      ],
+      "limit": "No DAST finding has ever arrived late: the dynamic tier has not run live (Phase 8). The reserve is proven on the queue cut with constructed rows."
+    },
+    {
+      "criterion": "A narrow fix is caught by mutation",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestANarrowFixIsCaughtByMutation",
+          "path": "internal/remediation/oracle_test.go",
+          "note": "a patch that special-cases the recorded payload passes the exact replay and is refused when a mutant that is a live exploit on the scanned code still triggers; mutants that never triggered on the scanned code do not count, and a reproduction that does not trigger there proves nothing (the same-family review's blocking finding 4); seen failing on 2026-10-04 under three mutations"
+        }
+      ],
+      "limit": "Against a simulated target. The replay itself belongs to the dynamic tier, which has not run live; Phase 8 provides the Replayer."
+    },
+    {
+      "criterion": "Verified-fixed has one road",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestVerifiedFixedHasOneRoad",
+          "path": "internal/remediation/oracle_test.go",
+          "note": "in every non-test Go file of the module, the label is named only where it is declared, in LabelFor, and where the pull-request body words it"
+        },
+        {
+          "test": "TestValidatedRequiresDynamicEvidence",
+          "path": "internal/handoff/handoff_test.go",
+          "note": "the handoff table refuses 'validated' for a finding that needs dynamic confirmation when its audit's DAST half produced no reproduction"
+        }
+      ]
+    },
+    {
+      "criterion": "The hosted-endpoint warning fires only when it should",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheHostedEndpointWarningFiresOnlyWhenItShould",
+          "path": "internal/remediation/backend_test.go",
+          "note": "eighteen configurations: only an allowed public endpoint warns; a public one not allowed, a public host declared local or own, and a public endpoint over plain http are refused; seen failing on 2026-10-04 with the warning removed"
+        }
+      ]
+    },
+    {
+      "criterion": "Every commit carries its three trailers",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheControllerConsumesAnAuditToItsDispositions",
+          "path": "internal/remediation/consume_test.go",
+          "note": "every commit on an Anvil fix branch names one audit and, for each finding, its fingerprint and the idempotency key its handoff row holds"
+        },
+        {
+          "test": "TestTrailersFindAnEarlierCommit",
+          "path": "internal/remediation/ladder_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "Every disposition is reachable and tested",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestEveryDispositionIsReachable",
+          "path": "internal/remediation/consume_test.go",
+          "note": "all thirteen handoff.state literals, each through the code that writes it in production"
+        },
+        {
+          "test": "TestTheControllerConsumesAnAuditToItsDispositions",
+          "path": "internal/remediation/consume_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "The target's build and tests run confined: no network, no file system beyond an export of the patched tree, and never in the clone the controller's git uses",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheBuildHasNoNetwork",
+          "path": "internal/remediation/ladder_test.go",
+          "note": "bubblewrap with an allowlisted file system: from inside, this test binary cannot reach a listener on the host, read a secret kept beside the test (outside /tmp), or write there; outside, the same binary can. Seen failing on 2026-10-04 with the network namespace dropped and with the whole file system shown. Added after the same-family review's blocking findings 1 and 2"
+        },
+        {
+          "test": "TestTheControllerConsumesAnAuditToItsDispositions",
+          "path": "internal/remediation/consume_test.go",
+          "note": "the test installation's build fails unless it runs in an export with the sources and no .git; seen failing with the ladder building in the clone"
+        },
+        {
+          "test": "TestTheLadderStopsAtTheFirstBlockingRung",
+          "path": "internal/remediation/ladder_test.go",
+          "note": "only source files in Lane B's languages may be patched, never a hidden directory, a manifest or a build script, whatever the case"
+        },
+        {
+          "test": "TestAPathGitWouldQuoteIsNeverPatched",
+          "path": "internal/remediation/edits_test.go"
+        },
+        {
+          "test": "TestTheProductionRescanIsLaneB",
+          "path": "internal/remediation/consume_test.go"
+        }
+      ],
+      "limit": "Bubblewrap needs unprivileged user namespaces. A host without them, or without bubblewrap (GitHub's hosted runners may be either), refuses the build, and there the test proves the refusal, not the confinement (docs/controls.md, U12)."
+    },
+    {
+      "criterion": "Lane B's unconfirmed findings are taken, triaged by the gate's own statement, and never overwritten",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheControllerConsumesAnAuditToItsDispositions",
+          "path": "internal/remediation/consume_test.go",
+          "note": "all twelve fixture findings are enqueued; triage verdicts are their own rows; no finding's verdict changes; the gate's false positives are in the audit log"
+        },
+        {
+          "test": "TestUnmeasuredTriageGatesNothingByDefault",
+          "path": "internal/remediation/consume_test.go",
+          "note": "triage is off by default because its precision is unmeasured: every unconfirmed finding is report-only and no model is called; seen failing on 2026-10-04 with an empty mode treated as gate"
+        },
+        {
+          "test": "TestTriageFencesTheTargetsWords",
+          "path": "internal/remediation/triage_test.go"
+        },
+        {
+          "test": "TestAPersistingFindingIsNotReTriagedWithoutCause",
+          "path": "internal/remediation/triage_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "The register rows Phase 7 owns are run before its exit gate",
+      "status": "UNPROVEN (deferred by the owner)",
+      "evidence": [
+        {
+          "artifact": "eval/register.yaml",
+          "path": "eval/register.yaml",
+          "note": "patch-quality, task-cards and the new triage-precision need the coder on the GPUs; the owner deferred every GPU run to separate work after Phase 9 on 2026-10-04. batch-size needs real pull requests on a real repository, which Phase 7 does not open. The patch-quality bars are signed; triage-precision's are proposed."
+        },
+        {
+          "test": "test_scoring_and_its_label_blind_control",
+          "path": "eval/tests/test_triage_experiment.py"
+        }
+      ]
+    },
+    {
+      "criterion": "The same-family adversarial review has no open blocking finding",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "path": "docs/reviews/remediation-gate.md",
+          "note": "four blocking findings (an unconfined build, a .git the build could rewrite, a commit not the judged tree, an oracle counting dead mutants) and eleven others, each fixed and seen failing under a mutation; the critic's re-check found the four blocking ones closed and no new blocking finding"
+        }
+      ]
+    }
+  ]
+}

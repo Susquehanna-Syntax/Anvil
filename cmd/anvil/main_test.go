@@ -209,3 +209,20 @@ func TestTheFullScanTimerIsTheMapsDesign(t *testing.T) {
 		}
 	}
 }
+
+// TestRemediateRefusesWhenTheTierIsOff: with no remediation block, anvil
+// remediate is a refusal, never a quiet success.
+func TestRemediateRefusesWhenTheTierIsOff(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "anvil.yml")
+	if err := os.WriteFile(cfg, []byte("version: 1\nstateDir: "+dir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run(context.Background(), []string{"remediate", "--config", cfg}, &out, &errb); code != exitRefused {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "not enabled") {
+		t.Fatalf("stderr %q", errb.String())
+	}
+}

@@ -4,16 +4,19 @@ An open-source, **profit-free**, self-hostable system that finds vulnerabilities
 code repositories and proposes fixes — using locally-served open-weight models, and never browsing the
 live web at inference time.
 
-**Status (2026-10-03): Phases 0–6 of 10 are built; Phase 7, remediation, is next.** Phase 5's evaluation
-decided the model tier: the small detection model did not earn its place (`eval/register.yaml`), so the owner
-shrank it to recall rules, and Phase 6 built Lane B that way, with no ranker (none was measured beating chance).
-`anvil scan --repo` runs both lanes into one SAST half: Lane A matches dependencies through Trivy when the
-operator enables its database, and Lane B runs its rule pack over the first-party source and records every
-match as an `unconfirmed` finding for the coding agent's triage gate. `anvil scan --host` matches a host
-inventory through Anvil's own comparator. Every scan seals the SAST half, writes the record and its findings to
-the store, marks each finding new, persisting, regressed or fixed against earlier scans, and writes the record
-as SARIF 2.1.0. What is not built yet: remediation and its triage gate, the dynamic tier running live (it is
-built but has never touched a kernel or a target), and the release packages.
+**Status (2026-10-04): Phases 0–7 of 10 are built; Phase 8, the dynamic tier running live, is next.** Phase 5's
+evaluation decided the model tier: the small detection model did not earn its place (`eval/register.yaml`), so the
+owner shrank it to recall rules, and Phase 6 built Lane B that way, with no ranker. `anvil scan --repo` runs both
+lanes into one SAST half: Lane A matches dependencies through Trivy when the operator enables its database, and Lane B
+runs its rule pack over the first-party source and records every match as an `unconfirmed` finding. `anvil scan
+--host` matches a host inventory through Anvil's own comparator. Every scan seals the SAST half, writes the record and
+its findings to the store, marks each finding new, persisting, regressed or fixed against earlier scans, and writes
+the record as SARIF 2.1.0. Phase 7 built remediation (`anvil remediate`, below): it turns a sealed audit's findings
+into draft pull requests whose body is the evidence, and never merges. **No model has run it yet:** the owner
+deferred every GPU run (patch quality, the task-card comparison and the triage gate's precision) to after Phase 9,
+so its quality is unmeasured, its triage gate is off by default, and it has opened pull requests only on an
+in-process stand-in. What is not built yet: the dynamic tier running live (it is built but has never touched a
+kernel or a target), so no fix can yet be labelled verified, and the release packages.
 A fresh clone admits no real advisory feed until an operator acquires and certifies the publishers' licence
 texts (`mirror/README.md`); `testdata/lanea-fixture` is an offline snapshot that proves the chain without one.
 
@@ -57,7 +60,7 @@ Two detection lanes, one audit record, and a remediation tier that proposes and 
   on Anvil's own candidates, and none of them are labelled.
 - **Dynamic tier.** Ships as a **separate artifact** (`anvil-dast`), separately installed, requiring
   explicit attestation before it probes anything.
-- **Remediation.** Proposes patches. It does not merge them.
+- **Remediation.** Proposes patches as draft pull requests. It does not merge them.
 
 ## What Lane B covers
 
@@ -88,6 +91,56 @@ all ignored, and anything a tool was given and did not analyse (another platform
 timeout) is recorded as incomplete coverage. Measured on
 2026-10-03 on five sample repositories, the selection produces 0 to 225 candidates a full scan (curl is the most;
 `eval/results/candidates-per-scan.json`), under the budget of 500. Every scan records its count.
+
+## Remediation
+
+`anvil remediate` runs one cycle of the coding agent: it enqueues every sealed audit still inside its claim window,
+then for each fix group (one finding plus up to four in the same file and function) leases the findings, asks the
+triage gate about the unconfirmed ones, generates SEARCH/REPLACE edits, anchors them in the exact scanned blob and
+applies them with `git apply --3way`, climbs a validation ladder, commits with trailers, and opens a draft pull
+request from a fork. It needs a configuration block; it is off without one, and it names no model of its own:
+
+```yaml
+remediation:
+  enabled: true
+  endpoint: {url: http://127.0.0.1:8080/v1, model: <your coder>, tier: local}   # local, own or public
+  triage: off            # off (default), record, or gate
+  budgetTokens: 120000   # optional: the queue cut defers what does not fit
+  forge: {tokenFile: /etc/anvil/fork-token}    # optional: no token, no pull requests, commits only
+  targets:
+    - locator: "repo:myapp"          # the scan's --target name
+      source: /srv/checkouts/myapp   # the checkout that was scanned; cloned, never written
+      build: [go, build, ./...]      # an argument vector, run in bubblewrap with no network
+      readOnly: [/usr/local/go]      # directories the build may read (a toolchain); never one holding a secret
+      test: [go, test, ./...]
+      repository: owner/myapp
+      fork: anvil-bot/myapp
+      forkRemote: https://github.com/anvil-bot/myapp.git
+```
+
+What it guarantees, each held by a test (`docs/gates/remediation.json`):
+
+- **Nothing merges.** The forge client can reach six routes and none merges; the push token is refused if it can
+  write to the upstream at all, so Anvil pushes to a fork. Pull requests are drafts, at most three open per
+  repository.
+- **The model only proposes.** Generation runs in its own process whose whole environment is one marker variable
+  (no credential, no proxy) and whose only socket is the model endpoint; every string from the scanned repository
+  reaches the prompt inside a fence it cannot close. A public hosted endpoint is refused unless allowed, and
+  warns loudly when it is.
+- **The target is untrusted.** git runs with hooks, fsmonitor, external diff and credential helpers off and no
+  system or global configuration; the build and tests run in bubblewrap, in an export of the patched tree with no
+  `.git`, with no network and no file system beyond that export and read-only system directories (or not at all
+  where bubblewrap or unprivileged namespaces are missing); a patch may touch only source files its findings are
+  in, never a build, CI, dependency, configuration or repository-control file.
+- **A pass never claims more than its rung.** Each rung says what it proves and what it does not; a clean rescan
+  can only lower a label. Only the exploit oracle (a stored reproduction and its mutants no longer triggering) earns
+  "verified fixed"; until the dynamic tier runs live, every proposal is labelled unverified-security.
+- **Re-runs are idempotent.** The idempotency key (audit, fingerprint, base commit) rides in each commit's
+  trailers, so a crash between commit and bookkeeping is recovered, never redone.
+
+What it does not yet know: whether its fixes are any good. The patch-quality measurement (50 cases of a local reproducible-vulnerability corpus,
+bars signed by the owner: at least 5% verified fixed passes, under 2% fails) waits until after Phase 9, as does the
+triage gate's precision on Juliet. `anvil triage PATH` runs that gate over a tree without recording anything.
 
 ## Three rules that are enforced in code, not documentation
 

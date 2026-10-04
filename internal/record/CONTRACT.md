@@ -796,3 +796,46 @@ code as suspect.
 **The store.** Migration `0002_recall_candidates` adds `scan_run.recall_candidates`, the candidates-per-scan
 count (NULL when Lane B did not run, 0 when it ran and matched nothing, negative refused). `schema.sql` is
 unchanged.
+
+## Amendment 2026-10-04 — the remediation tier's statements, and store migration 0003 (plan nodes consume and triage)
+
+**No record change.** The record stays at 1.1.0. Everything the remediation tier says about a finding is its own
+statement, kept in the store beside the sealed record, never written into it:
+
+* **The triage gate's verdict** (§1.6 names the gate as a later producer of `anvil/verdict`). It is not written
+  there. A Lane B finding's `anvil/verdict` stays `unconfirmed` in the record and in `finding.verdict`, because the
+  triage verdict is a judgement by another producer about whether to attempt a fix, never evidence that the
+  finding is real (plan node triage). It lives in `triage_verdict` with its model and prompt digest, keyed by the
+  fingerprint and a digest of the inputs the gate saw (rule, weakness, path, symbol, matched code and context;
+  not the line number, so code that only moved is not judged again). Its precision is unmeasured, so by default it
+  gates nothing (`remediation.triage: off`).
+* **Proposed fixes.** `result.fixes[]` is not written: the sealed record is not rewritten after the fact. A proposal
+  lives on its fix branch, in `fix_attempt` (with one `verification` row per rung of the ladder) and in `fix_pr`.
+* **`anvil/groupId`** is not assigned in the record; a fix group's id names its branch,
+  `anvil/fix/<audit>/<group>`.
+
+**How the consumption controller uses the thirteen `handoff.state` literals** (§3; the vocabulary is unchanged):
+`validated` (the ladder passed and the commit carries its trailers), `failed_validation` (a blocking rung failed, or
+the diff did not apply to the scanned blob), `failed_format` (no anchored edit after one repair turn),
+`regression_introduced` (the diff-aware rescan found a finding the base did not have), `false_positive` (the record's
+verdict, or the triage gate's), `withdrawn` (report-only: insufficient context, triage off or in record mode, a
+dependency finding, no recorded base commit), `split_required` (the prompt is over the token ceiling),
+`fixed_incidentally` (another group's commit changed this finding's code and its rule no longer matches; a finding
+whose rule stopped matching while its code did not change stays), `superseded` (a newer audit re-reported the
+fingerprint), `skipped_budget` (the queue cut, which the controller runs against its budget), `expired` (the
+reaper), and `ready`/`leased` while live. Every disposition is logged with its reason in `remediation_log`.
+
+**Store migration `0003_remediation`** (additive; `schema.sql` unchanged):
+
+| Table / column | What it holds | Producer |
+|---|---|---|
+| `audit_record.audit_id` | `anvil/auditId`, unique where present; NULL on audits written before 0003 | the scan writer |
+| `triage_verdict` | the triage gate's statement: `true_positive`, `false_positive` or `insufficient_context` (never `unconfirmed`, which is the absence of one), with model, prompt digest and a reason capped at 512 bytes | the triage gate |
+| `remediation_log` | every disposition and its reason, capped at 2 KiB; the audit log a triage false positive is dropped into | the consumption controller |
+| `fix_pr` | one draft pull request per validated group: label `verified_fixed` or `unverified_security`, state `draft`, `merged`, `rejected`, `stale_closed` or `superseded` | the pull-request lifecycle |
+
+A repository scan now records its base commit in `scan_run.commit_sha` (HEAD, when the scanned directory is the top
+of a clean git checkout; otherwise empty, and the controller withdraws that audit's findings, since no patch could
+name the blob it changes). With `audit_id` and `commit_sha` stored, `handoff.idempotency_key`
+(sha256 of the audit id, the fingerprint and the base commit) can be recomputed from the store alone, which closes
+the gap `internal/handoff`'s `EnqueueRequest` named.

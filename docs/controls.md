@@ -164,6 +164,11 @@ and the package still printed `ok`.
 `ck_audit_record_dast_status` constraint error skips; every other error is
 `t.Fatalf`.
 
+**Closed 2026-10-04 (Phase 7).** Both narrowed skips are gone: `schema.sql` has admitted every
+`dast_status` literal since 2026-08-07, so the skip could never fire and its stated reason was stale.
+A fixture that does not build now fails both tests. The remediation exit gate's row "no skipped
+security test" (`TestNoGateTestCanSkip`) refuses any skip in a test it cites.
+
 ## H5 / H6 — a toolchain table's absence disables the invisible-character sweep
 
 | | |
@@ -2145,6 +2150,9 @@ missing artefact and the command that produces it.
 | **Security control?** | Yes |
 | **Verdict** | **LEGITIMATE.** The skip is narrow (one named constraint, not any error), the DDL gap is reported to the orchestrator, and the classification is asserted without a database by `TestHasDynamicEvidenceClassifiesEveryDastStatus`. H4 was the same test's *un-narrowed* twin |
 
+**Removed 2026-10-04 (Phase 7).** The DDL gap closed on 2026-08-07, so the skip could never fire; it is now a
+failure, and the remediation exit gate cites this test (`TestNoGateTestCanSkip`). See H4.
+
 ## L11 — `TestXVM3RelatedLocationsAreCapped/loc0_rel3000`
 
 | | |
@@ -2260,3 +2268,49 @@ Measured on this machine on 2026-10-03: with the tools present the real-tools te
 `--disable-nosem` or `--ignore-nosec` out of the argument vectors, or disabling the GitLab directory allowlist,
 fails it or `TestThePackGuardsFire`, and mapping a candidate to `true_positive` fails
 `TestEveryCandidateReachesTheRecordUnconfirmed`.
+
+---
+
+# REMEDIATION (Phase 7, 2026-10-04)
+
+No `t.Skip` was added, and two were removed (H4). `TestNoGateTestCanSkip` (`internal/remediation`) fails if
+any test the remediation exit gate cites, or any test in `internal/remediation`, can skip. Every guard below
+was seen failing under a deliberate mutation on 2026-10-04 before it was trusted (the mutations are listed
+in `docs/gates/remediation.json`). What the suite cannot prove on this machine:
+
+## U11 — the exploit oracle and the regression re-check have no replayer
+
+`internal/remediation` defines `Replayer` (replay one payload of a stored reproduction against a patched
+target, inside the dynamic tier's containment) and nothing implements it, because the dynamic tier has never
+run live. So every proposal is labelled unverified-security, and `anvil remediate`'s re-check reports each
+merged fix as not re-checked. `TestANarrowFixIsCaughtByMutation` proves the oracle's logic against a simulated
+target. **What would settle it:** Phase 8's dynamic tier implements `Replayer` over its stored reproductions
+and the kernel, and a test replays a real reproduction against a patched and an unpatched target.
+
+## U12 — the build sandbox needs bubblewrap and unprivileged user namespaces
+
+The ladder runs the target's build and tests in bubblewrap with an allowlisted file system (`/usr` and `/etc`
+read-only, a fresh `/tmp`, the operator's listed toolchain directories, one writable export of the patched tree with
+no `.git`) and fresh user, pid, ipc, uts, cgroup and network namespaces. `TestTheBuildHasNoNetwork` proves it here
+(Debian 13, bubblewrap 0.12.0, 2026-10-04): from inside, the test binary cannot reach a listener the same binary
+reaches outside, cannot read a secret kept beside the test, and cannot write there. A host without bubblewrap or
+without unprivileged user namespaces (GitHub's hosted Ubuntu runners may lack either) gets `ErrNoSandbox`, and the
+build rung fails closed: no patch is proposed. On such a host the test asserts the refusal and logs it, so a CI pass
+there proves the refusal, not the confinement. **Closed in CI (2026-10-04, the owner's decision):** the Go job
+installs bubblewrap, lifts Ubuntu's AppArmor restriction on unprivileged user namespaces for that runner, and sets
+`ANVIL_SANDBOX_REQUIRED=1`, under which a missing sandbox fails the test; a following step asserts the test passed
+and did not take the fail-closed branch. On any other host the refusal stands as described.
+
+## U13 — the generation process's socket check is a snapshot
+
+`anvil generate-isolated` lists the sockets it holds when it answers, from `/proc`, and the parent refuses a
+reply that names anything but the endpoint. A socket opened and closed during the call would not show, and no
+network namespace confines the process. The child runs only Anvil's code and executes nothing the model
+writes, so a stray socket would be a defect, not an injection. **What would settle it:** a seccomp or
+network-namespace confinement that allows exactly the endpoint, tested by a child that tries a second address.
+
+## U14 — no pull request has been opened on a real forge
+
+The GitHub client, the fork push and the token-scope check are tested against a test server and an in-process
+fake (the owner chose the fake forge only for Phase 7). `batch-size` and the acceptance rate need real pull
+requests. **What would settle it:** Phase 9's scratch-repository gate, with a token scoped to a fork.

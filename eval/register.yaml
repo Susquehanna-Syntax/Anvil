@@ -48,8 +48,9 @@
 #     them precedes every file under eval/results/; `git log -- eval/register.yaml`
 #     is the evidence.
 #   - Owner decisions folded in on 2026-10-03: the recall corpus is the
-#     federation (candidates-per-scan), and ARVO is dropped for now
-#     (later that day the owner allowed ARVO for local-only patch-quality testing)
+#     federation (candidates-per-scan), and the reproducible-vulnerability corpus is
+#     dropped for now (later that day the owner allowed it for local-only patch-quality
+#     testing)
 #     (patch-quality).
 #   - Every deferred row names its owning phase.
 #   - `decision` is still UNRESOLVED on all fourteen rows. Only the owner sets it.
@@ -63,6 +64,14 @@
 # owner's selection of that day (data/rules/selection.json): largest full scan 225 (curl, was
 # 10,714), largest push 27 (Anvil, was 88), under both bars. The owner set the row's decision to
 # PASS on 2026-10-04.
+
+# PHASE 7 (2026-10-04): the owner signed the patch-quality bars as proposed (the point estimate
+# decides; the Wilson interval is reported beside it), approved 50 cases of the local
+# reproducible-vulnerability corpus, skipped
+# CWE-Bench-Java for v1, and deferred every GPU run (patch quality, task cards and the triage
+# measurement) to separate work after Phase 9. batch-size waits for real pull requests on a real
+# repository, which Phase 7 does not open. triage-precision is a new row, pre-registered before
+# any of it ran. No decision field was changed by Phase 7.
 
 version: 1
 
@@ -346,7 +355,7 @@ experiments:
 
   # =========================================================================
   - id: patch-quality
-    name: Open-weight patch quality (ARVO, local only; CWE-Bench-Java)
+    name: Open-weight patch quality (a local reproducible-vulnerability corpus; CWE-Bench-Java)
     kind: experiment
     spine_ref: the spine's evaluate-first and safety sections
     source_ref: >-
@@ -364,15 +373,15 @@ experiments:
       human review regardless of rate.
     corpus:
       - name: >-
-          ARVO, local only: the generator n132/ARVO at bc2a373c6b32fb3d9e7f86c516b1844885dcec51,
-          the dataset n132/ARVO-Meta (release v3.0.0, arvo.db, sha256
-          331184ca807c2f136f98dac9f1df94c893f4ee2fdf9329dca517ff88e72f97ce) and the per-case
-          n132/arvo:<id>-vul and <id>-fix Docker images
+          A local reproducible-vulnerability corpus: a generator, a case database and one
+          container image per case, each case carrying a fuzzer's crashing input. Its exact pins
+          (repositories, commit, release and SHA-256) are kept outside the repository, under
+          ~/.cache/anvil-eval/, by the owner's instruction of 2026-10-04 that no commit names it
         licence: >-
-          The generator is BSD-2-Clause (its LICENSE body, read 2026-10-03). The dataset and the
-          images carry no licence. The owner allowed local-only use on 2026-10-03: nothing from ARVO
-          is redistributed or committed, and no ARVO content is quoted in the repository.
-        licence_ref: n132/ARVO's LICENSE body; n132/ARVO-Meta's tree (no LICENSE file) read 2026-10-03
+          The generator is BSD-2-Clause (its LICENSE body, read 2026-10-03). The case database and
+          the images carry no licence. The owner allowed local-only use on 2026-10-03: nothing from
+          the corpus is redistributed, committed or quoted in the repository.
+        licence_ref: the generator's LICENSE body and the database's tree (no LICENSE file), read 2026-10-03; recorded with the pins
       - name: CWE-Bench-Java (iris-sast/cwe-bench-java at afe0ebd0adc237abb46255f9cd479b1d71819136)
         licence: MIT
         licence_ref: the repository's LICENSE body (GitHub reports MIT; body to be archived at acquisition)
@@ -380,30 +389,34 @@ experiments:
         licence: Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03
         licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue
     method: >-
-      ARVO is the oracle corpus, used locally only (the owner, 2026-10-03, after first dropping it
-      the same day): each sampled case's n132/arvo:<id>-vul image rebuilds the vulnerable project
-      with `arvo compile`, and `arvo` replays the fuzzer's crashing input, so a patch counts as
-      verified-fixed only when that input no longer crashes; nothing from ARVO is committed or
-      redistributed. CWE-Bench-Java has no oracle and reports build and test rates only. The loop
+      The local reproducible-vulnerability corpus is the oracle corpus, used locally only (the
+      owner, 2026-10-03, after first dropping it the same day): each sampled case's image rebuilds
+      the vulnerable project, and the corpus's tooling replays the fuzzer's crashing input, so a
+      patch counts as verified-fixed only when that input no longer crashes; nothing from the
+      corpus is committed or redistributed. CWE-Bench-Java has no oracle and reports build and test rates only. The loop
       (anvil_eval.patchloop) is generate, apply, build, test and, when a case has one, reproduce:
       the coder is served by llama-server from a Q4_K_M GGUF of the pinned revision and returns
       SEARCH/REPLACE blocks; the harness anchors and applies them; a case with an exploit oracle
       counts as verified-fixed only when the oracle no longer triggers. The loop is proven on a
-      synthetic C case with a crash reproducer; the ARVO adapter is Phase 7's to build. The frontier
-      comparison is taken from published literature, never re-run: no proprietary API is called.
+      synthetic C case with a crash reproducer. The frontier comparison is taken from published
+      literature, never re-run: no proprietary API is called. Case selection, pre-registered on
+      2026-10-04 before any image was pulled: the 50 cases ranked first by SHA-256 of the seed
+      20261004 and the case's id, among the cases the corpus records as reproduced, with a
+      located and verified fix commit, in C or C++. The adapter that runs a case in its image (rootless
+      Podman) is built with the run, after Phase 9: it can only be checked against a real image,
+      and none is pulled before then. The case list stays local.
     metric: >-
       Per corpus: generation rate, apply rate, build-pass rate and test-pass rate, and the
       verified-fix rate where an oracle exists, with the full failure breakdown (no_patch, apply_fail,
       build_fail, test_fail, exploit_still_triggers). Never an aggregate percentage alone. On
       CWE-Bench-Java the verified-fix rate is not measurable and is reported as such.
     threshold_pass: >-
-      These bars apply to the verified-fix rate on ARVO (local only), the corpus with exploit
-      oracles; they are unsigned and need the owner's sign-off. Verified-fix rate >= 5% on ARVO, matching or exceeding Gemini 1.5 Pro's AutoPatchBench-verified
-      5.3%. PROPOSED — derived by analogy, not a number published for Qwen3-Coder-Next specifically;
-      plan/design/evaluation.md "## Open Questions" requires explicit sign-off before this
-      drives any messaging claim.
+      Verified-fix rate >= 5% on the local reproducible-vulnerability corpus (50 cases), matching or exceeding Gemini 1.5
+      Pro's AutoPatchBench-verified 5.3%. Derived by analogy, not a number published for this
+      coder. SIGNED by the owner on 2026-10-04 as proposed: the point estimate decides and the
+      Wilson 95% interval is reported beside it; a rate between the bars is AMBIGUOUS.
     threshold_fail: >-
-      Verified-fix rate < 2% on ARVO. PROPOSED, same caveat as threshold_pass.
+      Verified-fix rate < 2% on that corpus. SIGNED by the owner on 2026-10-04, as threshold_pass.
     reference_baseline: >-
       research/11-fix-validation-and-false-positives.md S7 — AutoPatchBench: Gemini 1.5 Pro 61.1%
       generation / 5.3% fully-verified; supporting context research/16-fuzzing-and-dynamic-analysis.md
@@ -417,15 +430,17 @@ experiments:
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: >-
-      Deferred to Phase 7 by the owner on 2026-10-03; Remediation owns the coder and the validation
-      ladder. The owner then allowed ARVO for local-only use, so Phase 7 measures a real
-      verified-fix rate on it. Running it needs Docker (not installed on 2026-10-03), the ARVO
-      images for the sampled cases and the 61 GB coder; CWE-Bench-Java additionally needs two JDKs
-      (its pinned JDK 8u202 is an Oracle build under Oracle's licence) and Maven. The loop and its
-      CWE-Bench-Java adapter are built and tested; the bars stay unsigned until the owner signs
-      them.
+      Deferred again by the owner on 2026-10-04, to separate work after Phase 9: every GPU run
+      waits until then. Phase 7 acquired and converted the coder (the owner's approval of
+      2026-10-04: Qwen3-Coder-30B-A3B-Instruct at b2cff646, Q4_K_M), fetched the corpus's case
+      database (its SHA-256 matches the local pin) and has the owner's approval for 50 cases pulled
+      one image at a time
+      and for rootless Podman, which the owner installs. CWE-Bench-Java is skipped for v1 (the
+      owner, 2026-10-04): it has no oracle and needs Oracle's JDK 8u202 and Maven with network
+      access. The loop and its CWE-Bench-Java adapter stay built and tested.
     owning_future_phase: >-
-      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
+      after Phase 9, as separate work the owner set on 2026-10-04 (it was Phase 7's to run
+      before its exit gate)
 
   # =========================================================================
   # PERMANENT INSTRUMENT — not a kill gate
@@ -605,11 +620,15 @@ experiments:
     decision: UNRESOLVED
     depends_on: []
     deferred_reason: >-
-      Milestone 0 executes only the six core items (advisory permutation, code-metrics baseline, prefill sweep, patch quality, candidates per scan, encoder round trip)
-      (plan/design/evaluation.md "## Overview"). This experiment measures a parameter of the
-      remediation consumption protocol, which does not exist yet — there is no PR pipeline to batch.
+      Phase 7 built the pull-request pipeline (internal/remediation: draft pull requests, the
+      open limit of three per repository, supersession, syncing and the acceptance rate with its
+      interval), but acceptance can only be measured on real pull requests to a real repository,
+      and the owner chose an in-process fake forge only for Phase 7 (2026-10-04). Nothing has been
+      opened anywhere, so there is no acceptance data to sweep. The bars stay qualitative
+      proposals.
     owning_future_phase: >-
-      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
+      Phase 9 or later: it needs real pull requests on a repository the owner names, which
+      Phase 9's scratch-repository gate is the first to open
 
   # =========================================================================
   - id: correlation-precision
@@ -835,15 +854,14 @@ experiments:
       does. FAIL: feed raw SARIF excerpts directly to the coding agent and drop the task-card
       abstraction layer entirely.
     corpus:
-      - name: ARVO (subset reused from the patch-quality experiment)
-        licence: BSD-2-Clause
-        licence_ref: research/16-fuzzing-and-dynamic-analysis.md S2/S25
-      - name: CWE-Bench-Java (subset reused from the patch-quality experiment)
-        licence: MIT
-        licence_ref: plan/design/spine-open-licences.md section 7
+      - name: the local reproducible-vulnerability corpus (the patch-quality experiment's 50 cases)
+        licence: >-
+          The generator is BSD-2-Clause; the dataset and the images carry no licence. Used locally
+          only, never committed, redistributed or quoted (the owner, 2026-10-03).
+        licence_ref: the patch-quality row's corpus entry
     method: >-
       A/B compare coding-agent fix-success rate given task cards versus raw SARIF excerpts, reusing
-      the patch-quality experiment's ARVO / CWE-Bench-Java subset so the two arms differ only in prompt representation.
+      the patch-quality experiment's corpus subset so the two arms differ only in prompt representation.
     metric: Coding-agent fix-success rate, task-card arm vs. raw-SARIF arm, on the identical subset.
     threshold_pass: >-
       The task-card arm's fix-success rate materially exceeds the raw-SARIF arm's. PROPOSED — no
@@ -860,11 +878,12 @@ experiments:
     depends_on:
       - patch-quality
     deferred_reason: >-
-      Depends on the patch-quality experiment's corpus subset and harness, which do not exist until the patch-quality experiment runs, and on
-      whether the spine's record section gains a task-card schema slot at all. Milestone 0 executes only the
-      six items named in plan/design/evaluation.md "## Overview".
+      Depends on the patch-quality run, which the owner deferred with every GPU run to after
+      Phase 9 (2026-10-04); the two arms run together on the same corpus cases so each image is
+      pulled once. The task-card arm is what the product sends (internal/remediation builds its
+      generation prompt from the read path's task cards). The margin stays unspecified.
     owning_future_phase: >-
-      Phase 7 (Remediation: proposed fixes); it must run before Phase 7's exit gate
+      after Phase 9, with patch quality, as separate work the owner set on 2026-10-04
 
   # =========================================================================
   - id: lora-hot-swap
@@ -910,3 +929,78 @@ experiments:
       nothing to hot-swap.
     owning_future_phase: >-
       Phase 6 (Lane B: first-party source), and only if adapters are ever trained; v1 trains none, so the row stays deferred unless the gate keeps the adjudicator and a later decision proposes training
+
+  # =========================================================================
+  # PRE-REGISTERED BY PHASE 7 (2026-10-04), before anything ran
+  # =========================================================================
+  - id: triage-precision
+    name: The triage gate's precision on labelled Lane B candidates
+    kind: experiment
+    spine_ref: the spine's safety section
+    source_ref: >-
+      plan node triage, whose risk says to measure the coder's precision on a labelled sample
+      before triage verdicts gate generation; the gate decision moved confirmation to this gate
+      (the gate block above)
+    owner_node: deferred
+    status: deferred
+    decision_gated: >-
+      Whether the triage gate's verdicts may decide which unconfirmed Lane B findings reach patch
+      generation (remediation.triage: gate). Until this row passes, the gate ships off (every
+      unconfirmed finding is report-only) or in record mode (verdicts stored, nothing acted on).
+      PASS: an operator may turn gating on, with the measured precision stated beside it. FAIL:
+      triage stays off; a larger model, a different prompt or more context is needed first.
+    corpus:
+      - name: >-
+          Juliet Test Suite for C/C++ 1.3 and for Java 1.3 (NIST SARD test suites 112 and 111;
+          archives sha256 ada9d7e1c323d283446df3f55bdee0d00bda1fed786785fe98764d58688f38eb and
+          d985f4177c2bcd7b03455a05c1c8f2e755f55c9eb250accd052f05f877347e60), kept local under
+          ~/.cache/anvil-eval/juliet and never committed
+        licence: >-
+          Public domain in the United States under 17 USC 105; CC0 1.0 for any foreign rights NIST
+          may claim (NIST's statement on each suite's SARD page, read 2026-10-04)
+        licence_ref: https://samate.nist.gov/SARD/test-suites/112 and /111, read 2026-10-04
+      - name: Qwen/Qwen3-Coder-30B-A3B-Instruct at b2cff646eb4bb1d68355c01b18ae02e7cf42d120, Q4_K_M
+        licence: Apache-2.0, read from the repository's LICENSE body at that revision on 2026-10-03
+        licence_ref: eval/src/anvil_eval/models.py, the candidate catalogue
+    method: >-
+      anvil_eval.experiments.triage. Sample: from each CWE directory of each suite, the test-case
+      files ranked first by SHA-256 of seed 20261004 and the file name (6 per CWE for C/C++, 4 for
+      Java), extracted outside the repository and scanned by anvil recall built from the checkout
+      with the pinned tools. Label: a candidate inside a function Juliet names bad (CWE..._bad,
+      badSink) is a true positive, inside one it names good (goodG2B, CWE..._good) a false
+      positive; a candidate in any other function is left out. The label is a proxy on synthetic
+      code; a stricter reading also requires the candidate's CWE to match the test case's. Run:
+      anvil triage over the same tree, which uses the product's own triage input builder, prompt
+      and parser through the isolated generation process, with the coder served by llama-server.
+    metric: >-
+      Precision of the gate's plausible verdict with its Wilson 95% interval, the sample's base
+      rate (a label-blind gate's precision), recall of plausible on true positives, the share of
+      false positives dropped, the insufficient_context counts on each side, and the cost per
+      finding (mean seconds and mean prompt tokens), under both labels.
+    threshold_pass: >-
+      PROPOSED, needs the owner's sign-off: the lower bound of the plausible verdict's precision
+      interval is above the sample's base rate (the gate beats a label-blind one), and at least
+      half of the labelled false positives are dropped.
+    threshold_fail: >-
+      PROPOSED, needs the owner's sign-off: the upper bound of the precision interval is at or
+      below the base rate (the gate is no better than letting every finding through).
+    reference_baseline: PROPOSED — no published baseline
+    result:
+      value: null
+      unit: null
+      measured_at: null
+      artifact_path: null
+    decision: UNRESOLVED
+    depends_on: []
+    deferred_reason: >-
+      The run needs the coder on the GPUs, and the owner deferred every GPU run to after Phase 9
+      (2026-10-04). The CPU-only parts ran on 2026-10-04 at commit 9bf7768 (clean tree): the
+      sample (eval/results/runs/triage-precision/sample.json) drew 1,068 test-case files (686
+      C/C++, 382 Java), on which Lane B produced 1,693 candidates with no coverage problem; 1,034
+      fall in a Juliet bad or good function, 429 bad and 605 good, so the base rate a gate must
+      beat is 0.415 by the function label and 0.048 when the candidate's CWE must also match the
+      test case's. The stub-endpoint control passed through anvil triage (8 candidates on the
+      planted fixture, 8 true_positive verdicts).
+    owning_future_phase: >-
+      after Phase 9, as separate work the owner set on 2026-10-04, with patch quality and task
+      cards

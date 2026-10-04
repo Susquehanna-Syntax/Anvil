@@ -9,7 +9,7 @@ nothing in this tree is part of the Anvil control plane.
 The package provides the shared skeleton that every later Milestone 0 step
 builds on:
 
-* ``anvil_eval.data``     — corpus loaders (PrimeVul, ARVO, CWE-Bench-Java)
+* ``anvil_eval.data``     — corpus loaders (PrimeVul, CWE-Bench-Java)
 * ``anvil_eval.harness``  — experiment runners (the evaluation experiments)
 
 Those submodules are written by later packets; this module only fixes the
@@ -49,7 +49,7 @@ REPO_ROOT: Path = EVAL_ROOT.parent
 
 # Canonical sub-trees. These paths are the contract between evaluation steps; a step
 # that writes somewhere else breaks the register's ``artifact_path`` fields.
-DATA_DIR: Path = EVAL_ROOT / "data"          # PrimeVul, ARVO, CWE-Bench-Java — gitignored payloads
+DATA_DIR: Path = EVAL_ROOT / "data"          # corpora, e.g. PrimeVul — gitignored payloads
 MODELS_DIR: Path = EVAL_ROOT / "models"      # candidate models: pinned manifests, not weights
 TOOLS_DIR: Path = EVAL_ROOT / "tools"        # opengrep engine + pinned ruleset
 RESULTS_DIR: Path = EVAL_ROOT / "results"    # eval/results/<ID>.json, committed

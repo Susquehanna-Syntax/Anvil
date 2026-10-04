@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -350,10 +351,19 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	res.Log = l
 
+	var commit string
+	if req.Kind == KindRepo {
+		var note string
+		commit, note = BaseCommit(ctx, req.RepoPath)
+		if note != "" {
+			res.Notes = append(res.Notes, note)
+		}
+	}
 	w, err := store.WriteScan(ctx, req.Store, store.ScanWrite{
 		TargetKind:        string(req.Kind),
 		TargetLocator:     locator,
 		TriggerRef:        req.Event,
+		CommitSHA:         commit,
 		RulesetVersion:    strings.Join(ruleset, "+"),
 		SastEngineVersion: strings.Join(engineVer, "; "),
 		AdvisorySnapshot:  snapshotDigest(snapshot),
@@ -379,6 +389,41 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		res.Outcome = OutcomeClean
 	}
 	return res, nil
+}
+
+// BaseCommit is the commit a repository scan read: HEAD of the checkout, when
+// root is the top of a git working tree with nothing uncommitted. Otherwise it
+// is empty and the note says why; the remediation tier withdraws an audit's
+// findings to report-only when no base commit names the blobs it scanned.
+//
+// git runs in the scanned repository, so it runs as the remediation tier runs
+// it: hooks and fsmonitor off, no system or global configuration.
+func BaseCommit(ctx context.Context, root string) (commit, note string) {
+	gitc := func(args ...string) (string, error) {
+		full := append([]string{"--no-optional-locks", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+			"-c", "core.untrackedCache=false", "-c", "diff.external=", "-c", "credential.helper=",
+			"-c", "protocol.allow=never", "-C", root}, args...)
+		cmd := exec.CommandContext(ctx, "git", full...)
+		cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/nonexistent", "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "LC_ALL=C"}
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+	top, err := gitc("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", ""
+	}
+	if abs, aerr := filepath.EvalSymlinks(root); aerr != nil || filepath.Clean(top) != filepath.Clean(abs) {
+		return "", ""
+	}
+	head, err := gitc("rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", "the checkout has no commit, so no base commit is recorded"
+	}
+	if dirty, err := gitc("status", "--porcelain", "--untracked-files=no"); err != nil || dirty != "" {
+		return "", "the checkout has uncommitted changes, so no base commit is recorded and the remediation tier will not propose fixes from this scan"
+	}
+	return head, ""
 }
 
 // detectorsRun is what the store may resolve findings for: every lane that

@@ -589,6 +589,23 @@ func (c *Consumer) ReleaseLeaseContext(ctx context.Context, t Task, to record.Ha
 	return c.q.ReleaseLeaseContext(ctx, t.lease, to)
 }
 
+// HandBackContext gives a leased finding back to the ready set without
+// spending an attempt: the holder declined the work before attempting it
+// (the remediation tier does when a repository is at its open pull-request
+// limit). It is handoff.Queue.HandBack and nothing else.
+func (c *Consumer) HandBackContext(ctx context.Context, t Task) error {
+	if !t.Held() {
+		return errUnheld("HandBack")
+	}
+	return c.q.HandBackContext(ctx, t.lease)
+}
+
+// FailureDisposition is the disposition a failed attempt records: 'ready'
+// while an attempt remains, handoff.ExhaustedState when none does. It is the
+// rule ConsumeOne applies, exported so a consumer that drives its own leases
+// applies the same one.
+func FailureDisposition(t Task) record.HandoffState { return failureDisposition(t) }
+
 // ReclaimExpired sweeps lapsed leases: the crash path. A holder that was
 // OOM-killed loses its finding back to the ready set if an attempt remains,
 // and to handoff.ExhaustedState if none does.

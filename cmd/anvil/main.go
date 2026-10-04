@@ -49,6 +49,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/poller"
 	"github.com/Susquehanna-Syntax/Anvil/internal/laneb"
 	"github.com/Susquehanna-Syntax/Anvil/internal/recall"
+	"github.com/Susquehanna-Syntax/Anvil/internal/remediation"
 	"github.com/Susquehanna-Syntax/Anvil/internal/scan"
 	"github.com/Susquehanna-Syntax/Anvil/internal/settings"
 	"github.com/Susquehanna-Syntax/Anvil/internal/store"
@@ -72,6 +73,8 @@ const usage = `usage:
   anvil scan --host --inventory FILE|- [--out FILE] [--event EVENT] [--full] [--policy FILE]
   anvil findings [--target LOCATOR] [--all]
   anvil recall PATH [FILE...]
+  anvil remediate
+  anvil triage PATH [FILE...]
   anvil feeds import DIR
   anvil dispatch (--repo PATH | --host --inventory FILE) --event EVENT [--full]
   anvil daemon [--once]
@@ -82,6 +85,13 @@ anvil scan --host does not collect: it reads the inventory the host collector
 (cmd/anvil-host-collector) writes when it runs under its systemd unit.
 anvil recall prints Lane B's candidates for a tree as JSON and records nothing;
 with FILEs, only candidates in those repository-relative files.
+anvil remediate runs the remediation tier once: it enqueues sealed audits,
+proposes fixes as draft pull requests (never merging), syncs open drafts and
+re-checks merged fixes. It needs remediation.enabled and a model endpoint in
+the configuration file.
+anvil triage runs Lane B on a tree as anvil recall does, then asks the
+configured model's triage gate about every candidate, printing one JSON line
+per verdict; it records nothing. The triage-precision measurement drives it.
 `
 
 func main() {
@@ -106,6 +116,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return cmdFindings(ctx, args[1:], stdout, stderr)
 	case "recall":
 		return cmdRecall(ctx, args[1:], stdout, stderr)
+	case "remediate":
+		return cmdRemediate(ctx, args[1:], stdout, stderr)
+	case "triage":
+		return cmdTriage(ctx, args[1:], stdout, stderr)
+	case "generate-isolated":
+		// The generation process (internal/remediation, isolate.go): started
+		// by `anvil remediate` with an environment of one marker variable. It
+		// is not a command for people, so it is not in the usage text.
+		return remediation.ServeGeneration(ctx, os.Stdin, stdout)
 	case "feeds":
 		return cmdFeeds(ctx, args[1:], stdout, stderr)
 	case "dispatch":
@@ -265,6 +284,153 @@ func cmdScan(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitMissing
 	}
 	return exitRefused
+}
+
+// cmdRemediate runs one remediation cycle and prints its report as JSON.
+func cmdRemediate(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs, configPath := newFlags("remediate", stderr)
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "anvil remediate takes no arguments\n\n%s", usage)
+		return exitUsage
+	}
+	st, err := open(ctx, *configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil remediate: %v\n", err)
+		return exitError
+	}
+	defer st.close()
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil remediate: %v\n", err)
+		return exitError
+	}
+	c, warnings, err := remediation.FromSettings(st.store, st.cfg, exe, laneBConfig(st.cfg))
+	switch {
+	case errors.Is(err, remediation.ErrNotEnabled):
+		fmt.Fprintf(stderr, "anvil remediate: %v\n", err)
+		return exitRefused
+	case err != nil:
+		fmt.Fprintf(stderr, "anvil remediate: %v\n", err)
+		return exitError
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "\n*** %s ***\n\n", w)
+	}
+	out := map[string]any{}
+	enq, err := c.EnqueuePending(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil remediate: enqueueing: %v\n", err)
+		return exitError
+	}
+	out["enqueued"] = enq
+	cyc, err := c.Cycle(ctx)
+	out["cycle"] = cyc
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil remediate: %v\n", err)
+		return exitError
+	}
+	if c.Forge != nil {
+		days := time.Duration(st.cfg.Remediation.StaleAfterDays) * 24 * time.Hour
+		if err := remediation.SyncDrafts(ctx, st.store, c.Forge, days, time.Now()); err != nil {
+			fmt.Fprintf(stderr, "anvil remediate: syncing drafts: %v\n", err)
+			return exitError
+		}
+	}
+	rc, err := remediation.Recheck(ctx, st.store, nil, func(string) (remediation.ReplayTarget, bool) { return remediation.ReplayTarget{}, false }, time.Now())
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil remediate: re-check: %v\n", err)
+		return exitError
+	}
+	out["recheck"] = rc
+	if acc, err := remediation.AcceptanceRates(ctx, st.store); err == nil {
+		out["acceptance"] = acc
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		return exitError
+	}
+	return exitClean
+}
+
+// cmdTriage runs the triage gate over Lane B's candidates for a tree, with
+// the same input builder, prompt and parser the controller uses, and records
+// nothing.
+func cmdTriage(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs, configPath := newFlags("triage", stderr)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintf(stderr, "anvil triage: give a PATH\n\n%s", usage)
+		return exitUsage
+	}
+	cfg, err := settings.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", err)
+		return exitError
+	}
+	lb := laneBConfig(cfg)
+	if lb == nil {
+		fmt.Fprint(stderr, "anvil triage: Lane B is off in the configuration\n")
+		return exitRefused
+	}
+	if !cfg.Remediation.Enabled {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", remediation.ErrNotEnabled)
+		return exitRefused
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", err)
+		return exitError
+	}
+	r := cfg.Remediation
+	ep := remediation.Endpoint{URL: r.EndpointURL, Model: r.Model, Tier: remediation.Tier(r.Tier), AllowPublic: r.AllowPublic, APIKeyFile: r.APIKeyFile}
+	warnings, err := ep.Check()
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", err)
+		return exitError
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "\n*** %s ***\n\n", w)
+	}
+	gen := remediation.IsolatedGenerator{Exe: exe, Args: []string{"generate-isolated"}, Endpoint: ep}
+	lane, err := laneb.Prepare(ctx, *lb, fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", err)
+		return exitMissing
+	}
+	if only := fs.Args()[1:]; len(only) > 0 {
+		lane = lane.Only(only)
+	}
+	out, err := lane.Run(ctx, "triage:"+fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil triage: %v\n", err)
+		return exitError
+	}
+	for _, p := range out.Problems {
+		fmt.Fprintf(stderr, "anvil triage: %s\n", p)
+	}
+	enc := json.NewEncoder(stdout)
+	for _, res := range out.Results {
+		in := remediation.TriageInputOf(res)
+		line := 0
+		if l := res.Locations; len(l) > 0 && l[0].PhysicalLocation != nil && l[0].PhysicalLocation.Region != nil {
+			line = l[0].PhysicalLocation.Region.StartLine
+		}
+		j, err := remediation.Judge(ctx, gen, in)
+		row := map[string]any{"fingerprint": in.Fingerprint, "path": in.Path, "startLine": line, "ruleId": in.RuleID,
+			"cwe": in.CWE, "symbol": in.Symbol}
+		if err != nil {
+			row["error"] = err.Error()
+		} else {
+			row["verdict"], row["reason"], row["promptTokens"], row["seconds"] = j.Verdict, j.Reason, j.PromptTokens, j.Elapsed.Seconds()
+		}
+		if err := enc.Encode(row); err != nil {
+			return exitError
+		}
+	}
+	if len(out.Problems) > 0 {
+		return exitRefused
+	}
+	return exitClean
 }
 
 // laneBConfig is Lane B's configuration from the operator's file, or nil when

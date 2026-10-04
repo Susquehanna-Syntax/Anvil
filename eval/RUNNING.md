@@ -31,7 +31,8 @@ nothing else running unless noted.
 | prefill-sweep | `python -m anvil_eval.experiments.prefill run --model qwen3.5-2b --arms rtx4070 rtx4060 cpu12 tier-s cpu1` (and the same for gemma-4-e2b-it), then `... prefill report` | both GPUs, then the CPU alone; run it with nothing else on the machine | about 10 min per model | `results/runs/prefill-sweep/`, `results/prefill-sweep.json` |
 | candidates-per-scan | `python -m anvil_eval.experiments.candidates run`, then `... candidates report` | CPU, all cores | about 15 min before Phase 6, 3.5 min since (see below) | `results/runs/candidates-per-scan/counts.json`, `results/candidates-per-scan.json` |
 | encoder-round-trip | `python -m anvil_eval.encoder measure --pairs 5000`, then `... encoder report` (after the prefill report) | CPU, 4 threads | about 8 min | `results/runs/encoder-round-trip/timings.json`, `results/encoder-round-trip.json` |
-| patch-quality | `python -m anvil_eval.experiments.patch run --jdk 8u202=<JDK 8 home> --jdk 17=<JDK 17 home>`, then `... patch report` | both GPUs plus system RAM for the coder's experts | not yet run: it needs the coder (a 61 GB download), JDK 8 and 17, Maven and network access for Maven at build time | `results/runs/patch-quality/outcomes.jsonl`, `results/patch-quality.json` |
+| patch-quality | `python -m anvil_eval.experiments.patch run --jdk 8u202=<JDK 8 home> --jdk 17=<JDK 17 home>`, then `... patch report` | both GPUs plus system RAM for the coder's experts | not yet run: deferred by the owner with every GPU run to after Phase 9 (2026-10-04). The coder is acquired and converted; CWE-Bench-Java is skipped for v1; the arm on the local reproducible-vulnerability corpus (50 cases) needs rootless Podman, which is installed | `results/runs/patch-quality/outcomes.jsonl`, `results/patch-quality.json` |
+| triage-precision | `python -m anvil_eval.experiments.triage sample` (CPU), then `... triage run --config <anvil.yml naming the endpoint> --anvil <anvil binary>` (GPU), then `... triage report` | `sample`: CPU, all cores; `run`: the coder on both GPUs | `run` not yet run: deferred with every GPU run to after Phase 9 | `results/runs/triage-precision/sample.json`, `verdicts.jsonl`, `results/triage-precision.json` |
 
 A trial on a few pairs never writes into `results/`: `permutation run --limit 3 --out <scratch path>`.
 
@@ -45,6 +46,7 @@ A trial on a few pairs never writes into `results/`: `permutation run --limit 3 
 | candidates-per-scan | a planted file per language family is each flagged, the same files under `tests/` are not, and a clean file is not |
 | encoder-round-trip | the worker refuses other paths and malformed bodies, and scores a duplicated pair identically |
 | patch-quality | a real canned fix is `verified_fixed` and a cosmetic one `exploit_still_triggers` on the synthetic C case |
+| triage-precision | `anvil triage` against an always-plausible stub endpoint returns one `true_positive` per candidate of the planted recall fixture, and a label-blind gate's precision equals the sample's base rate |
 
 ## Since Phase 6
 
@@ -53,3 +55,14 @@ builds `anvil` from the checkout and drives `anvil recall` with the vendored rul
 tools, so the number recorded is the number a scan records. It took 3 min 24 s on 2026-10-03 (all cores). The
 rule pack is regenerated from the owner's selection by `python -m anvil_eval.vendor_rules` (needs `python -m
 anvil_eval.recall acquire` first); it writes nothing if any selected rule's licence is not MIT or Apache-2.0.
+
+## Since Phase 7
+
+The coder for patch quality and the triage measurement is acquired and converted (`python -m anvil_eval.models
+acquire qwen3-coder-30b-a3b`, 61.08 GB, then a Q4_K_M conversion with the BF16 intermediate deleted; the owner's
+approval of 2026-10-04). The triage measurement drives the product: `anvil triage PATH` runs Lane B and then the
+triage gate's own input builder, prompt and parser through the isolated generation process, and records nothing.
+Its labelled sample is Juliet C/C++ 1.3 and Java 1.3 (NIST SARD, public domain in the United States, CC0 elsewhere),
+kept with its extracted test cases under `~/.cache/anvil-eval/juliet`, never in the repository. Every GPU run
+(patch quality, task cards, triage precision) waits for separate work after Phase 9, by the owner's decision of
+2026-10-04.

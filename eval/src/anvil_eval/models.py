@@ -175,7 +175,7 @@ CANDIDATES: dict[str, Candidate] = {
         ),
         Candidate(
             name="qwen3-coder-30b-a3b",
-            role="coder, patch quality (not acquired)",
+            role="coder: patch quality, task cards, triage precision",
             repo="Qwen/Qwen3-Coder-30B-A3B-Instruct",
             revision="b2cff646eb4bb1d68355c01b18ae02e7cf42d120",
             licence="Apache-2.0",

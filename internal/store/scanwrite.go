@@ -399,11 +399,11 @@ func (t *writer) auditRecord(scanRunID int64, w ScanWrite, payload []byte, paylo
 	r, err := t.c.ExecContext(t.ctx, `
 INSERT INTO audit_record (scan_run_id, schema_version, audit_version, state, sast_status, sast_sealed_at,
                           dast_status, dast_sealed_at, target_provenance, deadline_at,
-                          claim_timeout_seconds, dast_deadline_seconds, payload, payload_sha256, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          claim_timeout_seconds, dast_deadline_seconds, payload, payload_sha256, created_at, audit_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scanRunID, record.SchemaVersion, w.AuditVersion, string(s.State), string(s.Sast.Status), sastSealed,
 		string(s.DastStatus), dastSealed, string(w.Log.Properties.Target.Provenance), ts(s.DeadlineAt),
-		s.ClaimTimeoutSeconds, dastDeadline, payload, payloadSHA, ts(s.StartedAt))
+		s.ClaimTimeoutSeconds, dastDeadline, payload, payloadSHA, ts(s.StartedAt), nullString(w.Log.Properties.AuditID))
 	if err != nil {
 		return 0, fmt.Errorf("store: recording audit record: %w", err)
 	}

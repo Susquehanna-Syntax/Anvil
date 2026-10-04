@@ -323,6 +323,14 @@ var nonKernelEgressAllowlist = []allowEntry{
 		why: "Lane A: downloads Trivy and Grype database bundles into the local mirror. " +
 			"Not a probe of a target.",
 	},
+	{
+		path:   modulePath + "/internal/remediation",
+		prefix: false,
+		why: "The remediation tier (Phase 7): its generation process calls the operator's " +
+			"configured model endpoint, and its forge client the operator's configured pull-request " +
+			"host through an allowlist of five routes. Neither address comes from a scanned target, " +
+			"and neither is a probe of one.",
+	},
 }
 
 // isStdlibPackage reports whether p is a standard-library package.
