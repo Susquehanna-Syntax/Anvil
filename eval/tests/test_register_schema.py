@@ -33,8 +33,9 @@ EVAL_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = EVAL_ROOT / "schema" / "register.schema.json"
 REGISTER_PATH = EVAL_ROOT / "register.yaml"
 
-# The fourteen rows the plan requires. Named explicitly rather than counted, so a
-# row being renamed fails loudly instead of silently keeping the count right.
+# The rows the plan requires: the fourteen of the evaluation phase and triage-precision,
+# pre-registered by Phase 7 on 2026-10-04. Named explicitly rather than counted, so a row
+# being renamed fails loudly instead of silently keeping the count right.
 REQUIRED_IDS = [
     "advisory-permutation",
     "code-metrics-baseline",
@@ -50,6 +51,7 @@ REQUIRED_IDS = [
     "lora-hot-swap",
     "candidates-per-scan",
     "encoder-round-trip",
+    "triage-precision",
 ]
 
 # Any status meaning "this experiment has not produced an adjudicated outcome".
@@ -91,7 +93,7 @@ def test_register_validates(schema: dict, register: dict) -> None:
     )
 
 
-def test_all_fourteen_rows_present_exactly_once(register: dict) -> None:
+def test_every_required_row_present_exactly_once(register: dict) -> None:
     ids = [r["id"] for r in _rows(register)]
     assert sorted(ids) == sorted(REQUIRED_IDS), (
         f"missing={sorted(set(REQUIRED_IDS) - set(ids))} "

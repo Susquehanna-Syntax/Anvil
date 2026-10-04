@@ -1,0 +1,24 @@
+{
+  "llama_cpp": {
+    "build": "b11146",
+    "commit": "7fe450e19305b828c199d602c23a8337aaa1f03b"
+  },
+  "converter_env": {
+    "torch": "2.11.0+cpu",
+    "transformers": "5.18.0"
+  },
+  "from": {
+    "repo": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    "revision": "b2cff646eb4bb1d68355c01b18ae02e7cf42d120"
+  },
+  "files": {
+    "BF16": {
+      "path": "qwen3-coder-30b-a3b-BF16.gguf",
+      "sha256": "14f07639b223b91f0b21daaa31500086e2da15e8dbc86b853cbd1784e73cf36c"
+    },
+    "Q4_K_M": {
+      "path": "qwen3-coder-30b-a3b-Q4_K_M.gguf",
+      "sha256": "93154e111f63c2bbdc5b9c51dce993fa743eebc1219b61776f0c854ffffe0b94"
+    }
+  }
+}

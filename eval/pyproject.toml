@@ -67,7 +67,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
   "network: test reaches the public internet; skipped in offline runs",
-  "docker: test shells out to Docker (ARVO reproducers, the patch-quality experiment)",
+  "docker: test shells out to Docker (crash reproducers, the patch-quality experiment)",
   "model: test loads model weights from eval/models/",
   "slow: test takes more than a few seconds",
 ]

@@ -28,10 +28,10 @@
       "minimum": 1
     },
     "experiments": {
-      "description": "Exactly the fourteen registered rows, each ID present exactly once.",
+      "description": "Exactly the registered rows (the fourteen of the evaluation phase and triage-precision, added 2026-10-04), each ID present exactly once.",
       "type": "array",
-      "minItems": 14,
-      "maxItems": 14,
+      "minItems": 15,
+      "maxItems": 15,
       "items": { "$ref": "#/$defs/row" },
       "allOf": [
         { "contains": { "$ref": "#/$defs/idIs/advisory-permutation" }, "minContains": 1, "maxContains": 1 },
@@ -100,7 +100,7 @@
           "enum": [
             "advisory-permutation", "code-metrics-baseline", "prefill-sweep", "patch-quality", "batch-size", "correlation-precision",
             "route-extraction", "dast-model-size", "gvisor-overhead", "zap-memory", "task-cards", "lora-hot-swap",
-            "candidates-per-scan", "encoder-round-trip"
+            "candidates-per-scan", "encoder-round-trip", "triage-precision"
           ]
         },
         "name": { "type": "string", "minLength": 1 },
@@ -188,7 +188,7 @@
             "enum": [
               "advisory-permutation", "code-metrics-baseline", "prefill-sweep", "patch-quality", "batch-size", "correlation-precision",
               "route-extraction", "dast-model-size", "gvisor-overhead", "zap-memory", "task-cards", "lora-hot-swap",
-              "candidates-per-scan", "encoder-round-trip"
+              "candidates-per-scan", "encoder-round-trip", "triage-precision"
             ]
           },
           "uniqueItems": true

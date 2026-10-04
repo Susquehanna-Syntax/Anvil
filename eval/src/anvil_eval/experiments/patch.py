@@ -2,9 +2,10 @@
 
 The coder (Qwen3-Coder-30B-A3B, Q4_K_M, served by llama-server across both GPUs with the experts
 that do not fit kept in system RAM) runs the patch loop. This module drives CWE-Bench-Java, which
-has no exploit oracle, so its verified-fix rate is reported as not measurable. The owner allowed
-ARVO for local-only use on 2026-10-03; its adapter, which gives the loop a real oracle (`arvo`
-replays the crashing input), is Phase 7's to build, and the register's bars apply to that rate.
+has no exploit oracle, so its verified-fix rate is reported as not measurable. The owner allowed a
+reproducible-vulnerability corpus for local-only use on 2026-10-03; its adapter, which gives the
+loop a real oracle (the corpus replays a fuzzer's crashing input), is built with the run after
+Phase 9, and the register's bars apply to that rate.
 
 Negative control, inside every report: the synthetic C case with a reproducer, run with two
 canned patches and no model. The real fix must come out ``verified_fixed`` and the cosmetic one

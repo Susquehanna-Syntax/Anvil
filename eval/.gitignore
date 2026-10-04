@@ -9,9 +9,9 @@
 # Deeper .gitignore files take precedence over shallower ones, so the
 # re-inclusions below override the root file's `models/` rule for eval/models.
 
-# --- Dataset payloads (PrimeVul, ARVO, CWE-Bench-Java) -------
+# --- Dataset payloads (PrimeVul, a reproducible-vulnerability corpus, CWE-Bench-Java) -------
 # Corpora are acquired locally and never committed or re-hosted:
-# PrimeVul is Google-Drive-gated (the PrimeVul acquisition forbidden actions) and ARVO /
+# PrimeVul is Google-Drive-gated (the PrimeVul acquisition forbidden actions) and the other corpora /
 # CWE-Bench-Java are pulled from their upstream repos at a pinned SHA.
 data/**
 # ...but keep the directory skeleton, the MANIFEST files that record the
