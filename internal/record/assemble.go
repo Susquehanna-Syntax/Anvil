@@ -32,11 +32,23 @@ type Assembly struct {
 	// SastTool is the SAST half's tool.driver.
 	SastTool ToolComponent
 
+	// SastExtensions are the SAST half's tool.extensions: Lane B's rule
+	// corpora and native analysers, with the rules its results cite.
+	SastExtensions []ToolComponent
+
+	// SastTaxonomies are the taxonomies the SAST half's results cite in
+	// result.taxa: CWE, for Lane B.
+	SastTaxonomies []ToolComponent
+
 	// SastResults are the SAST half's results, as emitted.
 	SastResults []Result
 
 	// AdvisorySnapshot identifies the advisory corpus the SAST half read.
 	AdvisorySnapshot *AdvisorySnapshot
+
+	// SpecHarvest is the SAST half's anvil/specHarvest (Lane B's spec
+	// harvest); nil when no harvest ran in this scan.
+	SpecHarvest *SpecHarvest
 }
 
 // ErrAssembleDastHalf means the audit's DAST half ran. Assembling a DAST run
@@ -62,7 +74,8 @@ func Assemble(a Assembly) (*SARIFLog, error) {
 		results = []Result{}
 	}
 	sast := Run{
-		Tool: Tool{Driver: a.SastTool},
+		Tool:       Tool{Driver: a.SastTool, Extensions: a.SastExtensions},
+		Taxonomies: a.SastTaxonomies,
 		AutomationDetails: RunAutomationDetails{
 			ID:              "anvil/" + string(HalfSast) + "/" + s.AuditID,
 			CorrelationGUID: s.AuditID,
@@ -73,6 +86,7 @@ func Assemble(a Assembly) (*SARIFLog, error) {
 			Status:           s.Sast.Status,
 			SealedAt:         s.Sast.SealedAt,
 			AdvisorySnapshot: a.AdvisorySnapshot,
+			SpecHarvest:      a.SpecHarvest,
 		},
 	}
 

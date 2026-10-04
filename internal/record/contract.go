@@ -78,7 +78,12 @@ const (
 	// SchemaVersion is the value of `anvil/schemaVersion`. Bump the minor
 	// component for an additive change, the major for a breaking one; the
 	// store's migration ledger keys off it.
-	SchemaVersion = "1.0.0"
+	//
+	// 1.1.0 (2026-10-03, Phase 6): rule provenance for Lane B. tool.extensions,
+	// result.rule and a rule descriptor's anvil/ruleProvenance; see
+	// CONTRACT.md, the amendment of that date. A 1.0.0 record is a valid
+	// 1.1.0 record.
+	SchemaVersion = "1.1.0"
 )
 
 // Fingerprint identifiers. The fingerprint owns the algorithm; this file owns the key
@@ -1700,6 +1705,11 @@ type Result struct {
 
 	Taxa []ReportingDescriptorReference `json:"taxa,omitempty"`
 
+	// Rule is SARIF §3.27.7: the rule this result cites, by id and by the
+	// index of the tool extension that holds it (record 1.1.0). A result that
+	// carries it must resolve to a rule with complete anvil/ruleProvenance.
+	Rule *ReportingDescriptorReference `json:"rule,omitempty"`
+
 	// WebRequest and WebResponse are the SARIF-native DAST evidence slots
 	// (§3.27.14/15). MASKED BY secrets masking BEFORE STORAGE — research/18 Risk #10:
 	// "an 8-hour TTL is not a security control for a token that is still
@@ -2122,6 +2132,10 @@ type Message struct {
 // Tool is SARIF §3.18.
 type Tool struct {
 	Driver ToolComponent `json:"driver"`
+	// Extensions are SARIF §3.18.3 tool extensions: for the SAST half, the
+	// rule corpora and native analysers Lane B ran, each carrying the rules
+	// its results cite (record 1.1.0).
+	Extensions []ToolComponent `json:"extensions,omitempty"`
 }
 
 // ToolComponent is SARIF §3.19. Also used for taxonomies (e.g. CWE).
@@ -2147,6 +2161,49 @@ type ReportingDescriptor struct {
 	HelpURI              string                            `json:"helpUri,omitempty"`
 	DefaultConfiguration *ReportingConfiguration           `json:"defaultConfiguration,omitempty"`
 	Relationships        []ReportingDescriptorRelationship `json:"relationships,omitempty"`
+	// Properties carries anvil/ruleProvenance on a rule a Lane B result
+	// cites (record 1.1.0).
+	Properties *RuleProperties `json:"properties,omitempty"`
+}
+
+// RuleProperties is the typed `anvil/*` bag on a rule descriptor.
+type RuleProperties struct {
+	RuleProvenance *RuleProvenance `json:"anvil/ruleProvenance,omitempty"`
+}
+
+// PropRuleProvenance is the rule descriptor key for RuleProvenance.
+const PropRuleProvenance = "anvil/ruleProvenance"
+
+// RuleProvenance is where a rule came from: the corpus or native analyser,
+// its repository, the commit or release, the rule file or the tool's rule id,
+// and its licence as read from a body. `anvil/ruleProvenance`, record 1.1.0.
+//
+// Every field is required and non-blank. A rule whose provenance cannot be
+// stated in full is one Lane B may not run (plan node candidatelist: 100%
+// non-empty provenance), so a partial one is refused rather than recorded.
+type RuleProvenance struct {
+	Source          string `json:"source"`
+	Repository      string `json:"repository"`
+	Version         string `json:"version"`
+	RulePath        string `json:"rulePath"`
+	LicenseSpdx     string `json:"licenseSpdx"`
+	LicenseEvidence string `json:"licenseEvidence"`
+}
+
+// Validate refuses a provenance with any blank field.
+func (p *RuleProvenance) Validate() error {
+	if p == nil {
+		return fmt.Errorf("%s is required", PropRuleProvenance)
+	}
+	for _, f := range []struct{ name, v string }{
+		{"source", p.Source}, {"repository", p.Repository}, {"version", p.Version},
+		{"rulePath", p.RulePath}, {"licenseSpdx", p.LicenseSpdx}, {"licenseEvidence", p.LicenseEvidence},
+	} {
+		if strings.TrimSpace(f.v) == "" {
+			return fmt.Errorf("%s.%s is blank; a rule's provenance is stated in full or not at all", PropRuleProvenance, f.name)
+		}
+	}
+	return nil
 }
 
 // ReportingConfiguration is SARIF §3.50.
@@ -2610,12 +2667,56 @@ func (r *Run) validate(auditID string) error {
 	if err := ValidateSpecHarvest(r.Properties.SpecHarvest); err != nil {
 		return err
 	}
+	for i, ext := range r.Tool.Extensions {
+		if strings.TrimSpace(ext.Name) == "" {
+			return fmt.Errorf("tool.extensions[%d] has no name", i)
+		}
+		for j := range ext.Rules {
+			if p := ext.Rules[j].Properties; p != nil && p.RuleProvenance != nil {
+				if err := p.RuleProvenance.Validate(); err != nil {
+					return fmt.Errorf("tool.extensions[%d].rules[%d]: %w", i, j, err)
+				}
+			}
+		}
+	}
 	for i := range r.Results {
 		if err := r.Results[i].validate(r.Properties.Half); err != nil {
 			return fmt.Errorf("results[%d]: %w", i, err)
 		}
+		if err := r.resolveRule(&r.Results[i]); err != nil {
+			return fmt.Errorf("results[%d]: %w", i, err)
+		}
 	}
 	return nil
+}
+
+// resolveRule checks a result's SARIF result.rule: when present, it names a
+// tool extension by index and a rule in it by id, the id agrees with
+// result.ruleId, and that rule states its provenance in full.
+func (r *Run) resolveRule(res *Result) error {
+	ref := res.Rule
+	if ref == nil {
+		return nil
+	}
+	if ref.ToolComponent == nil || ref.ToolComponent.Index == nil {
+		return fmt.Errorf("result.rule must name its tool extension by index")
+	}
+	i := *ref.ToolComponent.Index
+	if i < 0 || i >= len(r.Tool.Extensions) {
+		return fmt.Errorf("result.rule names tool.extensions[%d], and the run has %d", i, len(r.Tool.Extensions))
+	}
+	if ref.ID != res.RuleID {
+		return fmt.Errorf("result.rule.id %q disagrees with result.ruleId %q", ref.ID, res.RuleID)
+	}
+	for _, d := range r.Tool.Extensions[i].Rules {
+		if d.ID == ref.ID {
+			if d.Properties == nil {
+				return fmt.Errorf("rule %q in tool.extensions[%d] carries no %s", ref.ID, i, PropRuleProvenance)
+			}
+			return d.Properties.RuleProvenance.Validate()
+		}
+	}
+	return fmt.Errorf("result.rule %q is not among tool.extensions[%d]'s rules", ref.ID, i)
 }
 
 // ValidateDastCoverage checks that coverage is reported as a numerator and a

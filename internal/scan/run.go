@@ -1,6 +1,15 @@
 // This file is the scan itself: trigger policy, controller, collection,
 // comparison, emission, seal, assembly, masking, the store and the SARIF
 // output, in that order (plan node cli).
+//
+// A repository scan runs two lanes into the one SAST half: Lane A's
+// repository SCA (Trivy, when the operator enables its database) and Lane B's
+// recall tier (when the operator configures its rule pack and tools). Each
+// lane runs only if the configuration enables it and the trigger policy's
+// detectors allow it. A lane the configuration leaves off is stated in
+// Result.NotRun, and a scan with a lane not run and nothing found exits
+// refused, never clean: no scan reports a repository clean on the strength of
+// half its lanes.
 
 package scan
 
@@ -20,6 +29,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/collector/repo"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/cache"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/config"
+	"github.com/Susquehanna-Syntax/Anvil/internal/laneb"
 	"github.com/Susquehanna-Syntax/Anvil/internal/match"
 	"github.com/Susquehanna-Syntax/Anvil/internal/policy"
 	"github.com/Susquehanna-Syntax/Anvil/internal/record"
@@ -72,6 +82,10 @@ type Request struct {
 	TrivyDB TrivyDB
 	Trivy   repo.Config
 
+	// LaneB configures Lane B's recall tier for repository scans. Nil means
+	// the operator's configuration leaves Lane B off.
+	LaneB *laneb.Config
+
 	AnvilVersion string
 	Now          func() time.Time
 }
@@ -97,6 +111,15 @@ type Result struct {
 	Complete  bool
 	Problems  []string
 	PolicyHit []string
+
+	// NotRun names each lane the operator's configuration left off. It keeps
+	// a scan with nothing found from reading clean.
+	NotRun []string
+	// Notes are informational: Lane B's candidate count and its budget flag.
+	Notes []string
+	// RecallCandidates is Lane B's candidates-per-scan count; nil when Lane B
+	// did not run.
+	RecallCandidates *int
 }
 
 // ErrPolicyRefused means the trigger policy resolved to a rule whose
@@ -106,6 +129,12 @@ var ErrPolicyRefused = errors.New("scan: the trigger policy does not run this sc
 
 // ErrMissingTool wraps a missing scanner or its data.
 var ErrMissingTool = errors.New("scan: a required tool or its data is missing")
+
+// The two NotRun statements.
+const (
+	notRunSCA   = "repository SCA did not run: the operator's configuration does not enable the Trivy database (trivyDB: {enabled: true})"
+	notRunLaneB = "Lane B did not run: the operator's configuration does not enable it (recall: {enabled: true})"
+)
 
 // Run performs one scan. A returned error with ErrMissingTool, ErrPolicyRefused
 // or ErrRepoSCANotEnabled happened BEFORE anything was recorded; any other
@@ -120,11 +149,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, errors.New("scan: a scan needs the store and the advisory cache")
 	}
 
-	detector, err := laneDetector(req.Kind)
-	if err != nil {
-		return Result{}, err
+	if req.Kind != KindRepo && req.Kind != KindHost {
+		return Result{}, fmt.Errorf("scan: unknown scan kind %q", req.Kind)
 	}
-	rule, polRef, err := resolvePolicy(req, detector)
+	rule, polRef, err := resolvePolicy(req)
 	if err != nil {
 		return Result{}, err
 	}
@@ -132,13 +160,29 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	// Everything that can stop a scan before it starts is checked first, so
 	// a refusal leaves no audit behind.
 	var (
-		locator string
-		trivyDB repo.DatabaseInfo
+		locator  string
+		trivyDB  repo.DatabaseInfo
+		lane     *laneb.Lane
+		runSCA   bool
+		detected []record.DetectorKind
+		notRun   []string
 	)
 	switch req.Kind {
 	case KindRepo:
+		if !req.TrivyDB.Enabled && req.LaneB == nil {
+			return Result{}, fmt.Errorf("%w, and Lane B is not enabled either, so a repository scan has no lane to run", ErrRepoSCANotEnabled)
+		}
+		runSCA = req.TrivyDB.Enabled && policyAllows(rule, record.DetectorKindSCA)
+		runLaneB := req.LaneB != nil && policyAllows(rule, record.DetectorKindSast)
+		if !runSCA && !runLaneB {
+			return Result{}, fmt.Errorf("%w: the resolved rule's detectors are %v, which exclude every enabled repository lane",
+				ErrPolicyRefused, rule.Detectors)
+		}
 		if !req.TrivyDB.Enabled {
-			return Result{}, ErrRepoSCANotEnabled
+			notRun = append(notRun, notRunSCA)
+		}
+		if req.LaneB == nil {
+			notRun = append(notRun, notRunLaneB)
 		}
 		abs, err := filepath.Abs(req.RepoPath)
 		if err != nil {
@@ -152,14 +196,30 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if req.TargetName != "" {
 			locator = "repo:" + req.TargetName
 		}
-		if _, err := repo.ResolveBinary(binaryOf(req.Trivy)); err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrMissingTool, err)
+		if runSCA {
+			if _, err := repo.ResolveBinary(binaryOf(req.Trivy)); err != nil {
+				return Result{}, fmt.Errorf("%w: %v", ErrMissingTool, err)
+			}
+			trivyDB, err = repo.Database(ctx, req.Trivy.Runner())
+			if err != nil {
+				return Result{}, fmt.Errorf("%w: %v", ErrMissingTool, err)
+			}
+			detected = append(detected, record.DetectorKindSCA)
 		}
-		trivyDB, err = repo.Database(ctx, req.Trivy.Runner())
-		if err != nil {
-			return Result{}, fmt.Errorf("%w: %v", ErrMissingTool, err)
+		if runLaneB {
+			// A refused rule pack, an absent tool and a tool at the wrong
+			// version all stop the scan here, before any audit exists.
+			if lane, err = laneb.Prepare(ctx, *req.LaneB, abs); err != nil {
+				return Result{}, fmt.Errorf("%w: %v", ErrMissingTool, err)
+			}
+			detected = append(detected, record.DetectorKindSast)
 		}
 	case KindHost:
+		if !policyAllows(rule, record.DetectorKindHost) {
+			return Result{}, fmt.Errorf("%w: the resolved rule's detectors are %v, which exclude %q",
+				ErrPolicyRefused, rule.Detectors, record.DetectorKindHost)
+		}
+		detected = []record.DetectorKind{record.DetectorKindHost}
 		if req.Inventory == nil {
 			return Result{}, errors.New("scan: a host scan needs the collector's inventory")
 		}
@@ -185,13 +245,15 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
-	res := Result{AuditID: auditID, Complete: true, PolicyHit: rule.MatchedNames()}
+	res := Result{AuditID: auditID, Complete: true, PolicyHit: rule.MatchedNames(), NotRun: notRun}
 	emitter := lanea.Emitter{TargetID: locator, AssembledAt: started}
 	var (
 		emissions []lanea.Emission
 		snapshot  *record.AdvisorySnapshot
-		engineVer string
+		engineVer []string
+		ruleset   = []string{RulesetVersion}
 		half      = record.HalfStatusSealed
+		lbOut     laneb.Output
 	)
 	incomplete := func(format string, args ...any) {
 		res.Complete = false
@@ -206,22 +268,47 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			incomplete("%v", err)
 		}
 	case KindRepo:
-		engineVer = "trivy " + trivyDB.TrivyVersion
-		emissions, err = repoLane(ctx, req, trivyDB, emitter, incomplete)
-		if err != nil {
-			half = record.HalfStatusFailed
-			incomplete("%v", err)
+		if runSCA {
+			engineVer = append(engineVer, "trivy "+trivyDB.TrivyVersion)
+			emissions, err = repoLane(ctx, req, trivyDB, emitter, incomplete)
+			if err != nil {
+				half = record.HalfStatusFailed
+				incomplete("%v", err)
+			}
+			snapshot = &record.AdvisorySnapshot{
+				FeedIDs:        []string{TrivyDBSource},
+				SnapshotDigest: TrivyDBSource + "@" + trivyDB.UpdatedAt.UTC().Format(time.RFC3339),
+				ScrapedAt:      trivyDB.UpdatedAt.UTC(),
+			}
 		}
-		snapshot = &record.AdvisorySnapshot{
-			FeedIDs:        []string{TrivyDBSource},
-			SnapshotDigest: TrivyDBSource + "@" + trivyDB.UpdatedAt.UTC().Format(time.RFC3339),
-			ScrapedAt:      trivyDB.UpdatedAt.UTC(),
+		if lane != nil {
+			engineVer = append(engineVer, lane.EngineVersion())
+			ruleset = append(ruleset, lane.RulesetVersion())
+			lbOut, err = lane.Run(ctx, locator)
+			if err != nil {
+				half = record.HalfStatusFailed
+				incomplete("%v", err)
+			} else {
+				for _, p := range lbOut.Problems {
+					incomplete("%s", p)
+				}
+				res.Notes = append(res.Notes, lbOut.Notes...)
+				n := lbOut.Recall.Count
+				res.RecallCandidates = &n
+			}
+			if snapshot == nil {
+				// The SAST run names the corpus it read; with no advisory
+				// feed in this scan, that corpus is the rule pack.
+				snapshot = lane.Snapshot()
+			}
 		}
 	}
-	res.Emitted = len(emissions)
+	results := lanea.Results(emissions)
+	results = append(results, lbOut.Results...)
+	res.Emitted = len(results)
 
-	if len(emissions) > 0 {
-		if rec, err = ctl.Transition(rec, scanctl.FindingsEvent(record.HalfSast, lanea.Results(emissions)...)); err != nil {
+	if len(results) > 0 {
+		if rec, err = ctl.Transition(rec, scanctl.FindingsEvent(record.HalfSast, results...)); err != nil {
 			return res, err
 		}
 	}
@@ -246,8 +333,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			ConfigSource: polRef, Actor: actor, ResolvedAt: started,
 		},
 		SastTool:         record.ToolComponent{Name: "anvil", Version: req.AnvilVersion},
-		SastResults:      lanea.Results(emissions),
+		SastExtensions:   lbOut.Extensions,
+		SastTaxonomies:   lbOut.Taxonomies,
+		SastResults:      results,
 		AdvisorySnapshot: snapshot,
+		SpecHarvest:      lbOut.SpecHarvest,
 	})
 	if err != nil {
 		return res, err
@@ -264,14 +354,15 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		TargetKind:        string(req.Kind),
 		TargetLocator:     locator,
 		TriggerRef:        req.Event,
-		RulesetVersion:    RulesetVersion,
-		SastEngineVersion: engineVer,
+		RulesetVersion:    strings.Join(ruleset, "+"),
+		SastEngineVersion: strings.Join(engineVer, "; "),
 		AdvisorySnapshot:  snapshotDigest(snapshot),
 		FinishedAt:        now().UTC(),
 		Seal:              seal,
 		AuditVersion:      rec.Version,
 		Complete:          res.Complete,
-		DetectorsRun:      []record.DetectorKind{detector},
+		DetectorsRun:      detectorsRun(detected, lane, res.RecallCandidates),
+		RecallCandidates:  res.RecallCandidates,
 		Log:               l,
 	})
 	if err != nil {
@@ -280,9 +371,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	res.Write = w
 
 	switch {
-	case len(emissions) > 0:
+	case len(results) > 0:
 		res.Outcome = OutcomeFindings
-	case half != record.HalfStatusSealed || !res.Complete:
+	case half != record.HalfStatusSealed || !res.Complete || len(res.NotRun) > 0:
 		res.Outcome = OutcomeRefused
 	default:
 		res.Outcome = OutcomeClean
@@ -290,22 +381,31 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	return res, nil
 }
 
-// laneDetector is the one detector kind each Lane A scan produces.
-func laneDetector(k Kind) (record.DetectorKind, error) {
-	switch k {
-	case KindRepo:
-		return record.DetectorKindSCA, nil
-	case KindHost:
-		return record.DetectorKindHost, nil
+// detectorsRun is what the store may resolve findings for: every lane that
+// ran, except a Lane B run that failed before it counted anything, whose
+// absent findings prove nothing.
+func detectorsRun(detected []record.DetectorKind, lane *laneb.Lane, count *int) []record.DetectorKind {
+	var out []record.DetectorKind
+	for _, d := range detected {
+		if d == record.DetectorKindSast && (lane == nil || count == nil) {
+			continue
+		}
+		out = append(out, d)
 	}
-	return "", fmt.Errorf("scan: unknown scan kind %q", k)
+	return out
+}
+
+// policyAllows reports whether the resolved rule lets a detector run. A rule
+// that names no detectors allows every one.
+func policyAllows(rule policy.ResolvedRule, d record.DetectorKind) bool {
+	return len(rule.Detectors) == 0 || rule.HasDetector(d)
 }
 
 // resolvePolicy evaluates the trigger policy for this scan. A repository with
-// no policy file runs a manual scan with every Lane A detector; a scheduled
+// no policy file runs a manual scan with every enabled detector; a scheduled
 // scan runs only when a rule matched, because "a timer fired" is not on its
 // own a reason to scan.
-func resolvePolicy(req Request, detector record.DetectorKind) (policy.ResolvedRule, string, error) {
+func resolvePolicy(req Request) (policy.ResolvedRule, string, error) {
 	path := req.PolicyPath
 	if path == "" && req.Kind == KindRepo {
 		p, err := policy.Locate(req.RepoPath)
@@ -333,10 +433,6 @@ func resolvePolicy(req Request, detector record.DetectorKind) (policy.ResolvedRu
 	}
 	if (req.Full || req.Event == "schedule") && len(rule.Matched) == 0 {
 		return rule, path, fmt.Errorf("%w: no rule in %s matches event %q", ErrPolicyRefused, path, req.Event)
-	}
-	if len(rule.Detectors) > 0 && !rule.HasDetector(detector) {
-		return rule, path, fmt.Errorf("%w: the resolved rule's detectors are %v, which exclude %q",
-			ErrPolicyRefused, rule.Detectors, detector)
 	}
 	return rule, path, nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/collector/repo"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/config"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/delta"
+	"github.com/Susquehanna-Syntax/Anvil/internal/laneb"
 	"github.com/Susquehanna-Syntax/Anvil/internal/scan"
 )
 
@@ -63,6 +64,7 @@ type Config struct {
 	Policy       string // the trigger policy for host requests
 	TrivyDB      scan.TrivyDB
 	Trivy        repo.Config
+	LaneB        *laneb.Config // nil: Lane B is off in the configuration
 	Version      string
 	Tick         time.Duration
 	Log          io.Writer
@@ -174,7 +176,7 @@ func handle(ctx context.Context, cfg Config, path string) Answer {
 		Kind: req.Kind, RepoPath: req.Repo, TargetName: req.Target,
 		Event: req.Event, Full: req.Full, PolicyPath: req.Policy,
 		Cache: cfg.Cache, Store: cfg.Store, Feeds: cfg.Feeds,
-		TrivyDB: cfg.TrivyDB, Trivy: cfg.Trivy, AnvilVersion: cfg.Version, Now: cfg.Now,
+		TrivyDB: cfg.TrivyDB, Trivy: cfg.Trivy, LaneB: cfg.LaneB, AnvilVersion: cfg.Version, Now: cfg.Now,
 	}
 	if req.Kind == scan.KindHost {
 		if sr.PolicyPath == "" {

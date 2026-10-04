@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: Lane B fixture
+  version: "1"
+paths:
+  /items/{id}:
+    get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: an item

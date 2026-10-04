@@ -182,44 +182,67 @@ func TestIncludeExpansion(t *testing.T) {
 
 // TestMigrateBuildsExactlyTheStoreSchema is the packet's schema-equivalence evidence
 // item: a database built by the migration runner and a database built by
-// applying schema.sql directly must be indistinguishable, object for object.
+// applying schema.sql directly, then each later migration's SQL in order, must
+// be indistinguishable, object for object.
 func TestMigrateBuildsExactlyTheStoreSchema(t *testing.T) {
+	migrations, err := Migrations()
+	if err != nil {
+		t.Fatalf("Migrations: %v", err)
+	}
+	n := len(migrations)
 	migrated := openMemory(t)
 	applied, err := Migrate(context.Background(), migrated, "")
 	if err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if len(applied) != 1 || applied[0] != 1 {
-		t.Fatalf("Migrate applied %v, want [1]", applied)
+	if len(applied) != n || applied[0] != 1 || applied[n-1] != n {
+		t.Fatalf("Migrate applied %v, want 1 to %d", applied, n)
 	}
 
 	direct := openMemory(t)
 	if _, err := direct.Exec(Schema()); err != nil {
 		t.Fatalf("applying schema.sql directly: %v", err)
 	}
+	for _, m := range migrations[1:] {
+		if _, err := direct.Exec(m.SQL); err != nil {
+			t.Fatalf("applying %s directly: %v", m.Filename, err)
+		}
+	}
 
 	if got, want := schemaObjects(t, migrated), schemaObjects(t, direct); got != want {
 		t.Fatalf("migrated schema differs from schema.sql applied directly:\n--- migrated ---\n%s\n--- direct ---\n%s", got, want)
 	}
 
-	if v := mustSchemaVersion(t, migrated); v != 1 {
-		t.Fatalf("PRAGMA user_version = %d after migrating, want 1", v)
+	if v := mustSchemaVersion(t, migrated); v != n {
+		t.Fatalf("PRAGMA user_version = %d after migrating, want %d", v, n)
 	}
 
 	rows := ledgerRows(t, migrated)
-	if len(rows) != 1 {
-		t.Fatalf("schema_migration has %d rows, want 1", len(rows))
+	if len(rows) != n {
+		t.Fatalf("schema_migration has %d rows, want %d", len(rows), n)
 	}
-	migrations, err := Migrations()
+	for i, m := range migrations {
+		if rows[i].Version != m.Version || rows[i].Name != m.Name || rows[i].Checksum != m.Checksum {
+			t.Fatalf("ledger row %+v does not describe %s", rows[i], m.Filename)
+		}
+		if rows[i].AppliedAt == "" {
+			t.Fatalf("ledger row %d has no applied_at timestamp", i)
+		}
+	}
+	if rows[0].Name != "init" {
+		t.Fatalf("migration 1 is %q, want init", rows[0].Name)
+	}
+}
+
+// latestReal is the number of embedded migrations; synthetic test migrations
+// are numbered after it.
+func latestReal(t *testing.T) int {
+	t.Helper()
+	n, err := LatestVersion()
 	if err != nil {
-		t.Fatalf("Migrations: %v", err)
+		t.Fatalf("LatestVersion: %v", err)
 	}
-	if rows[0].Version != 1 || rows[0].Name != "init" || rows[0].Checksum != migrations[0].Checksum {
-		t.Fatalf("ledger row %+v does not describe %s", rows[0], migrations[0].Filename)
-	}
-	if rows[0].AppliedAt == "" {
-		t.Fatal("ledger row has no applied_at timestamp")
-	}
+	return n
 }
 
 func TestMigrateIsANoOpWhenCurrent(t *testing.T) {
@@ -247,39 +270,45 @@ func TestMigrateIsANoOpWhenCurrent(t *testing.T) {
 	}
 }
 
-// TestMigrateAppliesInNumberedOrderInsideTransactions injects later versions,
-// which is the only way to test ordering and transactionality while 0001 is
-// the only real migration. The alternative is finding out during the first
-// upgrade a user ever performs.
+// TestMigrateAppliesInNumberedOrderInsideTransactions injects later versions
+// after the real ones, so ordering and transactionality are tested past the
+// last migration that exists. The alternative is finding out during the next
+// upgrade a user performs.
 func TestMigrateAppliesInNumberedOrderInsideTransactions(t *testing.T) {
 	db, dir := openOnDisk(t)
 	ctx := context.Background()
+	n := latestReal(t)
 
 	migrations := withSynthetic(t,
-		synthetic(2, "second", "CREATE TABLE second_step (x INTEGER);"),
-		synthetic(3, "third", "CREATE TABLE third_step (y INTEGER REFERENCES second_step(x));"),
+		synthetic(n+1, "second", "CREATE TABLE second_step (x INTEGER);"),
+		synthetic(n+2, "third", "CREATE TABLE third_step (y INTEGER REFERENCES second_step(x));"),
 	)
 
 	applied, err := migrateWith(ctx, db, migrations, dir)
 	if err != nil {
 		t.Fatalf("migrateWith: %v", err)
 	}
-	if len(applied) != 3 || applied[0] != 1 || applied[1] != 2 || applied[2] != 3 {
-		t.Fatalf("applied %v, want [1 2 3] in order", applied)
+	if len(applied) != n+2 {
+		t.Fatalf("applied %v, want 1 to %d", applied, n+2)
 	}
-	if v := mustSchemaVersion(t, db); v != 3 {
-		t.Fatalf("user_version = %d, want 3", v)
+	for i, v := range applied {
+		if v != i+1 {
+			t.Fatalf("applied %v, want 1 to %d in order", applied, n+2)
+		}
 	}
-	if rows := ledgerRows(t, db); len(rows) != 3 {
-		t.Fatalf("ledger has %d rows, want 3", len(rows))
+	if v := mustSchemaVersion(t, db); v != n+2 {
+		t.Fatalf("user_version = %d, want %d", v, n+2)
+	}
+	if rows := ledgerRows(t, db); len(rows) != n+2 {
+		t.Fatalf("ledger has %d rows, want %d", len(rows), n+2)
 	}
 	// third_step references second_step; it could not have been created first.
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name IN ('second_step','third_step')`).Scan(&n); err != nil {
+	var tables int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name IN ('second_step','third_step')`).Scan(&tables); err != nil {
 		t.Fatalf("counting new tables: %v", err)
 	}
-	if n != 2 {
-		t.Fatalf("expected both synthetic tables, found %d", n)
+	if tables != 2 {
+		t.Fatalf("expected both synthetic tables, found %d", tables)
 	}
 }
 
@@ -288,28 +317,29 @@ func TestMigrateAppliesInNumberedOrderInsideTransactions(t *testing.T) {
 func TestFailedMigrationLeavesSchemaUntouched(t *testing.T) {
 	db := openMemory(t)
 	ctx := context.Background()
+	n := latestReal(t)
 
-	migrations := withSynthetic(t, synthetic(2, "broken",
+	migrations := withSynthetic(t, synthetic(n+1, "broken",
 		"CREATE TABLE half_applied (x INTEGER);\nCREATE TABLE half_applied (x INTEGER);"))
 
 	applied, err := migrateWith(ctx, db, migrations, t.TempDir())
 	if err == nil {
 		t.Fatal("a migration with invalid DDL was accepted")
 	}
-	if len(applied) != 1 || applied[0] != 1 {
-		t.Fatalf("applied %v, want [1] — 0001 succeeded and 0002 must not count", applied)
+	if len(applied) != n || applied[n-1] != n {
+		t.Fatalf("applied %v, want 1 to %d: the real migrations succeeded and the broken one must not count", applied, n)
 	}
-	if v := mustSchemaVersion(t, db); v != 1 {
-		t.Fatalf("user_version = %d after a failed migration, want 1", v)
+	if v := mustSchemaVersion(t, db); v != n {
+		t.Fatalf("user_version = %d after a failed migration, want %d", v, n)
 	}
-	if rows := ledgerRows(t, db); len(rows) != 1 {
-		t.Fatalf("ledger has %d rows after a failed migration, want 1", len(rows))
+	if rows := ledgerRows(t, db); len(rows) != n {
+		t.Fatalf("ledger has %d rows after a failed migration, want %d", len(rows), n)
 	}
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name = 'half_applied'`).Scan(&n); err != nil {
+	var left int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name = 'half_applied'`).Scan(&left); err != nil {
 		t.Fatalf("looking for the rolled-back table: %v", err)
 	}
-	if n != 0 {
+	if left != 0 {
 		t.Fatal("half_applied survived a rolled-back migration")
 	}
 }
@@ -356,12 +386,13 @@ func TestMigrateRefusesADowngrade(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	// Simulate an older binary opening a store a newer one migrated.
+	future := latestReal(t) + 1
 	if _, err := db.Exec(
-		`INSERT INTO schema_migration (version, name, checksum, applied_at) VALUES (2, 'future', 'x', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO schema_migration (version, name, checksum, applied_at) VALUES (?, 'future', 'x', '2026-01-01T00:00:00Z')`, future,
 	); err != nil {
 		t.Fatalf("seeding a future migration: %v", err)
 	}
-	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, future)); err != nil {
 		t.Fatalf("bumping user_version: %v", err)
 	}
 
@@ -402,14 +433,15 @@ func TestMigrateRefusesAPopulatedDatabaseWithNoLedger(t *testing.T) {
 func TestMigrateRefusesAGapInTheLedger(t *testing.T) {
 	db := openMemory(t)
 	ctx := context.Background()
+	n := latestReal(t)
 	migrations := withSynthetic(t,
-		synthetic(2, "second", "CREATE TABLE second_step (x INTEGER);"),
-		synthetic(3, "third", "CREATE TABLE third_step (y INTEGER);"),
+		synthetic(n+1, "second", "CREATE TABLE second_step (x INTEGER);"),
+		synthetic(n+2, "third", "CREATE TABLE third_step (y INTEGER);"),
 	)
 	if _, err := migrateWith(ctx, db, migrations, t.TempDir()); err != nil {
 		t.Fatalf("migrateWith: %v", err)
 	}
-	if _, err := db.Exec(`DELETE FROM schema_migration WHERE version = 2`); err != nil {
+	if _, err := db.Exec(`DELETE FROM schema_migration WHERE version = ?`, n+1); err != nil {
 		t.Fatalf("punching a hole in the ledger: %v", err)
 	}
 	if _, err := migrateWith(ctx, db, migrations, t.TempDir()); !errors.Is(err, ErrMigrationLedger) {
@@ -428,7 +460,8 @@ func TestMigrateRefusesToUpgradeWithoutASnapshotDirectory(t *testing.T) {
 		t.Fatalf("initial Migrate: %v", err)
 	}
 
-	migrations := withSynthetic(t, synthetic(2, "second", "CREATE TABLE second_step (x INTEGER);"))
+	n := latestReal(t)
+	migrations := withSynthetic(t, synthetic(n+1, "second", "CREATE TABLE second_step (x INTEGER);"))
 	_, err := migrateWith(ctx, db, migrations, "")
 	if !errors.Is(err, ErrSnapshotRequired) {
 		t.Fatalf("Migrate upgraded a populated database with no snapshot directory, got %v", err)
@@ -436,7 +469,7 @@ func TestMigrateRefusesToUpgradeWithoutASnapshotDirectory(t *testing.T) {
 	if !strings.Contains(err.Error(), "forward-only") {
 		t.Errorf("error does not explain why the snapshot is mandatory: %v", err)
 	}
-	if v := mustSchemaVersion(t, db); v != 1 {
+	if v := mustSchemaVersion(t, db); v != n {
 		t.Fatalf("a refused upgrade changed user_version to %d", v)
 	}
 }
@@ -453,12 +486,13 @@ func TestSnapshotIsTakenBeforeAnUpgrade(t *testing.T) {
 	}
 
 	snapDir := filepath.Join(dir, "snapshots")
-	migrations := withSynthetic(t, synthetic(2, "second", "CREATE TABLE second_step (x INTEGER);"))
+	n := latestReal(t)
+	migrations := withSynthetic(t, synthetic(n+1, "second", "CREATE TABLE second_step (x INTEGER);"))
 	if _, err := migrateWith(ctx, db, migrations, snapDir); err != nil {
 		t.Fatalf("migrateWith: %v", err)
 	}
 
-	snap := filepath.Join(snapDir, "anvil-pre-v1.db")
+	snap := filepath.Join(snapDir, fmt.Sprintf("anvil-pre-v%d.db", n))
 	if _, err := os.Stat(snap); err != nil {
 		t.Fatalf("no pre-migration snapshot at %s: %v", snap, err)
 	}
@@ -470,14 +504,14 @@ func TestSnapshotIsTakenBeforeAnUpgrade(t *testing.T) {
 	defer func() { _ = restored.Close() }()
 	restored.SetMaxOpenConns(1)
 
-	if v := mustSchemaVersion(t, restored); v != 1 {
-		t.Fatalf("snapshot is at user_version %d, want the pre-upgrade version 1", v)
+	if v := mustSchemaVersion(t, restored); v != n {
+		t.Fatalf("snapshot is at user_version %d, want the pre-upgrade version %d", v, n)
 	}
-	var n int
-	if err := restored.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name = 'second_step'`).Scan(&n); err != nil {
+	var found int
+	if err := restored.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name = 'second_step'`).Scan(&found); err != nil {
 		t.Fatalf("querying the snapshot: %v", err)
 	}
-	if n != 0 {
+	if found != 0 {
 		t.Fatal("the snapshot contains the migration it was supposed to precede")
 	}
 }

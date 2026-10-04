@@ -1,23 +1,28 @@
 """Candidates per scan (register row candidates-per-scan, plan node candidatecount).
 
-A permanent instrument: run the recall federation (opengrep over GitLab's sast-rules and 0xdea's
-C/C++ rules, gosec on Go, bandit on Python) over a pinned repository and count candidates. One
-candidate is one (file, line, CWE) after de-duplication across tools; a finding without a CWE
-keeps its rule id in that slot.
+A permanent instrument. Since Phase 6 it measures through Lane B itself: ``anvil recall``, built
+from this checkout, runs the vendored rule pack (``data/rules``, the owner's selection of
+2026-10-03) and the native analysers exactly as a repository scan does, and prints the candidates.
+There is one implementation of the selection, the exclusions and the de-duplication, and it is the
+one that ships; this module only drives it and counts.
 
 * Full scan: the whole checkout at the pinned commit.
 * Per push: each of the most recent first-parent commits (up to 20), scanning the files that
   commit touched and keeping only candidates on lines it added or changed.
 
-Each tool is a subprocess. A missing tool is a refusal and a failed tool is an error; neither is
-ever a count of zero, because a zero from a broken install and a zero from a clean repository
-must not look alike (that is how a two-rule corpus measured nothing).
+A missing tool is a refusal and a failed tool is an error; neither is ever a count of zero.
+``anvil recall`` exits 4 for the first, and its JSON lists coverage problems (a file a tool was
+given and did not scan, a rule that timed out), which the artifact records per repository.
 
-Negative control: the federation runs over a planted fixture with one known-bad file per
-language family and over a clean file. Every planted file must yield a candidate and the clean
-file none; otherwise the artifact does not validate. The Go file and its go.mod are stored with a
-``.txt`` suffix, because ``eval/`` holds no Go source (``tests/test_scaffold.py``), and are
+Negative control: Lane B runs over a planted fixture with one known-bad file per language family,
+the same files again under a ``tests/`` directory, and a clean file. Every planted file must yield
+a candidate, nothing under ``tests/`` may (the selection excludes test trees), and the clean file
+must yield none; otherwise the artifact does not validate. The Go file and its go.mod are stored
+with a ``.txt`` suffix, because ``eval/`` holds no Go source (``tests/test_scaffold.py``), and are
 materialised into a temporary directory for the scan.
+
+The measurement before the narrowing (10,714 candidates on curl, 2026-10-03, commit 66669864) is
+carried in the artifact as ``previous``; its raw run is in git history.
 """
 
 from __future__ import annotations
@@ -29,8 +34,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from anvil_eval import EVAL_ROOT, REPO_ROOT, RESULTS_DIR, recall, results
@@ -41,140 +45,70 @@ FULL_BAR, PUSH_BAR = 500, 50
 FIXTURES = EVAL_ROOT / "tests" / "fixtures" / "recall"
 ANVIL_COMMIT = "1d8657e889cdf292b1ee792ceb36913f6d8539d2"  # main after Phase 4 (#18)
 GO = Path.home() / "sdk" / "go1.26.5" / "bin"
+RULES = REPO_ROOT / "data" / "rules"
 
-C_EXT = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh"}
-SCANNED_EXT = C_EXT | {".py", ".go", ".java", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
-                       ".cs", ".scala"}
+#: The measurement this instrument replaced on 2026-10-03, before the owner's narrowing.
+PREVIOUS = {
+    "measured_at": "2026-10-03",
+    "value": 10714,
+    "git_commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+    "what": "the whole federation, before the owner's selection: GitLab's seven allowlisted "
+            "directories including c/, 0xdea's rules including rules/noisy, bandit B101, no "
+            "path exclusions; counted by the Python runners this module then held",
+    "full_scan": {"curl": 10714, "flask": 1090, "anvil": 159, "express": 8,
+                  "spring-petclinic": 0},
+    "largest_push": 88,
+}
 
 
 class ToolMissing(RuntimeError):
-    """A recall tool is not installed; the scan is refused rather than counted as zero."""
+    """A recall tool or the rule pack is not installed; the scan is refused, never zero."""
 
 
 class ToolFailed(RuntimeError):
-    """A recall tool ran and failed."""
+    """``anvil recall`` ran and failed."""
 
 
 @dataclass(frozen=True)
 class Candidate:
     tool: str
-    rule: str
+    rule: str  # versioned, as the record carries it
     path: str  # relative to the scanned root
     line: int
     cwe: str
 
-    @property
-    def key(self) -> tuple[str, int, str]:
-        return (self.path, self.line, self.cwe or self.rule)
+
+class Anvil:
+    """``anvil recall``, built from this checkout and configured with the pinned tools."""
+
+    def __init__(self, workdir: Path):
+        self.bin = workdir / "anvil"
+        subprocess.run([str(GO / "go"), "build", "-o", str(self.bin), "./cmd/anvil"], check=True,
+                       cwd=REPO_ROOT, env=dict(os.environ, GOTOOLCHAIN="local", CGO_ENABLED="0"))
+        self.config = workdir / "anvil.yml"
+        self.config.write_text(
+            "version: 1\n"
+            f"stateDir: {workdir / 'state'}\n"
+            "recall:\n"
+            f"  rules: {RULES}\n"
+            f"  opengrep: {recall.opengrep_bin()}\n"
+            f"  gosec: {recall.RECALL_BIN / 'gosec'}\n"
+            f"  bandit: {recall.RECALL_VENV / 'bin' / 'bandit'}\n"
+            f"  goBin: {GO}\n")
+
+    def recall(self, root: Path, files: list[str] | None = None) -> dict:
+        proc = subprocess.run([str(self.bin), "recall", "--config", str(self.config), str(root),
+                               *(files or [])], capture_output=True, text=True)
+        if proc.returncode == 4:
+            raise ToolMissing(proc.stderr.strip())
+        if proc.returncode not in (0, 1, 3):
+            raise ToolFailed(f"anvil recall exited {proc.returncode}: {proc.stderr[-800:]}")
+        return json.loads(proc.stdout)
 
 
-def _cwe(raw) -> str:
-    if isinstance(raw, list):
-        raw = raw[0] if raw else ""
-    if isinstance(raw, dict):
-        raw = raw.get("id", "")
-    m = re.search(r"(?i)cwe-?(\d+)", str(raw)) or re.fullmatch(r"\s*(\d+)\s*", str(raw))
-    return f"CWE-{int(m.group(1))}" if m else ""  # 'CWE-078' and '78' are one CWE
-
-
-def _need(path: Path, name: str) -> Path:
-    if not path.is_file() or not os.access(path, os.X_OK):
-        raise ToolMissing(f"{name} is not installed at {path}; run python -m anvil_eval.recall "
-                          "acquire")
-    return path
-
-
-def run_opengrep(root: Path, targets: list[Path], has_c: bool) -> list[Candidate]:
-    exe = _need(recall.opengrep_bin(), "opengrep")
-    configs = [recall.GITLAB.path / d for d in recall.GITLAB_RULE_DIRS]
-    if has_c:
-        configs.append(recall.OXDEA.path / "rules")
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "out.json"
-        cmd = [str(exe), "scan", "--json", "--output", str(out), "--quiet", "--no-git-ignore"]
-        for c in configs:
-            cmd += ["--config", str(c)]
-        proc = subprocess.run(cmd + [str(t) for t in targets], capture_output=True, text=True,
-                              cwd=root)
-        if proc.returncode not in (0, 1) or not out.is_file():
-            raise ToolFailed(f"opengrep exited {proc.returncode}: {proc.stderr[-800:]}")
-        doc = json.loads(out.read_text())
-    return [Candidate("opengrep", r["check_id"].rsplit(".", 1)[-1],
-                      os.path.relpath((root / r["path"]).resolve(), root.resolve()),
-                      int(r["start"]["line"]), _cwe(r["extra"].get("metadata", {}).get("cwe")))
-            for r in doc["results"]]
-
-
-def run_gosec(root: Path, packages: list[str]) -> list[Candidate]:
-    exe = _need(recall.RECALL_BIN / "gosec", "gosec")
-    env = dict(os.environ, PATH=f"{GO}:{os.environ.get('PATH', '')}", GOTOOLCHAIN="local",
-               GOFLAGS="-mod=mod")
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "out.json"
-        # Never -quiet: with it, gosec writes nothing at all for a package with no findings
-        # (seen on 2026-10-03), and silence must never be read as a count.
-        proc = subprocess.run([str(exe), "-fmt=json", f"-out={out}", "-no-fail",
-                               *packages], capture_output=True, text=True, cwd=root, env=env)
-        if proc.returncode != 0 or not out.is_file():
-            raise ToolFailed(f"gosec exited {proc.returncode}: {proc.stderr[-800:]}")
-        doc = json.loads(out.read_text())
-    if doc.get("Golang errors"):
-        raise ToolFailed(f"gosec could not load packages: {list(doc['Golang errors'])[:3]}")
-    return [Candidate("gosec", i["rule_id"], os.path.relpath(i["file"], root.resolve()),
-                      int(str(i["line"]).split("-")[0]), _cwe(i.get("cwe")))
-            for i in doc.get("Issues") or []]
-
-
-def run_bandit(root: Path, targets: list[Path]) -> list[Candidate]:
-    exe = _need(recall.RECALL_VENV / "bin" / "bandit", "bandit")
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "out.json"
-        proc = subprocess.run([str(exe), "-r", "-q", "-f", "json", "-o", str(out),
-                               *[str(t) for t in targets]], capture_output=True, text=True,
-                              cwd=root)
-        if proc.returncode not in (0, 1) or not out.is_file():
-            raise ToolFailed(f"bandit exited {proc.returncode}: {proc.stderr[-800:]}")
-        doc = json.loads(out.read_text())
-    if doc.get("errors"):
-        raise ToolFailed(f"bandit errors: {doc['errors'][:3]}")
-    return [Candidate("bandit", r["test_id"], os.path.relpath((root / r["filename"]).resolve(),
-                                                              root.resolve()),
-                      int(r["line_number"]), _cwe(r.get("issue_cwe")))
-            for r in doc["results"]]
-
-
-def scan(root: Path, files: Iterable[Path] | None = None) -> list[Candidate]:
-    """Every tool the tree calls for, over ``files`` (all tracked files when None)."""
-    root = root.resolve()
-    if files is None:
-        listed = subprocess.run(["git", "-C", str(root), "ls-files"], capture_output=True,
-                                text=True)
-        names = listed.stdout.split() if listed.returncode == 0 else [
-            str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()]
-        files = [root / n for n in names]
-        whole = True
-    else:
-        whole = False
-    files = [f for f in files if f.suffix in SCANNED_EXT and f.is_file()]
-    if not files:
-        return []
-    out = run_opengrep(root, [root] if whole else files, any(f.suffix in C_EXT for f in files))
-    py = [f for f in files if f.suffix == ".py"]
-    if py:
-        out += run_bandit(root, [root] if whole else py)
-    # gosec skips test files by default; leave them out of its package list to match.
-    go = [f for f in files if f.suffix == ".go" and not f.name.endswith("_test.go")]
-    if go and (root / "go.mod").is_file():
-        pkgs = ["./..."] if whole else sorted({"./" + os.path.relpath(f.parent, root) for f in go})
-        out += run_gosec(root, pkgs)
-    return out
-
-
-def dedupe(cands: list[Candidate]) -> list[Candidate]:
-    seen: dict[tuple, Candidate] = {}
-    for c in cands:
-        seen.setdefault(c.key, c)
-    return list(seen.values())
+def candidates_of(doc: dict) -> list[Candidate]:
+    return [Candidate(c["tool"], c["ruleIdVersioned"], c["path"], c["startLine"], c["cwe"])
+            for c in doc["candidates"]]
 
 
 def changed_lines(root: Path, commit: str) -> dict[str, set[int]]:
@@ -193,7 +127,7 @@ def changed_lines(root: Path, commit: str) -> dict[str, set[int]]:
     return {p: ls for p, ls in out.items() if ls}
 
 
-def per_push(root: Path, pushes: int) -> list[dict]:
+def per_push(anvil: Anvil, root: Path, pushes: int) -> list[dict]:
     head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
                           text=True, check=True).stdout.strip()
     commits = subprocess.run(["git", "-C", str(root), "rev-list", "--first-parent",
@@ -204,7 +138,7 @@ def per_push(root: Path, pushes: int) -> list[dict]:
         for c in commits:
             subprocess.run(["git", "-C", str(root), "checkout", "-q", "--detach", c], check=True)
             lines = changed_lines(root, c)
-            found = dedupe(scan(root, [root / p for p in lines]))
+            found = candidates_of(anvil.recall(root, sorted(lines))) if lines else []
             kept = [f for f in found if f.line in lines.get(f.path, ())]
             rows.append({"commit": c, "files_changed": len(lines), "candidates": len(kept)})
     finally:
@@ -212,31 +146,34 @@ def per_push(root: Path, pushes: int) -> list[dict]:
     return rows
 
 
-def measure_repo(name: str, root: Path, pushes: int) -> dict:
-    full = dedupe(scan(root))
-    by_tool: dict[str, int] = {}
-    for c in full:
-        by_tool[c.tool] = by_tool.get(c.tool, 0) + 1
-    push = per_push(root, pushes)
+def _top(values: list[str], n: int = 10) -> dict[str, int]:
+    tally: dict[str, int] = {}
+    for v in values:
+        tally[v] = tally.get(v, 0) + 1
+    return dict(sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))[:n])
+
+
+def measure_repo(anvil: Anvil, name: str, root: Path, pushes: int) -> dict:
+    doc = anvil.recall(root)
+    full = candidates_of(doc)
+    push = per_push(anvil, root, pushes)
     counts = sorted(p["candidates"] for p in push)
     return {
         "repo": name,
         "commit": subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
                                  capture_output=True, text=True, check=True).stdout.strip(),
         "full_scan": len(full),
-        "full_scan_by_tool": by_tool,
-        "full_scan_by_cwe_top10": _top(full),
+        "full_scan_by_tool": doc["byTool"],
+        "full_scan_by_rule_top10": _top([c.rule for c in full]),
+        "full_scan_by_cwe_top10": _top([c.cwe for c in full]),
+        "files_scanned": doc["files"],
+        "files_excluded": doc["excluded"],
+        "coverage_problems": doc["problems"],
+        "partial_parses": doc["partialParses"],
         "pushes": push,
         "per_push_median": counts[len(counts) // 2] if counts else 0,
         "per_push_max": counts[-1] if counts else 0,
     }
-
-
-def _top(cands: list[Candidate]) -> dict[str, int]:
-    tally: dict[str, int] = {}
-    for c in cands:
-        tally[c.cwe or "none"] = tally.get(c.cwe or "none", 0) + 1
-    return dict(sorted(tally.items(), key=lambda kv: -kv[1])[:10])
 
 
 def materialise(src: Path, dest: Path) -> Path:
@@ -248,18 +185,28 @@ def materialise(src: Path, dest: Path) -> Path:
     return dest
 
 
-def control() -> dict:
+def control(anvil: Anvil) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         planted = materialise(FIXTURES / "planted", Path(tmp) / "planted")
-        found = dedupe(scan(planted, sorted(planted.iterdir())))
-        files = sorted(p.name for p in planted.iterdir() if p.suffix in SCANNED_EXT)
+        # The same planted files under tests/: the selection excludes test trees, so none of
+        # these may be flagged. The Go module stays at the root.
+        tests = planted / "tests"
+        tests.mkdir()
+        for f in planted.iterdir():
+            if f.is_file() and f.suffix in (".py", ".js", ".java", ".c"):
+                (tests / f.name).write_bytes(f.read_bytes())
+        found = candidates_of(anvil.recall(planted))
+        files = sorted(p.name for p in planted.iterdir()
+                       if p.is_file() and p.suffix in (".py", ".js", ".java", ".c", ".go"))
         clean_dir = materialise(FIXTURES / "clean", Path(tmp) / "clean")
-        clean = dedupe(scan(clean_dir, sorted(clean_dir.iterdir())))
+        clean = candidates_of(anvil.recall(clean_dir))
     hit = {c.path for c in found}
-    return {"planted_files": files, "planted_flagged": sorted(hit),
+    in_tests = sorted(c.path for c in found if c.path.startswith("tests/"))
+    return {"planted_files": files, "planted_flagged": sorted(hit - set(in_tests)),
+            "flagged_under_tests": in_tests,
             "by_tool": sorted({(c.tool, c.path) for c in found}),
-            "clean_candidates": [asdict(c) for c in clean],
-            "passed": set(files) <= hit and not clean}
+            "clean_candidates": [c.__dict__ for c in clean],
+            "passed": set(files) <= hit and not in_tests and not clean}
 
 
 def anvil_checkout() -> Path:
@@ -274,13 +221,17 @@ def run() -> Path:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     targets = [(p.name, p.path, p.commit) for p in recall.REPOS]
     targets.append(("anvil", anvil_checkout(), ANVIL_COMMIT))
-    rows = []
-    for name, path, commit in targets:
-        # An interrupted run can leave a checkout at a push commit: start from the pin.
-        subprocess.run(["git", "-C", str(path), "checkout", "-q", "--detach", commit], check=True)
-        rows.append(measure_repo(name, path, recall.PUSHES))
+    with tempfile.TemporaryDirectory() as tmp:
+        anvil = Anvil(Path(tmp))
+        rows = []
+        for name, path, commit in targets:
+            # An interrupted run can leave a checkout at a push commit: start from the pin.
+            subprocess.run(["git", "-C", str(path), "checkout", "-q", "--detach", commit],
+                           check=True)
+            rows.append(measure_repo(anvil, name, path, recall.PUSHES))
+        ctl = control(anvil)
     out = RUNS_DIR / "counts.json"
-    out.write_text(json.dumps({"repos": rows, "control": control()}, indent=1) + "\n")
+    out.write_text(json.dumps({"repos": rows, "control": ctl}, indent=1) + "\n")
     return out
 
 
@@ -290,6 +241,8 @@ def report() -> Path:
     biggest = max(rows, key=lambda r: r["full_scan"])
     worst_push = max(r["per_push_max"] for r in rows)
     ctl = run_doc["control"]
+    selection = json.loads((RULES / "selection.json").read_text())
+    manifest = json.loads((RULES / "MANIFEST.json").read_text())
     doc = {
         "id": ID,
         "measured_at": results.today(),
@@ -299,10 +252,13 @@ def report() -> Path:
         "command": "python -m anvil_eval.experiments.candidates report",
         "git": results.git_state(),
         "pins": {
-            "opengrep": "v1.26.0 (eval/tools/opengrep/MANIFEST.toml)",
-            "gitlab_sast_rules": {"commit": recall.GITLAB.commit,
-                                  "dirs": list(recall.GITLAB_RULE_DIRS)},
-            "0xdea_semgrep_rules": recall.OXDEA.commit,
+            "measured_through": "anvil recall, built from the commit in git",
+            "selection_sha256": manifest["selection_sha256"],
+            "selection_decided": f"{selection['decided_by']}, {selection['decided_on']}",
+            "rule_files": len(manifest["rules"]),
+            "corpora": {c["name"]: {"commit": c["commit"], "directories": c["directories"]}
+                        for c in selection["corpora"]},
+            "tools": {t["name"]: t["version"] for t in selection["tools"]},
             "gosec": recall.GOSEC, "bandit": recall.BANDIT,
             "repos": {r["repo"]: r["commit"] for r in rows},
         },
@@ -312,11 +268,13 @@ def report() -> Path:
             "largest_push": worst_push,
             "bars": {"full_scan": FULL_BAR, "per_push": PUSH_BAR},
             "within_bars": biggest["full_scan"] < FULL_BAR and worst_push < PUSH_BAR,
+            "previous": PREVIOUS,
         },
         "negative_control": {
-            "description": "a planted file per language family must each yield a candidate, and "
-                           "a clean file none",
-            "expected": "every planted file flagged; no candidate in the clean file",
+            "description": "a planted file per language family must each yield a candidate, the "
+                           "same files under tests/ none, and a clean file none",
+            "expected": "every planted file flagged; nothing under tests/; no candidate in the "
+                        "clean file",
             "observed": {k: v for k, v in ctl.items() if k != "passed"},
             "passed": ctl["passed"],
         },
@@ -337,11 +295,11 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "report":
         print(report())
     else:
-        found = dedupe(scan(a.root))
-        print(json.dumps({"candidates": len(found)}, indent=1))
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = Anvil(Path(tmp)).recall(a.root)
+        print(json.dumps({k: v for k, v in doc.items() if k != "candidates"}, indent=1))
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

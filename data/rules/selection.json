@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "about": "Lane B's recall selection: which rule corpora, directories, rule files and native-analyser rules Lane B runs, and which paths it never reports from. Decided by the owner on 2026-10-03 from the per-rule counts in eval/results/candidates-per-scan.json. data/rules/MANIFEST.json is generated from this file by `python -m anvil_eval.vendor_rules` and internal/recall verifies both.",
+  "decided_by": "the owner",
+  "decided_on": "2026-10-03",
+  "tools": [
+    {
+      "name": "opengrep",
+      "version": "1.26.0",
+      "repository": "https://github.com/opengrep/opengrep",
+      "licence": "LGPL-2.1",
+      "licence_evidence": "eval/tools/opengrep/LICENSES.md section 1, the LICENSE body at tag v1.26.0",
+      "role": "runs the vendored rule corpora; subprocess only"
+    },
+    {
+      "name": "gosec",
+      "version": "2.29.0",
+      "repository": "https://github.com/securego/gosec",
+      "licence": "Apache-2.0",
+      "licence_evidence": "LICENSE.txt in gosec_2.29.0_linux_amd64.tar.gz (sha256 6431b119741c1f4a50fdfcf94e782e16b9e642afc8c7fa9b5d39d48bf3003095), read 2026-10-03",
+      "role": "Go, with its own rules"
+    },
+    {
+      "name": "bandit",
+      "version": "1.9.4",
+      "repository": "https://github.com/PyCQA/bandit",
+      "licence": "Apache-2.0",
+      "licence_evidence": "the LICENSE body at tag 1.9.4, read 2026-10-03",
+      "role": "Python, with its own rules"
+    }
+  ],
+  "corpora": [
+    {
+      "name": "gitlab-sast-rules",
+      "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+      "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+      "licence_file": "LICENSE",
+      "rule_suffix": ".yml",
+      "directories": [
+        "csharp",
+        "go",
+        "java",
+        "javascript",
+        "python",
+        "scala"
+      ]
+    },
+    {
+      "name": "0xdea-semgrep-rules",
+      "repository": "https://github.com/0xdea/semgrep-rules",
+      "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+      "licence_file": "LICENSE",
+      "rule_suffix": ".yaml",
+      "directories": [
+        "rules/c"
+      ]
+    }
+  ],
+  "excluded_directories": [
+    {
+      "corpus": "gitlab-sast-rules",
+      "directory": "c",
+      "reason": "Every one of its 62 rule files is headed 'License: GPL 2.0': they are generated from flawfinder, which is GPL-2.0. The repository LICENSE keeps third-party components under their own licences. Excluded by the owner on 2026-10-03; C coverage comes from 0xdea's MIT rules."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "directory": "rules/noisy",
+      "reason": "Its one rule, bad-words, flags comments (CWE-546) and its author lists it as 'potentially too noisy and unsuitable for general use'. It was 5,249 of curl's 10,714 candidates."
+    }
+  ],
+  "excluded_rule_files": [
+    {
+      "corpus": "gitlab-sast-rules",
+      "path": "python/assert/rule-assert-used.yml",
+      "reason": "Assert statements (CWE-754), the same informational finding as bandit B101."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/interesting-api-calls.yaml",
+      "reason": "A code-review heuristic: lists calls worth a look (CWE-676), not a weakness. 1,440 of curl's candidates outside its tests."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/typos.yaml",
+      "reason": "A code-review heuristic for operator typos (CWE-480). 977 of curl's candidates outside its tests."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/signed-unsigned-conversion.yaml",
+      "reason": "A code-review heuristic flagging every signed-to-unsigned conversion (CWE-195). 493 of curl's candidates outside its tests."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/suspicious-assert.yaml",
+      "reason": "A code-review heuristic for assert usage (CWE-754)."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/missing-default-in-switch.yaml",
+      "reason": "A code-quality pattern (CWE-478), not a weakness."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/pointer-subtraction.yaml",
+      "reason": "A code-review heuristic (CWE-469) flagging every pointer subtraction."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/missing-break-in-switch.yaml",
+      "reason": "A code-quality pattern (CWE-484), not a weakness."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/missing-return.yaml",
+      "reason": "A code-quality pattern (CWE-393), not a weakness."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/argv-envp-access.yaml",
+      "reason": "A code-review heuristic marking every argv and envp access (CWE-15)."
+    },
+    {
+      "corpus": "0xdea-semgrep-rules",
+      "path": "rules/c/high-entropy-assignment.yaml",
+      "reason": "A code-review heuristic for high-entropy string literals (CWE-540)."
+    }
+  ],
+  "excluded_tool_rules": [
+    {
+      "tool": "bandit",
+      "rule": "B101",
+      "reason": "Assert statements (CWE-703): informational. 1,054 of flask's 1,090 candidates."
+    }
+  ],
+  "excluded_paths": {
+    "reason": "Lane B reports on shipped first-party code. Test, test-data, documentation and example trees are not shipped; they were 1,071 of flask's 1,090 candidates and 2,131 of curl's 10,714.",
+    "directories": [
+      "test",
+      "tests",
+      "testing",
+      "testdata",
+      "__tests__",
+      "spec",
+      "fixtures",
+      "doc",
+      "docs",
+      "example",
+      "examples"
+    ],
+    "file_globs": [
+      "*_test.go",
+      "test_*.py",
+      "*_test.py",
+      "conftest.py"
+    ]
+  }
+}

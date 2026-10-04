@@ -84,6 +84,11 @@ type ScanWrite struct {
 	// these kinds can be resolved by it.
 	DetectorsRun []record.DetectorKind
 
+	// RecallCandidates is Lane B's candidates-per-scan count, written to
+	// scan_run.recall_candidates (migration 0002). Nil means Lane B did not
+	// run; a pointer to 0 means it ran and matched nothing.
+	RecallCandidates *int
+
 	// Log is the assembled record. Its SAST results become the findings, and
 	// its canonical JSON becomes audit_record.payload.
 	Log *record.SARIFLog
@@ -193,6 +198,8 @@ func (w ScanWrite) check() error {
 		return errors.New("store: a scan needs its assembled record")
 	case w.Seal.AuditID == "" || w.Seal.AuditID != w.Log.Properties.AuditID:
 		return fmt.Errorf("store: the seal (%q) and the record (%q) are different audits", w.Seal.AuditID, w.Log.Properties.AuditID)
+	case w.RecallCandidates != nil && *w.RecallCandidates < 0:
+		return fmt.Errorf("store: a candidate count of %d is not a count", *w.RecallCandidates)
 	case !record.IsTerminalHalfStatus(w.Seal.Sast.Status):
 		return fmt.Errorf("store: the SAST half is %q; a scan is written after its half reaches a terminal status", w.Seal.Sast.Status)
 	}
@@ -326,6 +333,13 @@ func nullString(s string) any {
 	return s
 }
 
+func nullInt(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 // writer is one write transaction's statements.
 type writer struct {
 	ctx context.Context
@@ -359,10 +373,10 @@ func (t *writer) target(kind, locator string) (int64, error) {
 func (t *writer) scanRun(targetID int64, w ScanWrite, status, rollupHash string) (int64, error) {
 	r, err := t.c.ExecContext(t.ctx, `
 INSERT INTO scan_run (target_id, trigger_ref, commit_sha, started_at, finished_at, status,
-                      sast_engine_ver, ruleset_version, advisory_snapshot, rollup_hash)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                      sast_engine_ver, ruleset_version, advisory_snapshot, rollup_hash, recall_candidates)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		targetID, nullString(w.TriggerRef), nullString(w.CommitSHA), ts(w.Seal.StartedAt), t.now, status,
-		nullString(w.SastEngineVersion), w.RulesetVersion, nullString(w.AdvisorySnapshot), rollupHash)
+		nullString(w.SastEngineVersion), w.RulesetVersion, nullString(w.AdvisorySnapshot), rollupHash, nullInt(w.RecallCandidates))
 	if err != nil {
 		return 0, fmt.Errorf("store: recording scan run: %w", err)
 	}

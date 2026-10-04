@@ -6,7 +6,7 @@
 
   "x-anvil-baseSchema": "https://json.schemastore.org/sarif-2.1.0.json",
   "x-anvil-validationProcedure": "TWO GATES, both required. Gate 1: validate the record against https://json.schemastore.org/sarif-2.1.0.json (stock SARIF conformance; needed for GitHub and DefectDojo to accept it). Gate 2: validate against THIS schema (the anvil/* extension and the S6-required fields). This schema does not $ref the SARIF base schema because that reference is not resolvable in Anvil's offline CI; keeping the two gates separate makes the offline gate work and makes a SARIF-conformance failure distinguishable from an anvil/* failure.",
-  "x-anvil-contractVersion": "1.0.0",
+  "x-anvil-contractVersion": "1.1.0",
 
   "type": "object",
   "required": ["$schema", "version", "runs", "properties"],
@@ -120,6 +120,44 @@
       "type": "string",
       "enum": ["static_only", "requires_dynamic_confirmation"]
     },
+    "nonBlank": { "type": "string", "pattern": "\\S" },
+
+    "ruleProvenance": {
+      "description": "Record 1.1.0, anvil/ruleProvenance: where a rule came from, stated in full or not at all.",
+      "type": "object",
+      "required": ["source", "repository", "version", "rulePath", "licenseSpdx", "licenseEvidence"],
+      "properties": {
+        "source": { "$ref": "#/$defs/nonBlank" },
+        "repository": { "$ref": "#/$defs/nonBlank" },
+        "version": { "$ref": "#/$defs/nonBlank" },
+        "rulePath": { "$ref": "#/$defs/nonBlank" },
+        "licenseSpdx": { "$ref": "#/$defs/nonBlank" },
+        "licenseEvidence": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+
+    "toolExtension": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonBlank" },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "properties": {
+                "type": "object",
+                "properties": { "anvil/ruleProvenance": { "$ref": "#/$defs/ruleProvenance" } }
+              }
+            }
+          }
+        }
+      }
+    },
+
     "trustedString": {
       "description": "An anvil/* extension string that originated outside Anvil, carrying its trust inline. SARIF-native strings cannot change shape, so those are classified by JSON Pointer in anvil/trust.fields instead.",
       "type": "object",
@@ -252,7 +290,13 @@
       "type": "object",
       "required": ["tool", "automationDetails", "results", "properties"],
       "properties": {
-        "tool": { "type": "object" },
+        "tool": {
+          "description": "SARIF tool. Record 1.1.0 constrains tool.extensions: the rule corpora and native analysers Lane B ran, each holding the rules its results cite, each rule stating anvil/ruleProvenance.",
+          "type": "object",
+          "properties": {
+            "extensions": { "type": "array", "items": { "$ref": "#/$defs/toolExtension" } }
+          }
+        },
         "automationDetails": {
           "type": "object",
           "required": ["correlationGuid"],
@@ -499,6 +543,19 @@
         "relatedLocations": { "type": "array" },
         "codeFlows": { "type": "array" },
         "taxa": { "type": "array" },
+        "rule": {
+          "description": "Record 1.1.0: the rule this result cites, by id and by its tool extension's index. internal/record checks that it resolves; this schema checks its shape.",
+          "type": "object",
+          "required": ["id", "toolComponent"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "toolComponent": {
+              "type": "object",
+              "required": ["index"],
+              "properties": { "index": { "type": "integer", "minimum": 0 } }
+            }
+          }
+        },
         "webRequest": { "type": "object" },
         "webResponse": { "type": "object" },
         "provenance": { "type": "object" },

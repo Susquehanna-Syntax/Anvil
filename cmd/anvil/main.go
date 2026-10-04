@@ -17,8 +17,8 @@
 //
 // A refusal and a missing tool are never 0. No flag widens what a scan may
 // touch: what a scan reads is the repository or inventory it is named, and
-// whether Trivy-decided findings are admitted is the operator's configuration
-// file, not a flag.
+// whether Trivy-decided findings are admitted, and whether Lane B runs, is the
+// operator's configuration file, not a flag.
 //
 // THIS BINARY HAS NO NETWORK-PROBING CAPABILITY. The dynamic tier is
 // cmd/anvil-dast, a separate artifact; TestSplit in split_test.go fails if
@@ -47,6 +47,8 @@ import (
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/delta"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/offline"
 	"github.com/Susquehanna-Syntax/Anvil/internal/ingest/poller"
+	"github.com/Susquehanna-Syntax/Anvil/internal/laneb"
+	"github.com/Susquehanna-Syntax/Anvil/internal/recall"
 	"github.com/Susquehanna-Syntax/Anvil/internal/scan"
 	"github.com/Susquehanna-Syntax/Anvil/internal/settings"
 	"github.com/Susquehanna-Syntax/Anvil/internal/store"
@@ -69,6 +71,7 @@ const usage = `usage:
   anvil scan --repo PATH [--target NAME] [--out FILE] [--event EVENT] [--full] [--policy FILE]
   anvil scan --host --inventory FILE|- [--out FILE] [--event EVENT] [--full] [--policy FILE]
   anvil findings [--target LOCATOR] [--all]
+  anvil recall PATH [FILE...]
   anvil feeds import DIR
   anvil dispatch (--repo PATH | --host --inventory FILE) --event EVENT [--full]
   anvil daemon [--once]
@@ -77,6 +80,8 @@ const usage = `usage:
 Every command takes --config FILE (default $ANVIL_CONFIG, then /etc/anvil/anvil.yml).
 anvil scan --host does not collect: it reads the inventory the host collector
 (cmd/anvil-host-collector) writes when it runs under its systemd unit.
+anvil recall prints Lane B's candidates for a tree as JSON and records nothing;
+with FILEs, only candidates in those repository-relative files.
 `
 
 func main() {
@@ -99,6 +104,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return cmdScan(ctx, args[1:], stdout, stderr)
 	case "findings":
 		return cmdFindings(ctx, args[1:], stdout, stderr)
+	case "recall":
+		return cmdRecall(ctx, args[1:], stdout, stderr)
 	case "feeds":
 		return cmdFeeds(ctx, args[1:], stdout, stderr)
 	case "dispatch":
@@ -209,7 +216,7 @@ func cmdScan(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Event: *event, Full: *full, PolicyPath: *policyPath,
 		Cache: st.cache, Store: st.store, Feeds: st.feeds,
 		TrivyDB: scan.TrivyDB{Enabled: st.cfg.TrivyDB}, Trivy: repo.DefaultConfig(),
-		AnvilVersion: version,
+		LaneB: laneBConfig(st.cfg), AnvilVersion: version,
 	}
 	if *hostScan {
 		req.Kind = scan.KindHost
@@ -243,6 +250,12 @@ func cmdScan(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	for _, p := range res.Problems {
 		fmt.Fprintf(stderr, "anvil scan: %s\n", p)
 	}
+	for _, n := range res.NotRun {
+		fmt.Fprintf(stderr, "anvil scan: %s\n", n)
+	}
+	for _, n := range res.Notes {
+		fmt.Fprintf(stderr, "anvil scan: note: %s\n", n)
+	}
 	switch res.Outcome {
 	case scan.OutcomeFindings:
 		return exitFindings
@@ -252,6 +265,90 @@ func cmdScan(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitMissing
 	}
 	return exitRefused
+}
+
+// laneBConfig is Lane B's configuration from the operator's file, or nil when
+// the file turns it off.
+func laneBConfig(cfg settings.Settings) *laneb.Config {
+	if !cfg.Recall.Enabled {
+		return nil
+	}
+	r := cfg.Recall
+	return &laneb.Config{Rules: r.Rules, Tools: recall.Tools{
+		Opengrep: r.Opengrep, Gosec: r.Gosec, Bandit: r.Bandit, GoBin: r.GoBin,
+	}}
+}
+
+// cmdRecall prints Lane B's candidates for a tree: the recall tier exactly as
+// a repository scan runs it, with nothing recorded. The candidates-per-scan
+// instrument (eval/) measures through it, so the number it reports is the
+// number a scan would record.
+func cmdRecall(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs, configPath := newFlags("recall", stderr)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintf(stderr, "anvil recall: give a PATH\n\n%s", usage)
+		return exitUsage
+	}
+	cfg, err := settings.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil recall: %v\n", err)
+		return exitError
+	}
+	lb := laneBConfig(cfg)
+	if lb == nil {
+		fmt.Fprint(stderr, "anvil recall: Lane B is off in the configuration (recall: {enabled: false})\n")
+		return exitRefused
+	}
+	pack, err := recall.LoadPack(lb.Rules)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil recall: %v\n", err)
+		return exitMissing
+	}
+	s := recall.Scanner{Pack: pack, Tools: lb.Tools}
+	plan, err := s.Prepare(ctx, fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil recall: %v\n", err)
+		if errors.Is(err, recall.ErrToolAbsent) {
+			return exitMissing
+		}
+		return exitError
+	}
+	if only := fs.Args()[1:]; len(only) > 0 {
+		plan = plan.Only(only)
+	}
+	res, err := s.Scan(ctx, plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "anvil recall: %v\n", err)
+		return exitError
+	}
+	out := struct {
+		Count         int                `json:"count"`
+		ByTool        map[string]int     `json:"byTool"`
+		Files         int                `json:"files"`
+		Excluded      int                `json:"excluded"`
+		ToolsRun      []string           `json:"toolsRun"`
+		Problems      []string           `json:"problems"`
+		PartialParses int                `json:"partialParses"`
+		Candidates    []recall.Candidate `json:"candidates"`
+	}{res.Count, res.ByTool, res.Files, plan.Excluded, res.ToolsRun, res.Problems, res.PartialParses, res.Candidates}
+	if out.Candidates == nil {
+		out.Candidates = []recall.Candidate{}
+	}
+	if out.Problems == nil {
+		out.Problems = []string{}
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", " ")
+	if err := enc.Encode(out); err != nil {
+		return exitError
+	}
+	if len(res.Problems) > 0 {
+		return exitRefused
+	}
+	if res.Count > 0 {
+		return exitFindings
+	}
+	return exitClean
 }
 
 func writeRecord(path string, res scan.Result) error {
@@ -389,7 +486,7 @@ func cmdDaemon(ctx context.Context, args []string, stderr io.Writer) int {
 		Cache: st.cache, Store: st.store, Feeds: st.feeds,
 		SpoolDir: st.cfg.SpoolDir, Policy: st.cfg.Policy,
 		TrivyDB: scan.TrivyDB{Enabled: st.cfg.TrivyDB}, Trivy: repo.DefaultConfig(),
-		Version: version, Log: stderr,
+		LaneB: laneBConfig(st.cfg), Version: version, Log: stderr,
 	}
 	if len(st.feeds.Feeds) > 0 {
 		p, err := poller.New(poller.Options{DB: st.cache, Mirror: os.DirFS(st.cfg.MirrorRoot)})

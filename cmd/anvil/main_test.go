@@ -40,6 +40,7 @@ func anvil(t *testing.T, args ...string) (int, string, string) {
 
 func TestExitStatuses(t *testing.T) {
 	cfg := installation(t, "")
+	noLanes := installation(t, "recall:\n  enabled: false\n")
 	inv := filepath.Join(fixture, "host", "inventory-1.json")
 	sarif := filepath.Join(t.TempDir(), "host.sarif")
 	cases := []struct {
@@ -54,7 +55,11 @@ func TestExitStatuses(t *testing.T) {
 		{"scan with both targets", []string{"scan", "--config", cfg, "--repo", ".", "--host"}, exitUsage},
 		{"a host scan never collects itself", []string{"scan", "--config", cfg, "--host"}, exitRefused},
 		{"a host with findings", []string{"scan", "--config", cfg, "--host", "--inventory", inv, "--out", sarif}, exitFindings},
-		{"repository SCA is off by default", []string{"scan", "--config", cfg, "--repo", filepath.Join(fixture, "repo")}, exitRefused},
+		{"a repository scan with both lanes off is refused", []string{"scan", "--config", noLanes, "--repo", filepath.Join(fixture, "repo")}, exitRefused},
+		{"Lane B is on by default, and its absent rule pack is a missing tool", []string{"scan", "--config", cfg, "--repo", filepath.Join(fixture, "repo")}, exitMissing},
+		{"anvil recall with Lane B off is refused", []string{"recall", "--config", noLanes, "."}, exitRefused},
+		{"anvil recall with no rule pack is a missing tool", []string{"recall", "--config", cfg, "."}, exitMissing},
+		{"anvil recall with no path", []string{"recall", "--config", cfg}, exitUsage},
 		{"a scheduled scan with no policy is refused", []string{"scan", "--config", cfg, "--host", "--inventory", inv, "--full", "--event", "schedule"}, exitRefused},
 		{"findings in the store", []string{"findings", "--config", cfg}, exitFindings},
 	}

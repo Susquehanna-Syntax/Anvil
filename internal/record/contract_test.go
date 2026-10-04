@@ -943,3 +943,63 @@ func TestAnUnconfirmedFindingWaitsForTheTriageGate(t *testing.T) {
 		t.Errorf("blockers %q must name the triage gate and must not demote to report-only", blockers)
 	}
 }
+
+// TestARuleReferenceMustResolveToCompleteProvenance holds record 1.1.0's one
+// rule: a result that cites a rule through result.rule names a tool extension
+// that holds it, agrees with ruleId, and the rule states its provenance in
+// full. A result with no result.rule is a 1.0.0 shape and stays valid.
+func TestARuleReferenceMustResolveToCompleteProvenance(t *testing.T) {
+	zero, one := 0, 1
+	prov := func() *RuleProvenance {
+		return &RuleProvenance{Source: "gosec", Repository: "https://github.com/securego/gosec", Version: "2.29.0",
+			RulePath: "gosec:G204", LicenseSpdx: "Apache-2.0", LicenseEvidence: "LICENSE.txt"}
+	}
+	build := func(edit func(*Run, *Result)) error {
+		run := Run{Tool: Tool{Extensions: []ToolComponent{{Name: "gosec", Rules: []ReportingDescriptor{
+			{ID: "gosec/G204@2.29.0", Properties: &RuleProperties{RuleProvenance: prov()}},
+		}}}}}
+		res := Result{RuleID: "gosec/G204@2.29.0", Rule: &ReportingDescriptorReference{
+			ID: "gosec/G204@2.29.0", ToolComponent: &ToolComponentRef{Index: &zero}}}
+		edit(&run, &res)
+		return run.resolveRule(&res)
+	}
+	if err := build(func(*Run, *Result) {}); err != nil {
+		t.Fatalf("a resolvable rule was refused: %v", err)
+	}
+	if err := build(func(_ *Run, r *Result) { r.Rule = nil }); err != nil {
+		t.Fatalf("a 1.0.0 result with no result.rule was refused: %v", err)
+	}
+	for name, edit := range map[string]func(*Run, *Result){
+		"no extension index":    func(_ *Run, r *Result) { r.Rule.ToolComponent = nil },
+		"an index past the end": func(_ *Run, r *Result) { r.Rule.ToolComponent.Index = &one },
+		"ruleId disagrees":      func(_ *Run, r *Result) { r.RuleID = "gosec/G101@2.29.0" },
+		"no such rule":          func(run *Run, _ *Result) { run.Tool.Extensions[0].Rules[0].ID = "other" },
+		"no provenance":         func(run *Run, _ *Result) { run.Tool.Extensions[0].Rules[0].Properties = nil },
+		"a blank licence evidence": func(run *Run, _ *Result) {
+			run.Tool.Extensions[0].Rules[0].Properties.RuleProvenance.LicenseEvidence = " "
+		},
+		"a blank repository": func(run *Run, _ *Result) { run.Tool.Extensions[0].Rules[0].Properties.RuleProvenance.Repository = "" },
+	} {
+		if err := build(edit); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestTheSchemaNamesTheContractVersion: the wire schema's contract version is
+// the record's anvil/schemaVersion, so a change to one is a change to both.
+func TestTheSchemaNamesTheContractVersion(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "schemas", "anvil-record-v1.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Version string `json:"x-anvil-contractVersion"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Version != SchemaVersion {
+		t.Fatalf("the wire schema is contract version %q, the record writes %q", doc.Version, SchemaVersion)
+	}
+}

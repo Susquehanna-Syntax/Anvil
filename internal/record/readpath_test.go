@@ -2920,9 +2920,11 @@ func gateUngatedAllowlist() map[string]gateExemption {
 		"Result.ExternalStringPointers": {body: "b598635db55a205e", reason: "a pure accessor on a Result the caller already holds. " +
 			"It cannot obtain one: whoever calls it got the Result from somewhere, and that " +
 			"somewhere is what the gate covers."},
-		"Assemble": {body: "adedd1ebaf48cab2", reason: "the record assembler, producer side. It builds a record from " +
+		"Assemble": {body: "7e5bdb35b8560cb5", reason: "the record assembler, producer side. It builds a record from " +
 			"results its caller already holds, before any half is consumable, and hands the same results " +
-			"back inside the record; it reads nothing from a sealed half, a store or a packet."},
+			"back inside the record; it reads nothing from a sealed half, a store or a packet. Re-read " +
+			"2026-10-03 for record 1.1.0 (Phase 6): the change copies the caller's own tool extensions, " +
+			"taxonomies and spec harvest into the run it builds, and reads nothing else."},
 		"ValidateResultTrust": {body: "bbff534e61dffe8b", reason: "a validator over one caller-held Result, returning only an error. " +
 			"Re-read 2026-10-03 after plan node contractgaps added the validation-step check: the new " +
 			"branch reads the caller's own Result through verifiedLabels and puts JSON Pointers and the " +
