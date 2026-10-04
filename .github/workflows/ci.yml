@@ -51,8 +51,34 @@ jobs:
       - name: go build
         run: go build ./...
 
+      # The remediation tier runs a target's build and tests in bubblewrap with
+      # no network and no file system beyond an export of the patched tree. A
+      # host without bubblewrap or unprivileged user namespaces refuses the
+      # build (fail closed), and there TestTheBuildHasNoNetwork could only prove
+      # the refusal. This lane provides both, and ANVIL_SANDBOX_REQUIRED makes a
+      # missing sandbox a test failure, so CI proves the confinement itself
+      # (docs/controls.md, U12). Ubuntu 24.04 restricts unprivileged user
+      # namespaces through AppArmor; the sysctl lifts that for this runner only.
+      - name: Build sandbox (bubblewrap) for the remediation tier
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib \
+            --symlink usr/lib64 /lib64 --proc /proc --dev /dev -- true
+          echo "ANVIL_SANDBOX_REQUIRED=1" >> "$GITHUB_ENV"
+
       - name: go test
         run: go test -race -count=1 ./...
+
+      - name: The build sandbox's confinement really ran, and passed
+        run: |
+          out=$(go test -count=1 -v -run '^TestTheBuildHasNoNetwork$' ./internal/remediation/ 2>&1)
+          echo "$out"
+          echo "$out" | grep -q -- '--- PASS: TestTheBuildHasNoNetwork' || { echo "::error::TestTheBuildHasNoNetwork did not pass"; exit 1; }
+          if echo "$out" | grep -q 'refuses the sandbox'; then echo "::error::the sandbox test took the fail-closed branch"; exit 1; fi
 
       # THE SECOND LANE, and it is not redundant with the one above.
       #
