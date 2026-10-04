@@ -1,0 +1,4271 @@
+{
+ "version": 1,
+ "generated_by": "python -m anvil_eval.vendor_rules",
+ "selection_sha256": "7b86bf58da7eaca7d0a19ec9a96fef3fe2b8ace672c4a8b7647e3ff5c236e729",
+ "licences": [
+  {
+   "path": "0xdea-semgrep-rules/LICENSE",
+   "sha256": "1f9dca8eb03ff3c87d77694e09b36a06485158a161c3614b0d45277bc6ddd767"
+  },
+  {
+   "path": "gitlab-sast-rules/LICENSE",
+   "sha256": "33acf42afdd03163d75fe856cb431e70710e0b5deede3362e6d1c4697cfe1c6a"
+  },
+  {
+   "path": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt",
+   "sha256": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b"
+  },
+  {
+   "path": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt",
+   "sha256": "2be0a81f30d2b73cb3b5182b969175245042158735fcc8af133929212c772e78"
+  }
+ ],
+ "rules": [
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/csharp/crypto/rule-WeakCipherMode.yml",
+   "blob_sha1": "a5ce3fe55c0ba5e990b1a9a05da6dae9eb1cc45d",
+   "sha256": "bb8a0f1ae5effbbacdb921b5f1875d9d8a3198133898cb12ed6ed42e77a663a1",
+   "ids": [
+    "csharp_crypto_rule-WeakCipherMode"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "csharp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-WeakCipherMode.cs: License: MIT Copyright (c) 2022-Present GitLab B.V.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/blocklist/rule-blocklist-des.yml",
+   "blob_sha1": "59e9c424444b1aa42cdb0bddf335ad796688219b",
+   "sha256": "3847da3d5b77b31882aab293319871a852c99b534bb322c3a602331912e77287",
+   "ids": [
+    "go_blocklist_rule-blocklist-des"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-blocklist-des.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/blocklist/rule-blocklist-md5.yml",
+   "blob_sha1": "d1e9d5f967371587e56104286218156274a7ba1f",
+   "sha256": "1284f0ec904497a6ca6e2bf3eb44c87ad28a1480ddf12c3be5496885a1659a66",
+   "ids": [
+    "go_blocklist_rule-blocklist-md5"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-blocklist-md5.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/blocklist/rule-blocklist-rc4.yml",
+   "blob_sha1": "21ec66d2e7e673a531f6bbed1699933a3a4d19c8",
+   "sha256": "93dd91d71c4733c59b4528fb70ab578681be4d521fcc78ea97db5d0e920fef6e",
+   "ids": [
+    "go_blocklist_rule-blocklist-rc4"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-blocklist-rc4.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/blocklist/rule-blocklist-sha1.yml",
+   "blob_sha1": "edb06d38496209a680eb6b9cb7a612620c2513ba",
+   "sha256": "838e84783441f8f293a2f96da0421ea1aa1fc81276d741e36d9350c516067f1c",
+   "ids": [
+    "go_blocklist_rule-blocklist-sha1"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "# License: Apache 2.0 (c) gosec; its GitLab companion rule-blocklist-sha1.go: License: Apache 2.0",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/crypto/rule-badtlssettings.yml",
+   "blob_sha1": "80b8936e63cf5eb8b8230a8b2c54c2b5af76b084",
+   "sha256": "293cbc1ba2b8cbcf2357392f02ad2fc5b8a71c91e2b2481145671d75bd3e1568",
+   "ids": [
+    "go_crypto_rule-badtlssettings"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-badtlssettings.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/crypto/rule-insecure-ignore-host-key.yml",
+   "blob_sha1": "fd3d6a7e8f42e1cbc41b96a3a1b8276570c2b328",
+   "sha256": "8b44db76de65512904ba20ea1eac327c682d50dfb2d0d8551e2915c8b417dc34",
+   "ids": [
+    "go_crypto_rule-insecure-ignore-host-key"
+   ],
+   "cwes": [
+    "CWE-322"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-insecure-ignore-host-key.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/crypto/rule-tlsversion.yml",
+   "blob_sha1": "95b23d2336278fcd856d02620889c3b4a1c8981f",
+   "sha256": "447cfe992de2ef972ae8ebda534653290c23d12a0860385401be779634891d9d",
+   "ids": [
+    "go_crypto_rule-tlsversion"
+   ],
+   "cwes": [
+    "CWE-757"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-tlsversion.go: License: Apache 2.0 (c) gosec; the rule's own header says License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/crypto/rule-weakkeystrength.yml",
+   "blob_sha1": "4b88f37ba2d4f793a341473bdfd78a22fd27fe06",
+   "sha256": "4bc5ea4080746745677533317f4b8a15c02561ee2462bad4b1a278ed0cdfa137",
+   "ids": [
+    "go_crypto_rule-weakkeystrength"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-weakkeystrength.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/crypto/rule-weakrandsource.yml",
+   "blob_sha1": "1b6e8bb9726cd996202e5b2745757d54c7e748f0",
+   "sha256": "219f254406b3b425ee7e256bb3a42949caf3b45151f9608b29183d29dcdb536a",
+   "ids": [
+    "go_crypto_rule-weakrandsource"
+   ],
+   "cwes": [
+    "CWE-338"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-weakrandsource.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/file_permissions/rule-fileperm.yml",
+   "blob_sha1": "a6e5bc805b4499b3f5743e131475728bbd4f76c9",
+   "sha256": "fce51d68dce96d0472371290d2ad5177fedc82c4a04058a4007ea81203a2e894",
+   "ids": [
+    "go_file-permissions_rule-fileperm"
+   ],
+   "cwes": [
+    "CWE-732"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-fileperm.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/file_permissions/rule-mkdir.yml",
+   "blob_sha1": "87767da1f29aa14e28cae0e6c1d1c6e7d8177a99",
+   "sha256": "841aa14d55ee79bdf183beb4cc41033b79eed20d0631935703bee9558ee30ae6",
+   "ids": [
+    "go_file-permissions_rule-mkdir"
+   ],
+   "cwes": [
+    "CWE-732"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-mkdir.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-decompression-bomb.yml",
+   "blob_sha1": "577e35fdab7cc0b7c294a0d852588f0f2154ee00",
+   "sha256": "219e19deb11a6e743a977ef91a98120554793b08bfc2f6a942ee38336401ad0a",
+   "ids": [
+    "go_filesystem_rule-decompression-bomb"
+   ],
+   "cwes": [
+    "CWE-409"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-decompression-bomb.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-fileread.yml",
+   "blob_sha1": "31646692398f54eadcf659deadc3162f27e06a83",
+   "sha256": "c14e6e3f658c59a4b62081768fe0d9ff4efaab151d9e84975e6411045e7aacec",
+   "ids": [
+    "go_filesystem_rule-fileread"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-fileread.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-httprootdir.yml",
+   "blob_sha1": "8f9917ee41a02323ace4af85a8cc253a0b5a4de7",
+   "sha256": "b1835648cdf63bcaa1ff0197a1ecc95015bf8f9f343e66d07d122e1ea9e58f4d",
+   "ids": [
+    "go_filesystem_rule-httprootdir"
+   ],
+   "cwes": [
+    "CWE-552"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "# License: Apache 2.0 (c) gosec; its GitLab companion rule-httprootdir.go: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-poorwritepermissions.yml",
+   "blob_sha1": "8adc1de9d25e4ab7dc373e20bbd3a2796631fc57",
+   "sha256": "23c9300589ca87b5dca081451151d705234b5d21a50613106b679b26c6149f4f",
+   "ids": [
+    "go_filesystem_rule-poorwritepermissions"
+   ],
+   "cwes": [
+    "CWE-276"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-poorwritepermissions.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-tempfiles.yml",
+   "blob_sha1": "1170b4bb00ff63b2929dc51440aae193ad7fd5f1",
+   "sha256": "ea993a23913efe2b62caf0904221c86403d8cb4952d1d9e53fb4edf617b398a1",
+   "ids": [
+    "go_filesystem_rule-tempfiles"
+   ],
+   "cwes": [
+    "CWE-378"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-tempfiles.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/filesystem/rule-ziparchive.yml",
+   "blob_sha1": "57cb0709492e8b21829467ea7f4d09f8e0d0d29c",
+   "sha256": "61744a438d8cf45470791ffac1bb6cc922a9165c0ce2a7a8279d54d335211e28",
+   "ids": [
+    "go_filesystem_rule-ziparchive"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-ziparchive.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/http/rule-http-serve.yml",
+   "blob_sha1": "9a7424e9cb14a3d12cc0ba7eb19a33352a69ef60",
+   "sha256": "87ae144671fd1bfd1a824e54a9731f369cfb22f68934c3fb333428e50ccb916f",
+   "ids": [
+    "go_http_rule-http-serve"
+   ],
+   "cwes": [
+    "CWE-770"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-http-serve.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/injection/rule-ssrf.yml",
+   "blob_sha1": "414accdc29495705b51c42b28a58f4d8e951c22a",
+   "sha256": "dfe372da4c399d512cf19dcb118b613a10c3b0abe8a574c3994048ec6d98437e",
+   "ids": [
+    "go_injection_rule-ssrf"
+   ],
+   "cwes": [
+    "CWE-918"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-ssrf.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/injection/rule-template-injection.yml",
+   "blob_sha1": "83cbef3686706856848c28bc41f7511911683a36",
+   "sha256": "ce15c5ef530e329743fe227fc45e81cdb36c1854943a6f6739544cec809683bc",
+   "ids": [
+    "go_injection_rule-template-injection"
+   ],
+   "cwes": [
+    "CWE-79"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-template-injection.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/leak/rule-pprof-endpoint.yml",
+   "blob_sha1": "a39f8b4e17c030a6b449989c865d438e116afff2",
+   "sha256": "0ae795faedd0501a871637b516770eb8599660e637c292b2ae519abbb8591566",
+   "ids": [
+    "go_leak_rule-pprof-endpoint"
+   ],
+   "cwes": [
+    "CWE-489"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-pprof-endpoint.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/memory/rule-integer-overflow.yml",
+   "blob_sha1": "b8d48df4ef29754204ec8bd001d3b31569d73100",
+   "sha256": "60379e31b48631dc5bbcb7270d636e091c566139b55d75d3e5bafc8e62f84d5d",
+   "ids": [
+    "go_memory_rule-integer-overflow"
+   ],
+   "cwes": [
+    "CWE-190"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-integer-overflow.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/memory/rule-memoryaliasing.yml",
+   "blob_sha1": "58142036e7f8ac7d97727cfc54ee11d9149765ae",
+   "sha256": "06bfad2f4d4592dd7e8b290cb083ad592d2cb1e6c575b38ccff9bdd0d050a04b",
+   "ids": [
+    "go_memory_rule-memoryaliasing"
+   ],
+   "cwes": [
+    "CWE-118"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-memoryaliasing.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/network/rule-bind-to-all-interfaces.yml",
+   "blob_sha1": "534eb44ae5b3c4031531e4dcc52783be0102195a",
+   "sha256": "bbad7ae4b87e409d3c5a536611c00225abdbcc776aab949df175ca23be004bd5",
+   "ids": [
+    "go_network_rule-bind-to-all-interfaces"
+   ],
+   "cwes": [
+    "CWE-1327"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-bind-to-all-interfaces.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/sql/rule-concat-sqli.yml",
+   "blob_sha1": "3997ad3edc7fc8563696bec258b17db786bc4080",
+   "sha256": "faeaf36a51298ab0f4f56a77bdbbac9a5f97d4f2fe35cfb05cc69778eb81b760",
+   "ids": [
+    "go_sql_rule-concat-sqli"
+   ],
+   "cwes": [
+    "CWE-89"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-concat-sqli.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/subproc/rule-subproc.yml",
+   "blob_sha1": "88937e89be39b756e27a0c911b31d64824fbd13f",
+   "sha256": "c920efef89fc373ab991a594eb0f92768fced69f6bd46a569bfad271a30233fb",
+   "ids": [
+    "go_subproc_rule-subproc"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-subproc.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/go/unsafe/rule-unsafe.yml",
+   "blob_sha1": "f6fecc9a3f93fd333cd12ec4161f38d9846460c0",
+   "sha256": "25c5a206ed1149c502b5ae00350e4295746cd8ef8ac464f4f92ee6fd7aea339a",
+   "ids": [
+    "go_unsafe_rule-unsafe"
+   ],
+   "cwes": [
+    "CWE-242"
+   ],
+   "languages": [
+    "go"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from gosec: its GitLab companion rule-unsafe.go: License: Apache 2.0 (c) gosec; the rule's own header says Apache 2.0 (c) gosec",
+   "licence_file": "gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/cookie/rule-RequestParamToHeader.yml",
+   "blob_sha1": "a4a01e18c799a8914e4354eb04a4215efd861079",
+   "sha256": "0d40a67c62f374fe0462d8ba3e371a9515b16aefc78f43f921eca7643aa88b1b",
+   "ids": [
+    "java_cookie_rule-RequestParamToHeader"
+   ],
+   "cwes": [
+    "CWE-113"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-RequestParamToHeader.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/cors/rule-PermissiveCORSInjection.yml",
+   "blob_sha1": "ba997e4b4155bf1e2018e8cc7f494581b1397cab",
+   "sha256": "c92bd81dcef0007d36dde4d887ce718f65a1c82696596daff41d8d6d7408086b",
+   "ids": [
+    "java_cors_rule-PermissiveCORSInjection"
+   ],
+   "cwes": [
+    "CWE-942"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-PermissiveCORSInjection.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-CipherDESInsecure.yml",
+   "blob_sha1": "311f713961ee29c34ad1e94faf43c9bee4a854d7",
+   "sha256": "aa785226525d9e05d59b3a8b6679c3a6ccb51b1549c95a35808c077f40d69913",
+   "ids": [
+    "java_crypto_rule-CipherDESInsecure"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherDESInsecure.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-CipherDESedeInsecure.yml",
+   "blob_sha1": "7a7c4bcf6b361adbe3452d369945850f0b314459",
+   "sha256": "cacb2b30067ce28e206777e051749bbef6c9de4ff80e05694cf4ea060b2eef3e",
+   "ids": [
+    "java_crypto_rule-CipherDESedeInsecure"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherDESedeInsecure.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-CipherECBMode.yml",
+   "blob_sha1": "88350d2e9295cf97dae6be71ab38730608b43758",
+   "sha256": "14ac22e6185951e9d45f890f833929dc3fef7440f442a46aacaa61e73774a3c5",
+   "ids": [
+    "java_crypto_rule-CipherECBMode"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherECBMode.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-CipherIntegrity.yml",
+   "blob_sha1": "95f99bc82a604efcb5bbd46d4df8701d2e407146",
+   "sha256": "4ee989ddb4958a14a2ca7ff9df8bd48503db72710341de2869fd24b83c99b91a",
+   "ids": [
+    "java_crypto_rule-CipherIntegrity"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherIntegrity.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-CipherPaddingOracle.yml",
+   "blob_sha1": "c15ac4d1241895b465a880944e7fbb28e171acb3",
+   "sha256": "54a56985718cd56bb21eb16f3dbb5982d9c111ea42cc7c4c39781bf394457570",
+   "ids": [
+    "java_crypto_rule-CipherPaddingOracle"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherPaddingOracle.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/crypto/rule-WeakTLSProtocolVersion.yml",
+   "blob_sha1": "4bd5fdf888cf54601f4c0db558fa9c0f63bb5681",
+   "sha256": "5a818f90e3ab6fb68f38de3687d0d80f3c979e85db14613def8f0e8e7d9885ae",
+   "ids": [
+    "java_crypto_rule-WeakTLSProtocolVersion"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-WeakTLSProtocolVersion.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/inject/rule-ELInjection.yml",
+   "blob_sha1": "bfd56ae1c720a0cf7cd20d38326a0e4fae0b6566",
+   "sha256": "ed18e62ac44e768c8eb03d0280a0567e24b73170355cb206091e2ca20109b158",
+   "ids": [
+    "java_inject_rule-ELInjection"
+   ],
+   "cwes": [
+    "CWE-917"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-ELInjection.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/password/rule-ConstantDBPassword.yml",
+   "blob_sha1": "43969aca24716cffcc66af38a4e7ccde40f48d4a",
+   "sha256": "7cf5a7dd8107bba7c57e8f868ad44e0c9a945a0d1ee3197254af77862cde7350",
+   "ids": [
+    "java_password_rule-ConstantDBPassword"
+   ],
+   "cwes": [
+    "CWE-259"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-ConstantDBPassword.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/password/rule-EmptyDBPassword.yml",
+   "blob_sha1": "805888590ad0488e795c7056245a26eb61bc151a",
+   "sha256": "6d5650e0a70cc8fd8a0c760b12c82e0f2f96eb9b0aec142bfea7ac896853ff87",
+   "ids": [
+    "java_password_rule-EmptyDBPassword"
+   ],
+   "cwes": [
+    "CWE-306"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-EmptyDBPassword.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/java/xml/rule-XmlDecoder.yml",
+   "blob_sha1": "9df19bbdae3376133e118edf5ec4f0ca7b534f31",
+   "sha256": "4acabd60252b9c8e3cd88db36d82fee5f00e996cdd67e013c0fabdd79f167e77",
+   "ids": [
+    "java_xml_rule-XmlDecoder"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-XmlDecoder.java: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/buf/rule-buffer-noassert-read.yml",
+   "blob_sha1": "faf9abeaccf27f45f66b0d3fbed59f1e44fce363",
+   "sha256": "5ed51fdc61c271d8d2856ec1f62f42257bddf5b0f8e2fd5a14dd164c68f49cac",
+   "ids": [
+    "javascript_buf_rule-buffer-noassert-read"
+   ],
+   "cwes": [
+    "CWE-125"
+   ],
+   "languages": [
+    "javascript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-buffer-noassert-read.js states no licence",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/buf/rule-buffer-noassert-write.yml",
+   "blob_sha1": "cc941bad92a0ca812f6bb3e9776a6173921da566",
+   "sha256": "44267b8f91c7f73a35e5768b3f268aa63fdb5d09c38afde215c5bbd9d132279e",
+   "ids": [
+    "javascript_buf_rule-buffer-noassert-write"
+   ],
+   "cwes": [
+    "CWE-787"
+   ],
+   "languages": [
+    "javascript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-buffer-noassert-write.js states no licence",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/buf/rule-detect-new-buffer.yml",
+   "blob_sha1": "8c35dc6ab4ad5539e02f36e08e687791ecde14f2",
+   "sha256": "4b1ca91bd91b36e70b6c92c2532992abf37759c80027fff4e786d34acd5564f2",
+   "ids": [
+    "javascript_buf_rule-detect-new-buffer"
+   ],
+   "cwes": [
+    "CWE-770"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-detect-new-buffer.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/dos/rule-non-literal-regexp.yml",
+   "blob_sha1": "0f813b76713ad7077acf2a92dcade78c46c2cdd9",
+   "sha256": "5178adc3e41175c46b4f0b377cfc87de5bb5d7580af75a32bbfb183f5feb22ff",
+   "ids": [
+    "javascript_dos_rule-non-literal-regexp"
+   ],
+   "cwes": [
+    "CWE-185"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-non-literal-regexp.js: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/eval/rule-eval-with-expression.yml",
+   "blob_sha1": "f4df5391f93c8fe529860cacf6830c16263c99e8",
+   "sha256": "6a60110e2d2a7f22d9c4a69b09d2d489e151da40ad5c8aeb6a55401791faf5ed",
+   "ids": [
+    "javascript_eval_rule-eval-with-expression"
+   ],
+   "cwes": [
+    "CWE-95"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-eval-with-expression.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/pathtraversal/rule-non-literal-fs-filename.yml",
+   "blob_sha1": "c0d8dcf2117faa330664145a29f3b3e84e5650f4",
+   "sha256": "429484d0b1c907ec22f6416c97ca8b0a46d8e8a23683384de0d0c4e6b0344169",
+   "ids": [
+    "javascript_pathtraversal_rule-non-literal-fs-filename"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "typescript",
+    "javascript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-non-literal-fs-filename.js: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/random/rule-pseudo-random-bytes.yml",
+   "blob_sha1": "a984bf2cb90633d5eea95829bd5769a5100cb671",
+   "sha256": "44b32800f17196b53b965e1be11b787a521cdf5ce164249c0a2e2d4604c0b870",
+   "ids": [
+    "javascript_random_rule-pseudo-random-bytes"
+   ],
+   "cwes": [
+    "CWE-338"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-pseudo-random-bytes.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/react/rule-dangerouslysetinnerhtml.yml",
+   "blob_sha1": "dfbbafa2a6564dca2463ece6ac320837076f7be7",
+   "sha256": "1a43ece6a249e7486bfb156a4bfc0ea7043d477e36d52442b07fd9291ae60e68",
+   "ids": [
+    "javascript_react_rule-dangerouslysetinnerhtml"
+   ],
+   "cwes": [
+    "CWE-79"
+   ],
+   "languages": [
+    "typescript",
+    "javascript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-dangerouslysetinnerhtml.js: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/require/rule-non-literal-require.yml",
+   "blob_sha1": "b81110bbc62930a35a374dadafb8e6336675b11d",
+   "sha256": "e464056a07762ff78332adc779ec8bf558a09304d7d09881f750135803fd9564",
+   "ids": [
+    "javascript_require_rule-non-literal-require"
+   ],
+   "cwes": [
+    "CWE-95"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-non-literal-require.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/timing/rule-possible-timing-attacks.yml",
+   "blob_sha1": "4affb2f6a133d25d19fc8e2d09cccb2c2632d87b",
+   "sha256": "dde4f910f55979cba09d1994626f17d1dd27f4e0ba89199dcb0428580bb158bf",
+   "ids": [
+    "javascript_timing_rule-possible-timing-attacks"
+   ],
+   "cwes": [
+    "CWE-208"
+   ],
+   "languages": [
+    "javascript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-possible-timing-attacks.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/javascript/xss/rule-mustache-escape.yml",
+   "blob_sha1": "429504fc6346d685e6136d9eeaeac8f55cd619ab",
+   "sha256": "58ca5a063f5f919333c79d7e8adb4f16575ae963fede25589ea0f32fe2b36549",
+   "ids": [
+    "javascript_xss_rule-mustache-escape"
+   ],
+   "cwes": [
+    "CWE-79"
+   ],
+   "languages": [
+    "javascript",
+    "typescript"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "derived from JS Foundation: its GitLab companion rule-mustache-escape.js: License: MIT (c) JS Foundation and other contributors, https://js.foundation; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/bind_all_interfaces/rule-general-bindall-interfaces.yml",
+   "blob_sha1": "b642e26fc3919a71d611e42c3485246e34a64eb4",
+   "sha256": "f0e93ecf57e8deb595c013ff1a9133223ff5aa3552e18c610cf93302b7dd0b86",
+   "ids": [
+    "python_bind-all-interfaces_rule-general-bindall-interfaces"
+   ],
+   "cwes": [
+    "CWE-1327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-general-bindall-interfaces.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-cipher-modes.yml",
+   "blob_sha1": "f34f74b689cab925a68fb0962647034fe5cefe71",
+   "sha256": "579be41611e34d423691c9341ea6e9b5471d35ac934b09d119646ad2bb04b779",
+   "ids": [
+    "python_crypto_rule-cipher-modes"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-cipher-modes.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-cipher-blowfish.yml",
+   "blob_sha1": "0bddb0fe1bfe104ca94f68a54d28681ed157b0fd",
+   "sha256": "98432fc326baaeedf04ce105093d30593777e9c50db378bbfb56de606096f349",
+   "ids": [
+    "python_crypto_rule-crypto-cipher-blowfish"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-cipher-blowfish.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-cipher-des.yml",
+   "blob_sha1": "fe42b44263217363ec934ae5d42e8f8707b7c073",
+   "sha256": "c4a72951ba44060b5957566aed08086242a7755d256fa791df87b8ffc861b138",
+   "ids": [
+    "python_crypto_rule-crypto-cipher-des"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-cipher-des.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-cipher-rc2.yml",
+   "blob_sha1": "c7929b3141dfb7c19f058cfa27133ae122add8e0",
+   "sha256": "4c6b7354a6b6990c37406ff457054b4a1513c654ad0c9a97a7ccca765238ee46",
+   "ids": [
+    "python_crypto_rule-crypto-cipher-rc2"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-cipher-rc2.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-cipher-rc4.yml",
+   "blob_sha1": "1ca78198b0217a2dc9ae7bf9bb56bb49a3f05620",
+   "sha256": "1a152e8a7f9fa44f6639df7e199023906983402f434732ae1b9200377aee92dc",
+   "ids": [
+    "python_crypto_rule-crypto-cipher-rc4"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-cipher-rc4.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-cipher-xor.yml",
+   "blob_sha1": "0b146e8068391148bbd4556f20a91dfeaae63cfc",
+   "sha256": "a94a1eb095d2c8b4ac1ed9e0c7e118c0fb5a4412edd02fa72e6a57ad6ea0cda6",
+   "ids": [
+    "python_crypto_rule-crypto-cipher-xor"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-cipher-xor.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-encrypt-dsa-rsa.yml",
+   "blob_sha1": "f180f44cb725c64ce50e8354b1237d255063992e",
+   "sha256": "9fadf035dac3736e3de1d6d1463cda3659fb7a4281c3cfc19ac3146034f0f517",
+   "ids": [
+    "python_crypto_rule-crypto-encrypt-dsa-rsa"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-encrypt-dsa-rsa.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-encrypt-ec.yml",
+   "blob_sha1": "28f3de64de0489879e185124a5b6e1466e6a72ed",
+   "sha256": "c2e7a1c70a6730c575af68b8c0d0a2de803a5f291303f7147f9aa4f62a9c2f6f",
+   "ids": [
+    "python_crypto_rule-crypto-encrypt-ec"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-encrypt-ec.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hash-md5.yml",
+   "blob_sha1": "c21873755ddc049c7f0c06da77d87721e7add02e",
+   "sha256": "d2df42348852a44fcc61bb02a39de831c0940bad9e0069809404cc412f3d7e8a",
+   "ids": [
+    "python_crypto_rule-crypto-hash-md5"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hash-md5.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hash-sha1.yml",
+   "blob_sha1": "2270e611b009a180cc0e45223f3831e6752b1af8",
+   "sha256": "576a2466dab13cb4cf3d7ab1a034b83c31b12ddf4f077baf25a856ddeb07555b",
+   "ids": [
+    "python_crypto_rule-crypto-hash-sha1"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hash-sha1.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hazmat-cipher-arc4.yml",
+   "blob_sha1": "e93a94c4b5c9c0e7adc32be9993de4e9237ccae0",
+   "sha256": "86a2fcd4d721ba5050168e6d00b653b8ff8eb14c9847b91dc58db9dec5b120a4",
+   "ids": [
+    "python_crypto_rule-crypto-hazmat-cipher-arc4"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hazmat-cipher-arc4.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hazmat-cipher-blowfish.yml",
+   "blob_sha1": "e85205018bff42db4853c5ebfe61483f2dfb7022",
+   "sha256": "6664d107499416988b11b624e85fa3158191d0cec5bae71754df6405d62d90e1",
+   "ids": [
+    "python_crypto_rule-crypto-hazmat-cipher-blowfish"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hazmat-cipher-blowfish.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hazmat-cipher-idea.yml",
+   "blob_sha1": "dc07e183cf5e37b0c0370695db946da3b7ae909b",
+   "sha256": "37e222953c38028e03a1d0c8f595dc87cf694a95a38c8b802aa7acf2af1da657",
+   "ids": [
+    "python_crypto_rule-crypto-hazmat-cipher-idea"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hazmat-cipher-idea.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hazmat-hash-md5.yml",
+   "blob_sha1": "8427a103fc48ed457d9941d04cc8821045fb660b",
+   "sha256": "d65341d672ab0679e48d063fd026418ea45fb6644b8a3f2f004be18d2d61e9c6",
+   "ids": [
+    "python_crypto_rule-crypto.hazmat-hash-md5"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hazmat-hash-md5.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-crypto-hazmat-hash-sha1.yml",
+   "blob_sha1": "7a5a83c9b723d5cfe6036ed49406b01fb0022b61",
+   "sha256": "2e49a98758c396b7936efc6f6faed848a00f93220319878ed2af5a320d294c34",
+   "ids": [
+    "python_crypto_rule-crypto.hazmat-hash-sha1"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-crypto-hazmat-hash-sha1.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-hash-md2.yml",
+   "blob_sha1": "2f969f1cae20027dd2651005fcde4149019c02be",
+   "sha256": "ce8e79cb18041ef60d38012ba0002525d4db8036e90acd944584f0ef9436f24f",
+   "ids": [
+    "python_crypto_rule-hash-md2"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hash-md2.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-hash-md4.yml",
+   "blob_sha1": "fc48267c4182b0f8fcfb439ee322a50d1df58502",
+   "sha256": "a1c01385a5604c3ec52ffb52a1782cc3d1803f42d8bb92e2ac8b1b9375774822",
+   "ids": [
+    "python_crypto_rule-hash-md4"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hash-md4.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-hash-md5.yml",
+   "blob_sha1": "9374e341f4ea5460795fccbd61706a7cba1cbdd3",
+   "sha256": "a1ea675f50c0404e7dcc1c94630a18cfae6251afdcdc17a23922309beb15d09c",
+   "ids": [
+    "python_crypto_rule-hash-md5"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hash-md5.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-hash-sha1.yml",
+   "blob_sha1": "e078474e960660248820a169e1ce313284e9907e",
+   "sha256": "31cbaf048f10d1937c434ff461c962b24336213c1455c3f20cdb0498b3a968da",
+   "ids": [
+    "python_crypto_rule-hash-sha1"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hash-sha1.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-hashlib-new-insecure-functions.yml",
+   "blob_sha1": "2c772d23a4df45a96413d340085e1c50a9b66a96",
+   "sha256": "894ff7b3a25230c15572c24ab7872afcf357ac29965482cf1a36d7ac21ecc43c",
+   "ids": [
+    "python_crypto_rule-hashlib-new-insecure-functions"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hashlib-new-insecure-functions.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/crypto/rule-import-pycrypto.yml",
+   "blob_sha1": "2d473352d7954c5b91608aa6f375907384e0e59d",
+   "sha256": "b78ad33eb3f0c485638d92e028cf42cf12466e7978fd1f49eda3c5dc2786c919",
+   "ids": [
+    "python_crypto_rule-import-pycrypto"
+   ],
+   "cwes": [
+    "CWE-1104"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-import-pycrypto.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-cpickle.yml",
+   "blob_sha1": "1d93799fd27a61647fc63728e26fbdce8da86bc3",
+   "sha256": "6f481a1ad60a0b17d23747518da2e884e4642e9c505f17b50eeb4c6db9aadaf8",
+   "ids": [
+    "python_deserialization_rule-cpickle"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-cpickle.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-dill.yml",
+   "blob_sha1": "374b480c80a66a053732aa3f050bd5ce2d4fc85d",
+   "sha256": "33c5f3b59b33ba8eb1b8f68b6e404d821d5c1c9eda5f3c919784ab4e2ec87fef",
+   "ids": [
+    "python_deserialization_rule-dill"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-dill.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-marshal.yml",
+   "blob_sha1": "f64fba6885be67caf3bcc3601f1b30f3ddd6bb5c",
+   "sha256": "0a028a60ea0453bafe18c0eb865b9a72a200a5b13aa7d2dd49efb13870ca0dfb",
+   "ids": [
+    "python_deserialization_rule-marshal"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-marshal.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-pickle.yml",
+   "blob_sha1": "11eddb3ef7cdd12d81f17e91ce2909fa43112361",
+   "sha256": "604febbd00d5d0aec6f12b515330aa99cb39af30e237afa64415fcc70c8a2a8d",
+   "ids": [
+    "python_deserialization_rule-pickle"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-pickle.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-shelve.yml",
+   "blob_sha1": "a6f39ea9ed2d7b8bc2a6416bbfe7de8ea301e113",
+   "sha256": "c7e2ac0f2571009e65d9596adeffed22ab962270774a046a0cdd5afd9857d1bb",
+   "ids": [
+    "python_deserialization_rule-shelve"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-shelve.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/deserialization/rule-yaml-load.yml",
+   "blob_sha1": "1733c11f52c1d714c2793a5853ac30199b33d6e0",
+   "sha256": "f356f893e9b58b637209f0079bc3f60ff4d84b4b3c46858333682d2682e50572",
+   "ids": [
+    "python_deserialization_rule-yaml-load"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-yaml-load.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/django/rule-django-extra-used.yml",
+   "blob_sha1": "4adbb2c290ee0d29d23c52801b7a149b6aea3835",
+   "sha256": "37dcc477c25cc1cd092581ec2efc629ca221f4a11675f161e563d276bc3c8576",
+   "ids": [
+    "python_django_rule-django-extra-used"
+   ],
+   "cwes": [
+    "CWE-89"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-django-extra-used.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/escaping/rule-jinja2-autoescape-false.yml",
+   "blob_sha1": "a0a7c6a4fdb33359e4702e63f1e33d50df59740a",
+   "sha256": "4a6273aa13150b0e0a7810e601ccac7fbf24e4b26add58a638424f0789112826",
+   "ids": [
+    "python_escaping_rule-jinja2-autoescape-false"
+   ],
+   "cwes": [
+    "CWE-116"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-jinja2-autoescape-false.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/escaping/rule-use-of-mako-templates.yml",
+   "blob_sha1": "826a1f6c05781a7a6858a3c871030b650aab0fb4",
+   "sha256": "00a0ebcb5cf8a8b3d02fb21c7d9c3c06ef16f6e272430a9b1c4bb82600326e94",
+   "ids": [
+    "python_escaping_rule-use-of-mako-templates"
+   ],
+   "cwes": [
+    "CWE-79"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-use-of-mako-templates.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/eval/rule-eval.yml",
+   "blob_sha1": "359cce5bb9ec0c69a39680a9b217f532171c1674",
+   "sha256": "f0ef96a45a2d432e7cd364883653c35a96acdca162180c7a45c30b9551e9e87d",
+   "ids": [
+    "python_eval_rule-eval"
+   ],
+   "cwes": [
+    "CWE-95"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-eval.py states no licence",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-exec-used.yml",
+   "blob_sha1": "79e4e003d8080bac1f61f1ee95a8301583865d62",
+   "sha256": "00cc80d176a1a801801fb8412894c150902b9e3c29466cd574df2f5d846859a2",
+   "ids": [
+    "python_exec_rule-exec-used"
+   ],
+   "cwes": [
+    "CWE-95"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-exec-used.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-linux-command-wildcard-injection.yml",
+   "blob_sha1": "aa774d89ce7d7419d8970148fc6b1c47eecbc215",
+   "sha256": "c78b58400f82dfb4b16f6d84549d0a587fc7ee00323159fdbee87e7991deb045",
+   "ids": [
+    "python_exec_rule-linux-command-wildcard-injection"
+   ],
+   "cwes": [
+    "CWE-155"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-linux-command-wildcard-injection.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-os-path.yml",
+   "blob_sha1": "0d4545edaa19ed9c7d8d34c881e8f5c9d345d1ff",
+   "sha256": "e02a31e93847850dbcd0d02f5f8aed8fd86a004c62c62729b4bcd9d5c8fd9346",
+   "ids": [
+    "python_exec_rule-os-path"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-os-path.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-os-popen2.yml",
+   "blob_sha1": "d0ba0c45ef76d05e6b651202636159b03e3bf8f0",
+   "sha256": "2dc4551679a2636582dd8c518c3632929e480629ed23fe27352df7383de9218e",
+   "ids": [
+    "python_exec_rule-os-popen2"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-os-popen2.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-start-process-with-no-shell.yml",
+   "blob_sha1": "f84f48e628165044875f79fc47569db6c00cccfd",
+   "sha256": "0538e647b62caee1348d18633b17aaa20a8fc0d2d03ec5113ad450db5e5b34e0",
+   "ids": [
+    "python_exec_rule-start-process-with-no-shell"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-start-process-with-no-shell.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-subprocess-call.yml",
+   "blob_sha1": "f80bea8caf3fc94835a92c00fd019e41d1863a51",
+   "sha256": "874386052dc293105a222211f15e28c3cab47592000682aa6706401033098f5f",
+   "ids": [
+    "python_exec_rule-subprocess-call"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-subprocess-call.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-subprocess-popen-shell-true.yml",
+   "blob_sha1": "d4dc537d03443be413e235ad6514bfec4a684aab",
+   "sha256": "697dc9cf925703ca91cba0231bfb07c44d9a61e8ec159e93bd2263ec6cae251b",
+   "ids": [
+    "python_exec_rule-subprocess-popen-shell-true"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-subprocess-popen-shell-true.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/exec/rule-subprocess-shell-TRUE.yml",
+   "blob_sha1": "2c7ec045e54e88dfcfd0d6c3f5ca206845b33f1f",
+   "sha256": "ed5b254f615cff63a2d390d7c21b3b3e54e14ed5a0994b840d77e5e12fea1046",
+   "ids": [
+    "python_exec_rule-subprocess-shell-TRUE"
+   ],
+   "cwes": [
+    "CWE-78"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-subprocess-shell-TRUE.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/file_permissions/rule-general-bad-permission.yml",
+   "blob_sha1": "dca0a2f26b6956709d84cd2b4237565048f82eee",
+   "sha256": "2b34fbb865d85916558a8388a9bb5bbe0874293b47e0e7f4d6b0d7e56a156437",
+   "ids": [
+    "python_file-permissions_rule-general-bad-permission"
+   ],
+   "cwes": [
+    "CWE-732"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-general-bad-permission.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/files/rule-tarfile-unsafe-members.yml",
+   "blob_sha1": "be9b8efb4c0b0d05b5acf6403aa4109b19802c51",
+   "sha256": "01d488fa3f0b7de5643e5bf5289e3201c9078ed3334f7f874ad0121609e86531",
+   "ids": [
+    "python_files_rule-tarfile-unsafe-members"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-tarfile-unsafe-members.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/flask/rule-app-debug.yml",
+   "blob_sha1": "8463dad6bd65a2bbc7bfc8bddb72ed7e6be98991",
+   "sha256": "6dfa6301da8474b8f57c319bdc4f114decd8ffc08aea393ce51749a9cd42b0cf",
+   "ids": [
+    "python_flask_rule-app-debug"
+   ],
+   "cwes": [
+    "CWE-489"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-app-debug.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ftp/rule-ftplib.yml",
+   "blob_sha1": "a05d0382099ca33ff04350d1e5c6da61b00fe042",
+   "sha256": "da0a9b91bf9396837a0edf87c63af697322c22148981107a25814df58e0bf3d8",
+   "ids": [
+    "python_ftp_rule-ftplib"
+   ],
+   "cwes": [
+    "CWE-319"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-ftplib.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/log/rule-logging-config-insecure-listen.yml",
+   "blob_sha1": "066ebac4b1f12f885b222dc2ce029cdd2ff7597e",
+   "sha256": "581ff4351a7333e103c735f47f8f1a8f9c6e94981eddc0b789e5e44cd10c0994",
+   "ids": [
+    "python_log_rule-logging-config-insecure-listen"
+   ],
+   "cwes": [
+    "CWE-94"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-logging-config-insecure-listen.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/random/rule-random.yml",
+   "blob_sha1": "d4d72ad7a8c39c2b91f6375889f4d8f275f6ba2d",
+   "sha256": "06610ca04152d6eb2627c169b833df95acfa660e6cc00fd605b6f786847e1a6e",
+   "ids": [
+    "python_random_rule-random"
+   ],
+   "cwes": [
+    "CWE-338"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-random.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/requests/rule-request-without-timeout.yml",
+   "blob_sha1": "6c633e3e7ec2f10dcce1ce25d25fad3ecc058e71",
+   "sha256": "fd3940d67788d0695a019c6e4d4678ebce74428a65919dfefea445ee4a840ef7",
+   "ids": [
+    "python_requests_rule-request-without-timeout"
+   ],
+   "cwes": [
+    "CWE-770"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-request-without-timeout.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/snmp/rule-insecure-snmp-version.yml",
+   "blob_sha1": "e43d3d4218556938bf3060af6a0133e9793d76e8",
+   "sha256": "0030cb025c25a44f291983628ff3459ecf174d6bc693a3e634afaf4170044034",
+   "ids": [
+    "python_snmp_rule-insecure-snmp-version"
+   ],
+   "cwes": [
+    "CWE-319"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-insecure-snmp-version.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/snmp/rule-snmp-weak-cryptography.yml",
+   "blob_sha1": "0e8806c679480a12266f8098043135d5000bf8bc",
+   "sha256": "31c1f1375f4515d8410204387fd07e67d49435faa862f86701aa3f842ea8fc83",
+   "ids": [
+    "python_snmp_rule-snmp-weak-cryptography"
+   ],
+   "cwes": [
+    "CWE-319"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-snmp-weak-cryptography.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/sql/rule-hardcoded-sql-expression.yml",
+   "blob_sha1": "a964b3b2c68db4411eb481120005f27f03ef6fab",
+   "sha256": "0b3efb24d1e631ba2704bf2af3edef7a173990f12f46b107b9128b9ec0ce2323",
+   "ids": [
+    "python_sql_rule-hardcoded-sql-expression"
+   ],
+   "cwes": [
+    "CWE-89"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hardcoded-sql-expression.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ssh/rule-ssh-nohost-key-verification.yml",
+   "blob_sha1": "6dabedfd113f6d25296f6d21447f9f60737ac809",
+   "sha256": "eeb3ea435e58b03e1dc7e1dadbf904a6533d8cddd18900c5b126a48686142b7b",
+   "ids": [
+    "python_ssh_rule-ssh-nohost-key-verification"
+   ],
+   "cwes": [
+    "CWE-322"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-ssh-nohost-key-verification.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ssl/rule-req-no-certvalid.yml",
+   "blob_sha1": "ac30a75912362d693cbb162aa666e9cf5fe23741",
+   "sha256": "cf653caeafd1a007a964d2083be04c6b530ac8aee25de567ea34c42c7c6a94ff",
+   "ids": [
+    "python_ssl_rule-req-no-certvalid"
+   ],
+   "cwes": [
+    "CWE-295"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-req-no-certvalid.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ssl/rule-ssl-no-version.yml",
+   "blob_sha1": "9965f8ae0e6dbaf7838c3d2035082e617f787a06",
+   "sha256": "202672f5b1b6668a1991b1945b48a73f359343c4ee8f1ca3a12cb595f1c004c7",
+   "ids": [
+    "python_ssl_rule-ssl-no-version"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-ssl-no-version.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ssl/rule-ssl-with-bad-version.yml",
+   "blob_sha1": "34dbe9c8fddd8eb3be8ed897d06d4dd39b2080f5",
+   "sha256": "63fb951999b114edf2a9d1a0d32955833adaed93b298f6d6b0dffa726d497917",
+   "ids": [
+    "python_ssl_rule-ssl-with-bad-version"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-ssl-with-bad-version.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/ssl/rule-unverified-context.yml",
+   "blob_sha1": "c7fc63f6c38f8a9cee95dea29eb6b87ee85f2635",
+   "sha256": "b895b4fa102fc0362652c0c6b59a52468c61a38fc9bf6ca5249267968eeb7bc4",
+   "ids": [
+    "python_ssl_rule-unverified-context"
+   ],
+   "cwes": [
+    "CWE-295"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-unverified-context.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/telnet/rule-import-telnib.yml",
+   "blob_sha1": "7cb11fb11c254121a0f6955eb2fed564ce787415",
+   "sha256": "1ecb890e46adfb29bb1580e7f1f7f471e85137c32ad6dda913a940e644351228",
+   "ids": [
+    "python_telnet_rule-import-telnib"
+   ],
+   "cwes": [
+    "CWE-319"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-import-telnib.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/tmpdir/rule-hardcodedtmp.yml",
+   "blob_sha1": "0a3e6a7d399d7ddfb277cf6e489ad9804421aec2",
+   "sha256": "bc7fdab58f75607050580350026e62e31f394e8ac3936475d0ac46009d68884c",
+   "ids": [
+    "python_tmpdir_rule-hardcodedtmp"
+   ],
+   "cwes": [
+    "CWE-377"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-hardcodedtmp.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/tmpdir/rule-mktemp-q.yml",
+   "blob_sha1": "12171feff5cc7550ccd16a926a70fd66d4156e83",
+   "sha256": "fd2b4caafbdfa0a867faf7ea8ed75d563eaa9a02f26844e851fb398e93185f90",
+   "ids": [
+    "python_tmpdir_rule-mktemp-q"
+   ],
+   "cwes": [
+    "CWE-377"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-mktemp-q.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/urlopen/rule-urllib-urlopen.yml",
+   "blob_sha1": "b7ba0208df24dfb346c6d437b268486721cec5ce",
+   "sha256": "f76f741b217c7dd7823596785a4180dc5e7ab2d68c8d21d3970bb4ab6c4ba2f4",
+   "ids": [
+    "python_urlopen_rule-urllib-urlopen"
+   ],
+   "cwes": [
+    "CWE-918"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-urllib-urlopen.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-celement.yml",
+   "blob_sha1": "a49efd941890967f07d12d76cdfee0503d60aab1",
+   "sha256": "b006aa121ecfd7a068fe48853fba6d3c01173906ec7f9b1880ea9c7aad59dd99",
+   "ids": [
+    "python_xml_rule-celement"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-celement.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-element.yml",
+   "blob_sha1": "0ceca8fd778286c11754a22a87d70b8c40922116",
+   "sha256": "52f546c49625a51bc7dfd99e259adc28edfda8f840a264abbe0bf567fb73b4a5",
+   "ids": [
+    "python_xml_rule-element"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-element.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-etree.yml",
+   "blob_sha1": "13a9f930d074147516820ca393a1b7bf540e6687",
+   "sha256": "081a39e7afb105af4abc826dcddf904965ab969c4f41ac7bdc175a0ffd7af2dd",
+   "ids": [
+    "python_xml_rule-etree"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-etree.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-expatbuilder.yml",
+   "blob_sha1": "1999d2b946b95bd89920054f20a220c6886f0790",
+   "sha256": "90f209120fd1b7d2920c533cc88af2e2b98be7b0ecc67408eab12d17039bf437",
+   "ids": [
+    "python_xml_rule-expatbuilder"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-expatbuilder.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-expatreader.yml",
+   "blob_sha1": "0704220cd733f809a42241a7274abb056efc8d7a",
+   "sha256": "06ca936c5fdb0cf79983e198fcfa1af35a2fab5e34da12b921744f91ab54a761",
+   "ids": [
+    "python_xml_rule-expatreader"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-expatreader.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-minidom.yml",
+   "blob_sha1": "f9aadc5dd6f8516053f417934f9be363aae0e6aa",
+   "sha256": "c386a666a6b96c06f85ef3eb213d2b5774e09114621bef5e9e4ebc0fc13e0900",
+   "ids": [
+    "python_xml_rule-minidom"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-minidom.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-pulldom.yml",
+   "blob_sha1": "bdfa3dacaf1e62bb75c81c4aa5db879d018c20e2",
+   "sha256": "932d143eff3e8a95d6be0b0f0acb025c281b2b464019d150e83a978154942c0f",
+   "ids": [
+    "python_xml_rule-pulldom"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "Apache-2.0",
+   "licence_evidence": "derived from bandit: its GitLab companion rule-pulldom.py: License: Apache 2.0 (c) PyCQA; the rule's own header says MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE.bandit-Apache-2.0.txt"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/python/xml/rule-sax.yml",
+   "blob_sha1": "009fb29cf933b161ac870c0519f8b7640c4243f5",
+   "sha256": "d1b194d9f5037b89bdd2b8034ac47b5a884da855b1577b6c33e6f578a8b8dd8a",
+   "ids": [
+    "python_xml_rule-sax"
+   ],
+   "cwes": [
+    "CWE-611"
+   ],
+   "languages": [
+    "python"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-sax.py: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/cookie/rule-RequestParamToCookie.yml",
+   "blob_sha1": "70f5a5aed7b9ba5edbd30208fcd47ae1b6c14d9b",
+   "sha256": "93791c1bf99ad774bc2d039822ca148d7da648745cd49a8d33b61d09b9261951",
+   "ids": [
+    "scala_cookie_rule-RequestParamToCookie"
+   ],
+   "cwes": [
+    "CWE-113"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-RequestParamToCookie.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/cookie/rule-RequestParamToHeader.yml",
+   "blob_sha1": "2b20048684581e15c81164aeb7f3bd46c76161e7",
+   "sha256": "b243a695c808a2591fa26ff71e6199f8e4508cbd212373e7dccc65c87a82f6e3",
+   "ids": [
+    "scala_cookie_rule-RequestParamToHeader"
+   ],
+   "cwes": [
+    "CWE-113"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-RequestParamToHeader.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/cors/rule-PermissiveCORSInjection.yml",
+   "blob_sha1": "786d2576ff4f4c0210a70bb779704eec3bcd5576",
+   "sha256": "e91e3dbbd95b100fed4be732af4ec4c89a2c94340055db145f1bc2c61c759844",
+   "ids": [
+    "scala_cors_rule-PermissiveCORSInjection"
+   ],
+   "cwes": [
+    "CWE-942"
+   ],
+   "languages": [
+    "java"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-PermissiveCORSInjection.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/crypto/rule-CipherDESInsecure.yml",
+   "blob_sha1": "dce61a45de81b348514494f320a1d32b86df02a2",
+   "sha256": "81ee9cc8ae73efeb44fcde6fcc2a2a8c42a61cdd1f0897406eddae561e1395d9",
+   "ids": [
+    "scala_crypto_rule-CipherDESInsecure"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherDESInsecure.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/crypto/rule-CipherDESedeInsecure.yml",
+   "blob_sha1": "e31dcb858b044bd12ba8a41cc704653bb65a02ea",
+   "sha256": "21019c52e4d616237d1ae24a12a9b132e995266374bb6aaedc90a9efb9078d7e",
+   "ids": [
+    "scala_crypto_rule-CipherDESedeInsecure"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherDESedeInsecure.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/crypto/rule-CipherECBMode.yml",
+   "blob_sha1": "f1ccbc8d3c47f41ac9856947aefa89bff1ed3984",
+   "sha256": "f0b36009bdc4c544d805c254fb53c1cc030a3882937496a47dbe9c53ec853b64",
+   "ids": [
+    "scala_crypto_rule-CipherECBMode"
+   ],
+   "cwes": [
+    "CWE-326"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherECBMode.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/crypto/rule-CipherIntegrity.yml",
+   "blob_sha1": "278c234280385dadb6f8b84eff45acf7a33f6ec7",
+   "sha256": "935002e37c7184169e825ef53090863172c0e620d22b91b36a6c5cab0f98e6f5",
+   "ids": [
+    "scala_crypto_rule-CipherIntegrity"
+   ],
+   "cwes": [
+    "CWE-353"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherIntegrity.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/crypto/rule-CipherPaddingOracle.yml",
+   "blob_sha1": "e6223d557475b829e4644a5a5541148bb9a34012",
+   "sha256": "9cf48594c3433f78753acdc484e9c7af666c137d452adbe8a3f390823eb3252e",
+   "ids": [
+    "scala_crypto_rule-CipherPaddingOracle"
+   ],
+   "cwes": [
+    "CWE-327"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CipherPaddingOracle.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/inject/rule-CustomInjectionSQLString.yml",
+   "blob_sha1": "af83591d7f5ca95a54d3d76c5c3b2a6f659430a3",
+   "sha256": "891c402a3d882b8b7a56a33214a4afdc582e98bfef672147391d397ff0abae3a",
+   "ids": [
+    "scala_inject_rule-CustomInjectionSQLString"
+   ],
+   "cwes": [
+    "CWE-89"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-CustomInjectionSQLString.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/inject/rule-PathTraversalIn.yml",
+   "blob_sha1": "ac69982fd1cc5e526b3593d9a18c9d2067ab256a",
+   "sha256": "e2563829f01cf096252fbf812b7d0bfde491ec12c1ebb7258052d21da1fd18dd",
+   "ids": [
+    "scala_inject_rule-PathTraversalIn"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-PathTraversalIn.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/inject/rule-PathTraversalOut.yml",
+   "blob_sha1": "05f4946d173576cabc49c93b4ac31bbf6fca3227",
+   "sha256": "b0c9dcbd519d6453011ee8d3ea08b35a427d75a9ca0e1afc7a383e81ca20f956",
+   "ids": [
+    "scala_inject_rule-PathTraversalOut"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-PathTraversalOut.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/inject/rule-SpotbugsPathTraversalAbsolute.yml",
+   "blob_sha1": "656a2885506e8ccdc673d1720bc7c4cc3476c28b",
+   "sha256": "023f229cbcbab36a948bb68a1fa459aef3024a42455900f2346043639b3ffe3f",
+   "ids": [
+    "scala_inject_rule-SpotbugsPathTraversalAbsolute"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-SpotbugsPathTraversalAbsolute.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/inject/rule-SpotbugsPathTraversalRelative.yml",
+   "blob_sha1": "d3715cc42843fc9d2267f0790b4cbc9168abf4e0",
+   "sha256": "47c4515d3751940352d83c7eeffb0c02cca5458bf50de906203aca00393cb721",
+   "ids": [
+    "scala_inject_rule-SpotbugsPathTraversalRelative"
+   ],
+   "cwes": [
+    "CWE-22"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-SpotbugsPathTraversalRelative.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/ldap/rule-EntryPoisoning.yml",
+   "blob_sha1": "7d7b6d93e795302125d362783c393b7acae28f1a",
+   "sha256": "4caf84d355fdfe771e7c8ce898e48b1d6451148ffcc5f6d8721fda7429d09004",
+   "ids": [
+    "scala_ldap_rule-EntryPoisoning"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-EntryPoisoning.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/password/rule-ConstantDBPassword.yml",
+   "blob_sha1": "222d5b82e72d81a5cbf6d15ccc839eef640a6111",
+   "sha256": "50399d405dc8afca564bb8ec34e05d9990bf8669754cf4428af3778b4787831c",
+   "ids": [
+    "scala_password_rule-ConstantDBPassword"
+   ],
+   "cwes": [
+    "CWE-259"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-ConstantDBPassword.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/password/rule-EmptyDBPassword.yml",
+   "blob_sha1": "49fff0106b266daac108c02eb5a7fcd2d3b01eb6",
+   "sha256": "679b970e0e661b20f79c688c93478d10e21e853ce98e3e5f3f954b46964f77eb",
+   "ids": [
+    "scala_password_rule-EmptyDBPassword"
+   ],
+   "cwes": [
+    "CWE-259"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-EmptyDBPassword.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/password/rule-HardcodePassword.yml",
+   "blob_sha1": "3487865ee12db94b254cc414fa8ecf3cfb4d227c",
+   "sha256": "6b590965adcfbb28569b59e7df6ce2129cecd33f9ead43ac4b77d559f2a26dc1",
+   "ids": [
+    "scala_password_rule-HardcodePassword"
+   ],
+   "cwes": [
+    "CWE-259"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-HardcodePassword.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/xml/rule-XmlDecoder.yml",
+   "blob_sha1": "334db2357c1d4901c643e18a155d050dd220f35e",
+   "sha256": "e7ba1aff74e64f7b2c10709e4f4b6ab9f6cb950075f5d31ea9b3d1a1f295d634",
+   "ids": [
+    "scala_xml_rule-XmlDecoder"
+   ],
+   "cwes": [
+    "CWE-502"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-XmlDecoder.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "gitlab-sast-rules",
+   "repository": "https://gitlab.com/gitlab-org/security-products/sast-rules",
+   "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+   "path": "gitlab-sast-rules/scala/xss/rule-XSSServlet.yml",
+   "blob_sha1": "db9693763a35f5bc0bf5445faebd0df2a90747dc",
+   "sha256": "c25f5a21dabe50dd5cff2d8314194583abac7e515c41d5ea30c3e8dc8b03e453",
+   "ids": [
+    "scala_xss_rule-XSSServlet"
+   ],
+   "cwes": [
+    "CWE-79"
+   ],
+   "languages": [
+    "scala"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "# License: MIT (c) GitLab Inc.; its GitLab companion rule-XSSServlet.scala: License: MIT (c) GitLab Inc.",
+   "licence_file": "gitlab-sast-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/command-injection.yaml",
+   "blob_sha1": "92183f2e2188568e3cbe2dd26da473372481ee0e",
+   "sha256": "9853fbecd89048df3c6e941b3f494d9bfd33f6d3cdfc3312bd1c89e0e89ec5ae",
+   "ids": [
+    "raptor-command-injection"
+   ],
+   "cwes": [
+    "CWE-78",
+    "CWE-88",
+    "CWE-676"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/double-free.yaml",
+   "blob_sha1": "6cefafdab1d2a7360a85220dd4c3559ece533723",
+   "sha256": "7f97efbc6bd0c73e55aa762341323218ef80ce05e13f9c767ccc6ba7c7a9f56e",
+   "ids": [
+    "raptor-double-free"
+   ],
+   "cwes": [
+    "CWE-415"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/format-string-bugs.yaml",
+   "blob_sha1": "350270ea73ef2b528493be86d786c9cce66b1467",
+   "sha256": "d6127079635340bd65c9ea2b076401be1b365d552076d740df2eb65989593f5c",
+   "ids": [
+    "raptor-format-string-bugs"
+   ],
+   "cwes": [
+    "CWE-134"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-order-setuid-setgid.yaml",
+   "blob_sha1": "28a1f8d248b3e99483b078751a3c75cbc3100e0f",
+   "sha256": "4ab184cebdf06464d3b4195c25d010ddb5a87d87b5a4eaed3a8f9dd12f356eb3",
+   "ids": [
+    "raptor-incorrect-order-setuid-setgid"
+   ],
+   "cwes": [
+    "CWE-696"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-unsigned-comparison.yaml",
+   "blob_sha1": "549c7e8e3a64ac0119e84b0db1b0e4bc2a1449ce",
+   "sha256": "131e9eeb059717d38a5be0e0dfa44fc8fde1cfcca1cd998515ce11586ca8b352",
+   "ids": [
+    "raptor-incorrect-unsigned-comparison"
+   ],
+   "cwes": [
+    "CWE-697"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-use-of-free.yaml",
+   "blob_sha1": "a87f0a4ef03e8b1efbefafe4f5f8b55df799f884",
+   "sha256": "36f45f59725115bc3a945955d427d1484306b0bc13393ec2d64d3589ad93c860",
+   "ids": [
+    "raptor-incorrect-use-of-free"
+   ],
+   "cwes": [
+    "CWE-590"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-use-of-memset.yaml",
+   "blob_sha1": "5467115570ab3a585d15b343e5aaa35922b852c3",
+   "sha256": "a4d32967836736f8c06933454d16775d272dfa448397495b8cbf768d25b04907",
+   "ids": [
+    "raptor-incorrect-use-of-memset"
+   ],
+   "cwes": [
+    "CWE-683"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-use-of-sizeof.yaml",
+   "blob_sha1": "1e7b26fd2ff3a9251d523f78a1948b4915aa8861",
+   "sha256": "cd4a492d354a290ce4dc4f481bc82f212dc44478d0ebffb03375284cff147278",
+   "ids": [
+    "raptor-incorrect-use-of-sizeof"
+   ],
+   "cwes": [
+    "CWE-467"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/incorrect-use-of-strncat.yaml",
+   "blob_sha1": "478ddf0dd7026c6434ea6768ef68ca0e8f092078",
+   "sha256": "7450acff6d03c97e2b1c5e92a316afd86536b7b665478c1acbbf3d6206f69899",
+   "ids": [
+    "raptor-incorrect-use-of-strncat"
+   ],
+   "cwes": [
+    "CWE-787",
+    "CWE-193"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-access-stat.yaml",
+   "blob_sha1": "092204a69c6d0df03a64dc651cf19604f95dc830",
+   "sha256": "d807b74d184e7283e1fdf3193566465a0349918322b2712981432b4c42d9e874",
+   "ids": [
+    "raptor-insecure-api-access-stat"
+   ],
+   "cwes": [
+    "CWE-367"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-alloca.yaml",
+   "blob_sha1": "c994acb4a7dd384f32dcc57cf85429bea391d0fe",
+   "sha256": "9bd9c4dfb3990851bc6938ed646e7f53bdbe765690b8288a1ed6950d3317c9cc",
+   "ids": [
+    "raptor-insecure-api-alloca"
+   ],
+   "cwes": [
+    "CWE-676",
+    "CWE-1325"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-ato.yaml",
+   "blob_sha1": "a7f9e645522f2cfc9f25d8efb4f3f6e084a4952a",
+   "sha256": "24b73fd7d77bb35ddc9cf71b7dc1450ec8df9444c7d46227841ba30dd91e20df",
+   "ids": [
+    "raptor-insecure-api-ato"
+   ],
+   "cwes": [
+    "CWE-839"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-gets.yaml",
+   "blob_sha1": "4f67b55b954aecacfa2e94b19ddfc1aea85886e2",
+   "sha256": "184afb46808532ae024322322b0bc0171859ef833b79e8ee7ea47a84820d067f",
+   "ids": [
+    "raptor-insecure-api-gets"
+   ],
+   "cwes": [
+    "CWE-242",
+    "CWE-120"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-mktemp-tmpnam-tempnam.yaml",
+   "blob_sha1": "682f26f0fa7439c70c5f6c546a46d24965908022",
+   "sha256": "60e371556add3bf80b7ac29d2de6eae7f3981c3245c596091005fddc14e954d6",
+   "ids": [
+    "raptor-insecure-api-mktemp-tmpnam-tempnam"
+   ],
+   "cwes": [
+    "CWE-377",
+    "CWE-367"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-rand-srand.yaml",
+   "blob_sha1": "42c3b9a0a71a47d84d0e5f73e17451cb25af524f",
+   "sha256": "7267d8e5291bc848d1c6baa4da2387d31900f692ccd9df037dd86a1fa93d201f",
+   "ids": [
+    "raptor-insecure-api-rand-srand"
+   ],
+   "cwes": [
+    "CWE-338",
+    "CWE-330"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-scanf.yaml",
+   "blob_sha1": "622777a4759758ac1539a066fb9bf0864bb683a1",
+   "sha256": "9150c50d7bf403fcbdc4a403c235e43264282628ffa3feb8cdbe91a8cf417814",
+   "ids": [
+    "raptor-insecure-api-scanf"
+   ],
+   "cwes": [
+    "CWE-676",
+    "CWE-120",
+    "CWE-787"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-signal.yaml",
+   "blob_sha1": "7029f954fe26b94407a1fe3e6b690fbf31113d97",
+   "sha256": "9d18af572463b2b46bc34ab3041eb311905918292555ca0de8a72beb07fd42cd",
+   "ids": [
+    "raptor-insecure-api-signal"
+   ],
+   "cwes": [
+    "CWE-364",
+    "CWE-479",
+    "CWE-828"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-sprintf-vsprintf.yaml",
+   "blob_sha1": "a250134090372b9ae3556794b05c2fc8aa40a5d7",
+   "sha256": "41da105efae2db54897649a199a0b38cbcc6d2077064a7b83b6ca7332d33c875",
+   "ids": [
+    "raptor-insecure-api-sprintf-vsprintf"
+   ],
+   "cwes": [
+    "CWE-676",
+    "CWE-120",
+    "CWE-787"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/insecure-api-strcpy-strcat.yaml",
+   "blob_sha1": "bbe2119cdb26b9483b29aa3d4c16f4929adc315a",
+   "sha256": "87585575b9e92174efec337a5a7cbf4c17f176b9ad9a3988224caf8a3f420ed6",
+   "ids": [
+    "raptor-insecure-api-strcpy-strcat"
+   ],
+   "cwes": [
+    "CWE-676",
+    "CWE-120",
+    "CWE-787"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/integer-truncation.yaml",
+   "blob_sha1": "4987332556cda5ad319014393c9f93ea4981d880",
+   "sha256": "907821bce0d8882822678465093cd70add09db9232db729f9589c09d15172b6f",
+   "ids": [
+    "raptor-integer-truncation"
+   ],
+   "cwes": [
+    "CWE-197",
+    "CWE-681"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/integer-wraparound.yaml",
+   "blob_sha1": "c2f477b556b7ca43eaf410ca6a294665d350ea5b",
+   "sha256": "27d4948843de5cccfafe020f16d0904c9a6b05a4d830138b5fe23c7c926fc5c7",
+   "ids": [
+    "raptor-integer-wraparound"
+   ],
+   "cwes": [
+    "CWE-190",
+    "CWE-128",
+    "CWE-131"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/memory-address-exposure.yaml",
+   "blob_sha1": "37cef3491146e0b9737d46b76988a2bb4665beb0",
+   "sha256": "269e000d559b001d77f8a03defe2aff1f5e7e518e50623947d46a2ba98dd78fb",
+   "ids": [
+    "raptor-memory-address-exposure"
+   ],
+   "cwes": [
+    "CWE-209",
+    "CWE-497"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/mismatched-memory-management-cpp.yaml",
+   "blob_sha1": "e9123ed43f2a58757ca0b81eae536aa6f5cd34aa",
+   "sha256": "13be850b69ecc989aa5e611a76590e79806e8cb8e726399ac853034a489400fd",
+   "ids": [
+    "raptor-mismatched-memory-management-cpp"
+   ],
+   "cwes": [
+    "CWE-762"
+   ],
+   "languages": [
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/mismatched-memory-management.yaml",
+   "blob_sha1": "a20305220299f07aea0011f52b681a75bd20ac4a",
+   "sha256": "55331d496f71e8e6eae47c36312a4c09b214fa5092d189cc3772c671c009eaf3",
+   "ids": [
+    "raptor-mismatched-memory-management"
+   ],
+   "cwes": [
+    "CWE-762"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/off-by-one.yaml",
+   "blob_sha1": "d32d7d833064cb410452c4650236f0971d738d94",
+   "sha256": "03123e96d70bbc5e8c93683ee54385e22e4573f252e4cfc03343d60e7df0f1e2",
+   "ids": [
+    "raptor-off-by-one"
+   ],
+   "cwes": [
+    "CWE-193",
+    "CWE-787"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/overlapping-source-destination.yaml",
+   "blob_sha1": "ed218d2a1bcb8be28d590c2d980df664e765f195",
+   "sha256": "d2545f62ac3566fceeb73056263c80b6089fbcbe7eac0bc811fc7e0da6a9beb8",
+   "ids": [
+    "raptor-overlapping-source-destination"
+   ],
+   "cwes": [
+    "CWE-1260"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/putenv-stack-var.yaml",
+   "blob_sha1": "7f90369ea8e649890ee94cf89594118c8fa970df",
+   "sha256": "921496b89f6a1ea8eed1a5dd49a2a27c5f12eb3e7ddbc51e211ae51a9b25d2d3",
+   "ids": [
+    "raptor-putenv-stack-var"
+   ],
+   "cwes": [
+    "CWE-686",
+    "CWE-562"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/regex-dos.yaml",
+   "blob_sha1": "764eb7cf23eb25b91992c34f73c148328415af97",
+   "sha256": "6db97a2eade6cf5f3843f26e1deb6d1aed00017820329dd1c2330b119a14845a",
+   "ids": [
+    "raptor-regex-dos"
+   ],
+   "cwes": [
+    "CWE-1333"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/ret-stack-address.yaml",
+   "blob_sha1": "627ec7f5f0c1e41c51fdf5446ca905fb8402e477",
+   "sha256": "c7278ecd49da34c42b11e082c30fe6b4fd0c5e5254f7c8c8e572a4a9fe1b5ddc",
+   "ids": [
+    "raptor-ret-stack-address"
+   ],
+   "cwes": [
+    "CWE-562"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unchecked-ret-malloc.yaml",
+   "blob_sha1": "d75ec2b1a09f34ffcd6ec16ece32bf1c8d628d4b",
+   "sha256": "1303d90463c816b244081edc7e0647942fe0e1b9f25cf6599ab7bf13d23f3606",
+   "ids": [
+    "raptor-unchecked-ret-malloc"
+   ],
+   "cwes": [
+    "CWE-252",
+    "CWE-690"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unchecked-ret-scanf.yaml",
+   "blob_sha1": "d4d6cca3094305b011ba8564be36b4cc7e5b1d21",
+   "sha256": "a60b1f8d6fd38b1d77f889408bd23d5f2dd4bd7ac116885b2a2f9a6d8b8eb8ac",
+   "ids": [
+    "raptor-unchecked-ret-scanf"
+   ],
+   "cwes": [
+    "CWE-252"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unchecked-ret-setuid-seteuid.yaml",
+   "blob_sha1": "da21f83a45935e0dd7bd742adf567c1acc746058",
+   "sha256": "cdba3b17c797115bd416fc22e92a152331017fd6d9c590e0fd0948079e60bd7f",
+   "ids": [
+    "raptor-unchecked-ret-setuid-seteuid"
+   ],
+   "cwes": [
+    "CWE-252"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unsafe-ret-snprintf-vsnprintf.yaml",
+   "blob_sha1": "4a5c51d01bbea8c3033d797bc81341cfd88e68e7",
+   "sha256": "729726facc17bed1b92a2c795fbf7144acae5335a92bf026b37a62d228df1645",
+   "ids": [
+    "raptor-unsafe-ret-snprintf-vsnprintf"
+   ],
+   "cwes": [
+    "CWE-131"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unsafe-ret-strlcpy-strlcat.yaml",
+   "blob_sha1": "269178c2051c07a7339fbff863b7a7905e7c10bd",
+   "sha256": "0e4d1141a5e619e663d4419ff9a66ac4e7df53869262de0570c70079fbf4b21f",
+   "ids": [
+    "raptor-unsafe-ret-strlcpy-strlcat"
+   ],
+   "cwes": [
+    "CWE-131"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unsafe-strlen.yaml",
+   "blob_sha1": "0f2d59c92d5a60ddaddc9a670617963ab1bf19e2",
+   "sha256": "b6b91d8663d1e5a8d872cd001092a56a90fafd1a6f5d9d859e6153313e490449",
+   "ids": [
+    "raptor-unsafe-strlen"
+   ],
+   "cwes": [
+    "CWE-190"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/unterminated-string-strncpy.yaml",
+   "blob_sha1": "cc61eca2f6ccebfb0c89b912d9bb6a6b2a9c605d",
+   "sha256": "15eeecc12664c983d4b7f02e7c4be2e4bdb6bc7cb4722939df7dd6874f41003f",
+   "ids": [
+    "raptor-unterminated-string-strncpy"
+   ],
+   "cwes": [
+    "CWE-170",
+    "CWE-126"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/use-after-free.yaml",
+   "blob_sha1": "594b494f01a7db17f034c3d809b9ba8fd95263ce",
+   "sha256": "c9c3d0eb87947adcf0313de1b3257e48c2b8bc59c332c990bcb4ad97f96add2b",
+   "ids": [
+    "raptor-use-after-free"
+   ],
+   "cwes": [
+    "CWE-416"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/use-of-source-size-in-copy.yaml",
+   "blob_sha1": "938939df865571fee9429be9341a80401d4f9ad4",
+   "sha256": "bdfdaa7e03356ab5dd34cd9eb28bafdc43e62b501500dccf1869a61debefa4fa",
+   "ids": [
+    "raptor-use-of-source-size-in-copy"
+   ],
+   "cwes": [
+    "CWE-806"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  },
+  {
+   "corpus": "0xdea-semgrep-rules",
+   "repository": "https://github.com/0xdea/semgrep-rules",
+   "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+   "path": "0xdea-semgrep-rules/rules/c/write-into-stack-buffer.yaml",
+   "blob_sha1": "5be6610551c1dec19e7dd1a0074cdf9ac379bd55",
+   "sha256": "8316f1d6cec93e9a6d9c963bf5684ab145dd5e2748afdd8b6220bf6b4884a58f",
+   "ids": [
+    "raptor-write-into-stack-buffer"
+   ],
+   "cwes": [
+    "CWE-121"
+   ],
+   "languages": [
+    "c",
+    "cpp"
+   ],
+   "licence": "MIT",
+   "licence_evidence": "the corpus LICENSE body: MIT License, Copyright (c) 2022 raptor; the rule file has no licence header of its own",
+   "licence_file": "0xdea-semgrep-rules/LICENSE"
+  }
+ ],
+ "excluded_by_licence": [
+  {
+   "path": "gitlab-sast-rules/csharp/cookies/rule-CookieWithoutHttpOnlyFlag.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-CookieWithoutHttpOnlyFlag.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/cookies/rule-CookieWithoutSSLFlag.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-CookieWithoutSSLFlag.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/crypto/rule-CertificateValidationDisabled.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-CertificateValidationDisabled.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/crypto/rule-WeakCipherAlgorithm.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-WeakCipherAlgorithm.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/crypto/rule-WeakHashingFunction.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-WeakHashingFunction.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/crypto/rule-WeakRNG.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-WeakRNG.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/csrf/rule-Csrf.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-Csrf.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/deserialization/rule-InsecureDeserialization.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-InsecureDeserialization.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/endpoint/rule-UnvalidatedRedirect.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-UnvalidatedRedirect.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-CommandInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-CommandInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-LdapInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-LdapInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-SQLInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-SQLInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-XPathInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-XPathInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-XmlDocumentXXEInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-XmlDocumentXXEInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/injection/rule-XmlReaderXXEInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-XmlReaderXXEInjection.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/other/rule-UnsafeXSLTSettingUsed.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-UnsafeXSLTSettingUsed.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/password/rule-PasswordComplexity.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-PasswordComplexity.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/path/rule-PathTraversal.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-PathTraversal.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/validation/rule-InputValidation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-InputValidation.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/xss/rule-HtmlElementXss.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-HtmlElementXss.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/csharp/xss/rule-ScriptXss.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from security-code-scan: its GitLab companion rule-ScriptXss.cs: License: LGPL-3.0 License (c) security-code-scan; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/cookie/rule-CookieInsecure.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CookieInsecure.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/cookie/rule-HttpResponseSplitting.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HttpResponseSplitting.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-BlowfishKeySize.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-BlowfishKeySize.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-CustomMessageDigest.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CustomMessageDigest.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-HazelcastSymmetricEncryption.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HazelcastSymmetricEncryption.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-InsufficientKeySizeRsa.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-InsufficientKeySizeRsa.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-NullCipher.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-NullCipher.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-RsaNoPadding.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-RsaNoPadding.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-WeakMessageDigest.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakMessageDigest.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-WeakTLSProtocolDefaultHttpClient.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakTLSProtocolDefaultHttpClient.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/crypto/rule-WeakTLSProtocolSSLContext.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakTLSProtocolSSLContext.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/endpoint/rule-HostnameVerifier.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HostnameVerifier.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/endpoint/rule-X509TrustManager.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-X509TrustManager.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/file/rule-FileUploadFileName.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FileUploadFileName.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/file/rule-FilenameUtils.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FilenameUtils.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-CommandInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CommandInjection.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-FileDisclosureRequestDispatcher.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FileDisclosureRequestDispatcher.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-FileDisclosureSpringFramework.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FileDisclosureSpringFramework.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-HttpParameterPollution.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HttpParameterPollution.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-LDAPInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-LDAPInjection.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-OgnlInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-OgnlInjection.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/inject/rule-SpotbugsPathTraversalAbsolute.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SpotbugsPathTraversalAbsolute.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/ldap/rule-AnonymousLDAP.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-AnonymousLDAP.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/password/rule-HardcodePassword.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HardcodePassword.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/perm/rule-DangerousPermissions.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-DangerousPermissions.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/perm/rule-OverlyPermissiveFilePermissionInline.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-OverlyPermissiveFilePermissionInline.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/script/rule-ScriptInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ScriptInjection.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/script/rule-SpringSpelExpressionParser.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SpringSpelExpressionParser.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/smtp/rule-InsecureSmtp.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-InsecureSmtp.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/smtp/rule-SmtpClient.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SmtpClient.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/ssrf/rule-SSRF.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SSRF.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/strings/rule-BadHexConversion.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-BadHexConversion.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/strings/rule-FormatStringManipulation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FormatStringManipulation.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/strings/rule-ModifyAfterValidation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ModifyAfterValidation.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/strings/rule-NormalizeAfterValidation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-NormalizeAfterValidation.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/templateinjection/rule-TemplateInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-TemplateInjection.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/unsafe/rule-ExternalConfigControl.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ExternalConfigControl.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/xml/rule-SAMLIgnoreComments.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SAMLIgnoreComments.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/xml/rule-XsltTransform.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XsltTransform.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/xss/rule-WicketXSS.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WicketXSS.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/xss/rule-XSSReqParamToServletWriter.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XSSReqParamToServletWriter.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/java/xxe/rule-XMLRdr.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XMLRdr.java: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-CookieHTTPOnly.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CookieHTTPOnly.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-CookieInsecure.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CookieInsecure.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-CookiePersistent.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CookiePersistent.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-CookieUsage.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CookieUsage.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-HttpResponseSplitting.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HttpResponseSplitting.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cookie/rule-TrustBoundaryViolation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-TrustBoundaryViolation.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/cors/rule-PermissiveCORS.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-PermissiveCORS.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-BlowfishKeySize.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-BlowfishKeySize.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-CustomMessageDigest.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CustomMessageDigest.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-DefaultHTTPClient.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-DefaultHTTPClient.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-HazelcastSymmetricEncryption.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HazelcastSymmetricEncryption.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-InsufficientKeySizeRsa.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-InsufficientKeySizeRsa.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-NullCipher.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-NullCipher.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-RsaNoPadding.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-RsaNoPadding.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-WeakMessageDigest.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakMessageDigest.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/crypto/rule-WeakTLSProtocol.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakTLSProtocol.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/endpoint/rule-JaxRsEndpoint.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-JaxRsEndpoint.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/endpoint/rule-JaxWsEndpoint.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-JaxWsEndpoint.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/endpoint/rule-UnencryptedSocket.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-UnencryptedSocket.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/endpoint/rule-UnvalidatedRedirect.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-UnvalidatedRedirect.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/endpoint/rule-WeakHostNameVerification.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WeakHostNameVerification.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/file/rule-FileUploadFileName.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FileUploadFileName.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/file/rule-FilenameUtils.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FilenameUtils.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/form/rule-FormValidate.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FormValidate.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-AWSQueryInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-AWSQueryInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-BeanPropertyInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-BeanPropertyInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-CLRFInjectionLogs.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CLRFInjectionLogs.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-CommandInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CommandInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-CustomInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-CustomInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-ELInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ELInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-FileDisclosure.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FileDisclosure.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-HttpParameterPollution.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-HttpParameterPollution.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-LDAPInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-LDAPInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-OgnlInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-OgnlInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/inject/rule-SqlInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SqlInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/ldap/rule-AnonymousLDAP.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-AnonymousLDAP.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/perm/rule-DangerousPermissions.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-DangerousPermissions.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/perm/rule-OverlyPermissiveFilePermissionInline.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-OverlyPermissiveFilePermissionInline.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/perm/rule-OverlyPermissiveFilePermissionObj.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-OverlyPermissiveFilePermissionObj.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/script/rule-ScriptInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ScriptInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/script/rule-SpelView.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SpelView.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/smtp/rule-InsecureSmtp.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-InsecureSmtp.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/smtp/rule-SmtpClient.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SmtpClient.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/ssrf/rule-PlaySSRF.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-PlaySSRF.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/ssrf/rule-SSRF.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SSRF.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/strings/rule-BadHexConversion.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-BadHexConversion.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/strings/rule-FormatStringManipulation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-FormatStringManipulation.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/strings/rule-ImproperUnicode.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ImproperUnicode.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/strings/rule-ModifyAfterValidation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ModifyAfterValidation.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/strings/rule-NormalizeAfterValidation.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-NormalizeAfterValidation.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/templateinjection/rule-TemplateInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-TemplateInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/unsafe/rule-ExternalConfigControl.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ExternalConfigControl.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/unsafe/rule-InformationExposure.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-InformationExposure.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/unsafe/rule-SensitiveDataExposure.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SensitiveDataExposure.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xml/rule-ApacheXmlRpc.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-ApacheXmlRpc.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xml/rule-SAMLIgnoreComments.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SAMLIgnoreComments.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xml/rule-XsltTransform.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XsltTransform.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xpathi/rule-XpathInjection.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XpathInjection.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xss/rule-MVCApi.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-MVCApi.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xss/rule-RequestWrapper.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-RequestWrapper.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xss/rule-WicketXSS.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-WicketXSS.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xss/rule-XSSReqParamToServletWriter.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XSSReqParamToServletWriter.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-Document.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-Document.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-SaxParserXXE.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-SaxParserXXE.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-Trans.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-Trans.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-XMLRdr.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XMLRdr.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-XMLStreamRdr.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XMLStreamRdr.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  },
+  {
+   "path": "gitlab-sast-rules/scala/xxe/rule-XPathXXE.yml",
+   "licence": "LGPL-3.0",
+   "evidence": "derived from find-sec-bugs: its GitLab companion rule-XPathXXE.scala: License: LGPL-3.0 License (c) find-sec-bugs; the rule's own header says MIT (c) GitLab Inc."
+  }
+ ]
+}

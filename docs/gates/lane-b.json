@@ -1,0 +1,239 @@
+{
+  "gate": "Lane B exit gate (plan node lanebgate), and Phase 6's exit gate (plan node p6)",
+  "written_on": "2026-10-03",
+  "written_by": "the Phase 6 agent; every PROVEN row names what showed it, and nothing passes by assertion",
+  "rows": [
+    {
+      "criterion": "On the fixture repositories, Lane B findings carry rule provenance",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestEveryCandidateReachesTheRecordUnconfirmed",
+          "path": "internal/scan/laneb_test.go"
+        },
+        {
+          "test": "TestTheFixtureWithTheRealTools",
+          "path": "internal/recall/recall_test.go"
+        },
+        {
+          "test": "TestARuleReferenceMustResolveToCompleteProvenance",
+          "path": "internal/record/contract_test.go"
+        },
+        {
+          "command": "sh test/e2e/laneb.sh",
+          "path": "test/e2e/laneb.sh"
+        }
+      ]
+    },
+    {
+      "criterion": "Lane B findings reach the record as unconfirmed, and the verdict mapping onto the record is tested",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestEveryCandidateReachesTheRecordUnconfirmed",
+          "path": "internal/scan/laneb_test.go",
+          "note": "seen failing on 2026-10-03 with VerdictFor mutated to true_positive"
+        },
+        {
+          "test": "TestVerdictForIsUnconfirmedWhateverTheCandidate",
+          "path": "internal/laneb/laneb_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "Candidates per scan are under 500 a full scan and 50 a push, or the recall tier is re-scoped",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "artifact": "eval/results/candidates-per-scan.json",
+          "path": "eval/results/candidates-per-scan.json",
+          "note": "re-measured after the review's fixes and the licence cut; see the artifact"
+        },
+        {
+          "artifact": "data/rules/selection.json",
+          "path": "data/rules/selection.json"
+        }
+      ],
+      "owner": "the register row's decision still reads FAIL, set on the old number; changing it is the owner's"
+    },
+    {
+      "criterion": "The ranker ships only on a measured win over chance",
+      "status": "PROVEN (no ranker ships)",
+      "evidence": [
+        {
+          "artifact": "eval/results/code-metrics-baseline.json",
+          "path": "eval/results/code-metrics-baseline.json",
+          "note": "on PrimeVul's pairs, precision at recall 0.70 was 0.498 for the model and 0.492 for the regression, both at chance (0.5)"
+        },
+        {
+          "test": "TestEveryCandidateReachesTheRecordUnconfirmed",
+          "path": "internal/scan/laneb_test.go",
+          "note": "asserts result.rank is unset on every Lane B result"
+        }
+      ],
+      "decision": "No ranker for v1, chosen by the owner on 2026-10-03: no labelled sample of Anvil's own candidates exists, so no win over chance can be measured on them, and the only measurement there is shows neither ranker beating chance. The encoder node is not built."
+    },
+    {
+      "criterion": "Engines are subprocess only",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheRecallTierLinksNoTool",
+          "path": "internal/recall/subprocess_test.go",
+          "note": "seen failing on 2026-10-03 with a third-party import planted"
+        },
+        {
+          "test": "TestTheArgumentVectorsSwitchOffTargetSuppression",
+          "path": "internal/recall/recall_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "Corpora are vendored at pinned commits, licence-verified from their bodies, with GitLab's directory allowlist enforced by a test with a negative control",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheVendoredPackVerifies",
+          "path": "internal/recall/recall_test.go"
+        },
+        {
+          "test": "TestThePackGuardsFire",
+          "path": "internal/recall/recall_test.go",
+          "note": "ten mutations, each refused; disabling the allowlist check fails its two directory cases (seen 2026-10-03)"
+        },
+        {
+          "test": "test_a_gpl_rule_refuses_the_whole_run",
+          "path": "eval/tests/test_vendor_rules.py"
+        },
+        {
+          "test": "test_an_lgpl_companion_is_left_out_when_the_selection_excludes_it",
+          "path": "eval/tests/test_vendor_rules.py",
+          "note": "after the same-family review: a GitLab rule's licence is the stricter of its own header and its companion's; 131 LGPL-3.0-derived rules are left out, by the owner's decision of 2026-10-03"
+        },
+        {
+          "test": "test_a_companion_decides_when_it_names_an_upstream",
+          "path": "eval/tests/test_vendor_rules.py"
+        }
+      ]
+    },
+    {
+      "criterion": "100% of candidates carry non-empty provenance (repository, commit or release, licence)",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestTheFixtureFromRecordedReports",
+          "path": "internal/recall/recall_test.go"
+        },
+        {
+          "test": "TestEmitRefusesIncompleteProvenance",
+          "path": "internal/laneb/laneb_test.go"
+        },
+        {
+          "command": "sh test/e2e/laneb.sh",
+          "path": "test/e2e/laneb.sh"
+        }
+      ]
+    },
+    {
+      "criterion": "Every runner distinguishes tool absent, tool failed and no matches; a missing tool is never a clean scan",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestAbsentFailedAndNoMatchesAreThreeAnswers",
+          "path": "internal/recall/recall_test.go"
+        },
+        {
+          "test": "TestAMissingRulePackIsAMissingTool",
+          "path": "internal/scan/laneb_test.go"
+        },
+        {
+          "test": "TestALaneBScanOfNothingIsNotClean",
+          "path": "internal/scan/laneb_test.go"
+        },
+        {
+          "test": "TestTheReviewersEvasionsAreRecorded",
+          "path": "internal/recall/recall_test.go"
+        }
+      ]
+    },
+    {
+      "criterion": "The scanned repository cannot switch a rule off",
+      "status": "PROVEN for nosemgrep, #nosec, # nosec, .semgrepignore, .bandit, bandit's and opengrep's default excludes; anything a tool was given and did not analyse is recorded as incomplete. NOT closed: the selection's own path exclusions match by name, kept by the owner as final for v1 (2026-10-04) with the limit stated",
+      "evidence": [
+        {
+          "test": "TestTheFixtureWithTheRealTools",
+          "path": "internal/recall/recall_test.go",
+          "note": "src/suppressed.py is still reported and .semgrepignore and .bandit have no effect; removing --disable-nosem or --ignore-nosec fails it (seen 2026-10-03)"
+        },
+        {
+          "test": "TestTheReviewersEvasionsAreRecorded",
+          "path": "internal/recall/recall_test.go",
+          "note": "another platform's build tags, cgo, Go outside any module, a symbolic link, bandit's default excludes; seen failing without the bandit and symlink fixes"
+        },
+        {
+          "document": "the exclusions' limit, as the owner kept it",
+          "path": "internal/record/CONTRACT.md"
+        }
+      ]
+    },
+    {
+      "criterion": "Candidates per scan is exported on every scan",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "test": "TestRecallCandidatesKeepsNotRunApartFromNone",
+          "path": "internal/store/recall_candidates_test.go"
+        },
+        {
+          "test": "TestEveryCandidateReachesTheRecordUnconfirmed",
+          "path": "internal/scan/laneb_test.go",
+          "note": "asserts scan_run.recall_candidates = 12"
+        }
+      ]
+    },
+    {
+      "criterion": "A checked-in API specification is handed to the dynamic tier's inventory",
+      "status": "PROVEN on the SAST run; the dynamic tier reading it live is Phase 8's",
+      "evidence": [
+        {
+          "test": "TestHarvest",
+          "path": "internal/laneb/laneb_test.go"
+        },
+        {
+          "command": "sh test/e2e/laneb.sh",
+          "path": "test/e2e/laneb.sh"
+        }
+      ]
+    },
+    {
+      "criterion": "Per-language coverage is stated in the README",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "document": "README.md, What Lane B covers",
+          "path": "README.md"
+        }
+      ]
+    },
+    {
+      "criterion": "The LGPL-2.1 obligation of shipping the opengrep binary is stated where packaging is decided",
+      "status": "PROVEN: stated, and decided by the owner on 2026-10-04 (an operator-installed prerequisite; no Anvil artifact conveys the binary)",
+      "evidence": [
+        {
+          "document": "the three options and their duties",
+          "path": "data/LICENSES/opengrep-binary-distribution.md"
+        }
+      ]
+    },
+    {
+      "criterion": "The adversarial review of licence and security conclusions is recorded as same-family",
+      "status": "PROVEN",
+      "evidence": [
+        {
+          "document": "the review and what was done about each finding",
+          "path": "docs/reviews/lane-b-gate.md"
+        }
+      ]
+    }
+  ]
+}

@@ -2239,3 +2239,24 @@ U1c is the one to read first if you are wiring DAST into a scan path.
 tree calls `Provision`, `SetupNetns` or `AssertContainment`, and the two halves
 of the containment story therefore do not compose yet. That is the dynamic tier exit gate's, not
 target provisioning's or network containment's — it is recorded here so it cannot be forgotten.
+
+---
+
+# LANE B (Phase 6, 2026-10-03)
+
+No `t.Skip` was added. The one Lane B control that needs installed tools is written the way the Trivy one is:
+
+- **`TestTheFixtureWithTheRealTools`** (`internal/recall`) runs opengrep 1.26.0, gosec 2.29.0 and bandit 1.9.4 over
+  `testdata/laneb-fixture` and asserts the exact twelve candidates. Where a tool is absent it does not skip: it
+  asserts that `Prepare` refused with a missing-tool error and logs it. With `ANVIL_LANEB_E2E=1` an absent tool
+  fails the test. CI's "Lane B end to end (real tools)" job installs the pinned tools, sets the opt-in, runs
+  `test/e2e/laneb.sh`, and proves the opt-in is fatal by hiding opengrep and requiring a failure.
+- **The Go job proves the chain without the tools** by replaying their real reports
+  (`internal/recall/recalltest`, recorded from the fixture on 2026-10-03 with `ANVIL_LANEB_RECORD=1`). A replay is
+  only as good as the recording, and the real-tools test, which asserts the same twelve candidates, is what holds
+  it to the tools.
+
+Measured on this machine on 2026-10-03: with the tools present the real-tools test passes; mutating
+`--disable-nosem` or `--ignore-nosec` out of the argument vectors, or disabling the GitLab directory allowlist,
+fails it or `TestThePackGuardsFire`, and mapping a candidate to `true_positive` fails
+`TestEveryCandidateReachesTheRecordUnconfirmed`.

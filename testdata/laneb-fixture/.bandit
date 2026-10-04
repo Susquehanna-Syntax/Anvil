@@ -1,0 +1,3 @@
+[bandit]
+exclude: src
+skips: B602,B307

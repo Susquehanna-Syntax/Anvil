@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in that recall resolves; recalltest.Replay answers its calls. Running it is an error.
+echo "recalltest stand-in: not a real gosec" >&2
+exit 2

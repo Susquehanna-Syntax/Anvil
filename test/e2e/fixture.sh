@@ -17,7 +17,9 @@ fixture="$root/testdata/lanea-fixture"
 go build -o "$work/anvil" "$root/cmd/anvil"
 anvil="$work/anvil"
 export ANVIL_CONFIG="$work/anvil.yml"
-printf 'version: 1\nstateDir: %s/state\ntrivyDB:\n  enabled: true\n' "$work" > "$ANVIL_CONFIG"
+# Lane B is on by default; the Lane A fixture repository holds no source in a
+# language its rules cover, so it needs the rule pack and no tool.
+printf 'version: 1\nstateDir: %s/state\ntrivyDB:\n  enabled: true\nrecall:\n  rules: %s/data/rules\n' "$work" "$root" > "$ANVIL_CONFIG"
 
 expect() { # expect STATUS DESCRIPTION -- COMMAND...
 	want=$1; what=$2; shift 3

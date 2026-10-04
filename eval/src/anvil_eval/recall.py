@@ -6,9 +6,10 @@ against the SHA-256 the release publishes. Binaries land under ``eval/tools/reca
 by git); corpora and repositories under ``~/.cache/anvil-eval/recall``, outside the repository.
 
 GitLab's sast-rules is not uniformly MIT: its LICENSE puts ``doc/`` under CC BY-SA 4.0 and keeps
-third-party components under their own licences. Only the seven rule directories in
-``GITLAB_RULE_DIRS`` are ever read, which is the directory allowlist the plan asks Phase 6 to
-enforce when it vendors them.
+third-party components under their own licences, and its ``c/`` rules turned out to be one of them
+(each is headed "License: GPL 2.0", generated from flawfinder). The checkout here is the whole
+corpus at its pin; what Lane B runs is the owner's selection in ``data/rules/selection.json``,
+vendored by ``anvil_eval.vendor_rules`` and enforced by ``internal/recall`` and its tests.
 """
 
 from __future__ import annotations
@@ -60,7 +61,6 @@ GITLAB = GitPin("gitlab-sast-rules",
                 licence="MIT Expat (allowlisted dirs)")
 OXDEA = GitPin("0xdea-semgrep-rules", "https://github.com/0xdea/semgrep-rules.git",
                "dae50da6e6e629750f1daec73a01ef9206a372ab", 1, licence="MIT")
-GITLAB_RULE_DIRS = ("c", "csharp", "go", "java", "javascript", "python", "scala")
 
 PUSHES = 20
 REPOS = (

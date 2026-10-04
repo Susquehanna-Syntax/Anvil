@@ -1,0 +1,44 @@
+{
+	"Golang errors": {},
+	"Issues": [
+		{
+			"severity": "HIGH",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "78",
+				"url": "https://cwe.mitre.org/data/definitions/78.html"
+			},
+			"rule_id": "G702",
+			"details": "Command injection via taint analysis",
+			"file": "@LANEB_FIXTURE_ROOT@/src/main.go",
+			"code": "11: func (runner) run(name string) error {\n12: \treturn exec.Command(\"sh\", \"-c\", name).Run()\n13: }\n",
+			"line": "12",
+			"column": "21",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "78",
+				"url": "https://cwe.mitre.org/data/definitions/78.html"
+			},
+			"rule_id": "G204",
+			"details": "Subprocess launched with variable",
+			"file": "@LANEB_FIXTURE_ROOT@/src/main.go",
+			"code": "11: func (runner) run(name string) error {\n12: \treturn exec.Command(\"sh\", \"-c\", name).Run()\n13: }\n",
+			"line": "12",
+			"column": "9",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 1,
+		"lines": 17,
+		"nosec": 0,
+		"found": 2
+	},
+	"GosecVersion": "2.29.0"
+}

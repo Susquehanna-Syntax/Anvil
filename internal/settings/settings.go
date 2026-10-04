@@ -33,11 +33,32 @@ type Settings struct {
 	// TrivyDB admits findings decided by Trivy's own database, with tier-2
 	// attribution. False unless the file says true.
 	TrivyDB bool
+	// Recall is Lane B's recall tier.
+	Recall Recall
+}
+
+// Recall configures Lane B's recall tier: the rule pack and the three tools
+// it runs as subprocesses. It is on unless the file says enabled: false. Its
+// rules are MIT and Apache-2.0 (data/rules/MANIFEST.json), so nothing like
+// the Trivy database's licence question keeps it off by default; an absent
+// rule pack or tool makes a repository scan exit as a missing tool, never
+// clean.
+type Recall struct {
+	Enabled bool
+	// Rules is the rule pack directory.
+	Rules string
+	// Opengrep, Gosec and Bandit are the executables; empty means the tool's
+	// name on PATH.
+	Opengrep, Gosec, Bandit string
+	// GoBin is the directory holding the go command gosec loads packages
+	// with; empty means the go on PATH.
+	GoBin string
 }
 
 // Default is an installation with nothing configured but a state directory.
 func Default() Settings {
-	return Settings{StateDir: "/var/lib/anvil", SpoolDir: "/var/lib/anvil/dispatch", MirrorRoot: "/usr/share/anvil"}
+	return Settings{StateDir: "/var/lib/anvil", SpoolDir: "/var/lib/anvil/dispatch", MirrorRoot: "/usr/share/anvil",
+		Recall: Recall{Enabled: true, Rules: "/usr/share/anvil/rules"}}
 }
 
 // StorePath and CachePath are the two databases under StateDir.
@@ -49,7 +70,9 @@ func (s Settings) CachePath() string { return filepath.Join(s.StateDir, "anvil-c
 // ErrSettings reports an unreadable or invalid configuration file.
 var ErrSettings = errors.New("settings: invalid configuration")
 
-var keys = map[string]bool{"version": true, "stateDir": true, "feeds": true, "policy": true, "spoolDir": true, "mirrorRoot": true, "trivyDB": true}
+var keys = map[string]bool{"version": true, "stateDir": true, "feeds": true, "policy": true, "spoolDir": true, "mirrorRoot": true, "trivyDB": true, "recall": true}
+
+var recallKeys = map[string]bool{"enabled": true, "rules": true, "opengrep": true, "gosec": true, "bandit": true, "goBin": true}
 
 // Load reads a configuration file. A missing file at DefaultPath is the
 // default configuration; a missing file anywhere else was named on purpose and
@@ -130,6 +153,39 @@ func Load(path string) (Settings, error) {
 			return s, fmt.Errorf("%w: %s: trivyDB.enabled must be true or false", ErrSettings, path)
 		}
 		s.TrivyDB = b
+	}
+	if v, present := m["recall"]; present {
+		mm, ok := v.(map[string]any)
+		if !ok {
+			return s, fmt.Errorf("%w: %s: recall must be a mapping", ErrSettings, path)
+		}
+		for k := range mm {
+			if !recallKeys[k] {
+				return s, fmt.Errorf("%w: %s: recall has an unknown key %q", ErrSettings, path, k)
+			}
+		}
+		if e, present := mm["enabled"]; present {
+			b, ok := e.(bool)
+			if !ok {
+				return s, fmt.Errorf("%w: %s: recall.enabled must be true or false", ErrSettings, path)
+			}
+			s.Recall.Enabled = b
+		}
+		for key, dst := range map[string]*string{"rules": &s.Recall.Rules, "opengrep": &s.Recall.Opengrep,
+			"gosec": &s.Recall.Gosec, "bandit": &s.Recall.Bandit, "goBin": &s.Recall.GoBin} {
+			v, present := mm[key]
+			if !present || v == nil {
+				continue
+			}
+			sv, ok := v.(string)
+			if !ok || sv == "" {
+				return s, fmt.Errorf("%w: %s: recall.%s must be a non-empty path", ErrSettings, path, key)
+			}
+			if !filepath.IsAbs(sv) {
+				sv = filepath.Join(base, sv)
+			}
+			*dst = sv
+		}
 	}
 	return s, nil
 }
