@@ -1,28 +1,42 @@
 {
   "id": "candidates-per-scan",
-  "measured_at": "2026-10-03",
-  "value": 10714,
+  "measured_at": "2026-10-04",
+  "value": 225,
   "unit": "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)",
   "command": "python -m anvil_eval.experiments.candidates report",
   "git": {
-    "commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
-    "dirty": true
+    "commit": "861f8c1603edf1e07c3393eb58f8642caa947ce6",
+    "dirty": false
   },
   "pins": {
-    "opengrep": "v1.26.0 (eval/tools/opengrep/MANIFEST.toml)",
-    "gitlab_sast_rules": {
-      "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
-      "dirs": [
-        "c",
-        "csharp",
-        "go",
-        "java",
-        "javascript",
-        "python",
-        "scala"
-      ]
+    "measured_through": "anvil recall, built from the commit in git",
+    "selection_sha256": "d347c4fa04d10d3c88083fd60cb98a402a45d11a733d6787dd0e69b3491cb810",
+    "selection_decided": "the owner, 2026-10-03",
+    "rule_files": 308,
+    "corpora": {
+      "gitlab-sast-rules": {
+        "commit": "53bf5cf6df3c51b6c02110f5a638b5e6213666cd",
+        "directories": [
+          "csharp",
+          "go",
+          "java",
+          "javascript",
+          "python",
+          "scala"
+        ]
+      },
+      "0xdea-semgrep-rules": {
+        "commit": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+        "directories": [
+          "rules/c"
+        ]
+      }
     },
-    "0xdea_semgrep_rules": "dae50da6e6e629750f1daec73a01ef9206a372ab",
+    "tools": {
+      "opengrep": "1.26.0",
+      "gosec": "2.29.0",
+      "bandit": "1.9.4"
+    },
     "gosec": {
       "version": "2.29.0",
       "url": "https://github.com/securego/gosec/releases/download/v2.29.0/gosec_2.29.0_linux_amd64.tar.gz",
@@ -46,21 +60,33 @@
       {
         "repo": "flask",
         "commit": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
-        "full_scan": 1090,
+        "full_scan": 9,
         "full_scan_by_tool": {
-          "opengrep": 8,
-          "bandit": 1082
+          "bandit": 7,
+          "opengrep": 2
+        },
+        "full_scan_by_rule_top10": {
+          "bandit/B105@1.9.4": 2,
+          "bandit/B102@1.9.4": 1,
+          "bandit/B110@1.9.4": 1,
+          "bandit/B307@1.9.4": 1,
+          "bandit/B324@1.9.4": 1,
+          "bandit/B704@1.9.4": 1,
+          "gitlab-sast-rules/python_eval_rule-eval@359cce5bb9ec": 1,
+          "gitlab-sast-rules/python_exec_rule-exec-used@79e4e003d808": 1
         },
         "full_scan_by_cwe_top10": {
-          "CWE-703": 1061,
-          "CWE-259": 14,
-          "CWE-754": 5,
-          "CWE-79": 3,
-          "CWE-95": 2,
+          "CWE-259": 2,
           "CWE-78": 2,
-          "CWE-94": 2,
-          "CWE-327": 1
+          "CWE-95": 2,
+          "CWE-327": 1,
+          "CWE-703": 1,
+          "CWE-79": 1
         },
+        "files_scanned": 24,
+        "files_excluded": 59,
+        "coverage_problems": [],
+        "partial_parses": 0,
         "pushes": [
           {
             "commit": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
@@ -90,7 +116,7 @@
           {
             "commit": "05e9c6bd630ecf4ec0ec884b1fc7901663737bc7",
             "files_changed": 4,
-            "candidates": 1
+            "candidates": 0
           },
           {
             "commit": "514fc6b3e8402e4c646d5284e97a4f0ab50a7c4b",
@@ -100,7 +126,7 @@
           {
             "commit": "8b4fd5d18611e63080b826ecfefe8659dba7d2e4",
             "files_changed": 2,
-            "candidates": 4
+            "candidates": 0
           },
           {
             "commit": "6a2f545bfd8ed31e19066a299296917e034aca58",
@@ -135,7 +161,7 @@
           {
             "commit": "06ea505ce2b2042af26e96d35ebf159af7c0869d",
             "files_changed": 2,
-            "candidates": 7
+            "candidates": 0
           },
           {
             "commit": "2ac89889f4cc330eabd50f295dcef02828522c69",
@@ -164,28 +190,47 @@
           }
         ],
         "per_push_median": 0,
-        "per_push_max": 7
+        "per_push_max": 0
       },
       {
         "repo": "curl",
         "commit": "21983c2fca1e4ecf3393e94455b343d082b6f1c9",
-        "full_scan": 10714,
+        "full_scan": 225,
         "full_scan_by_tool": {
-          "opengrep": 10169,
-          "bandit": 545
+          "opengrep": 225
+        },
+        "full_scan_by_rule_top10": {
+          "0xdea-semgrep-rules/raptor-integer-truncation@4987332556cd": 57,
+          "0xdea-semgrep-rules/raptor-write-into-stack-buffer@5be6610551c1": 49,
+          "0xdea-semgrep-rules/raptor-ret-stack-address@627ec7f5f0c1": 30,
+          "0xdea-semgrep-rules/raptor-mismatched-memory-management@a20305220299": 23,
+          "0xdea-semgrep-rules/raptor-off-by-one@d32d7d833064": 22,
+          "0xdea-semgrep-rules/raptor-integer-wraparound@c2f477b556b7": 17,
+          "0xdea-semgrep-rules/raptor-use-of-source-size-in-copy@938939df8655": 8,
+          "0xdea-semgrep-rules/raptor-incorrect-unsigned-comparison@549c7e8e3a64": 7,
+          "0xdea-semgrep-rules/raptor-insecure-api-signal@7029f954fe26": 5,
+          "0xdea-semgrep-rules/raptor-incorrect-use-of-sizeof@1e7b26fd2ff3": 3
         },
         "full_scan_by_cwe_top10": {
-          "CWE-546": 5249,
-          "CWE-676": 1584,
-          "CWE-480": 995,
-          "CWE-195": 543,
-          "CWE-703": 492,
-          "CWE-126": 483,
-          "CWE-120": 256,
-          "CWE-754": 162,
-          "CWE-478": 160,
-          "CWE-469": 128
+          "CWE-197": 57,
+          "CWE-121": 49,
+          "CWE-562": 30,
+          "CWE-762": 23,
+          "CWE-193": 22,
+          "CWE-190": 17,
+          "CWE-806": 8,
+          "CWE-697": 7,
+          "CWE-364": 5,
+          "CWE-467": 3
         },
+        "files_scanned": 495,
+        "files_excluded": 606,
+        "coverage_problems": [
+          "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c:",
+          "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-integer-wraparound on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:",
+          "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:"
+        ],
+        "partial_parses": 142,
         "pushes": [
           {
             "commit": "21983c2fca1e4ecf3393e94455b343d082b6f1c9",
@@ -260,7 +305,7 @@
           {
             "commit": "978cce12adb7251b48a9dfa03a817df83f15cfaf",
             "files_changed": 1,
-            "candidates": 1
+            "candidates": 0
           },
           {
             "commit": "318bd978ea2d36ace36b42da2174b79c3abd89a3",
@@ -289,14 +334,19 @@
           }
         ],
         "per_push_median": 0,
-        "per_push_max": 1
+        "per_push_max": 0
       },
       {
         "repo": "spring-petclinic",
         "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
         "full_scan": 0,
         "full_scan_by_tool": {},
+        "full_scan_by_rule_top10": {},
         "full_scan_by_cwe_top10": {},
+        "files_scanned": 30,
+        "files_excluded": 20,
+        "coverage_problems": [],
+        "partial_parses": 0,
         "pushes": [
           {
             "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
@@ -405,15 +455,22 @@
       {
         "repo": "express",
         "commit": "7ef98448f8b38099ab1ded55e458538ad47a51e7",
-        "full_scan": 8,
+        "full_scan": 2,
         "full_scan_by_tool": {
-          "opengrep": 8
+          "opengrep": 2
+        },
+        "full_scan_by_rule_top10": {
+          "gitlab-sast-rules/javascript_pathtraversal_rule-non-literal-fs-filename@c0d8dcf2117f": 1,
+          "gitlab-sast-rules/javascript_require_rule-non-literal-require@b81110bbc629": 1
         },
         "full_scan_by_cwe_top10": {
-          "CWE-22": 4,
-          "CWE-95": 3,
-          "CWE-208": 1
+          "CWE-22": 1,
+          "CWE-95": 1
         },
+        "files_scanned": 7,
+        "files_excluded": 134,
+        "coverage_problems": [],
+        "partial_parses": 0,
         "pushes": [
           {
             "commit": "7ef98448f8b38099ab1ded55e458538ad47a51e7",
@@ -522,54 +579,70 @@
       {
         "repo": "anvil",
         "commit": "1d8657e889cdf292b1ee792ceb36913f6d8539d2",
-        "full_scan": 159,
+        "full_scan": 79,
         "full_scan_by_tool": {
-          "opengrep": 31,
-          "bandit": 86,
-          "gosec": 42
+          "bandit": 9,
+          "gosec": 56,
+          "opengrep": 14
+        },
+        "full_scan_by_rule_top10": {
+          "gosec/G304@2.29.0": 22,
+          "gosec/G115@2.29.0": 10,
+          "gitlab-sast-rules/go_file-permissions_rule-mkdir@87767da1f29a": 6,
+          "gitlab-sast-rules/go_sql_rule-concat-sqli@3997ad3edc7f": 6,
+          "gosec/G204@2.29.0": 6,
+          "gosec/G301@2.29.0": 6,
+          "gosec/G101@2.29.0": 5,
+          "gosec/G202@2.29.0": 4,
+          "bandit/B603@1.9.4": 3,
+          "bandit/B105@1.9.4": 2
         },
         "full_scan_by_cwe_top10": {
-          "CWE-703": 74,
           "CWE-22": 24,
-          "CWE-78": 16,
-          "CWE-89": 10,
+          "CWE-78": 11,
           "CWE-190": 10,
-          "CWE-732": 7,
+          "CWE-89": 10,
           "CWE-276": 7,
+          "CWE-732": 7,
           "CWE-798": 5,
           "CWE-259": 2,
-          "CWE-327": 1
+          "CWE-327": 1,
+          "CWE-338": 1
         },
+        "files_scanned": 141,
+        "files_excluded": 101,
+        "coverage_problems": [],
+        "partial_parses": 0,
         "pushes": [
           {
             "commit": "1d8657e889cdf292b1ee792ceb36913f6d8539d2",
             "files_changed": 65,
-            "candidates": 12
+            "candidates": 7
           },
           {
             "commit": "009b468a68f4160e4c35961166657c6d7290d781",
             "files_changed": 22,
-            "candidates": 3
+            "candidates": 0
           },
           {
             "commit": "17e86d9db76442f02c4d2f4e13aeb2f8c486da3d",
             "files_changed": 141,
-            "candidates": 1
+            "candidates": 0
           },
           {
             "commit": "fe18b231abc9e0cfe6df2f11536d2d976fda24b7",
             "files_changed": 227,
-            "candidates": 61
+            "candidates": 27
           },
           {
             "commit": "67b6daa86ebc605d6ad010f808d95c3a84d6bcb5",
             "files_changed": 29,
-            "candidates": 1
+            "candidates": 0
           },
           {
             "commit": "eb28b4b5c02ea838725bf993755ab00e1d40a9da",
             "files_changed": 8,
-            "candidates": 1
+            "candidates": 0
           },
           {
             "commit": "4e7da7641005d251be48553f3127b9543d51211e",
@@ -579,32 +652,32 @@
           {
             "commit": "2db083e8a95451b8a33d6e9d5b157539af142d39",
             "files_changed": 35,
-            "candidates": 43
+            "candidates": 18
           },
           {
             "commit": "3d608562b309919510de1bbe2688f054f15cf347",
             "files_changed": 31,
-            "candidates": 6
+            "candidates": 5
           },
           {
             "commit": "aac11c4e213bfb6b69227773134f1705e27cd562",
             "files_changed": 21,
-            "candidates": 10
+            "candidates": 1
           },
           {
             "commit": "fe9ec3e90b308f0546f8548debf2c65406495811",
             "files_changed": 28,
-            "candidates": 3
+            "candidates": 2
           },
           {
             "commit": "02e3404a9cfe65ec8afe51d91036b5367be2bc4e",
             "files_changed": 17,
-            "candidates": 6
+            "candidates": 3
           },
           {
             "commit": "a1230513fe1b34ec5fa4a6564f928a87feffb261",
             "files_changed": 21,
-            "candidates": 17
+            "candidates": 8
           },
           {
             "commit": "5591198929e5f06decee95f9b14ac1ca64d8cf9d",
@@ -614,7 +687,7 @@
           {
             "commit": "167853edc02216c18933c665e3159781c50e8184",
             "files_changed": 30,
-            "candidates": 88
+            "candidates": 8
           },
           {
             "commit": "cd6471139ee16db2721e55d65f5d55847cc32c95",
@@ -637,24 +710,38 @@
             "candidates": 0
           }
         ],
-        "per_push_median": 3,
-        "per_push_max": 88
+        "per_push_median": 0,
+        "per_push_max": 27
       }
     ],
     "largest_full_scan": {
       "repo": "curl",
-      "candidates": 10714
+      "candidates": 225
     },
-    "largest_push": 88,
+    "largest_push": 27,
     "bars": {
       "full_scan": 500,
       "per_push": 50
     },
-    "within_bars": false
+    "within_bars": true,
+    "previous": {
+      "measured_at": "2026-10-03",
+      "value": 10714,
+      "git_commit": "666698643f22fb1863e7c24cc20c2dbe29610cbc",
+      "what": "the whole federation, before the owner's selection: GitLab's seven allowlisted directories including c/, 0xdea's rules including rules/noisy, bandit B101, no path exclusions; counted by the Python runners this module then held",
+      "full_scan": {
+        "curl": 10714,
+        "flask": 1090,
+        "anvil": 159,
+        "express": 8,
+        "spring-petclinic": 0
+      },
+      "largest_push": 88
+    }
   },
   "negative_control": {
-    "description": "a planted file per language family must each yield a candidate, and a clean file none",
-    "expected": "every planted file flagged; no candidate in the clean file",
+    "description": "a planted file per language family must each yield a candidate, the same files under tests/ none, and a clean file none",
+    "expected": "every planted file flagged; nothing under tests/; no candidate in the clean file",
     "observed": {
       "planted_files": [
         "BadExec.java",
@@ -670,6 +757,7 @@
         "bad_exec.go",
         "bad_strcpy.c"
       ],
+      "flagged_under_tests": [],
       "by_tool": [
         [
           "bandit",

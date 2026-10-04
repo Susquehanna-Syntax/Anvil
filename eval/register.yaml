@@ -58,6 +58,11 @@
 # each with its artifact under eval/results/. The owner set their decisions by
 # the pre-registered bands and decided the gate (the `gate` block below).
 # patch-quality is deferred to Phase 7 by the owner; eight rows stay deferred.
+#
+# PHASE 6 (2026-10-03): candidates-per-scan was re-run through Lane B itself (anvil recall) on the
+# owner's selection of that day (data/rules/selection.json): largest full scan 225 (curl, was
+# 10,714), largest push 27 (Anvil, was 88), under both bars. The row's decision is still the one
+# the owner set on the old number; only the owner changes it.
 
 version: 1
 
@@ -493,9 +498,9 @@ experiments:
       research/14-critique-and-gaps.md B1, restating the spine's figures: < 500 per full
       scan and < 50 per push
     result:
-      value: 10714
+      value: 225
       unit: "candidates per full scan, the largest of the sample repositories (per-push counts and every repository in the artifact)"
-      measured_at: "2026-10-03"
+      measured_at: "2026-10-04"
       artifact_path: "eval/results/candidates-per-scan.json"
     decision: FAIL
     depends_on: []
