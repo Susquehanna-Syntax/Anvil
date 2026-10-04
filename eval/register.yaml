@@ -994,7 +994,13 @@ experiments:
     depends_on: []
     deferred_reason: >-
       The run needs the coder on the GPUs, and the owner deferred every GPU run to after Phase 9
-      (2026-10-04). The sample step (CPU only) and the stub-endpoint control can run now.
+      (2026-10-04). The CPU-only parts ran on 2026-10-04 at commit 9bf7768 (clean tree): the
+      sample (eval/results/runs/triage-precision/sample.json) drew 1,068 test-case files (686
+      C/C++, 382 Java), on which Lane B produced 1,693 candidates with no coverage problem; 1,034
+      fall in a Juliet bad or good function, 429 bad and 605 good, so the base rate a gate must
+      beat is 0.415 by the function label and 0.048 when the candidate's CWE must also match the
+      test case's. The stub-endpoint control passed through anvil triage (8 candidates on the
+      planted fixture, 8 true_positive verdicts).
     owning_future_phase: >-
       after Phase 9, as separate work the owner set on 2026-10-04, with patch quality and task
       cards
