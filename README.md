@@ -29,7 +29,7 @@ export ANVIL_CONFIG=$PWD/anvil.yml
 ./anvil findings
 ```
 
-With opengrep 1.26.0, gosec 2.29.0 and bandit 1.9.4 on `PATH`, Lane B scans its planted fixture (11 unconfirmed
+With opengrep 1.26.0, gosec 2.29.0 and bandit 1.9.4 on `PATH`, Lane B scans its planted fixture (12 unconfirmed
 findings):
 
 ```bash
@@ -63,22 +63,29 @@ Two detection lanes, one audit record, and a remediation tier that proposes and 
 
 Lane B runs only the rules in `data/rules`, the owner's selection of 2026-10-03, pinned by commit and hashed
 file by file, plus gosec and bandit. **No permissive rule corpus gives broad multi-language taint (dataflow)
-recall**, and most of these rules match patterns, not flows:
+recall**: 16 of the 177 rule files are taint rules, and Java, Scala and C# are thin:
 
 | Language | Rule files | Of them taint rules | Native analyser |
 |---|---|---|---|
 | C and C++ | 39 (0xdea, MIT) | 0 | none |
 | Go | 27 (GitLab, Apache-2.0, derived from gosec) | 5 | gosec 2.29.0 (SSA, type-checked) |
-| Python | 67 (GitLab, MIT) | 1 | bandit 1.9.4 (AST) |
-| Java | 57 (GitLab, MIT) | 17 | none |
-| Scala | 85 (GitLab, MIT) | 17 | none |
-| C# | 22 (GitLab, MIT) | 10 | none |
+| Python | 67 (GitLab: 52 Apache-2.0, derived from bandit; 15 MIT) | 1 | bandit 1.9.4 (AST) |
+| Java | 13 (GitLab, MIT) | 4 | none |
+| Scala | 19 (GitLab, MIT) | 6 | none |
+| C# | 1 (GitLab, MIT) | 0 | none |
 | JavaScript and TypeScript | 11 (GitLab, MIT) | 0 | none |
 
-Anything else (Ruby, PHP, Kotlin, Rust, Swift, shell, …) is not covered at all. GitLab's own C rules are
-excluded: each is headed "License: GPL 2.0" because it is generated from flawfinder. Test, test-data,
-documentation and example trees are not reported on, and the scanned repository cannot switch a rule off: its
-`nosemgrep`, `#nosec` and `# nosec` comments, `.semgrepignore` and `.bandit` files are all ignored. Measured on
+Anything else (Ruby, PHP, Kotlin, Rust, Swift, shell, …) is not covered at all. Two kinds of GitLab rules are
+excluded for their licences: the C rules, each headed "License: GPL 2.0" because it is generated from flawfinder,
+and 131 Java, Scala and C# rules whose GitLab companion test files name find-sec-bugs or security-code-scan,
+both LGPL-3.0, as their source (a rule's licence is read from the stricter of its own header and its
+companion's). Test, test-data,
+documentation and example trees are not reported on. **Those exclusions match by name, so a repository can place
+first-party code under `spec/`, `docs/` or `fixtures/` and Lane B will not see it**; every scan reports how many
+source files they kept out. Otherwise the scanned repository cannot switch a rule off: its `nosemgrep`, `#nosec`
+and `# nosec` comments, `.semgrepignore` and `.bandit` files, and bandit's and opengrep's own default excludes are
+all ignored, and anything a tool was given and did not analyse (another platform's Go build tags, cgo, a rule
+timeout) is recorded as incomplete coverage. Measured on
 2026-10-03 on five sample repositories, the selection produces 0 to 225 candidates a full scan (curl is the most;
 `eval/results/candidates-per-scan.json`), under the budget of 500. Every scan records its count.
 

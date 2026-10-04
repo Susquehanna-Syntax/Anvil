@@ -37,14 +37,14 @@ func TestEveryCandidateReachesTheRecordUnconfirmed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Outcome != OutcomeFindings || res.Emitted != 11 || res.RecallCandidates == nil || *res.RecallCandidates != 11 {
+	if res.Outcome != OutcomeFindings || res.Emitted != 12 || res.RecallCandidates == nil || *res.RecallCandidates != 12 {
 		t.Fatalf("outcome %q emitted %d candidates %v problems %v", res.Outcome, res.Emitted, res.RecallCandidates, res.Problems)
 	}
 	if len(res.NotRun) != 1 || !strings.Contains(res.NotRun[0], "repository SCA did not run") {
 		t.Errorf("not run: %v", res.NotRun)
 	}
 	run := res.Log.Runs[0]
-	if len(run.Results) != 11 || run.Properties.SpecHarvest == nil || len(run.Properties.SpecHarvest.Files) != 1 {
+	if len(run.Results) != 12 || run.Properties.SpecHarvest == nil || len(run.Properties.SpecHarvest.Files) != 1 {
 		t.Fatalf("results %d spec harvest %+v", len(run.Results), run.Properties.SpecHarvest)
 	}
 	for _, r := range run.Results {
@@ -72,10 +72,10 @@ func TestEveryCandidateReachesTheRecordUnconfirmed(t *testing.T) {
 	if err := e.store.QueryRow(`SELECT count(*), sum(verdict = 'unconfirmed') FROM finding`).Scan(&verdicts, &unconfirmed); err != nil {
 		t.Fatal(err)
 	}
-	if verdicts != 11 || unconfirmed != 11 {
+	if verdicts != 12 || unconfirmed != 12 {
 		t.Fatalf("the store holds %d findings, %d unconfirmed", verdicts, unconfirmed)
 	}
-	if err := e.store.QueryRow(`SELECT recall_candidates FROM scan_run`).Scan(&count); err != nil || count != 11 {
+	if err := e.store.QueryRow(`SELECT recall_candidates FROM scan_run`).Scan(&count); err != nil || count != 12 {
 		t.Fatalf("scan_run.recall_candidates = %d (%v)", count, err)
 	}
 
@@ -88,7 +88,7 @@ func TestEveryCandidateReachesTheRecordUnconfirmed(t *testing.T) {
 	for _, m := range again.Write.Marks {
 		marks[m.Kind]++
 	}
-	if marks[store.MarkPersisting] != 11 || len(marks) != 1 {
+	if marks[store.MarkPersisting] != 12 || len(marks) != 1 {
 		t.Fatalf("second scan marks %v", marks)
 	}
 }

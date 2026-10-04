@@ -38,6 +38,8 @@ type toolRun struct {
 	// partialParses counts files opengrep parsed only in part (C macros, for
 	// one). Recorded, not treated as incomplete: see Result.PartialParses.
 	partialParses int
+	// analysed is how many files gosec says it analysed, per module root.
+	analysed map[string]int
 }
 
 // maxArgBytes bounds one invocation's argument vector. Linux allows about
@@ -105,13 +107,17 @@ func GosecArgs(out string) []string {
 // GosecEnv is the environment gosec runs in: the operator's, with the Go
 // command pinned to the local toolchain and kept off the network. Package
 // loading that would need a download fails instead, and gosec reports it as a
-// load error, which Lane B records as incomplete coverage.
+// load error, which Lane B records as incomplete coverage. CGO_ENABLED=0
+// keeps package loading from running the C compiler on the scanned
+// repository's cgo code (which can #include any readable host file); the cgo
+// files it leaves out show up in the file count as uncovered.
 func GosecEnv(goBin string) []string {
 	env := []string{}
 	for _, kv := range os.Environ() {
 		k := kv[:max(strings.IndexByte(kv, '='), 0)]
 		switch k {
-		case "GOFLAGS", "GOPROXY", "GOSUMDB", "GOTOOLCHAIN", "GONOSUMDB", "GOPRIVATE", "GONOPROXY", "GOINSECURE":
+		case "GOFLAGS", "GOPROXY", "GOSUMDB", "GOTOOLCHAIN", "GONOSUMDB", "GOPRIVATE", "GONOPROXY", "GOINSECURE",
+			"CGO_ENABLED", "GOWORK", "GOOS", "GOARCH":
 			continue
 		case "PATH":
 			if goBin != "" {
@@ -120,14 +126,23 @@ func GosecEnv(goBin string) []string {
 		}
 		env = append(env, kv)
 	}
-	return append(env, "GOFLAGS=-mod=readonly", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local")
+	return append(env, "GOFLAGS=-mod=readonly", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local",
+		"CGO_ENABLED=0", "GOWORK=off")
 }
 
+// BanditNoExclude is the -x value Lane B passes to bandit. Without -x,
+// bandit's default excludes (.git, CVS, .tox, __pycache__, …) are matched as
+// substrings of every path, even of files named explicitly, so
+// .github/scripts/rel.py and CVSS-tool/app.py were silently skipped (seen
+// 2026-10-03). An empty -x would match every path; this one matches none.
+const BanditNoExclude = "/anvil-recall-excludes-nothing"
+
 // BanditArgs is bandit's argument vector over absolute target files.
-// --ignore-nosec ignores `# nosec`; explicit files stop bandit discovering a
-// .bandit file in a scanned directory.
+// --ignore-nosec ignores `# nosec`; -x replaces bandit's own excludes with
+// one that matches nothing; explicit files stop bandit discovering a .bandit
+// file in a scanned directory.
 func BanditArgs(targets []string, out string) []string {
-	return append([]string{"-f", "json", "-o", out, "-q", "--ignore-nosec"}, targets...)
+	return append([]string{"-f", "json", "-o", out, "-q", "--ignore-nosec", "-x", BanditNoExclude}, targets...)
 }
 
 func runOpengrep(ctx context.Context, x Exec, bin string, rules, targets []string) (toolRun, error) {
@@ -228,7 +243,7 @@ func parseOpengrep(raw []byte, run *toolRun) error {
 }
 
 func runGosec(ctx context.Context, x Exec, bin, goBin string, modules []string) (toolRun, error) {
-	run := toolRun{scanned: map[string]bool{}}
+	run := toolRun{scanned: map[string]bool{}, analysed: map[string]int{}}
 	tmp, err := os.MkdirTemp("", "anvil-gosec-")
 	if err != nil {
 		return run, err
@@ -281,6 +296,7 @@ func parseGosec(file, module string, run *toolRun) error {
 	if rep.Stats == nil {
 		return fmt.Errorf("the report has no Stats section, so it cannot say what was scanned")
 	}
+	run.analysed[module] += rep.Stats.Files
 	files := make([]string, 0, len(rep.GolangErrors))
 	for f := range rep.GolangErrors {
 		files = append(files, f)

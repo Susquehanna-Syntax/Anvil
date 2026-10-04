@@ -43,19 +43,19 @@ expect() { # expect STATUS DESCRIPTION -- COMMAND...
 }
 
 expect 1 "Lane B scan, first run" -- "$anvil" scan --repo "$fixture" --target laneb-fixture --out "$work/laneb1.sarif"
-grep -q 'findings, 11 finding(s); scan_run 1 ok; new 11, persisting 0, regressed 0, fixed 0' "$work/out" ||
+grep -q 'findings, 12 finding(s); scan_run 1 ok; new 12, persisting 0, regressed 0, fixed 0' "$work/out" ||
 	{ echo "FAIL: first run marks" >&2; exit 1; }
 expect 1 "Lane B scan, second run" -- "$anvil" scan --repo "$fixture" --target laneb-fixture --out "$work/laneb2.sarif"
-grep -q 'new 0, persisting 11, regressed 0, fixed 0' "$work/out" || { echo "FAIL: second run marks" >&2; exit 1; }
+grep -q 'new 0, persisting 12, regressed 0, fixed 0' "$work/out" || { echo "FAIL: second run marks" >&2; exit 1; }
 expect 1 "anvil recall" -- "$anvil" recall "$fixture"
-grep -q '"count": 11' "$work/out" || { echo "FAIL: anvil recall count" >&2; exit 1; }
+grep -q '"count": 12' "$work/out" || { echo "FAIL: anvil recall count" >&2; exit 1; }
 
 python3 - "$work/laneb1.sarif" <<'PY'
 import json, sys
 log = json.load(open(sys.argv[1]))
 run = log["runs"][0]
 assert log["properties"]["anvil/schemaVersion"] == "1.1.0", log["properties"]["anvil/schemaVersion"]
-assert len(run["results"]) == 11
+assert len(run["results"]) == 12
 for r in run["results"]:
     p = r["properties"]
     assert p["anvil/verdict"] == "unconfirmed" and p["anvil/confidence"] == 1, r["ruleId"]

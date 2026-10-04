@@ -46,7 +46,7 @@ def test_a_gitlab_header_decides_the_licence(tmp_path):
         "python/a.yml": rule("# License: MIT (c) GitLab Inc.\n"),
         "python/b.yml": rule("# License: Apache 2.0 (c) gosec\n", "r-2"),
     })
-    rules, _ = vr.plan(selection(), root)
+    rules, _, _ = vr.plan(selection(), root)
     assert {r.licence for r in rules} == {"MIT", "Apache-2.0"}
 
 
@@ -70,7 +70,7 @@ def test_an_unread_or_conflicting_header_refuses(tmp_path, header):
 
 def test_a_corpus_without_headers_takes_its_licence_body(tmp_path):
     root = corpus(tmp_path, "0xdea-semgrep-rules", {"rules/c/a.yaml": rule("")})
-    rules, _ = vr.plan(selection("0xdea-semgrep-rules", ("rules/c",), ".yaml"), root)
+    rules, _, _ = vr.plan(selection("0xdea-semgrep-rules", ("rules/c",), ".yaml"), root)
     assert rules[0].licence == "MIT" and "Copyright (c) 2022 raptor" in rules[0].licence_evidence
 
 
@@ -105,4 +105,55 @@ def test_the_committed_manifest_matches_the_committed_selection():
     man = json.loads(vr.MANIFEST.read_text())
     assert man["selection_sha256"] == vr.sha256(sel)
     assert all(r["licence"] in vr.ALLOWED for r in man["rules"])
+    assert len(man["excluded_by_licence"]) == 131
+    assert all(e["licence"] == "LGPL-3.0" for e in man["excluded_by_licence"])
     assert not any(r["path"].startswith("gitlab-sast-rules/c/") for r in man["rules"])
+
+
+def test_a_companion_decides_when_it_names_an_upstream(tmp_path):
+    root = corpus(tmp_path, "gitlab-sast-rules", {
+        "python/a.yml": rule(GITLAB_MIT),
+        "python/a.py": "# License: Apache 2.0 (c) PyCQA\nimport os\n",
+        "python/b.yml": rule(GITLAB_MIT, "r-2"),
+        "python/b.py": "# License: MIT (c) GitLab Inc.\n",
+        "python/c.yml": rule(GITLAB_MIT, "r-3"),
+        "python/c.py": "import os  # no header\n",
+    })
+    rules, _, left_out = vr.plan(selection(), root)
+    by = {r.source_path: r for r in rules}
+    assert by["python/a.yml"].licence == "Apache-2.0"
+    assert by["python/a.yml"].licence_evidence.startswith("derived from bandit")
+    assert by["python/b.yml"].licence == "MIT"
+    assert "states no licence" in by["python/c.yml"].licence_evidence
+    assert left_out == []
+
+
+def test_an_lgpl_companion_is_left_out_when_the_selection_excludes_it(tmp_path):
+    root = corpus(tmp_path, "gitlab-sast-rules", {
+        "python/a.yml": rule(GITLAB_MIT),
+        "python/a.py": "// License: LGPL-3.0 License (c) find-sec-bugs\n",
+        "python/b.yml": rule(GITLAB_MIT, "r-2"),
+    })
+    sel = selection()
+    sel["exclude_by_derived_licence"] = {"licences": ["LGPL-3.0"]}
+    rules, _, left_out = vr.plan(sel, root)
+    assert [r.source_path for r in rules] == ["python/b.yml"]
+    assert left_out[0]["licence"] == "LGPL-3.0" and "find-sec-bugs" in left_out[0]["evidence"]
+
+
+def test_an_lgpl_companion_refuses_the_run_when_nothing_excludes_it(tmp_path):
+    root = corpus(tmp_path, "gitlab-sast-rules", {
+        "python/a.yml": rule(GITLAB_MIT),
+        "python/a.py": "// License: LGPL-3.0 License (c) find-sec-bugs\n",
+    })
+    with pytest.raises(vr.VendorError, match="LGPL-3.0"):
+        vr.plan(selection(), root)
+
+
+def test_an_unread_companion_header_refuses(tmp_path):
+    root = corpus(tmp_path, "gitlab-sast-rules", {
+        "python/a.yml": rule(GITLAB_MIT),
+        "python/a.py": "# License: WTFPL\n",
+    })
+    with pytest.raises(vr.VendorError, match="unread licence header"):
+        vr.plan(selection(), root)

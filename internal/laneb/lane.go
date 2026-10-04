@@ -105,6 +105,7 @@ func (l *Lane) Run(ctx context.Context, targetID string) (Output, error) {
 	}
 	out.Recall = res
 	out.Problems = append(out.Problems, res.Problems...)
+	out.Notes = append(out.Notes, res.Notes...)
 	if l.plan.Empty() {
 		out.Problems = append(out.Problems, fmt.Sprintf(
 			"Lane B found no source file in a language its rules cover (%s), so it scanned nothing; that is not a clean repository",

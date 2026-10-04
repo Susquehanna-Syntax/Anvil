@@ -125,6 +125,13 @@
       "reason": "A code-review heuristic for high-entropy string literals (CWE-540)."
     }
   ],
+  "exclude_by_derived_licence": {
+    "licences": [
+      "LGPL-3.0"
+    ],
+    "decided": "the owner, 2026-10-03, after the same-family review (docs/reviews/lane-b-gate.md)",
+    "reason": "GitLab ported most of its rules from other analysers and labels each rule's companion test file with the upstream licence. 131 rules headed 'MIT (c) GitLab Inc.' have companions labelled 'LGPL-3.0 License (c) find-sec-bugs' (Java 42, Scala 68) or '(c) security-code-scan' (C# 21). A rule's licence is the stricter of the two headers, and rules derived under LGPL-3.0 are left out; the manifest lists each one."
+  },
   "excluded_tool_rules": [
     {
       "tool": "bandit",

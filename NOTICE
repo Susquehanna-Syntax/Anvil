@@ -70,20 +70,34 @@ whose bodies or rules do not match.
 
   GitLab sast-rules (gitlab-org/security-products/sast-rules) at
     53bf5cf6df3c51b6c02110f5a638b5e6213666cd
-      243 rule files headed "License: MIT (c) GitLab Inc." -- MIT.
-      Copyright (c) 2011-present GitLab Inc. The MIT notice is in
-      data/rules/gitlab-sast-rules/LICENSE.
-      26 rule files (go/) headed "License: Apache 2.0 (c) gosec" -- Apache-2.0,
-      derived by GitLab from gosec's rules. Section 4(a): a copy of the
-      licence is at data/rules/gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt
-      (gosec's own LICENSE.txt, from its pinned 2.29.0 release archive).
-      Section 4(c): the files' own headers, which carry the attribution, are
-      kept unmodified. Section 4(d) applies only if the Work carries a NOTICE
-      file; the gosec 2.29.0 release archive carries none (checked
-      2026-10-03). GitLab's LICENSE puts doc/ under CC BY-SA 4.0 and keeps
-      third-party components under their own licences, so only the six
-      directories csharp, go, java, javascript, python and scala are vendored,
-      and a test refuses any other.
+      A rule's licence is read from the stricter of its own "License:" header
+      and the header of its GitLab companion test file, which names the
+      analyser GitLab ported it from. Rules whose companion names an LGPL-3.0
+      analyser (find-sec-bugs, security-code-scan: 131 rules) are not vendored;
+      MANIFEST.json lists each.
+      53 rule files -- MIT, Copyright (c) 2011-present GitLab Inc. The MIT
+      notice is in data/rules/gitlab-sast-rules/LICENSE.
+      6 rule files (javascript/) whose companions read "MIT (c) JS Foundation
+      and other contributors, https://js.foundation" -- MIT, Copyright JS
+      Foundation and other contributors; the MIT permission notice is the one
+      in data/rules/gitlab-sast-rules/LICENSE.
+      27 rule files (go/), derived from gosec -- Apache-2.0, (c) gosec.
+      52 rule files (python/), whose companions read "Apache 2.0 (c) PyCQA",
+      derived from bandit -- Apache-2.0. bandit's plugin sources carry
+      "Copyright 2014 Hewlett-Packard Development Company, L.P." (15 files)
+      and other contributors' notices (read from bandit 1.9.4, 2026-10-03);
+      GitLab's companions credit PyCQA.
+      For both Apache-2.0 groups: Section 4(a), a copy of the licence is at
+      data/rules/gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt (gosec's
+      LICENSE.txt from its 2.29.0 release archive) and
+      LICENSE.bandit-Apache-2.0.txt (bandit 1.9.4's licence body from its
+      wheel). Section 4(c): the files are copied unmodified with their own
+      headers. Section 4(d) applies only if the Work carries a NOTICE file;
+      the gosec 2.29.0 release archive and the bandit 1.9.4 wheel carry none
+      (checked 2026-10-03). GitLab's LICENSE puts doc/ under CC BY-SA 4.0 and
+      keeps third-party components under their own licences, so only the six
+      directories csharp, go, java, javascript, python and scala are read, and
+      a test refuses any other.
 
   0xdea semgrep-rules (0xdea/semgrep-rules) at
     dae50da6e6e629750f1daec73a01ef9206a372ab

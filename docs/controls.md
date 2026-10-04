@@ -2247,13 +2247,13 @@ target provisioning's or network containment's — it is recorded here so it can
 No `t.Skip` was added. The one Lane B control that needs installed tools is written the way the Trivy one is:
 
 - **`TestTheFixtureWithTheRealTools`** (`internal/recall`) runs opengrep 1.26.0, gosec 2.29.0 and bandit 1.9.4 over
-  `testdata/laneb-fixture` and asserts the exact eleven candidates. Where a tool is absent it does not skip: it
+  `testdata/laneb-fixture` and asserts the exact twelve candidates. Where a tool is absent it does not skip: it
   asserts that `Prepare` refused with a missing-tool error and logs it. With `ANVIL_LANEB_E2E=1` an absent tool
   fails the test. CI's "Lane B end to end (real tools)" job installs the pinned tools, sets the opt-in, runs
   `test/e2e/laneb.sh`, and proves the opt-in is fatal by hiding opengrep and requiring a failure.
 - **The Go job proves the chain without the tools** by replaying their real reports
   (`internal/recall/recalltest`, recorded from the fixture on 2026-10-03 with `ANVIL_LANEB_RECORD=1`). A replay is
-  only as good as the recording, and the real-tools test, which asserts the same eleven candidates, is what holds
+  only as good as the recording, and the real-tools test, which asserts the same twelve candidates, is what holds
   it to the tools.
 
 Measured on this machine on 2026-10-03: with the tools present the real-tools test passes; mutating

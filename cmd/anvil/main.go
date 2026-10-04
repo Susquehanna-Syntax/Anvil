@@ -321,6 +321,11 @@ func cmdRecall(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		fmt.Fprintf(stderr, "anvil recall: %v\n", err)
 		return exitError
 	}
+	if plan.Empty() {
+		// The same statement a repository scan makes: nothing was read, and
+		// that is not a clean tree.
+		res.Problems = append(res.Problems, "no file in a language Lane B's rules cover was given to any tool, so nothing was scanned")
+	}
 	out := struct {
 		Count         int                `json:"count"`
 		ByTool        map[string]int     `json:"byTool"`

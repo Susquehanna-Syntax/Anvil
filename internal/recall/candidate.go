@@ -95,6 +95,8 @@ type Result struct {
 	// Problems are coverage failures. Any problem makes the scan incomplete,
 	// which the store records as a partial scan that resolves nothing.
 	Problems []string
+	// Notes are informational and do not make the scan incomplete.
+	Notes []string
 	// PartialParses counts files opengrep parsed only in part. This is the
 	// engine's ordinary behaviour on macro-heavy C (144 of curl's 495 files on
 	// 2026-10-03), so it is reported rather than treated as incomplete.
@@ -116,6 +118,12 @@ type Plan struct {
 	Bandit   []string
 	// Modules are the Go module roots gosec runs in.
 	Modules []string
+	// GoFiles counts, per module root, the non-test Go files the Go tool
+	// would load there: gosec is expected to analyse each one. Orphans are Go
+	// files in no module, and Vendored those under a vendor/ directory.
+	GoFiles  map[string]int
+	Orphans  int
+	Vendored int
 	// Excluded is how many source files the selection's excluded paths kept
 	// out.
 	Excluded int
@@ -198,12 +206,12 @@ func (s Scanner) Prepare(ctx context.Context, root string) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	plan := Plan{Root: abs, bins: map[string]string{}}
+	plan := Plan{Root: abs, bins: map[string]string{}, GoFiles: map[string]int{}}
 	langs := map[string]bool{}
 	for _, l := range s.Pack.Languages() {
 		langs[l] = true
 	}
-	var goFiles bool
+	var goFiles []string // non-test Go files the Go tool would load, absolute
 	var modules []string
 	err = filepath.WalkDir(abs, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -216,6 +224,13 @@ func (s Scanner) Prepare(ctx context.Context, root string) (Plan, error) {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if d.Type().IsRegular() && strings.HasSuffix(d.Name(), ".go") && !strings.HasSuffix(d.Name(), "_test.go") {
+			if goToolSees(rel) {
+				goFiles = append(goFiles, full)
+			} else if inVendor(rel) {
+				plan.Vendored++
+			}
 		}
 		if !d.Type().IsRegular() {
 			return nil
@@ -239,19 +254,23 @@ func (s Scanner) Prepare(ctx context.Context, root string) (Plan, error) {
 		if ruled {
 			plan.Opengrep = append(plan.Opengrep, full)
 		}
-		switch filepath.Ext(d.Name()) {
-		case ".py":
+		if filepath.Ext(d.Name()) == ".py" {
 			plan.Bandit = append(plan.Bandit, full)
-		case ".go":
-			goFiles = true
 		}
 		return nil
 	})
 	if err != nil {
 		return Plan{}, fmt.Errorf("recall: enumerating %s: %w", abs, err)
 	}
-	if goFiles {
+	if len(goFiles) > 0 {
 		plan.Modules = modules
+		for _, f := range goFiles {
+			if m := owningModule(f, modules); m != "" {
+				plan.GoFiles[m]++
+			} else {
+				plan.Orphans++
+			}
+		}
 	}
 	x := s.exec()
 	for _, tool := range plan.Needs() {
@@ -318,7 +337,25 @@ func (s Scanner) Scan(ctx context.Context, plan Plan) (Result, error) {
 		if err != nil {
 			return res, err
 		}
+		// gosec analyses only the files the Go tool loads for this platform
+		// with cgo off; one it left out (build-constrained for another OS,
+		// cgo, unloadable) was read by opengrep alone, and the scan says so.
+		for _, m := range plan.Modules {
+			if want, got := plan.GoFiles[m], run.analysed[m]; got < want {
+				run.problems = append(run.problems, fmt.Sprintf(
+					"gosec analysed %d of the %d Go files in module %s; the rest (another platform's build constraints, cgo, or a package it could not load) were read by opengrep only",
+					got, want, relOrSelf(plan.Root, m)))
+			}
+		}
 		runs = append(runs, run)
+	}
+	if plan.Orphans > 0 {
+		res.Problems = append(res.Problems, fmt.Sprintf(
+			"%d Go file(s) belong to no Go module, so gosec did not analyse them (opengrep did)", plan.Orphans))
+	}
+	if plan.Vendored > 0 {
+		res.Notes = append(res.Notes, fmt.Sprintf(
+			"%d Go file(s) under vendor/ were read by opengrep only; gosec does not analyse vendored packages", plan.Vendored))
 	}
 	if len(plan.Bandit) > 0 {
 		run, err := runBandit(ctx, x, plan.bins[ToolBandit], plan.Bandit)
@@ -344,6 +381,15 @@ func (s Scanner) Scan(ctx context.Context, plan Plan) (Result, error) {
 		res.PartialParses += run.partialParses
 		for _, f := range run.findings {
 			c, keep, err := s.candidate(plan.Root, f, files)
+			var notRegular *notRegularError
+			if errors.As(err, &notRegular) {
+				// A tool followed a symbolic link Lane B does not follow
+				// (gosec loads a linked .go file as part of its package).
+				// The match is not reported, and the scan says so.
+				res.Problems = append(res.Problems, fmt.Sprintf(
+					"%s reported a match in %s, which is not a regular file in the tree; Lane B does not follow links", f.tool, notRegular.rel))
+				continue
+			}
 			if err != nil {
 				return res, err
 			}
@@ -411,6 +457,9 @@ func (s Scanner) candidate(root string, f rawFinding, files *sourceCache) (Candi
 		}
 	}
 	lines, err := files.lines(rel)
+	if errors.Is(err, errNotRegular) {
+		return c, false, &notRegularError{rel: rel}
+	}
 	if err != nil {
 		return c, false, fmt.Errorf("recall: reading %s for a %s match: %w", rel, f.tool, err)
 	}
@@ -514,6 +563,42 @@ func snippet(lines []string, start, end, maxLines int) string {
 	return s
 }
 
+var errNotRegular = errors.New("not a regular file")
+
+// notRegularError is a tool match in a path that is not a regular file in
+// the tree: a symbolic link, most often.
+type notRegularError struct{ rel string }
+
+func (e *notRegularError) Error() string { return "recall: " + e.rel + " is not a regular file" }
+
+// goToolSees reports whether the Go tool loads a file at this relative path:
+// not under testdata/ or vendor/, nor under a directory whose name starts
+// with "." or "_".
+func goToolSees(rel string) bool {
+	segs := strings.Split(rel, "/")
+	for _, s := range segs[:len(segs)-1] {
+		if s == "testdata" || s == "vendor" || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "_") {
+			return false
+		}
+	}
+	return !strings.HasPrefix(segs[len(segs)-1], ".") && !strings.HasPrefix(segs[len(segs)-1], "_")
+}
+
+func inVendor(rel string) bool {
+	return rel == "vendor" || strings.HasPrefix(rel, "vendor/") || strings.Contains(rel, "/vendor/")
+}
+
+// owningModule is the deepest module root containing file, or "".
+func owningModule(file string, modules []string) string {
+	best := ""
+	for _, m := range modules {
+		if strings.HasPrefix(file, m+string(filepath.Separator)) && len(m) > len(best) {
+			best = m
+		}
+	}
+	return best
+}
+
 // sourceCache reads each file once.
 type sourceCache struct {
 	root  string
@@ -535,7 +620,7 @@ func (c *sourceCache) lines(rel string) ([]string, error) {
 		return nil, err
 	}
 	if !st.Mode().IsRegular() {
-		return nil, errors.New("not a regular file")
+		return nil, errNotRegular
 	}
 	b, err := os.ReadFile(full)
 	if err != nil {

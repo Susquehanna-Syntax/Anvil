@@ -1,5 +1,10 @@
 # `eval/tools/opengrep` — the deterministic recall tier, pinned
 
+> **Since Phase 6 (2026-10-03)** the engine pinned here (v1.26.0, by SHA-256) is the one Lane B runs, but the
+> rule corpus is not: Lane B runs the owner's selection in `data/rules` (GitLab's sast-rules and 0xdea's C rules),
+> through `internal/recall`. The Aikido corpus below, two GitHub-workflow rules, is kept only as the acquisition's
+> record.
+
 Anvil's **opengrep acquisition** (`plan/design/evaluation.md`). Acquires and invokes the recall-tier
 stand-in that the candidates-per-scan instrument (the spine's affordability rule) measures against:
 

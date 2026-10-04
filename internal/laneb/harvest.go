@@ -21,6 +21,7 @@ package laneb
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,6 +39,24 @@ const MaxSpecBytes = 4 << 20
 // MaxSpecFiles is the most spec files one harvest carries, the repo spec
 // reader's per-ingest bound.
 const MaxSpecFiles = 4096
+
+// readAtMost reads a file, or returns nil when it holds more than n bytes,
+// however large it grew after it was measured.
+func readAtMost(path string, n int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, n+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > n {
+		return nil, nil
+	}
+	return b, nil
+}
 
 // IsSpecFile reports whether a file name is one the harvest carries.
 func IsSpecFile(name string) bool {
@@ -100,11 +119,11 @@ func Harvest(root string) (*record.SpecHarvest, error) {
 			omitted++
 			continue
 		}
-		b, err := os.ReadFile(full)
+		b, err := readAtMost(full, MaxSpecBytes)
 		if err != nil {
 			return nil, err
 		}
-		if !utf8.Valid(b) {
+		if b == nil || !utf8.Valid(b) { // nil: it grew past the bound after Lstat
 			omitted++
 			continue
 		}

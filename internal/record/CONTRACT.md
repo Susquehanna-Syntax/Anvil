@@ -782,6 +782,17 @@ own results, and `TestEveryCandidateReachesTheRecordUnconfirmed` (internal/scan)
 * `anvil/specHarvest` on the SAST run is now produced (`internal/laneb`, `Harvest`), with `declaredFormat`
   left empty so the dynamic tier classifies from the bytes.
 
+**Trust of the run-level strings.** `tool.extensions` names, rule ids and `anvil/ruleProvenance` fields come
+from the rule corpora and the tools' pins: third-party text, outside any result's `anvil/trust` assertion. They
+are never `anvil_generated`, and a consumer (the triage prompt above all) treats them as untrusted data.
+
+**A limit of the exclusions.** Lane B does not report on test, test-data, documentation and example trees
+(`data/rules/selection.json`, `excluded_paths`), and those are matched by name, so a repository can put
+first-party code under `spec/` or `docs/` and Lane B will not see it. Moving code there makes its findings
+absent, and the store marks them fixed. The owner kept the exclusions on 2026-10-03 (without them curl's full
+scan measured 525, over budget); a consumer treats a Lane B finding that became fixed with no change to its
+code as suspect.
+
 **The store.** Migration `0002_recall_candidates` adds `scan_run.recall_candidates`, the candidates-per-scan
 count (NULL when Lane B did not run, 0 when it ran and matched nothing, negative refused). `schema.sql` is
 unchanged.

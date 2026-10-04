@@ -1,9 +1,8 @@
 // Planted for Lane B's fixture. Never compiled.
-import java.security.MessageDigest;
+import javax.crypto.Cipher;
 
 public class Digest {
-    byte[] hash(byte[] in) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("MD5");
-        return md.digest(in);
+    Cipher cipher() throws Exception {
+        return Cipher.getInstance("DES/CBC/PKCS5Padding");
     }
 }

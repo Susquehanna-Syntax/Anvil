@@ -45,7 +45,7 @@ const (
 		"the finding is unconfirmed until the coding agent's triage gate decides it."
 	reasonCWE      = "The rule's CWE, by number:"
 	reasonLines    = "The match spans lines, first then last:"
-	reasonSymbol   = "A parser named the enclosing function, so the finding's identity follows the function rather than the line."
+	reasonSymbol   = "The enclosing function or class was named, by a parser or, for Python, by reading its indentation, so the finding's identity follows it rather than the line."
 	reasonNoSymbol = "No enclosing function was named, so the finding's identity follows the file."
 )
 

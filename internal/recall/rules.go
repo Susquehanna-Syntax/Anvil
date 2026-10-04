@@ -79,6 +79,11 @@ type Selection struct {
 		Path   string `json:"path"`
 		Reason string `json:"reason"`
 	} `json:"excluded_rule_files"`
+	ExcludeByDerivedLicence struct {
+		Licences []string `json:"licences"`
+		Decided  string   `json:"decided"`
+		Reason   string   `json:"reason"`
+	} `json:"exclude_by_derived_licence"`
 	ExcludedToolRules []struct {
 		Tool   string `json:"tool"`
 		Rule   string `json:"rule"`
@@ -127,6 +132,13 @@ type Manifest struct {
 		SHA256 string `json:"sha256"`
 	} `json:"licences"`
 	Rules []Rule `json:"rules"`
+	// ExcludedByLicence lists every rule the generator left out because its
+	// GitLab companion names an upstream licence the selection excludes.
+	ExcludedByLicence []struct {
+		Path     string `json:"path"`
+		Licence  string `json:"licence"`
+		Evidence string `json:"evidence"`
+	} `json:"excluded_by_licence"`
 }
 
 // Pack is a verified rule pack.
@@ -334,6 +346,11 @@ func (p *Pack) checkRule(r *Rule, licences map[string]bool) error {
 	for _, ex := range p.Selection.ExcludedRuleFiles {
 		if ex.Corpus == r.Corpus && ex.Path == inCorpus {
 			return errors.New("the selection excludes this rule file")
+		}
+	}
+	for _, ex := range p.Manifest.ExcludedByLicence {
+		if ex.Path == r.Path {
+			return fmt.Errorf("the manifest both vendors this rule and excludes it for its %s licence", ex.Licence)
 		}
 	}
 	for _, ex := range p.Selection.ExcludedDirectories {

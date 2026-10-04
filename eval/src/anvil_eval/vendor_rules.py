@@ -11,11 +11,18 @@ acquire`` fetches them), and writes:
 * ``data/rules/MANIFEST.json``: per rule file, the corpus, repository, commit, path, git blob SHA-1,
   SHA-256, rule ids, CWEs, languages and licence, with the evidence the licence was read from.
 
-Licences are read from the bodies, never from metadata. A GitLab rule file states its own licence in
-a ``# License:`` header, and that header decides, not the repository LICENSE: the C rules say
-GPL 2.0 under a repository LICENSE that says MIT. A rule file with no header takes its corpus's
-LICENSE body only when ``NO_PER_FILE_HEADERS`` names its corpus. Any licence outside
-MIT and Apache-2.0, or a header this module cannot read, refuses the whole run: nothing is written.
+Licences are read from the bodies, never from metadata. A GitLab rule file states a licence in a
+``# License:`` header, and that header outranks the repository LICENSE: the C rules say GPL 2.0
+under a repository LICENSE that says MIT. But GitLab ported most of its rules from other
+analysers, and the header of the rule's own companion test file (same name, the language's
+extension) names where it came from: "LGPL-3.0 License (c) find-sec-bugs" beside a rule headed
+"MIT (c) GitLab Inc." (the same-family review of 2026-10-03 found this; GitLab's mappings/ files
+agree). So a GitLab rule's licence is the stricter of the two headers: a third-party companion
+wins. The selection's ``exclude_by_derived_licence`` names the licences whose rules are left out
+(LGPL-3.0, the owner's decision of 2026-10-03), and the manifest lists every rule it left out. A
+rule file with no header takes its corpus's LICENSE body only when ``NO_PER_FILE_HEADERS`` names
+its corpus. Any other licence outside MIT and Apache-2.0, or a header this module cannot read,
+refuses the whole run: nothing is written.
 
 Only rule YAML is copied. The corpora's rule tests are third-party Go, Java and C sources, which
 gate 3 (internal/dast/authz/egress_chokepoint_test.go) and the licence boundary both keep out of
@@ -43,6 +50,9 @@ SELECTION = RULES_DIR / "selection.json"
 MANIFEST = RULES_DIR / "MANIFEST.json"
 GOSEC_TARBALL = recall.RECALL_BIN.parent / "gosec_2.29.0_linux_amd64.tar.gz"
 GOSEC_LICENCE_NAME = "LICENSE.gosec-Apache-2.0.txt"
+BANDIT_LICENCE = (recall.RECALL_VENV / "lib" / "python3.13" / "site-packages"
+                  / "bandit-1.9.4.dist-info" / "licenses" / "LICENSE")
+BANDIT_LICENCE_NAME = "LICENSE.bandit-Apache-2.0.txt"
 
 #: The licences a vendored rule may carry. Both are permissive and Apache-2.0 compatible.
 ALLOWED = ("MIT", "Apache-2.0")
@@ -61,6 +71,48 @@ HEADERS = {
 NO_PER_FILE_HEADERS = {"0xdea-semgrep-rules"}
 
 HEADER_RE = re.compile(r"^#\s*License:\s*(.+?)\s*$", re.M)
+
+#: A GitLab companion test file's ``License:`` header, mapped to (SPDX id, upstream). Every header
+#: seen beside a vendored rule at commit 53bf5cf6 is here; anything else is refused.
+COMPANION_HEADERS = {
+    "LGPL-3.0 License (c) find-sec-bugs": ("LGPL-3.0", "find-sec-bugs"),
+    "LGPL-3.0 License (c) security-code-scan": ("LGPL-3.0", "security-code-scan"),
+    "Apache 2.0 (c) PyCQA": ("Apache-2.0", "bandit"),
+    "Apache 2.0 (c) gosec": ("Apache-2.0", "gosec"),
+    "Apache 2.0": ("Apache-2.0", ""),
+    "MIT (c) JS Foundation and other contributors, https://js.foundation": ("MIT", "JS Foundation"),
+    "MIT (c) GitLab Inc.": ("MIT", "GitLab"),
+    "MIT Copyright (c) 2022-Present GitLab B.V.": ("MIT", "GitLab"),
+}
+COMPANION_RE = re.compile(r"License:\s*(.+?)\s*$", re.M)
+
+
+def companion_licence(root: Path, rel: str) -> tuple[str, str, str] | None:
+    """(SPDX, upstream, evidence) from the rule's companion test files, or None if it has none."""
+    base = rel.rsplit(".", 1)[0]
+    found = []
+    silent = []
+    for f in sorted(root.glob(base + ".*")):
+        if f.suffix in (".yml", ".yaml"):
+            continue
+        m = COMPANION_RE.search("\n".join(f.read_text("utf-8", "replace").splitlines()[:15]))
+        if not m:
+            # No header gives no evidence either way; the rule's own header governs, and the
+            # evidence says the companion was silent.
+            silent.append(f.name)
+            continue
+        if m.group(1) not in COMPANION_HEADERS:
+            raise VendorError(f"{rel}: companion {f.name} has an unread licence header "
+                              f"{m.group(1)!r}")
+        spdx, upstream = COMPANION_HEADERS[m.group(1)]
+        found.append((spdx, upstream, f"its GitLab companion {f.name}: License: {m.group(1)}"))
+    if not found:
+        if silent:
+            return ("", "", "its GitLab companion " + ", ".join(silent) + " states no licence")
+        return None
+    if len({f[0] for f in found}) != 1:
+        raise VendorError(f"{rel}: companions disagree on the licence: {found}")
+    return found[0]
 
 
 class VendorError(RuntimeError):
@@ -130,8 +182,26 @@ def read_rule(corpus: str, root: Path, rel: str) -> Rule:
     return Rule(corpus, rel, data, ids, cwes, langs, licence, evidence)
 
 
-def plan(selection: dict, corpus_root: Path) -> tuple[list[Rule], dict[str, bytes]]:
-    """Every rule the selection admits, and every licence body to archive. Writes nothing."""
+def derive(rule: Rule, root: Path) -> Rule:
+    """A GitLab rule's licence: the stricter of its own header and its companion's."""
+    comp = companion_licence(root, rule.source_path)
+    if comp is None:
+        return Rule(**{**rule.__dict__, "licence_evidence":
+                       rule.licence_evidence + "; it has no companion test file"})
+    spdx, upstream, evidence = comp
+    if upstream in ("", "GitLab") or not spdx:
+        return Rule(**{**rule.__dict__,
+                       "licence_evidence": rule.licence_evidence + "; " + evidence})
+    return Rule(**{**rule.__dict__, "licence": spdx, "licence_evidence":
+                   f"derived from {upstream}: {evidence}; the rule's own header says "
+                   f"{rule.licence_evidence.removeprefix('# License: ')}"})
+
+
+def plan(selection: dict, corpus_root: Path) -> tuple[list[Rule], dict[str, bytes], list[dict]]:
+    """Every rule the selection admits, every licence body to archive, and every rule left out for
+    its derived licence. Writes nothing."""
+    by_licence = selection.get("exclude_by_derived_licence") or {"licences": []}
+    left_out: list[dict] = []
     excluded_dirs = {(d["corpus"], d["directory"]) for d in selection["excluded_directories"]}
     excluded_files = {(f["corpus"], f["path"]) for f in selection["excluded_rule_files"]}
     rules: list[Rule] = []
@@ -153,6 +223,12 @@ def plan(selection: dict, corpus_root: Path) -> tuple[list[Rule], dict[str, byte
                 if (c["name"], rel) in excluded_files:
                     continue
                 rule = read_rule(c["name"], root, rel)
+                if c["name"] == "gitlab-sast-rules":
+                    rule = derive(rule, root)
+                    if rule.licence in by_licence["licences"]:
+                        left_out.append({"path": f"{rule.corpus}/{rel}", "licence": rule.licence,
+                                         "evidence": rule.licence_evidence})
+                        continue
                 if not rule.licence:
                     body = corpus_licence.decode("utf-8").splitlines()
                     if not body or body[0].strip() != "MIT License":
@@ -169,17 +245,31 @@ def plan(selection: dict, corpus_root: Path) -> tuple[list[Rule], dict[str, byte
         # An exclusion that names nothing would read as a decision that changed nothing.
         if not (corpus_root / f["corpus"] / f["path"]).is_file():
             raise VendorError(f"excluded rule file {f['corpus']}/{f['path']} does not exist")
-    if any(r.licence == "Apache-2.0" for r in rules):
+    if any(r.licence_evidence.startswith("derived from bandit") for r in rules):
+        body = BANDIT_LICENCE.read_bytes()
+        if b"Apache License" not in body or b"Version 2.0" not in body:
+            raise VendorError("bandit's LICENSE is not the Apache-2.0 body")
+        licences[f"gitlab-sast-rules/{BANDIT_LICENCE_NAME}"] = body
+    if any(r.licence == "Apache-2.0" and not r.licence_evidence.startswith("derived from bandit")
+           for r in rules):
         with tarfile.open(GOSEC_TARBALL) as t:
             body = t.extractfile("LICENSE.txt").read()
         if b"Apache License" not in body or b"Version 2.0" not in body:
             raise VendorError("gosec's LICENSE.txt is not the Apache-2.0 body")
         licences[f"gitlab-sast-rules/{GOSEC_LICENCE_NAME}"] = body
-    return rules, licences
+    return rules, licences, left_out
+
+
+def licence_file(r: Rule) -> str:
+    if r.licence == "Apache-2.0":
+        name = BANDIT_LICENCE_NAME if r.licence_evidence.startswith("derived from bandit") \
+            else GOSEC_LICENCE_NAME
+        return f"gitlab-sast-rules/{name}"
+    return f"{r.corpus}/LICENSE"
 
 
 def manifest(selection_bytes: bytes, selection: dict, rules: list[Rule],
-             licences: dict[str, bytes]) -> dict:
+             licences: dict[str, bytes], left_out: list[dict] | None = None) -> dict:
     by_corpus = {c["name"]: c for c in selection["corpora"]}
     return {
         "version": 1,
@@ -198,9 +288,9 @@ def manifest(selection_bytes: bytes, selection: dict, rules: list[Rule],
             "languages": r.languages,
             "licence": r.licence,
             "licence_evidence": r.licence_evidence,
-            "licence_file": (f"gitlab-sast-rules/{GOSEC_LICENCE_NAME}"
-                             if r.licence == "Apache-2.0" else f"{r.corpus}/LICENSE"),
+            "licence_file": licence_file(r),
         } for r in rules],
+        "excluded_by_licence": left_out or [],
     }
 
 
@@ -208,8 +298,8 @@ def vendor(rules_dir: Path = RULES_DIR, corpus_root: Path | None = None) -> dict
     corpus_root = corpus_root or recall.RECALL_DATA / "rules"
     selection_bytes = (rules_dir / "selection.json").read_bytes()
     selection = json.loads(selection_bytes)
-    rules, licences = plan(selection, corpus_root)
-    doc = manifest(selection_bytes, selection, rules, licences)
+    rules, licences, left_out = plan(selection, corpus_root)
+    doc = manifest(selection_bytes, selection, rules, licences, left_out)
     for c in selection["corpora"]:
         shutil.rmtree(rules_dir / c["name"], ignore_errors=True)
     for r in rules:
@@ -220,7 +310,7 @@ def vendor(rules_dir: Path = RULES_DIR, corpus_root: Path | None = None) -> dict
         (rules_dir / p).parent.mkdir(parents=True, exist_ok=True)
         (rules_dir / p).write_bytes(b)
     (rules_dir / "MANIFEST.json").write_text(json.dumps(doc, indent=1) + "\n")
-    return {"rules": len(rules), "licences": sorted(licences)}
+    return {"rules": len(rules), "licences": sorted(licences), "excluded_by_licence": len(left_out)}
 
 
 def main(argv: list[str] | None = None) -> int:

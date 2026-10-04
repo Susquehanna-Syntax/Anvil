@@ -32,8 +32,11 @@ func pack(t *testing.T) *recall.Pack {
 // rule's provenance is complete.
 func TestTheVendoredPackVerifies(t *testing.T) {
 	p := pack(t)
-	if n := len(p.Rules()); n != 308 {
-		t.Errorf("the pack holds %d rule files; the owner's selection of 2026-10-03 vendors 308", n)
+	if n := len(p.Rules()); n != 177 {
+		t.Errorf("the pack holds %d rule files; the owner's selection of 2026-10-03 vendors 177", n)
+	}
+	if n := len(p.Manifest.ExcludedByLicence); n != 131 {
+		t.Errorf("the manifest lists %d rules excluded for an LGPL-3.0 upstream; the generator left out 131", n)
 	}
 	for _, r := range p.Rules() {
 		if !slices.Contains(recall.AdmittedLicences, r.Licence) || r.LicenceEvidence == "" || r.Commit == "" || r.Repository == "" {
@@ -351,7 +354,8 @@ func TestAbsentFailedAndNoMatchesAreThreeAnswers(t *testing.T) {
 // expectedFixture is every candidate testdata/laneb-fixture must yield: the
 // planted matches, the suppressed one still reported, nothing from tests/.
 var expectedFixture = []string{
-	"gitlab-sast-rules/java_crypto_rule-WeakMessageDigest src/Digest.java:6 Digest.hash",
+	"gitlab-sast-rules/java_crypto_rule-CipherDESInsecure src/Digest.java:6 Digest.cipher",
+	"gitlab-sast-rules/java_crypto_rule-CipherIntegrity src/Digest.java:6 Digest.cipher",
 	"bandit/B404 src/app.py:2 ",
 	"bandit/B307 src/app.py:7 run_expression",
 	"gitlab-sast-rules/python_eval_rule-eval src/app.py:7 run_expression",
@@ -486,4 +490,83 @@ func TestDedupeIsDeterministic(t *testing.T) {
 func sha256Hex(b []byte) string {
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])
+}
+
+// TestTheReviewersEvasionsAreRecorded holds the fixes for the same-family
+// review of 2026-10-03 (docs/reviews/lane-b-gate.md): each way a scanned tree
+// kept code from a tool, or broke the scan, is now either scanned or recorded
+// as incomplete coverage, never silent. It needs the real tools, like
+// TestTheFixtureWithTheRealTools.
+func TestTheReviewersEvasionsAreRecorded(t *testing.T) {
+	tools := realTools()
+	if goBin, err := exec.LookPath("go"); err == nil && tools.GoBin == "" {
+		tools.GoBin = filepath.Dir(goBin)
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	write := func(base, rel, body string) {
+		p := filepath.Join(base, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := "package main\n\nimport (\n\t\"os\"\n\t\"os/exec\"\n)\n\nfunc main() { _ = exec.Command(\"sh\", \"-c\", os.Args[1]).Run() }\n"
+	write(root, "mod/go.mod", "module example.invalid/m\n\ngo 1.22\n")
+	write(root, "mod/a.go", cmd)
+	write(root, "mod/w.go", "//go:build windows\n\n"+cmd)                                                   // another platform
+	write(root, "mod/c.go", "package main\n\n// #include \"/etc/hostname\"\nimport \"C\"\n\nfunc c() {}\n") // cgo
+	write(root, "mod/vendor/v/v.go", "package v\n")
+	write(root, "loose/l.go", cmd) // in no module
+	write(outside, "linked.go", cmd)
+	if err := os.Symlink(filepath.Join(outside, "linked.go"), filepath.Join(root, "mod", "linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	write(root, ".github/scripts/rel.py", "import os\nos.system(input())\n") // bandit's default excludes
+	write(root, "CVSS-tool/app.py", "import os\nos.system(input())\n")
+
+	s := recall.Scanner{Pack: pack(t), Tools: tools}
+	plan, err := s.Prepare(context.Background(), root)
+	if errors.Is(err, recall.ErrToolAbsent) {
+		if os.Getenv("ANVIL_LANEB_E2E") == "1" {
+			t.Fatalf("ANVIL_LANEB_E2E=1 and a recall tool is absent: %v", err)
+		}
+		t.Logf("a recall tool is not installed, and the scan refused as a missing tool: %v", err)
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Scan(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("a symbolic link in a module broke the scan: %v", err)
+	}
+	problems := strings.Join(res.Problems, "\n")
+	for _, want := range []string{
+		"gosec analysed",              // w.go and c.go were not analysed
+		"belong to no Go module",      // loose/l.go
+		"which is not a regular file", // the link gosec followed
+	} {
+		if !strings.Contains(problems, want) {
+			t.Errorf("no problem mentions %q; problems:\n%s", want, problems)
+		}
+	}
+	if !strings.Contains(strings.Join(res.Notes, "\n"), "under vendor/") {
+		t.Errorf("the vendored Go file is not noted: %v", res.Notes)
+	}
+	host, _ := os.ReadFile("/etc/hostname")
+	if h := strings.TrimSpace(string(host)); h != "" && strings.Contains(problems, h) {
+		t.Errorf("a cgo #include put a host file's contents into the scan's output")
+	}
+	byPath := map[string]bool{}
+	for _, c := range res.Candidates {
+		byPath[c.Tool+" "+c.Path] = true
+	}
+	for _, want := range []string{"bandit .github/scripts/rel.py", "bandit CVSS-tool/app.py"} {
+		if !byPath[want] {
+			t.Errorf("no candidate %q: bandit's default excludes are still in force (%v)", want, byPath)
+		}
+	}
 }

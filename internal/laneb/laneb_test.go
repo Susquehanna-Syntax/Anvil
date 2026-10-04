@@ -154,7 +154,7 @@ func TestTheFixtureThroughTheLane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Recall.Count != 11 || len(out.Results) != 11 || len(out.Problems) != 0 {
+	if out.Recall.Count != 12 || len(out.Results) != 12 || len(out.Problems) != 0 {
 		t.Fatalf("count %d results %d problems %v", out.Recall.Count, len(out.Results), out.Problems)
 	}
 	if out.SpecHarvest == nil || len(out.SpecHarvest.Files) != 1 || out.SpecHarvest.Files[0].Location.URI != "api/openapi.yaml" {
