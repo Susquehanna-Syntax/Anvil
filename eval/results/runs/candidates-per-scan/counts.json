@@ -169,6 +169,7 @@
    "files_scanned": 495,
    "files_excluded": 606,
    "coverage_problems": [
+    "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/openssl.c: Timeout when running raptor-use-after-free on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/openssl.c:",
     "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/lib/vtls/schannel.c:",
     "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-integer-wraparound on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:",
     "opengrep warn in /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c: Timeout when running raptor-unchecked-ret-malloc on /home/tsnyd/.cache/anvil-eval/recall/repos/curl/src/tool_doswin.c:"
@@ -659,14 +660,14 @@
  ],
  "control": {
   "planted_files": [
-   "BadExec.java",
+   "BadCipher.java",
    "bad_eval.js",
    "bad_eval.py",
    "bad_exec.go",
    "bad_strcpy.c"
   ],
   "planted_flagged": [
-   "BadExec.java",
+   "BadCipher.java",
    "bad_eval.js",
    "bad_eval.py",
    "bad_exec.go",
@@ -684,7 +685,7 @@
    ],
    [
     "opengrep",
-    "BadExec.java"
+    "BadCipher.java"
    ],
    [
     "opengrep",
