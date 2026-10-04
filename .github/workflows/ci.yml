@@ -434,6 +434,65 @@ jobs:
           echo "$out" | grep -q 'PROVEN   repo SCA scan' || {
             echo "::error::the repo SCA link is not PROVEN in a job that installs Trivy and its database"; exit 1; }
 
+  # Lane B (Phase 6) with the real, pinned recall tools. The Go job runs the
+  # same chain with the tools' recorded reports replayed
+  # (internal/recall/recalltest); this job is what proves the recording is
+  # faithful, and that the built binary scans the planted fixture end to end.
+  laneb-e2e:
+    name: Lane B end to end (real tools)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the pinned recall tools
+        run: |
+          set -euo pipefail
+          # Pinned by version and digest, the values in
+          # eval/tools/opengrep/MANIFEST.toml and data/rules/selection.json.
+          OPENGREP_SHA256=40c21299eeddabf743b856daa843d24f9d4a027130671cd45b3b21776fd9ab26
+          curl -sSfL -o opengrep \
+            "https://github.com/opengrep/opengrep/releases/download/v1.26.0/opengrep_manylinux_x86"
+          echo "${OPENGREP_SHA256}  opengrep" | sha256sum -c -
+          sudo install -m 0755 opengrep /usr/local/bin/opengrep
+          GOSEC_SHA256=6431b119741c1f4a50fdfcf94e782e16b9e642afc8c7fa9b5d39d48bf3003095
+          curl -sSfL -o gosec.tar.gz \
+            "https://github.com/securego/gosec/releases/download/v2.29.0/gosec_2.29.0_linux_amd64.tar.gz"
+          echo "${GOSEC_SHA256}  gosec.tar.gz" | sha256sum -c -
+          tar -xzf gosec.tar.gz gosec
+          sudo install -m 0755 gosec /usr/local/bin/gosec
+          python -m pip install bandit==1.9.4
+          python -m pip install -r eval/requirements.txt
+          opengrep --version && gosec -version && bandit --version
+
+      - name: The opt-in is set, so a missing tool must FAIL rather than refuse quietly
+        env:
+          ANVIL_LANEB_E2E: "1"
+        run: go test -count=1 -v -run TestTheFixtureWithTheRealTools ./internal/recall/
+
+      - name: Lane B end to end on the fixture, through the built binary
+        run: sh test/e2e/laneb.sh
+
+      - name: Negative control -- the job must fail if opengrep disappears
+        env:
+          ANVIL_LANEB_E2E: "1"
+        run: |
+          set -uo pipefail
+          sudo mv /usr/local/bin/opengrep /usr/local/bin/opengrep.hidden
+          if go test -count=1 -run TestTheFixtureWithTheRealTools ./internal/recall/; then
+            sudo mv /usr/local/bin/opengrep.hidden /usr/local/bin/opengrep
+            echo "::error::The Lane B E2E test PASSED with no opengrep present. The opt-in is not fatal, so this job proves nothing."
+            exit 1
+          fi
+          sudo mv /usr/local/bin/opengrep.hidden /usr/local/bin/opengrep
+          echo "confirmed: with ANVIL_LANEB_E2E=1 and no opengrep, the test fails"
+
   # The spine's Go control-plane decision permits Python in exactly three places, and the
   # evaluation harness is one of them. eval/ is a pure-Python tree.
   #

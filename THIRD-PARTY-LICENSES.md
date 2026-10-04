@@ -100,8 +100,28 @@ attach when a release artifact bakes them in, which is the container image and t
 | Nuclei | MIT | Always-on DAST engine. Ships only in `anvil-dast`. |
 | ZAP | Apache-2.0 | Scheduled full scans. Ships only in `anvil-dast`. |
 | Syft / Grype / OSV-Scanner | Apache-2.0 | SBOM and matching. |
-| opengrep (engine) | **LGPL-2.1** | The single strongest obligation in the set — see below. |
-| `AikidoSec/opengrep-rules` | MIT | The rules corpus. **Not** `opengrep/opengrep-rules`, which is archived, `NOASSERTION`, and LGPL-2.1 + Commons Clause; it is on the spine's exclusion list. |
+| opengrep (engine) 1.26.0 | **LGPL-2.1** | Lane B's rule engine. The single strongest obligation in the set — see below. |
+| gosec 2.29.0 | Apache-2.0 | Lane B, Go. Read from `LICENSE.txt` in the pinned release archive. |
+| bandit 1.9.4 | Apache-2.0 | Lane B, Python. |
+
+## Rule corpora vendored in source form — `data/rules`
+
+Lane B's rules are committed, so their notices are owed now, not at packaging. `NOTICE` §1a states each
+duty; `data/rules/MANIFEST.json` records, per rule file, its repository, commit, git blob id, SHA-256 and the
+licence read from its own header (GitLab) or its corpus's LICENSE body (0xdea), and `internal/recall` refuses a
+pack that does not match.
+
+| Corpus | Pin | Rule files | SPDX | Licence body archived |
+|---|---|---|---|---|
+| GitLab `sast-rules` | `53bf5cf6` | 243 | MIT | `data/rules/gitlab-sast-rules/LICENSE` |
+| GitLab `sast-rules`, `go/` (derived from gosec) | `53bf5cf6` | 26 | Apache-2.0 | `data/rules/gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt` |
+| `0xdea/semgrep-rules`, `rules/c` | `dae50da6` | 39 | MIT | `data/rules/0xdea-semgrep-rules/LICENSE` |
+
+Excluded, with the reason in `data/rules/selection.json`: GitLab's `c/` (each rule headed "License: GPL 2.0",
+generated from flawfinder), `doc/` (CC BY-SA 4.0 under GitLab's LICENSE), and everything outside the six
+allowlisted directories; Semgrep's own rules; the archived `opengrep/opengrep-rules` (LGPL-2.1 + Commons Clause,
+`NOASSERTION`); `lambdasec/autogrep` (GPL, AGPL and unlicensed rules inside an Apache-2.0 repository).
+`AikidoSec/opengrep-rules` (MIT), the first plan's pick, is two GitHub-workflow rules and is not used.
 | llama.cpp / llama-server | MIT | Model serving. |
 | ONNX Runtime | MIT | Encoder path. |
 | honggfuzz | Apache-2.0 | The permissive AFL++ substitute. AFL++ is excluded: its LICENSE is AGPL-3.0 regardless of its README. |
@@ -111,7 +131,8 @@ attach when a release artifact bakes them in, which is the container image and t
 language (the spine's Go control-plane decision), so subprocess invocation is the only option that exists — which is
 also the option that keeps the LGPL boundary clean. Baking the binary into the container image is the
 event that triggers offer-source obligations, and the container image must name where that offer is served rather than
-leaving it implicit.
+leaving it implicit. `data/LICENSES/opengrep-binary-distribution.md` sets out the choice, which is the owner's and
+is still open.
 
 ## sqlmap — a separate GPL-3.0 artifact, deliberately not a dependency
 

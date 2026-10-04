@@ -162,10 +162,11 @@ file the scan did not have. Those two demand opposite handling: the first is dro
 escalated to a human or to the DAST half. A confidence threshold silently discards exactly the second
 population, and a float cannot express the difference.
 
-Lane B keeps its own in-process `Verdict.Result` (`EXHIBITS|…`), which is a judgment about the **code**;
-`anvil/verdict` is a judgment about the **finding**. Collapsing them would lose that distinction, so both
-stand and **the Lane B pipeline owns the mapping, including case normalisation**. A mapping with an owner and a test is
-not the same thing as two vocabularies drifting.
+Lane B was designed to keep its own in-process `Verdict.Result` (`EXHIBITS|…`), a judgment about the **code**,
+beside `anvil/verdict`, a judgment about the **finding**, with **the Lane B pipeline owning the mapping**. The
+gate deleted the adjudicator that would have produced the first, so as built (Phase 6, 2026-10-03) Lane B has
+no in-process verdict and the mapping it owns has one answer: `internal/laneb.VerdictFor` returns
+`unconfirmed`, and `TestEveryCandidateReachesTheRecordUnconfirmed` (internal/scan) holds it through the store.
 
 ---
 
@@ -735,3 +736,52 @@ this contract:
 
 No blocking finding remains open. `anvil/schemaVersion` is `1.0.0` and the wire schema is
 `schemas/anvil-record-v1.schema.json` (`x-anvil-contractVersion` 1.0.0): record v1 is frozen.
+
+## Amendment 2026-10-03 — record 1.1.0: rule provenance for Lane B (plan nodes candidatelist and pipeline)
+
+**Why.** Phase 6's exit gate needs every Lane B finding to carry its rule's provenance (repository, commit or
+release, licence) in the record. Frozen v1 had no slot for it: `anvil/detector` names a model, not a rule
+corpus, and `anvil/advisory` describes an advisory feed. This is the first change after the freeze, so it is
+additive and versioned: `anvil/schemaVersion` and the wire schema's `x-anvil-contractVersion` are now `1.1.0`
+(`TestTheSchemaNamesTheContractVersion` holds them together), and a 1.0.0 record is a valid 1.1.0 record.
+
+**The slots, all SARIF-native or on a SARIF property bag.**
+
+| Field | Native / ext | Required? | Producer | Consumer |
+|---|---|---|---|---|
+| `run.tool.extensions[]` | SARIF-native §3.18.3 | optional | the Lane B pipeline: one per rule corpus or native analyser it ran (`gitlab-sast-rules`, `0xdea-semgrep-rules`, `gosec`, `bandit`), each holding the rules its results cite | report, triage gate, audit |
+| `toolComponent.rules[].properties["anvil/ruleProvenance"]` | ext | optional; when present every field is non-blank: `source`, `repository`, `version`, `rulePath`, `licenseSpdx`, `licenseEvidence` | the Lane B pipeline, from `data/rules/MANIFEST.json` or the tool's pin in `data/rules/selection.json` | report, licence review |
+| `result.rule` | SARIF-native §3.27.7 | optional; when present it names a tool extension by index, agrees with `ruleId`, and resolves to a rule with complete `anvil/ruleProvenance` | the Lane B pipeline, on every result it emits | report, triage gate |
+
+`(*Run).validate` checks the resolution, which a JSON Schema cannot (`TestARuleReferenceMustResolveToCompleteProvenance`);
+the wire schema checks the shapes and the non-blank fields (`ruleProvenance`, `toolExtension`, `result.rule`),
+and refused both mutations tried on 2026-10-03 (a blank `licenseSpdx`, a `result.rule` with no tool component).
+The rule is "if present, complete" rather than "required on every SAST result", because SAST results that
+predate Lane B (test fixtures, the read path's) carry no rule; the Lane B pipeline guarantees presence on its
+own results, and `TestEveryCandidateReachesTheRecordUnconfirmed` (internal/scan) holds that through the store.
+
+**How Lane B fills the rest of a result, with no schema change.**
+
+* `anvil/verdict` `unconfirmed`, `anvil/confidence` 1, `anvil/detector` kind `sast` with an empty model and
+  revision, no `result.rank` (no ranker ships in v1), `anvil/evidenceClass` `sast_static_only`, and
+  `result.kind` `open` (SARIF's "could not determine whether this is a problem").
+* `anvil/reasoning` is composed from a closed vocabulary and integers (`internal/laneb`, `composeReasoning`), so
+  it alone is `anvil_generated`; the message, snippet, context, path and symbol are under the `untrusted`
+  default.
+* `partialFingerprints["anvilFindingId/v1"]` is the SAST tier of anvil-fp/v1, with `rule_id_versioned`
+  `<corpus>/<rule id>@<first 12 hex of the rule file's git blob id>` (or `<tool>/<rule>@<release>`), so a rule
+  file that changes re-mints only its own findings, and `enclosing_symbol_path` `path::Symbol` from a parser.
+* `partialFingerprints["primaryLocationLineHash"]` is required once a region has a start line, and nothing
+  produced it before. Lane B writes the first 16 hex characters of the SHA-256 of the match's first line with
+  whitespace collapsed, then `:` and its occurrence in the file. It is Anvil's own construction, not CodeQL's;
+  who owns this key is still the open question §6 and the GitHub projection record.
+* `result.taxa` cites CWE 4.20 in `run.taxonomies`.
+* `anvil/advisorySnapshot` is required on the SAST run. When repository SCA ran, it is Trivy's as before; when
+  only Lane B ran, it names the rule pack: feed id `laneb-rule-pack`, digest `laneb/selection@<12 hex of
+  selection.json's SHA-256>`, dated by the owner's selection decision.
+* `anvil/specHarvest` on the SAST run is now produced (`internal/laneb`, `Harvest`), with `declaredFormat`
+  left empty so the dynamic tier classifies from the bytes.
+
+**The store.** Migration `0002_recall_candidates` adds `scan_run.recall_candidates`, the candidates-per-scan
+count (NULL when Lane B did not run, 0 when it ran and matched nothing, negative refused). `schema.sql` is
+unchanged.

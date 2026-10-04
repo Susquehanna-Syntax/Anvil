@@ -29,7 +29,7 @@ nothing else running unless noted.
 | advisory-permutation | `python -m anvil_eval.experiments.permutation run --model qwen3.5-2b --device CUDA0` and, in parallel, `... --model gemma-4-e2b-it --device CUDA1`; then `... permutation report` | RTX 4070 and RTX 4060, under 4 GB each | 0.7 s an answer on an idle machine; about 30 min each. CPU load from another job makes it about 10 times slower | `results/runs/advisory-permutation/<model>.jsonl` (resumable), then `results/advisory-permutation.json` |
 | code-metrics-baseline | `python -m anvil_eval.experiments.baseline report` (after the permutation report) | CPU | features for the 175,797 training functions take 2.4 min once, then are cached | `results/code-metrics-baseline.json` |
 | prefill-sweep | `python -m anvil_eval.experiments.prefill run --model qwen3.5-2b --arms rtx4070 rtx4060 cpu12 tier-s cpu1` (and the same for gemma-4-e2b-it), then `... prefill report` | both GPUs, then the CPU alone; run it with nothing else on the machine | about 10 min per model | `results/runs/prefill-sweep/`, `results/prefill-sweep.json` |
-| candidates-per-scan | `python -m anvil_eval.experiments.candidates run`, then `... candidates report` | CPU, all cores | about 15 min | `results/runs/candidates-per-scan/counts.json`, `results/candidates-per-scan.json` |
+| candidates-per-scan | `python -m anvil_eval.experiments.candidates run`, then `... candidates report` | CPU, all cores | about 15 min before Phase 6, 3.5 min since (see below) | `results/runs/candidates-per-scan/counts.json`, `results/candidates-per-scan.json` |
 | encoder-round-trip | `python -m anvil_eval.encoder measure --pairs 5000`, then `... encoder report` (after the prefill report) | CPU, 4 threads | about 8 min | `results/runs/encoder-round-trip/timings.json`, `results/encoder-round-trip.json` |
 | patch-quality | `python -m anvil_eval.experiments.patch run --jdk 8u202=<JDK 8 home> --jdk 17=<JDK 17 home>`, then `... patch report` | both GPUs plus system RAM for the coder's experts | not yet run: it needs the coder (a 61 GB download), JDK 8 and 17, Maven and network access for Maven at build time | `results/runs/patch-quality/outcomes.jsonl`, `results/patch-quality.json` |
 
@@ -42,6 +42,14 @@ A trial on a few pairs never writes into `results/`: `permutation run --limit 3 
 | advisory-permutation | 50 pairs per framing asked again with their own advisory and the prompt cache off: at most one verdict may change |
 | code-metrics-baseline | a pair-blind scorer has P-C exactly 0 and precision exactly 0.5, and the model compared with itself overlaps |
 | prefill-sweep | one CPU thread is clearly slower than four (ratio under 0.75), so no GPU leaked into a CPU arm |
-| candidates-per-scan | a planted file per language family is each flagged, and a clean file is not |
+| candidates-per-scan | a planted file per language family is each flagged, the same files under `tests/` are not, and a clean file is not |
 | encoder-round-trip | the worker refuses other paths and malformed bodies, and scores a duplicated pair identically |
 | patch-quality | a real canned fix is `verified_fixed` and a cosmetic one `exploit_still_triggers` on the synthetic C case |
+
+## Since Phase 6
+
+The candidates-per-scan row measures through Lane B itself: `python -m anvil_eval.experiments.candidates run`
+builds `anvil` from the checkout and drives `anvil recall` with the vendored rule pack (`data/rules`) and the pinned
+tools, so the number recorded is the number a scan records. It took 3 min 24 s on 2026-10-03 (all cores). The
+rule pack is regenerated from the owner's selection by `python -m anvil_eval.vendor_rules` (needs `python -m
+anvil_eval.recall acquire` first); it writes nothing if any selected rule's licence is not MIT or Apache-2.0.

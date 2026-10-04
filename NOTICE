@@ -58,6 +58,39 @@ in THIRD-PARTY-LICENSES.md with its full attribution text.
   github.com/ncruces/go-strftime v1.0.0         MIT
 
 ================================================================================
+1a. REDISTRIBUTED IN SOURCE FORM TODAY (Lane B's vendored rules, data/rules)
+================================================================================
+
+Lane B's rule pack is committed under data/rules, the owner's selection of
+2026-10-03. Every rule file is copied byte for byte, keeping its own header,
+and its licence was read from that header or, where a corpus has no per-file
+headers, from the corpus LICENSE body. Each licence body is archived beside the
+rules and hashed in data/rules/MANIFEST.json; internal/recall refuses a pack
+whose bodies or rules do not match.
+
+  GitLab sast-rules (gitlab-org/security-products/sast-rules) at
+    53bf5cf6df3c51b6c02110f5a638b5e6213666cd
+      243 rule files headed "License: MIT (c) GitLab Inc." -- MIT.
+      Copyright (c) 2011-present GitLab Inc. The MIT notice is in
+      data/rules/gitlab-sast-rules/LICENSE.
+      26 rule files (go/) headed "License: Apache 2.0 (c) gosec" -- Apache-2.0,
+      derived by GitLab from gosec's rules. Section 4(a): a copy of the
+      licence is at data/rules/gitlab-sast-rules/LICENSE.gosec-Apache-2.0.txt
+      (gosec's own LICENSE.txt, from its pinned 2.29.0 release archive).
+      Section 4(c): the files' own headers, which carry the attribution, are
+      kept unmodified. Section 4(d) applies only if the Work carries a NOTICE
+      file; the gosec 2.29.0 release archive carries none (checked
+      2026-10-03). GitLab's LICENSE puts doc/ under CC BY-SA 4.0 and keeps
+      third-party components under their own licences, so only the six
+      directories csharp, go, java, javascript, python and scala are vendored,
+      and a test refuses any other.
+
+  0xdea semgrep-rules (0xdea/semgrep-rules) at
+    dae50da6e6e629750f1daec73a01ef9206a372ab
+      39 rule files, rules/c, no per-file headers -- MIT, Copyright (c) 2022
+      raptor. The MIT notice is in data/rules/0xdea-semgrep-rules/LICENSE.
+
+================================================================================
 2. APACHE-2.0 ARTIFACTS WITH SECTION 4(d) NOTICE DUTIES
 ================================================================================
 
@@ -84,6 +117,11 @@ duty is recorded now so that the packaging steps cannot ship without it.
       Source: research/13 row D2. This is the permissive AFL++ substitute;
       AFL++ is excluded by the spine's exclusion list because its LICENSE is AGPL-3.0
       regardless of what its README says.
+
+  gosec (securego/gosec) 2.29.0 -- Apache-2.0, read from LICENSE.txt in the
+      pinned release archive. bandit (PyCQA/bandit) 1.9.4 -- Apache-2.0, read
+      from its LICENSE body at the tag. Lane B runs both as subprocesses.
+      Duty: Section 4 on redistribution of either. Status: PENDING (packaging).
 
   Docker Engine, Docker Compose -- Apache-2.0
       Duty: Section 4(d) notice IF redistributed as binaries. Anvil invokes
@@ -198,7 +236,13 @@ documented reason, and must never appear in this file or in any Anvil artifact:
                                irrelevant to it.
   Semgrep-maintained rules     internal business use only.
   opengrep/opengrep-rules      archived, NOASSERTION, LGPL-2.1 + Commons Clause.
-                               Use AikidoSec/opengrep-rules instead (MIT).
+                               Lane B uses GitLab's sast-rules and 0xdea's
+                               rules instead (data/rules).
+  GitLab sast-rules c/         every rule headed "License: GPL 2.0", generated
+                               from flawfinder. Excluded by the owner on
+                               2026-10-03.
+  lambdasec/autogrep           Apache-2.0 on the repository, with GPL, AGPL
+                               and unlicensed rules inside.
   CIS Benchmark content        in any form, including rules written by reading
                                one.
   Gemma 1-3, Llama, StarCoder2,
