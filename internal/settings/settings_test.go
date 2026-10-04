@@ -76,3 +76,53 @@ func TestLoadRefuses(t *testing.T) {
 		t.Error("a named configuration file that does not exist loaded")
 	}
 }
+
+// TestRemediationIsOffAndNamesNoModel: the remediation tier is off unless the
+// file turns it on, triage is off by default, and turning the tier on without
+// naming an endpoint, a model and a tier is refused: there is no default.
+func TestRemediationIsOffAndNamesNoModel(t *testing.T) {
+	s, err := Load(write(t, "version: 1\nstateDir: state\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Remediation.Enabled || s.Remediation.Model != "" || s.Remediation.EndpointURL != "" {
+		t.Fatalf("a file that does not mention remediation: %+v", s.Remediation)
+	}
+	on, err := Load(write(t, `version: 1
+stateDir: state
+remediation:
+  enabled: true
+  endpoint:
+    url: http://127.0.0.1:8080/v1
+    model: qwen3-coder
+    tier: local
+  targets:
+    - locator: "repo:anvil"
+      source: ../anvil
+      build: [go, build, ./...]
+      test: [go, test, ./...]
+      repository: owner/anvil
+      fork: anvil-bot/anvil
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := on.Remediation
+	if !r.Enabled || r.Triage != "off" || r.Model != "qwen3-coder" || len(r.Targets) != 1 || r.StaleAfterDays != 30 ||
+		!filepath.IsAbs(r.Targets[0].Source) || len(r.Targets[0].Test) != 3 || filepath.Base(r.WorkDir) != "remediation" {
+		t.Fatalf("%+v", r)
+	}
+	for _, bad := range []string{
+		"remediation:\n  enabled: true\n",
+		"remediation:\n  enabled: true\n  endpoint:\n    url: http://x/v1\n    tier: own\n",
+		"remediation:\n  triage: always\n",
+		"remediation:\n  merge: true\n",
+		"remediation:\n  endpoint:\n    token: x\n",
+		"remediation:\n  targets:\n    - locator: x\n      source: y\n      build: go build ./...\n",
+		"remediation:\n  targets:\n    - locator: x\n",
+	} {
+		if _, err := Load(write(t, "version: 1\n"+bad)); !errors.Is(err, ErrSettings) {
+			t.Errorf("%q was accepted: %v", bad, err)
+		}
+	}
+}

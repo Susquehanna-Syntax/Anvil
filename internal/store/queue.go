@@ -787,31 +787,29 @@ func LateDastArrivalsPossible(s record.DastStatus) bool {
 // ResolveAuditRecordID turns the queue re-cut's `auditID string` into the store's
 // audit_record primary key.
 //
-// THE PACKET NAMES A STRING AND THE SCHEMA HAS NO STRING KEY. `anvil/auditId`
-// is a required record field (plan/design/record-and-store.md's Record Field
-// Contract) but schema.sql carries NO `audit_id` column — it is a frozen
-// interface and the queue re-cut may not add one. So this resolver accepts the decimal
-// `audit_record_id` and says exactly that when it cannot.
-//
-// It is deliberately NOT the sealing, claims and masking review's finding F7
-// mistake. F7 was about EXPORTING a rowid as a portable identity — hashing it
-// into a git trailer where it means nothing outside one copy of one database
-// file. This is the opposite direction: a local lookup key, never emitted,
-// never hashed, never handed to another process. When a later step adds the
-// `anvil/auditId` column, this function is the single place that changes and
-// every caller keeps its signature.
+// It accepts `anvil/auditId`, which migration 0003 stores in
+// audit_record.audit_id, and, for an audit written before that column existed,
+// the decimal `audit_record_id`. The rowid is a local lookup key only: never
+// emitted, never hashed, never handed to another process (the sealing, claims
+// and masking review's finding F7 was about exporting it).
 func ResolveAuditRecordID(ctx context.Context, db *sql.DB, auditID string) (int64, error) {
 	trimmed := strings.TrimSpace(auditID)
 	if trimmed == "" {
 		return 0, fmt.Errorf("store: empty audit id: %w", ErrNoSuchAudit)
 	}
-	id, err := strconv.ParseInt(trimmed, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, fmt.Errorf(
-			"store: audit id %q is not a positive audit_record_id, and schema.sql has no anvil/auditId "+
-				"column to resolve it against: %w", auditID, ErrNoSuchAudit)
-	}
 	var found int64
+	err := db.QueryRowContext(ctx,
+		`SELECT audit_record_id FROM audit_record WHERE audit_id = ?`, trimmed).Scan(&found)
+	if err == nil {
+		return found, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("store: resolving audit id %q: %w", auditID, err)
+	}
+	id, perr := strconv.ParseInt(trimmed, 10, 64)
+	if perr != nil || id <= 0 {
+		return 0, fmt.Errorf("store: audit id %q names no audit_record: %w", auditID, ErrNoSuchAudit)
+	}
 	err = db.QueryRowContext(ctx,
 		`SELECT audit_record_id FROM audit_record WHERE audit_record_id = ?`, id).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {

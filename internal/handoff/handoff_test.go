@@ -1890,17 +1890,10 @@ func TestValidatedRequiresDynamicEvidence(t *testing.T) {
 			audit, err := f.tryNewAudit(record.StateBothSealed, record.HalfStatusSealed,
 				status, f.clock.Now().Add(8*time.Hour))
 			if err != nil {
-				if strings.Contains(err.Error(), "ck_audit_record_dast_status") {
-					// The shared-vocabulary amendment added `completed_failed` to
-					// internal/record; internal/store/schema.sql is a frozen
-					// interface this packet may not edit, so the column cannot
-					// hold the literal yet. The DDL is reported to the
-					// orchestrator. The classification itself is still
-					// asserted, without a database, by
-					// TestHasDynamicEvidenceClassifiesEveryDastStatus.
-					t.Skipf("ck_audit_record_dast_status does not admit %q yet; "+
-						"schema.sql needs: dast_status IN (..., 'completed_failed', ...)", status)
-				}
+				// No skip: schema.sql has admitted every dast_status literal,
+				// completed_failed included, since 2026-08-07, so a fixture
+				// that cannot be built is a failure (the remediation exit
+				// gate's row "no skipped security test", 2026-10-04).
 				t.Fatalf("newAudit: %v", err)
 			}
 			fingerprint, row := f.enqueue(52, record.ConsumptionClassRequiresDynamicConfirmation, audit)

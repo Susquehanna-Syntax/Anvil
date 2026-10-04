@@ -52,6 +52,12 @@ func Prepare(ctx context.Context, cfg Config, root string) (*Lane, error) {
 	return &Lane{scanner: s, plan: plan}, nil
 }
 
+// Only narrows the prepared scan to the named repository-relative files. The
+// remediation tier's diff-aware rescan uses it on the files a patch touched.
+func (l *Lane) Only(rel []string) *Lane {
+	return &Lane{scanner: l.scanner, plan: l.plan.Only(rel)}
+}
+
 // RulesetVersion names the rule selection, for scan_run.ruleset_version.
 func (l *Lane) RulesetVersion() string {
 	return "laneb/selection@" + l.scanner.Pack.SelectionSHA256[:12]

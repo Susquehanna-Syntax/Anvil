@@ -35,6 +35,8 @@ type Settings struct {
 	TrivyDB bool
 	// Recall is Lane B's recall tier.
 	Recall Recall
+	// Remediation is the coding agent's tier; off unless the file says so.
+	Remediation Remediation
 }
 
 // Recall configures Lane B's recall tier: the rule pack and the three tools
@@ -70,7 +72,7 @@ func (s Settings) CachePath() string { return filepath.Join(s.StateDir, "anvil-c
 // ErrSettings reports an unreadable or invalid configuration file.
 var ErrSettings = errors.New("settings: invalid configuration")
 
-var keys = map[string]bool{"version": true, "stateDir": true, "feeds": true, "policy": true, "spoolDir": true, "mirrorRoot": true, "trivyDB": true, "recall": true}
+var keys = map[string]bool{"version": true, "stateDir": true, "feeds": true, "policy": true, "spoolDir": true, "mirrorRoot": true, "trivyDB": true, "recall": true, "remediation": true}
 
 var recallKeys = map[string]bool{"enabled": true, "rules": true, "opengrep": true, "gosec": true, "bandit": true, "goBin": true}
 
@@ -185,6 +187,11 @@ func Load(path string) (Settings, error) {
 				sv = filepath.Join(base, sv)
 			}
 			*dst = sv
+		}
+	}
+	if v, present := m["remediation"]; present {
+		if err := parseRemediation(v, path, base, &s); err != nil {
+			return s, err
 		}
 	}
 	return s, nil

@@ -37,7 +37,12 @@ type recutFixture struct {
 
 func newRecutFixture(t *testing.T, dastStatus record.DastStatus) *recutFixture {
 	t.Helper()
-	db := newDB(t)
+	// Migrated, not schema.sql alone: the re-cut resolves an audit id through
+	// migration 0003's audit_record.audit_id.
+	db := openMemory(t)
+	if _, err := Migrate(context.Background(), db, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	mustExec(t, db,
 		`INSERT INTO target (target_id, kind, locator) VALUES (?, 'repo', 'https://example.invalid/r.git')`,
@@ -888,11 +893,20 @@ func TestRecutRejectsBadConfigurationAndBudget(t *testing.T) {
 	}
 }
 
-// TestResolveAuditRecordID covers the packet's `auditID string` against a
-// schema that has no string audit key.
+// TestResolveAuditRecordID covers the packet's `auditID string`: the stored
+// anvil/auditId first, and the rowid for an audit written before migration 0003.
 func TestResolveAuditRecordID(t *testing.T) {
 	f := newRecutFixture(t, record.DastStatusRunning)
 	ctx := context.Background()
+
+	const auditID = "0198e2c1-6a4b-7d3e-9f10-2b7c5d8a4e11"
+	if _, err := ResolveAuditRecordID(ctx, f.db, auditID); !errors.Is(err, ErrNoSuchAudit) {
+		t.Fatalf("an audit id no row carries resolved: %v", err)
+	}
+	mustExec(t, f.db, `UPDATE audit_record SET audit_id = ? WHERE audit_record_id = ?`, auditID, recutAuditRecordID)
+	if got, err := ResolveAuditRecordID(ctx, f.db, auditID); err != nil || got != recutAuditRecordID {
+		t.Fatalf("ResolveAuditRecordID(%q) = %d, %v", auditID, got, err)
+	}
 
 	got, err := ResolveAuditRecordID(ctx, f.db, "  1 ")
 	if err != nil {
