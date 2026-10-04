@@ -71,7 +71,8 @@
 # CWE-Bench-Java for v1, and deferred every GPU run (patch quality, task cards and the triage
 # measurement) to separate work after Phase 9. batch-size waits for real pull requests on a real
 # repository, which Phase 7 does not open. triage-precision is a new row, pre-registered before
-# any of it ran. No decision field was changed by Phase 7.
+# any of it ran; the owner signed its bars on 2026-10-04 (pass: precision interval's lower bound
+# at least 0.75). No decision field was changed by Phase 7.
 
 version: 1
 
@@ -978,12 +979,14 @@ experiments:
       false positives dropped, the insufficient_context counts on each side, and the cost per
       finding (mean seconds and mean prompt tokens), under both labels.
     threshold_pass: >-
-      PROPOSED, needs the owner's sign-off: the lower bound of the plausible verdict's precision
-      interval is above the sample's base rate (the gate beats a label-blind one), and at least
-      half of the labelled false positives are dropped.
+      The lower bound of the plausible verdict's precision interval (Wilson 95%, function label)
+      is at least 0.75, and at least half of the labelled false positives are dropped. SIGNED by
+      the owner on 2026-10-04, who raised the proposed lower bound (above the sample's base rate,
+      0.415) to 0.75 before any model ran. A result meeting neither bar is AMBIGUOUS.
     threshold_fail: >-
-      PROPOSED, needs the owner's sign-off: the upper bound of the precision interval is at or
-      below the base rate (the gate is no better than letting every finding through).
+      The upper bound of the precision interval is at or below the sample's base rate (the gate
+      is no better than letting every finding through). SIGNED by the owner on 2026-10-04 as
+      proposed.
     reference_baseline: PROPOSED — no published baseline
     result:
       value: null
